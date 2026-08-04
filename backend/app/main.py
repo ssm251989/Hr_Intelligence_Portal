@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.bgv.router import router as bgv_router
 from app.candidates.applications_router import router as applications_router
@@ -12,6 +13,13 @@ from app.screening.router import router as screening_router
 from app.shortlisting.router import router as shortlisting_router
 
 app = FastAPI(title="HR Automation")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(jobs_router)
 app.include_router(candidates_router)

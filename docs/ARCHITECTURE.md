@@ -70,14 +70,20 @@ hr-automation/
 │   ├── alembic/                # DB migrations
 │   ├── tests/
 │   └── requirements.txt
-├── frontend/
+├── frontend/                    # Vite + React + TypeScript + MUI, scaffolded
 │   └── src/
-│       ├── modules/            # one folder per dashboard module
-│       └── components/
+│       ├── api/                # typed fetch client (client.ts, types.ts) against backend
+│       ├── layout/              # sidebar + main content shell (AppLayout.tsx)
+│       └── pages/                # one page per module; Jobs is functional, rest are placeholders
 └── docs/
     ├── ARCHITECTURE.md          # this file
     └── PROMPTS.md                # AI service prompt library
 ```
+
+**Frontend status:** scaffolded and running (`npm run dev` at `frontend/`, port 5173) against the
+backend at `http://localhost:8000` (no auth yet, CORS enabled for the dev origin in
+`backend/app/main.py`). Jobs page is fully wired to `/jobs` (list, create, generate-jd); the other
+nine module pages are "Coming soon" placeholders pending their own build-out.
 
 **Local dev database:** no `docker-compose.yml` — Docker isn't installed in this dev environment. Local dev runs against a native Windows PostgreSQL service (`postgresql-x64-17`) listening on `localhost:5432`, configured via `backend/.env`'s `DATABASE_URL`. Revisit a compose file if dev moves to a machine where Docker is the natural fit, or once there's a second service (e.g. the frontend) to orchestrate alongside it.
 
