@@ -94,6 +94,9 @@ def parse_candidate_resume(candidate_id: uuid.UUID, db: Session = Depends(get_db
 
     log_action(db, "candidate", candidate.id, "ai_resume_parser_scored", "system", result)
     candidate.parsed_fields = result
+    candidate.full_name = result.get("full_name") or candidate.full_name
+    candidate.email = result.get("email") or candidate.email
+    candidate.phone = result.get("phone") or candidate.phone
     db.commit()
     db.refresh(candidate)
     return candidate

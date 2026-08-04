@@ -56,6 +56,10 @@ def _by_status_map(body):
 
 
 def test_pipeline_counts_without_job_filter(client, db_session):
+    # Delta against a before-snapshot, since this endpoint has no filter to scope out
+    # unrelated rows that may already exist in the database.
+    before_by_status = _by_status_map(client.get("/reports/pipeline").json())
+
     job1 = _make_job(db_session)
     job2 = _make_job(db_session)
     candidate = _make_candidate(db_session)
@@ -70,10 +74,14 @@ def test_pipeline_counts_without_job_filter(client, db_session):
 
     assert response.status_code == 200
     body = response.json()
-    assert body["total"] == 5
-    assert _by_status_map(body) == {"received": 3, "screened": 1, "hr_selected": 1}
+    after_by_status = _by_status_map(body)
+    added = {
+        status: after_by_status.get(status, 0) - before_by_status.get(status, 0)
+        for status in ("received", "screened", "hr_selected")
+    }
+    assert added == {"received": 3, "screened": 1, "hr_selected": 1}
     # Ordered per the application lifecycle, not insertion or alphabetical order.
-    statuses = [row["status"] for row in body["by_status"]]
+    statuses = [row["status"] for row in body["by_status"] if row["status"] in added]
     assert statuses == ["received", "screened", "hr_selected"]
 
 
@@ -96,7 +104,9 @@ def test_pipeline_counts_with_job_filter(client, db_session):
 
 
 def test_pipeline_empty(client):
-    response = client.get("/reports/pipeline")
+    # Filter to a job_role_id no application can reference, so this is robust
+    # against unrelated rows already present in the database.
+    response = client.get(f"/reports/pipeline?job_role_id={uuid.uuid4()}")
 
     assert response.status_code == 200
     body = response.json()
@@ -156,7 +166,9 @@ def test_audit_filter_by_entity_type(client, db_session):
     _make_audit_entry(db_session, "application", app_id, "salary_validated")
     _make_audit_entry(db_session, "bgv_document", doc_id, "bgv_document_uploaded")
 
-    response = client.get("/reports/audit?entity_type=application")
+    # Combined with entity_id so this is scoped to rows this test created, robust
+    # against unrelated "application" audit_log rows already in the database.
+    response = client.get(f"/reports/audit?entity_type=application&entity_id={app_id}")
 
     assert response.status_code == 200
     body = response.json()
@@ -185,7 +197,9 @@ def test_audit_filter_by_action(client, db_session):
     _make_audit_entry(db_session, "application", app_id, "salary_approval_decision")
     _make_audit_entry(db_session, "application", uuid.uuid4(), "salary_validated")
 
-    response = client.get("/reports/audit?action=salary_approval_decision")
+    # Combined with entity_id so this is scoped to rows this test created, robust
+    # against unrelated "salary_approval_decision" audit_log rows already in the database.
+    response = client.get(f"/reports/audit?action=salary_approval_decision&entity_id={app_id}")
 
     assert response.status_code == 200
     body = response.json()
