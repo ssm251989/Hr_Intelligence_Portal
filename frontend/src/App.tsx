@@ -4,6 +4,7 @@ import { Navigate, Route, BrowserRouter, Routes } from "react-router-dom";
 import AppLayout from "./layout/AppLayout";
 import CandidatesPage from "./pages/CandidatesPage";
 import ComingSoonPage from "./pages/ComingSoonPage";
+import InterviewsPage from "./pages/InterviewsPage";
 import JobsPage from "./pages/JobsPage";
 import ScreeningPage from "./pages/ScreeningPage";
 import ShortlistingPage from "./pages/ShortlistingPage";
@@ -20,7 +21,7 @@ export default function App() {
             <Route path="/candidates" element={<CandidatesPage />} />
             <Route path="/screening" element={<ScreeningPage />} />
             <Route path="/shortlisting" element={<ShortlistingPage />} />
-            <Route path="/interviews" element={<ComingSoonPage title="Interviews" />} />
+            <Route path="/interviews" element={<InterviewsPage />} />
             <Route path="/salary" element={<ComingSoonPage title="Salary" />} />
             <Route path="/bgv" element={<ComingSoonPage title="BGV" />} />
             <Route path="/offers" element={<ComingSoonPage title="Offers" />} />
