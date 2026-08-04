@@ -5,6 +5,8 @@ import AppLayout from "./layout/AppLayout";
 import CandidatesPage from "./pages/CandidatesPage";
 import ComingSoonPage from "./pages/ComingSoonPage";
 import JobsPage from "./pages/JobsPage";
+import ScreeningPage from "./pages/ScreeningPage";
+import ShortlistingPage from "./pages/ShortlistingPage";
 
 export default function App() {
   return (
@@ -16,8 +18,8 @@ export default function App() {
             <Route index element={<Navigate to="/jobs" replace />} />
             <Route path="/jobs" element={<JobsPage />} />
             <Route path="/candidates" element={<CandidatesPage />} />
-            <Route path="/screening" element={<ComingSoonPage title="Screening" />} />
-            <Route path="/shortlisting" element={<ComingSoonPage title="Shortlisting" />} />
+            <Route path="/screening" element={<ScreeningPage />} />
+            <Route path="/shortlisting" element={<ShortlistingPage />} />
             <Route path="/interviews" element={<ComingSoonPage title="Interviews" />} />
             <Route path="/salary" element={<ComingSoonPage title="Salary" />} />
             <Route path="/bgv" element={<ComingSoonPage title="BGV" />} />

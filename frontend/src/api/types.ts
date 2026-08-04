@@ -92,7 +92,7 @@ export interface ApplicationRead {
   candidate_id: UUID;
   match_score?: number | null;
   skill_match_pct?: number | null;
-  missing_skills?: unknown[] | null;
+  missing_skills?: string[] | null;
   ranking_score?: number | null;
   ranking_rationale?: string | null;
   status: string;
