@@ -50,8 +50,32 @@ export interface CandidateRead {
   email?: string | null;
   phone?: string | null;
   resume_path?: string | null;
-  parsed_fields?: Record<string, unknown> | null;
+  parsed_fields?: ParsedResumeFields | null;
   created_at: string;
+}
+
+// shape of app.ai_services.resume_parser.ResumeParserOutput, stored as candidates.parsed_fields
+export interface EducationItem {
+  degree?: string | null;
+  institution?: string | null;
+  year?: number | null;
+}
+
+export interface WorkHistoryItem {
+  company?: string | null;
+  title?: string | null;
+  start?: string | null;
+  end?: string | null;
+}
+
+export interface ParsedResumeFields {
+  full_name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  total_experience_years?: number | null;
+  skills: string[];
+  education: EducationItem[];
+  work_history: WorkHistoryItem[];
 }
 
 // ---- applications ----
