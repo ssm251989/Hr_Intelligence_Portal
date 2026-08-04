@@ -6,11 +6,13 @@ from sqlalchemy.orm import Session
 from app.ai_services.candidate_ranker import rank_candidate
 from app.ai_services.resume_matcher import match_resume
 from app.audit.service import log_action
+from app.auth.dependencies import require_roles
 from app.core.database import get_db
 from app.models.application import Application
 from app.models.candidate import Candidate
 from app.models.interview import Interview
 from app.models.job_role import JobRole
+from app.models.user import User
 from app.schemas.application import ApplicationRead
 
 router = APIRouter(prefix="/applications", tags=["screening"])
@@ -39,7 +41,11 @@ def _render_ranking_rationale(result: dict) -> str:
 
 
 @router.post("/{application_id}/screen", response_model=ApplicationRead)
-def screen_application(application_id: uuid.UUID, db: Session = Depends(get_db)):
+def screen_application(
+    application_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "hiring_manager", "admin")),
+):
     application = _get_application_or_404(db, application_id)
     job = db.get(JobRole, application.job_role_id)
     candidate = db.get(Candidate, application.candidate_id)
@@ -62,7 +68,11 @@ def screen_application(application_id: uuid.UUID, db: Session = Depends(get_db))
 
 
 @router.post("/{application_id}/rank", response_model=ApplicationRead)
-def rank_application(application_id: uuid.UUID, db: Session = Depends(get_db)):
+def rank_application(
+    application_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "hiring_manager", "admin")),
+):
     application = _get_application_or_404(db, application_id)
     job = db.get(JobRole, application.job_role_id)
 

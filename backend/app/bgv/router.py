@@ -5,12 +5,14 @@ from sqlalchemy.orm import Session
 
 from app.ai_services.document_validator import validate_document
 from app.audit.service import log_action
+from app.auth.dependencies import get_current_user, require_roles
 from app.bgv.document_extraction import extract_bgv_text
 from app.bgv.storage import resolve_bgv_path, save_bgv_file
 from app.candidates.resume_extraction import ResumeExtractionError, UnsupportedFileTypeError
 from app.core.database import get_db
 from app.models.application import Application
 from app.models.bgv_document import BgvDocument
+from app.models.user import User
 from app.schemas.application import ApplicationRead
 from app.schemas.bgv import BGV_DOC_TYPES, BgvClearRequest, BgvDocumentRead
 
@@ -35,7 +37,11 @@ def _get_document_or_404(db: Session, application_id: uuid.UUID, doc_id: uuid.UU
 
 
 @router.post("/{application_id}/bgv/request", response_model=ApplicationRead)
-def request_bgv(application_id: uuid.UUID, db: Session = Depends(get_db)):
+def request_bgv(
+    application_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "admin")),
+):
     application = _get_application_or_404(db, application_id)
     if application.status != "salary_approved":
         raise HTTPException(
@@ -65,6 +71,7 @@ async def upload_bgv_document(
     doc_type: str = Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "admin")),
 ):
     if doc_type not in BGV_DOC_TYPES:
         raise HTTPException(status_code=400, detail=f"doc_type must be one of {sorted(BGV_DOC_TYPES)}")
@@ -112,7 +119,9 @@ async def upload_bgv_document(
 
 
 @router.get("/{application_id}/bgv/documents", response_model=list[BgvDocumentRead])
-def list_bgv_documents(application_id: uuid.UUID, db: Session = Depends(get_db)):
+def list_bgv_documents(
+    application_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+):
     _get_application_or_404(db, application_id)
     return (
         db.query(BgvDocument)
@@ -123,7 +132,12 @@ def list_bgv_documents(application_id: uuid.UUID, db: Session = Depends(get_db))
 
 
 @router.post("/{application_id}/bgv/documents/{doc_id}/validate", response_model=BgvDocumentRead)
-def validate_bgv_document(application_id: uuid.UUID, doc_id: uuid.UUID, db: Session = Depends(get_db)):
+def validate_bgv_document(
+    application_id: uuid.UUID,
+    doc_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "admin")),
+):
     _get_application_or_404(db, application_id)
     document = _get_document_or_404(db, application_id, doc_id)
 
@@ -149,7 +163,12 @@ def validate_bgv_document(application_id: uuid.UUID, doc_id: uuid.UUID, db: Sess
 
 
 @router.post("/{application_id}/bgv/clear", response_model=ApplicationRead)
-def clear_bgv(application_id: uuid.UUID, payload: BgvClearRequest, db: Session = Depends(get_db)):
+def clear_bgv(
+    application_id: uuid.UUID,
+    payload: BgvClearRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "admin")),
+):
     application = _get_application_or_404(db, application_id)
     if application.status not in BGV_IN_PROGRESS_STATUSES:
         raise HTTPException(status_code=400, detail="Application is not awaiting a BGV clearance decision")
@@ -181,7 +200,7 @@ def clear_bgv(application_id: uuid.UUID, payload: BgvClearRequest, db: Session =
         "application",
         application.id,
         "bgv_clearance_decision",
-        payload.cleared_by or "hr",
+        payload.cleared_by or current_user.email,
         {
             "decision": payload.decision,
             "notes": payload.notes,

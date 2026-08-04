@@ -4,9 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.audit.service import log_action
+from app.auth.dependencies import get_current_user, require_roles
 from app.core.database import get_db
 from app.models.application import Application
 from app.models.job_role import JobRole
+from app.models.user import User
 from app.schemas.application import ApplicationRead
 from app.schemas.salary import SalaryApprovalRequest, SalaryStatusResponse
 
@@ -23,7 +25,11 @@ def _get_application_or_404(db: Session, application_id: uuid.UUID) -> Applicati
 
 
 @router.post("/{application_id}/validate-salary", response_model=ApplicationRead)
-def validate_salary(application_id: uuid.UUID, db: Session = Depends(get_db)):
+def validate_salary(
+    application_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("hiring_manager", "admin")),
+):
     application = _get_application_or_404(db, application_id)
     if application.status not in VALIDATABLE_STATUSES:
         raise HTTPException(
@@ -67,7 +73,12 @@ def validate_salary(application_id: uuid.UUID, db: Session = Depends(get_db)):
 
 
 @router.post("/{application_id}/approve-salary", response_model=ApplicationRead)
-def approve_salary(application_id: uuid.UUID, payload: SalaryApprovalRequest, db: Session = Depends(get_db)):
+def approve_salary(
+    application_id: uuid.UUID,
+    payload: SalaryApprovalRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("hiring_manager", "admin")),
+):
     application = _get_application_or_404(db, application_id)
     if application.status != "salary_above_band":
         raise HTTPException(
@@ -98,7 +109,7 @@ def approve_salary(application_id: uuid.UUID, payload: SalaryApprovalRequest, db
         "application",
         application.id,
         "salary_approval_decision",
-        payload.approved_by or "hr",
+        payload.approved_by or current_user.email,
         {
             "decision": payload.decision,
             "approved_salary": final_salary,
@@ -111,7 +122,9 @@ def approve_salary(application_id: uuid.UUID, payload: SalaryApprovalRequest, db
 
 
 @router.get("/{application_id}/salary-status", response_model=SalaryStatusResponse)
-def get_salary_status(application_id: uuid.UUID, db: Session = Depends(get_db)):
+def get_salary_status(
+    application_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+):
     application = _get_application_or_404(db, application_id)
     job = db.get(JobRole, application.job_role_id)
 

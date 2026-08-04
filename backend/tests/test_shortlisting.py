@@ -86,19 +86,20 @@ def test_shortlist_decision_reject(client, db_session):
     assert response.json()["status"] == "hr_rejected"
 
 
-def test_shortlist_decision_defaults_actor_to_hr(client, db_session):
+def test_shortlist_decision_defaults_actor_to_current_user_email(client, db_session, make_auth_headers):
     job = _make_job(db_session)
     candidate = _make_candidate(db_session)
     application = _make_application(db_session, job, candidate, status="screened", match_score=75)
 
-    client.post(f"/applications/{application.id}/shortlist-decision", json={"decision": "select"})
+    headers = make_auth_headers(role="recruiter", email="recruiter@example.com")
+    client.post(f"/applications/{application.id}/shortlist-decision", json={"decision": "select"}, headers=headers)
 
     audit_entry = (
         db_session.query(AuditLog)
         .filter(AuditLog.entity_id == application.id, AuditLog.action == "hr_shortlisting_decision")
         .one_or_none()
     )
-    assert audit_entry.actor == "hr"
+    assert audit_entry.actor == "recruiter@example.com"
 
 
 def test_shortlist_decision_requires_screened_status(client, db_session):

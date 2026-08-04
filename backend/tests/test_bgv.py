@@ -378,20 +378,21 @@ def test_clear_bgv_reject(client, db_session):
     assert response.json()["status"] == "bgv_rejected"
 
 
-def test_clear_bgv_defaults_actor_to_hr(client, db_session):
+def test_clear_bgv_defaults_actor_to_current_user_email(client, db_session, make_auth_headers):
     job = _make_job(db_session)
     candidate = _make_candidate(db_session)
     application = _make_application(db_session, job, candidate, status="bgv_pending")
     _make_document(db_session, application, doc_type="aadhaar", validation_status="valid")
 
-    client.post(f"/applications/{application.id}/bgv/clear", json={"decision": "clear"})
+    headers = make_auth_headers(role="recruiter", email="recruiter@example.com")
+    client.post(f"/applications/{application.id}/bgv/clear", json={"decision": "clear"}, headers=headers)
 
     audit_entry = (
         db_session.query(AuditLog)
         .filter(AuditLog.entity_id == application.id, AuditLog.action == "bgv_clearance_decision")
         .one_or_none()
     )
-    assert audit_entry.actor == "hr"
+    assert audit_entry.actor == "recruiter@example.com"
 
 
 def test_clear_bgv_wrong_status_returns_400(client, db_session):

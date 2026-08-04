@@ -4,15 +4,17 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.audit.service import log_action
+from app.auth.dependencies import get_current_user, require_roles
 from app.core.database import get_db
 from app.models.application import Application
+from app.models.user import User
 from app.schemas.application import ApplicationRead, ShortlistDecisionRequest
 
 router = APIRouter(tags=["shortlisting"])
 
 
 @router.get("/jobs/{job_id}/shortlist", response_model=list[ApplicationRead])
-def list_shortlist(job_id: uuid.UUID, db: Session = Depends(get_db)):
+def list_shortlist(job_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return (
         db.query(Application)
         .filter(Application.job_role_id == job_id, Application.status == "screened")
@@ -23,7 +25,10 @@ def list_shortlist(job_id: uuid.UUID, db: Session = Depends(get_db)):
 
 @router.post("/applications/{application_id}/shortlist-decision", response_model=ApplicationRead)
 def make_shortlist_decision(
-    application_id: uuid.UUID, payload: ShortlistDecisionRequest, db: Session = Depends(get_db)
+    application_id: uuid.UUID,
+    payload: ShortlistDecisionRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "hiring_manager", "admin")),
 ):
     application = db.get(Application, application_id)
     if not application:
@@ -45,7 +50,7 @@ def make_shortlist_decision(
         "application",
         application.id,
         "hr_shortlisting_decision",
-        payload.decided_by or "hr",
+        payload.decided_by or current_user.email,
         {
             "decision": payload.decision,
             "notes": payload.notes,

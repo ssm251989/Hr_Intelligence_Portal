@@ -5,8 +5,10 @@ from sqlalchemy.orm import Session
 
 from app.ai_services.jd_generator import generate_jd
 from app.audit.service import log_action
+from app.auth.dependencies import get_current_user, require_roles
 from app.core.database import get_db
 from app.models.job_role import JobRole
+from app.models.user import User
 from app.schemas.job import JobRoleCreate, JobRoleRead, JobRoleUpdate
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -40,7 +42,11 @@ def _render_jd_text(jd: dict) -> str:
 
 
 @router.post("", response_model=JobRoleRead, status_code=201)
-def create_job(payload: JobRoleCreate, db: Session = Depends(get_db)):
+def create_job(
+    payload: JobRoleCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "admin")),
+):
     job = JobRole(**payload.model_dump())
     db.add(job)
     db.commit()
@@ -50,17 +56,22 @@ def create_job(payload: JobRoleCreate, db: Session = Depends(get_db)):
 
 
 @router.get("", response_model=list[JobRoleRead])
-def list_jobs(db: Session = Depends(get_db)):
+def list_jobs(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return db.query(JobRole).order_by(JobRole.created_at.desc()).all()
 
 
 @router.get("/{job_id}", response_model=JobRoleRead)
-def get_job(job_id: uuid.UUID, db: Session = Depends(get_db)):
+def get_job(job_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return _get_job_or_404(db, job_id)
 
 
 @router.patch("/{job_id}", response_model=JobRoleRead)
-def update_job(job_id: uuid.UUID, payload: JobRoleUpdate, db: Session = Depends(get_db)):
+def update_job(
+    job_id: uuid.UUID,
+    payload: JobRoleUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "admin")),
+):
     job = _get_job_or_404(db, job_id)
     updates = payload.model_dump(exclude_unset=True)
     for field, value in updates.items():
@@ -72,7 +83,11 @@ def update_job(job_id: uuid.UUID, payload: JobRoleUpdate, db: Session = Depends(
 
 
 @router.post("/{job_id}/generate-jd", response_model=JobRoleRead)
-def generate_job_description(job_id: uuid.UUID, db: Session = Depends(get_db)):
+def generate_job_description(
+    job_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "admin")),
+):
     job = _get_job_or_404(db, job_id)
     result = generate_jd(
         {

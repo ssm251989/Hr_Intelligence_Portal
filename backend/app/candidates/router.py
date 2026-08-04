@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.ai_services.resume_parser import parse_resume
 from app.audit.service import log_action
+from app.auth.dependencies import get_current_user, require_roles
 from app.candidates.resume_extraction import (
     ResumeExtractionError,
     UnsupportedFileTypeError,
@@ -14,6 +15,7 @@ from app.candidates.resume_extraction import (
 from app.candidates.storage import resolve_resume_path, save_resume_file
 from app.core.database import get_db
 from app.models.candidate import Candidate
+from app.models.user import User
 from app.schemas.candidate import CandidateRead
 
 router = APIRouter(prefix="/candidates", tags=["candidates"])
@@ -29,7 +31,11 @@ def _get_candidate_or_404(db: Session, candidate_id: uuid.UUID) -> Candidate:
 
 
 @router.post("/upload", response_model=CandidateRead, status_code=201)
-async def upload_resume(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def upload_resume(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "admin")),
+):
     extension = file.filename.rsplit(".", 1)[-1].lower() if file.filename and "." in file.filename else ""
     if extension not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail="Only PDF and DOCX resumes are supported")
@@ -53,17 +59,21 @@ async def upload_resume(file: UploadFile = File(...), db: Session = Depends(get_
 
 
 @router.get("", response_model=list[CandidateRead])
-def list_candidates(db: Session = Depends(get_db)):
+def list_candidates(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return db.query(Candidate).order_by(Candidate.created_at.desc()).all()
 
 
 @router.get("/{candidate_id}", response_model=CandidateRead)
-def get_candidate(candidate_id: uuid.UUID, db: Session = Depends(get_db)):
+def get_candidate(
+    candidate_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+):
     return _get_candidate_or_404(db, candidate_id)
 
 
 @router.get("/{candidate_id}/resume")
-def download_resume(candidate_id: uuid.UUID, db: Session = Depends(get_db)):
+def download_resume(
+    candidate_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+):
     candidate = _get_candidate_or_404(db, candidate_id)
     if not candidate.resume_path:
         raise HTTPException(status_code=404, detail="No resume uploaded for this candidate")
@@ -76,7 +86,11 @@ def download_resume(candidate_id: uuid.UUID, db: Session = Depends(get_db)):
 
 
 @router.post("/{candidate_id}/parse-resume", response_model=CandidateRead)
-def parse_candidate_resume(candidate_id: uuid.UUID, db: Session = Depends(get_db)):
+def parse_candidate_resume(
+    candidate_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "admin")),
+):
     candidate = _get_candidate_or_404(db, candidate_id)
     if not candidate.resume_path:
         raise HTTPException(status_code=400, detail="No resume uploaded for this candidate")

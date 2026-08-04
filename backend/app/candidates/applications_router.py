@@ -5,17 +5,23 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.audit.service import log_action
+from app.auth.dependencies import get_current_user, require_roles
 from app.core.database import get_db
 from app.models.application import Application
 from app.models.candidate import Candidate
 from app.models.job_role import JobRole
+from app.models.user import User
 from app.schemas.application import ApplicationCreate, ApplicationRead
 
 router = APIRouter(prefix="/applications", tags=["applications"])
 
 
 @router.post("", response_model=ApplicationRead, status_code=201)
-def create_application(payload: ApplicationCreate, db: Session = Depends(get_db)):
+def create_application(
+    payload: ApplicationCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "admin")),
+):
     if not db.get(JobRole, payload.job_role_id):
         raise HTTPException(status_code=404, detail="Job role not found")
     if not db.get(Candidate, payload.candidate_id):
@@ -36,7 +42,11 @@ def create_application(payload: ApplicationCreate, db: Session = Depends(get_db)
 
 
 @router.get("", response_model=list[ApplicationRead])
-def list_applications(job_role_id: Optional[uuid.UUID] = Query(None), db: Session = Depends(get_db)):
+def list_applications(
+    job_role_id: Optional[uuid.UUID] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     query = db.query(Application)
     if job_role_id is not None:
         query = query.filter(Application.job_role_id == job_role_id)

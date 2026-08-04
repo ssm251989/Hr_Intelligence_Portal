@@ -5,10 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.auth.dependencies import get_current_user
 from app.core.database import get_db
 from app.models.application import APPLICATION_STATUSES, Application
 from app.models.audit_log import AuditLog
 from app.models.job_role import JobRole
+from app.models.user import User
 from app.schemas.reports import (
     ApplicationTimelineResponse,
     AuditLogPage,
@@ -28,7 +30,11 @@ def _ordered_status_counts(rows: list[tuple[str, int]]) -> list[StatusCount]:
 
 
 @router.get("/reports/pipeline", response_model=PipelineResponse)
-def get_pipeline(job_role_id: Optional[uuid.UUID] = Query(None), db: Session = Depends(get_db)):
+def get_pipeline(
+    job_role_id: Optional[uuid.UUID] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     query = db.query(Application.status, func.count(Application.id))
     if job_role_id is not None:
         query = query.filter(Application.job_role_id == job_role_id)
@@ -39,7 +45,9 @@ def get_pipeline(job_role_id: Optional[uuid.UUID] = Query(None), db: Session = D
 
 
 @router.get("/reports/jobs/{job_id}/summary", response_model=JobSummaryResponse)
-def get_job_summary(job_id: uuid.UUID, db: Session = Depends(get_db)):
+def get_job_summary(
+    job_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+):
     job = db.get(JobRole, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -75,6 +83,7 @@ def list_audit_log(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     query = db.query(AuditLog)
     if entity_type is not None:
@@ -90,7 +99,9 @@ def list_audit_log(
 
 
 @router.get("/applications/{application_id}/timeline", response_model=ApplicationTimelineResponse)
-def get_application_timeline(application_id: uuid.UUID, db: Session = Depends(get_db)):
+def get_application_timeline(
+    application_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+):
     application = db.get(Application, application_id)
     if not application:
         raise HTTPException(status_code=404, detail="Application not found")

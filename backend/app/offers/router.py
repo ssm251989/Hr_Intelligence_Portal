@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.ai_services.offer_letter_generator import generate_offer_letter
 from app.audit.service import log_action
+from app.auth.dependencies import get_current_user, require_roles
 from app.core.database import get_db
 from app.models.application import Application
 from app.models.candidate import Candidate
@@ -31,7 +32,12 @@ def _get_offer_or_404(db: Session, application_id: uuid.UUID) -> Offer:
 
 
 @router.post("/{application_id}/offer/generate", response_model=OfferRead)
-def generate_offer(application_id: uuid.UUID, payload: OfferGenerateRequest, db: Session = Depends(get_db)):
+def generate_offer(
+    application_id: uuid.UUID,
+    payload: OfferGenerateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "admin")),
+):
     application = _get_application_or_404(db, application_id)
     if application.status != "bgv_cleared":
         raise HTTPException(
@@ -81,7 +87,12 @@ def generate_offer(application_id: uuid.UUID, payload: OfferGenerateRequest, db:
 
 
 @router.post("/{application_id}/offer/mark-signed", response_model=OfferRead)
-def mark_offer_signed(application_id: uuid.UUID, payload: OfferSendRequest, db: Session = Depends(get_db)):
+def mark_offer_signed(
+    application_id: uuid.UUID,
+    payload: OfferSendRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "admin")),
+):
     application = _get_application_or_404(db, application_id)
     offer = _get_offer_or_404(db, application_id)
 
@@ -115,7 +126,11 @@ def mark_offer_signed(application_id: uuid.UUID, payload: OfferSendRequest, db: 
 
 
 @router.post("/{application_id}/offer/complete-onboarding", response_model=OfferRead)
-def complete_onboarding(application_id: uuid.UUID, db: Session = Depends(get_db)):
+def complete_onboarding(
+    application_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "admin")),
+):
     application = _get_application_or_404(db, application_id)
     if application.status != "onboarding_started":
         raise HTTPException(
@@ -142,6 +157,8 @@ def complete_onboarding(application_id: uuid.UUID, db: Session = Depends(get_db)
 
 
 @router.get("/{application_id}/offer", response_model=OfferRead)
-def get_offer(application_id: uuid.UUID, db: Session = Depends(get_db)):
+def get_offer(
+    application_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+):
     _get_application_or_404(db, application_id)
     return _get_offer_or_404(db, application_id)

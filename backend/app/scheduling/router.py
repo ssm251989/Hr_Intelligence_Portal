@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.ai_services.interview_question_generator import generate_interview_questions
 from app.audit.service import log_action
+from app.auth.dependencies import get_current_user, require_roles
 from app.core.database import get_db
 from app.models.application import Application
 from app.models.interview import Interview
@@ -37,7 +38,12 @@ def _get_interview_or_404(db: Session, interview_id: uuid.UUID) -> Interview:
 
 
 @router.post("/applications/{application_id}/interviews", response_model=InterviewRead, status_code=201)
-def schedule_interview(application_id: uuid.UUID, payload: InterviewCreate, db: Session = Depends(get_db)):
+def schedule_interview(
+    application_id: uuid.UUID,
+    payload: InterviewCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "interviewer", "hiring_manager", "admin")),
+):
     application = _get_application_or_404(db, application_id)
     if application.status not in SCHEDULABLE_STATUSES:
         raise HTTPException(
@@ -76,7 +82,9 @@ def schedule_interview(application_id: uuid.UUID, payload: InterviewCreate, db: 
 
 
 @router.get("/applications/{application_id}/interviews", response_model=list[InterviewRead])
-def list_interviews(application_id: uuid.UUID, db: Session = Depends(get_db)):
+def list_interviews(
+    application_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+):
     _get_application_or_404(db, application_id)
     return (
         db.query(Interview)
@@ -87,13 +95,18 @@ def list_interviews(application_id: uuid.UUID, db: Session = Depends(get_db)):
 
 
 @router.get("/interviews/{interview_id}", response_model=InterviewRead)
-def get_interview(interview_id: uuid.UUID, db: Session = Depends(get_db)):
+def get_interview(
+    interview_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+):
     return _get_interview_or_404(db, interview_id)
 
 
 @router.patch("/interviews/{interview_id}/feedback", response_model=InterviewRead)
 def submit_interview_feedback(
-    interview_id: uuid.UUID, payload: InterviewFeedbackUpdate, db: Session = Depends(get_db)
+    interview_id: uuid.UUID,
+    payload: InterviewFeedbackUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "interviewer", "hiring_manager", "admin")),
 ):
     interview = _get_interview_or_404(db, interview_id)
     updates = payload.model_dump(exclude_unset=True)
@@ -130,7 +143,11 @@ def submit_interview_feedback(
 
 
 @router.post("/applications/{application_id}/interview-questions", response_model=InterviewQuestionsResponse)
-def generate_questions(application_id: uuid.UUID, db: Session = Depends(get_db)):
+def generate_questions(
+    application_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "interviewer", "hiring_manager", "admin")),
+):
     application = _get_application_or_404(db, application_id)
     job = db.get(JobRole, application.job_role_id)
     if not job or not job.jd_text:

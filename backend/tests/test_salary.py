@@ -193,21 +193,22 @@ def test_approve_salary_wrong_status_returns_400(client, db_session):
     assert response.status_code == 400
 
 
-def test_approve_salary_defaults_actor_to_hr(client, db_session):
+def test_approve_salary_defaults_actor_to_current_user_email(client, db_session, make_auth_headers):
     job = _make_job(db_session)
     candidate = _make_candidate(db_session)
     application = _make_application(
         db_session, job, candidate, status="salary_above_band", expected_salary=1500000
     )
 
-    client.post(f"/applications/{application.id}/approve-salary", json={"decision": "approve"})
+    headers = make_auth_headers(role="hiring_manager", email="hiring-manager@example.com")
+    client.post(f"/applications/{application.id}/approve-salary", json={"decision": "approve"}, headers=headers)
 
     audit_entry = (
         db_session.query(AuditLog)
         .filter(AuditLog.entity_id == application.id, AuditLog.action == "salary_approval_decision")
         .one_or_none()
     )
-    assert audit_entry.actor == "hr"
+    assert audit_entry.actor == "hiring-manager@example.com"
 
 
 def test_approve_salary_not_found(client):
