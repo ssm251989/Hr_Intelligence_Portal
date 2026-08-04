@@ -14,14 +14,22 @@ import Typography from "@mui/material/Typography";
 
 import { ApiError, applicationsApi, candidatesApi, jobsApi, offersApi } from "../api/client";
 import type { ApplicationRead, CandidateRead, JobRoleRead, OfferGenerateRequest, OfferRead } from "../api/types";
+import { useAuth } from "../auth/AuthContext";
+import { ROLE_MATRIX } from "../auth/roles";
 
 const RELEVANT_STATUSES = ["bgv_cleared", "offer_sent", "onboarding_started", "onboarding_completed"];
 
 function OfferGenerateForm({ onSubmit }: { onSubmit: (payload: OfferGenerateRequest) => Promise<void> }) {
+  const { can } = useAuth();
+  const canEdit = can(ROLE_MATRIX.offersWrite);
   const [startDate, setStartDate] = useState("");
   const [reportingManagerName, setReportingManagerName] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  if (!canEdit) {
+    return null;
+  }
 
   const handleSubmit = async () => {
     if (!startDate) {
@@ -72,9 +80,15 @@ function OfferGenerateForm({ onSubmit }: { onSubmit: (payload: OfferGenerateRequ
 }
 
 function MarkSignedForm({ onSubmit }: { onSubmit: (envelopeId: string | null) => Promise<void> }) {
+  const { can } = useAuth();
+  const canEdit = can(ROLE_MATRIX.offersWrite);
   const [envelopeId, setEnvelopeId] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  if (!canEdit) {
+    return null;
+  }
 
   const handleSubmit = async () => {
     setSaving(true);
@@ -116,6 +130,8 @@ function MarkSignedForm({ onSubmit }: { onSubmit: (envelopeId: string | null) =>
 }
 
 export default function OffersPage() {
+  const { can } = useAuth();
+  const canWrite = can(ROLE_MATRIX.offersWrite);
   const [jobs, setJobs] = useState<JobRoleRead[]>([]);
   const [selectedJobId, setSelectedJobId] = useState("");
   const [applications, setApplications] = useState<ApplicationRead[]>([]);
@@ -270,7 +286,7 @@ export default function OffersPage() {
                     <MarkSignedForm onSubmit={(envelopeId) => handleMarkSigned(app.id, envelopeId)} />
                   )}
 
-                  {app.status === "onboarding_started" && (
+                  {canWrite && app.status === "onboarding_started" && (
                     <Box mt={2}>
                       <Button
                         size="small"

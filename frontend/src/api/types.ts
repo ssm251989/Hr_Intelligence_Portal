@@ -2,6 +2,37 @@
 
 export type UUID = string;
 
+// ---- auth ----
+
+export type UserRole = "recruiter" | "hiring_manager" | "interviewer" | "admin";
+
+export const USER_ROLES: UserRole[] = ["recruiter", "hiring_manager", "interviewer", "admin"];
+
+export interface UserRegister {
+  email: string;
+  password: string;
+  full_name?: string | null;
+  role: UserRole;
+}
+
+export interface UserLogin {
+  email: string;
+  password: string;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+}
+
+export interface UserRead {
+  id: UUID;
+  email: string;
+  full_name?: string | null;
+  role: UserRole;
+  created_at: string;
+}
+
 // ---- jobs ----
 
 export interface JobRoleBase {

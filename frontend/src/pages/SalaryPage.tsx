@@ -20,6 +20,8 @@ import type {
   SalaryApprovalRequest,
   SalaryStatusResponse,
 } from "../api/types";
+import { useAuth } from "../auth/AuthContext";
+import { ROLE_MATRIX } from "../auth/roles";
 
 const RELEVANT_STATUSES = [
   "hr_selected",
@@ -38,12 +40,18 @@ function SalaryApprovalForm({
   application: ApplicationRead;
   onSubmit: (payload: SalaryApprovalRequest) => Promise<void>;
 }) {
+  const { can } = useAuth();
+  const canEdit = can(ROLE_MATRIX.salaryWrite);
   const [decision, setDecision] = useState<"approve" | "reject" | "">("");
   const [approvedSalary, setApprovedSalary] = useState(
     application.expected_salary != null ? String(application.expected_salary) : ""
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  if (!canEdit) {
+    return null;
+  }
 
   const handleSubmit = async () => {
     if (!decision) {
@@ -103,6 +111,8 @@ function SalaryApprovalForm({
 }
 
 export default function SalaryPage() {
+  const { can } = useAuth();
+  const canWrite = can(ROLE_MATRIX.salaryWrite);
   const [jobs, setJobs] = useState<JobRoleRead[]>([]);
   const [selectedJobId, setSelectedJobId] = useState("");
   const [applications, setApplications] = useState<ApplicationRead[]>([]);
@@ -247,18 +257,20 @@ export default function SalaryPage() {
                     </Box>
                   )}
 
-                  <Stack direction="row" spacing={1} mt={2}>
-                    {VALIDATABLE_STATUSES.includes(app.status) && (
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        onClick={() => handleValidate(app.id)}
-                        disabled={actionId === app.id}
-                      >
-                        {actionId === app.id ? "Validating..." : "Validate Salary"}
-                      </Button>
-                    )}
-                  </Stack>
+                  {canWrite && (
+                    <Stack direction="row" spacing={1} mt={2}>
+                      {VALIDATABLE_STATUSES.includes(app.status) && (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() => handleValidate(app.id)}
+                          disabled={actionId === app.id}
+                        >
+                          {actionId === app.id ? "Validating..." : "Validate Salary"}
+                        </Button>
+                      )}
+                    </Stack>
+                  )}
 
                   {app.status === "salary_above_band" && (
                     <SalaryApprovalForm application={app} onSubmit={(payload) => handleApprove(app.id, payload)} />

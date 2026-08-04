@@ -19,8 +19,13 @@ import Typography from "@mui/material/Typography";
 
 import { ApiError, applicationsApi, candidatesApi, jobsApi } from "../api/client";
 import type { CandidateRead, JobRoleRead } from "../api/types";
+import { useAuth } from "../auth/AuthContext";
+import { ROLE_MATRIX } from "../auth/roles";
 
 export default function CandidatesPage() {
+  const { can } = useAuth();
+  const canUpload = can(ROLE_MATRIX.candidatesWrite);
+  const canLink = can(ROLE_MATRIX.applicationsCreate);
   const [candidates, setCandidates] = useState<CandidateRead[]>([]);
   const [jobs, setJobs] = useState<JobRoleRead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -127,32 +132,34 @@ export default function CandidatesPage() {
         Candidates
       </Typography>
 
-      <Card variant="outlined" sx={{ mb: 3 }}>
-        <CardContent>
-          <Typography variant="h6" gutterBottom>
-            Upload Resume
-          </Typography>
-          {uploadError && (
-            <Alert severity="error" sx={{ mb: 2 }}>
-              {uploadError}
-            </Alert>
-          )}
-          <Stack direction="row" spacing={2} alignItems="center">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".pdf,.docx"
-              onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
-            />
-            <Button variant="contained" onClick={handleUpload} disabled={uploading}>
-              {uploading ? "Uploading..." : "Upload"}
-            </Button>
-          </Stack>
-          <Typography variant="caption" color="text.secondary">
-            PDF or DOCX only.
-          </Typography>
-        </CardContent>
-      </Card>
+      {canUpload && (
+        <Card variant="outlined" sx={{ mb: 3 }}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              Upload Resume
+            </Typography>
+            {uploadError && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {uploadError}
+              </Alert>
+            )}
+            <Stack direction="row" spacing={2} alignItems="center">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.docx"
+                onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
+              />
+              <Button variant="contained" onClick={handleUpload} disabled={uploading}>
+                {uploading ? "Uploading..." : "Upload"}
+              </Button>
+            </Stack>
+            <Typography variant="caption" color="text.secondary">
+              PDF or DOCX only.
+            </Typography>
+          </CardContent>
+        </Card>
+      )}
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
@@ -201,17 +208,21 @@ export default function CandidatesPage() {
                     </Stack>
 
                     <Stack direction="row" spacing={1} mt={2}>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        onClick={() => handleParse(candidate.id)}
-                        disabled={!candidate.resume_path || parsingId === candidate.id}
-                      >
-                        {parsingId === candidate.id ? "Parsing..." : "Parse Resume"}
-                      </Button>
-                      <Button size="small" variant="outlined" onClick={() => openLinkDialog(candidate)}>
-                        Link to Job
-                      </Button>
+                      {canUpload && (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() => handleParse(candidate.id)}
+                          disabled={!candidate.resume_path || parsingId === candidate.id}
+                        >
+                          {parsingId === candidate.id ? "Parsing..." : "Parse Resume"}
+                        </Button>
+                      )}
+                      {canLink && (
+                        <Button size="small" variant="outlined" onClick={() => openLinkDialog(candidate)}>
+                          Link to Job
+                        </Button>
+                      )}
                     </Stack>
 
                     {parsed && (

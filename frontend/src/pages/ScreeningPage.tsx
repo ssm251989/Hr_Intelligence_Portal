@@ -14,8 +14,12 @@ import Typography from "@mui/material/Typography";
 
 import { ApiError, applicationsApi, candidatesApi, jobsApi, screeningApi } from "../api/client";
 import type { ApplicationRead, CandidateRead, JobRoleRead } from "../api/types";
+import { useAuth } from "../auth/AuthContext";
+import { ROLE_MATRIX } from "../auth/roles";
 
 export default function ScreeningPage() {
+  const { can } = useAuth();
+  const canDecide = can(ROLE_MATRIX.screeningDecisions);
   const [jobs, setJobs] = useState<JobRoleRead[]>([]);
   const [selectedJobId, setSelectedJobId] = useState("");
   const [applications, setApplications] = useState<ApplicationRead[]>([]);
@@ -165,28 +169,30 @@ export default function ScreeningPage() {
                   </Box>
                 )}
 
-                <Stack direction="row" spacing={1} mt={2}>
-                  {app.status === "received" && (
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      onClick={() => handleScreen(app.id)}
-                      disabled={actionId === app.id}
-                    >
-                      {actionId === app.id ? "Screening..." : "Screen"}
-                    </Button>
-                  )}
-                  {app.match_score != null && (
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      onClick={() => handleRank(app.id)}
-                      disabled={actionId === app.id}
-                    >
-                      {actionId === app.id ? "Ranking..." : app.ranking_score != null ? "Re-rank" : "Rank"}
-                    </Button>
-                  )}
-                </Stack>
+                {canDecide && (
+                  <Stack direction="row" spacing={1} mt={2}>
+                    {app.status === "received" && (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => handleScreen(app.id)}
+                        disabled={actionId === app.id}
+                      >
+                        {actionId === app.id ? "Screening..." : "Screen"}
+                      </Button>
+                    )}
+                    {app.match_score != null && (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => handleRank(app.id)}
+                        disabled={actionId === app.id}
+                      >
+                        {actionId === app.id ? "Ranking..." : app.ranking_score != null ? "Re-rank" : "Rank"}
+                      </Button>
+                    )}
+                  </Stack>
+                )}
               </CardContent>
             </Card>
           ))}

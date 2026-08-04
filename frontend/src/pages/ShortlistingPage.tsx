@@ -14,8 +14,12 @@ import Typography from "@mui/material/Typography";
 
 import { ApiError, candidatesApi, jobsApi, shortlistingApi } from "../api/client";
 import type { ApplicationRead, CandidateRead, JobRoleRead } from "../api/types";
+import { useAuth } from "../auth/AuthContext";
+import { ROLE_MATRIX } from "../auth/roles";
 
 export default function ShortlistingPage() {
+  const { can } = useAuth();
+  const canDecide = can(ROLE_MATRIX.screeningDecisions);
   const [jobs, setJobs] = useState<JobRoleRead[]>([]);
   const [selectedJobId, setSelectedJobId] = useState("");
   const [applications, setApplications] = useState<ApplicationRead[]>([]);
@@ -147,26 +151,28 @@ export default function ShortlistingPage() {
                   </Box>
                 )}
 
-                <Stack direction="row" spacing={1} mt={2}>
-                  <Button
-                    size="small"
-                    variant="contained"
-                    color="success"
-                    onClick={() => handleDecision(app.id, "select")}
-                    disabled={actionId === app.id}
-                  >
-                    Select
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    color="error"
-                    onClick={() => handleDecision(app.id, "reject")}
-                    disabled={actionId === app.id}
-                  >
-                    Reject
-                  </Button>
-                </Stack>
+                {canDecide && (
+                  <Stack direction="row" spacing={1} mt={2}>
+                    <Button
+                      size="small"
+                      variant="contained"
+                      color="success"
+                      onClick={() => handleDecision(app.id, "select")}
+                      disabled={actionId === app.id}
+                    >
+                      Select
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color="error"
+                      onClick={() => handleDecision(app.id, "reject")}
+                      disabled={actionId === app.id}
+                    >
+                      Reject
+                    </Button>
+                  </Stack>
+                )}
               </CardContent>
             </Card>
           ))}

@@ -21,6 +21,10 @@ import type {
   SalaryApprovalRequest,
   SalaryStatusResponse,
   ShortlistDecisionRequest,
+  TokenResponse,
+  UserLogin,
+  UserRead,
+  UserRegister,
   UUID,
 } from "./types";
 
@@ -37,14 +41,33 @@ export class ApiError extends Error {
   }
 }
 
+let authToken: string | null = null;
+let onUnauthorized: (() => void) | null = null;
+
+export function setAuthToken(token: string | null) {
+  authToken = token;
+}
+
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  onUnauthorized = handler;
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${BASE_URL}${path}`, {
-    ...options,
-    headers:
-      options.body instanceof FormData
-        ? options.headers
-        : { "Content-Type": "application/json", ...options.headers },
-  });
+  const isFormData = options.body instanceof FormData;
+  const headers: Record<string, string> = isFormData
+    ? { ...(options.headers as Record<string, string> | undefined) }
+    : { "Content-Type": "application/json", ...(options.headers as Record<string, string> | undefined) };
+
+  const hadToken = Boolean(authToken);
+  if (authToken) {
+    headers["Authorization"] = `Bearer ${authToken}`;
+  }
+
+  const response = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+
+  if (response.status === 401 && hadToken) {
+    onUnauthorized?.();
+  }
 
   if (!response.ok) {
     let detail: unknown;
@@ -69,6 +92,14 @@ const post = <T>(path: string, body?: unknown) =>
 const patch = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: "PATCH", body: body !== undefined ? JSON.stringify(body) : undefined });
 const postForm = <T>(path: string, form: FormData) => request<T>(path, { method: "POST", body: form });
+
+// ---- auth ----
+
+export const authApi = {
+  register: (payload: UserRegister) => post<UserRead>("/auth/register", payload),
+  login: (payload: UserLogin) => post<TokenResponse>("/auth/login", payload),
+  me: () => get<UserRead>("/auth/me"),
+};
 
 // ---- jobs ----
 

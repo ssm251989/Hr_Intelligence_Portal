@@ -17,6 +17,8 @@ import Typography from "@mui/material/Typography";
 
 import { ApiError, jobsApi } from "../api/client";
 import type { JobRoleCreate, JobRoleRead } from "../api/types";
+import { useAuth } from "../auth/AuthContext";
+import { ROLE_MATRIX } from "../auth/roles";
 
 const EMPTY_FORM = {
   title: "",
@@ -30,6 +32,8 @@ const EMPTY_FORM = {
 };
 
 export default function JobsPage() {
+  const { can } = useAuth();
+  const canWrite = can(ROLE_MATRIX.jobsWrite);
   const [jobs, setJobs] = useState<JobRoleRead[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -107,9 +111,11 @@ export default function JobsPage() {
     <Box>
       <Stack direction="row" justifyContent="space-between" alignItems="center" mb={3}>
         <Typography variant="h4">Jobs</Typography>
-        <Button variant="contained" onClick={() => setDialogOpen(true)}>
-          Create Job
-        </Button>
+        {canWrite && (
+          <Button variant="contained" onClick={() => setDialogOpen(true)}>
+            Create Job
+          </Button>
+        )}
       </Stack>
 
       {error && (
@@ -154,16 +160,18 @@ export default function JobsPage() {
                       : ""}
                   </Typography>
 
-                  <Box mt={2}>
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      onClick={() => handleGenerateJd(job.id)}
-                      disabled={generatingId === job.id}
-                    >
-                      {generatingId === job.id ? "Generating..." : "Generate JD"}
-                    </Button>
-                  </Box>
+                  {canWrite && (
+                    <Box mt={2}>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => handleGenerateJd(job.id)}
+                        disabled={generatingId === job.id}
+                      >
+                        {generatingId === job.id ? "Generating..." : "Generate JD"}
+                      </Button>
+                    </Box>
+                  )}
 
                   {job.jd_text && (
                     <Box mt={2} p={1.5} bgcolor="action.hover" borderRadius={1}>

@@ -15,6 +15,8 @@ import Typography from "@mui/material/Typography";
 import { ApiError, applicationsApi, bgvApi, candidatesApi, jobsApi } from "../api/client";
 import type { ApplicationRead, BgvClearRequest, BgvDocumentRead, CandidateRead, JobRoleRead } from "../api/types";
 import { BGV_DOC_TYPES } from "../api/types";
+import { useAuth } from "../auth/AuthContext";
+import { ROLE_MATRIX } from "../auth/roles";
 
 const RELEVANT_STATUSES = ["salary_approved", "bgv_requested", "bgv_pending", "bgv_cleared", "bgv_rejected"];
 const IN_PROGRESS_STATUSES = ["bgv_requested", "bgv_pending"];
@@ -31,11 +33,17 @@ function statusColor(status: string) {
 }
 
 function BgvUploadForm({ onUpload }: { onUpload: (docType: string, file: File) => Promise<void> }) {
+  const { can } = useAuth();
+  const canEdit = can(ROLE_MATRIX.bgvWrite);
   const [docType, setDocType] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  if (!canEdit) {
+    return null;
+  }
 
   const handleUpload = async () => {
     if (!docType || !file) {
@@ -85,10 +93,16 @@ function BgvUploadForm({ onUpload }: { onUpload: (docType: string, file: File) =
 }
 
 function BgvClearForm({ onSubmit }: { onSubmit: (payload: BgvClearRequest) => Promise<void> }) {
+  const { can } = useAuth();
+  const canEdit = can(ROLE_MATRIX.bgvWrite);
   const [decision, setDecision] = useState<"clear" | "reject" | "">("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  if (!canEdit) {
+    return null;
+  }
 
   const handleSubmit = async () => {
     if (!decision) {
@@ -137,6 +151,8 @@ function BgvClearForm({ onSubmit }: { onSubmit: (payload: BgvClearRequest) => Pr
 }
 
 export default function BgvPage() {
+  const { can } = useAuth();
+  const canWrite = can(ROLE_MATRIX.bgvWrite);
   const [jobs, setJobs] = useState<JobRoleRead[]>([]);
   const [selectedJobId, setSelectedJobId] = useState("");
   const [applications, setApplications] = useState<ApplicationRead[]>([]);
@@ -278,7 +294,7 @@ export default function BgvPage() {
                     <Chip label={app.status} size="small" />
                   </Stack>
 
-                  {app.status === "salary_approved" && (
+                  {canWrite && app.status === "salary_approved" && (
                     <Box mt={2}>
                       <Button
                         size="small"
@@ -314,7 +330,7 @@ export default function BgvPage() {
                                 </Typography>
                                 <Stack direction="row" spacing={1} alignItems="center">
                                   <Chip label={doc.validation_status} size="small" color={statusColor(doc.validation_status)} />
-                                  {IN_PROGRESS_STATUSES.includes(app.status) && (
+                                  {canWrite && IN_PROGRESS_STATUSES.includes(app.status) && (
                                     <Button
                                       size="small"
                                       variant="outlined"

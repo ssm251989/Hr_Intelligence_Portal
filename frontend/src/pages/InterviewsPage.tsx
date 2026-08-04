@@ -25,6 +25,8 @@ import type {
   InterviewRead,
   JobRoleRead,
 } from "../api/types";
+import { useAuth } from "../auth/AuthContext";
+import { ROLE_MATRIX } from "../auth/roles";
 
 const SCHEDULED_STATUSES = ["interview_scheduled", "interview_selected", "interview_rejected"];
 
@@ -43,6 +45,8 @@ function InterviewFeedbackForm({
   interview: InterviewRead;
   onSubmit: (payload: InterviewFeedbackUpdate) => Promise<void>;
 }) {
+  const { can } = useAuth();
+  const canEdit = can(ROLE_MATRIX.interviewsWrite);
   const [form, setForm] = useState<FeedbackFormState>({
     technical_rating: interview.technical_rating?.toString() ?? "",
     communication_rating: interview.communication_rating?.toString() ?? "",
@@ -52,6 +56,10 @@ function InterviewFeedbackForm({
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  if (!canEdit) {
+    return null;
+  }
 
   const handleSubmit = async () => {
     setSaving(true);
@@ -131,6 +139,8 @@ function InterviewFeedbackForm({
 }
 
 export default function InterviewsPage() {
+  const { can } = useAuth();
+  const canWrite = can(ROLE_MATRIX.interviewsWrite);
   const [jobs, setJobs] = useState<JobRoleRead[]>([]);
   const [selectedJobId, setSelectedJobId] = useState("");
   const [applications, setApplications] = useState<ApplicationRead[]>([]);
@@ -337,19 +347,21 @@ export default function InterviewsPage() {
                         <Typography variant="h6">{candidateLabel(app.candidate_id)}</Typography>
                         <Chip label={app.status} size="small" />
                       </Stack>
-                      <Stack direction="row" spacing={1} mt={2}>
-                        <Button size="small" variant="contained" onClick={() => openScheduleDialog(app)}>
-                          Schedule Interview
-                        </Button>
-                        <Button
-                          size="small"
-                          variant="outlined"
-                          onClick={() => handleGenerateQuestions(app.id)}
-                          disabled={actionId === app.id}
-                        >
-                          {actionId === app.id ? "Generating..." : "Generate Prep Questions"}
-                        </Button>
-                      </Stack>
+                      {canWrite && (
+                        <Stack direction="row" spacing={1} mt={2}>
+                          <Button size="small" variant="contained" onClick={() => openScheduleDialog(app)}>
+                            Schedule Interview
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => handleGenerateQuestions(app.id)}
+                            disabled={actionId === app.id}
+                          >
+                            {actionId === app.id ? "Generating..." : "Generate Prep Questions"}
+                          </Button>
+                        </Stack>
+                      )}
                       {prepQuestions[app.id] && renderQuestions(prepQuestions[app.id])}
                     </CardContent>
                   </Card>
@@ -388,16 +400,18 @@ export default function InterviewsPage() {
                         </Box>
                       ))}
 
-                      <Box mt={2}>
-                        <Button
-                          size="small"
-                          variant="outlined"
-                          onClick={() => handleGenerateQuestions(app.id)}
-                          disabled={actionId === app.id}
-                        >
-                          {actionId === app.id ? "Generating..." : "Generate Prep Questions"}
-                        </Button>
-                      </Box>
+                      {canWrite && (
+                        <Box mt={2}>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => handleGenerateQuestions(app.id)}
+                            disabled={actionId === app.id}
+                          >
+                            {actionId === app.id ? "Generating..." : "Generate Prep Questions"}
+                          </Button>
+                        </Box>
+                      )}
                       {prepQuestions[app.id] && renderQuestions(prepQuestions[app.id])}
                     </CardContent>
                   </Card>

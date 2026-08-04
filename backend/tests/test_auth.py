@@ -71,6 +71,35 @@ def test_login_returns_access_token(anonymous_client):
     assert body["access_token"]
 
 
+def test_me_returns_current_user(anonymous_client):
+    anonymous_client.post(
+        "/auth/register",
+        json={
+            "email": "me-test@example.com",
+            "password": "supersecret123",
+            "full_name": "Me Test",
+            "role": "hiring_manager",
+        },
+    )
+    login_response = anonymous_client.post(
+        "/auth/login", json={"email": "me-test@example.com", "password": "supersecret123"}
+    )
+    token = login_response.json()["access_token"]
+
+    response = anonymous_client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["email"] == "me-test@example.com"
+    assert body["full_name"] == "Me Test"
+    assert body["role"] == "hiring_manager"
+
+
+def test_me_rejects_missing_token(anonymous_client):
+    response = anonymous_client.get("/auth/me")
+    assert response.status_code == 401
+
+
 def test_login_rejects_wrong_password(anonymous_client):
     anonymous_client.post(
         "/auth/register",

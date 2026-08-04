@@ -10,15 +10,20 @@ import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import type { SvgIconComponent } from "@mui/icons-material";
 import AppBar from "@mui/material/AppBar";
 import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
 import Drawer from "@mui/material/Drawer";
 import List from "@mui/material/List";
 import ListItemButton from "@mui/material/ListItemButton";
 import ListItemIcon from "@mui/material/ListItemIcon";
 import ListItemText from "@mui/material/ListItemText";
+import Stack from "@mui/material/Stack";
 import Toolbar from "@mui/material/Toolbar";
 import Typography from "@mui/material/Typography";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
+
+import { useAuth } from "../auth/AuthContext";
 
 const DRAWER_WIDTH = 240;
 
@@ -41,13 +46,32 @@ const MODULES: ModuleLink[] = [
 ];
 
 export default function AppLayout() {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login", { replace: true });
+  };
+
   return (
     <Box sx={{ display: "flex" }}>
       <AppBar position="fixed" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1 }}>
-        <Toolbar>
+        <Toolbar sx={{ justifyContent: "space-between" }}>
           <Typography variant="h6" noWrap component="div">
             HR Automation
           </Typography>
+          <Stack direction="row" spacing={2} alignItems="center">
+            {user && (
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Typography variant="body2">{user.full_name || user.email}</Typography>
+                <Chip label={user.role} size="small" color="secondary" />
+              </Stack>
+            )}
+            <Button color="inherit" size="small" onClick={handleLogout}>
+              Logout
+            </Button>
+          </Stack>
         </Toolbar>
       </AppBar>
       <Drawer
