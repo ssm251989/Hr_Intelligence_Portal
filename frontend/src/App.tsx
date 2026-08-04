@@ -2,6 +2,7 @@ import CssBaseline from "@mui/material/CssBaseline";
 import { Navigate, Route, BrowserRouter, Routes } from "react-router-dom";
 
 import AppLayout from "./layout/AppLayout";
+import BgvPage from "./pages/BgvPage";
 import CandidatesPage from "./pages/CandidatesPage";
 import ComingSoonPage from "./pages/ComingSoonPage";
 import InterviewsPage from "./pages/InterviewsPage";
@@ -24,7 +25,7 @@ export default function App() {
             <Route path="/shortlisting" element={<ShortlistingPage />} />
             <Route path="/interviews" element={<InterviewsPage />} />
             <Route path="/salary" element={<SalaryPage />} />
-            <Route path="/bgv" element={<ComingSoonPage title="BGV" />} />
+            <Route path="/bgv" element={<BgvPage />} />
             <Route path="/offers" element={<ComingSoonPage title="Offers" />} />
             <Route path="/reports" element={<ComingSoonPage title="Reports" />} />
           </Route>

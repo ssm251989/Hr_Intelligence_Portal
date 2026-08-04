@@ -173,8 +173,23 @@ export interface BgvDocumentRead {
   doc_type: string;
   file_path?: string | null;
   validation_status: string;
-  validator_output?: Record<string, unknown> | null;
+  validator_output?: BgvValidatorOutput | null;
   created_at: string;
+}
+
+// shape of app.ai_services.document_validator.DocumentValidatorOutput
+export interface BgvExtractedFields {
+  name?: string | null;
+  id_number?: string | null;
+  date?: string | null;
+}
+
+export interface BgvValidatorOutput {
+  doc_type_detected: string;
+  matches_expected_type: boolean;
+  extracted_fields: BgvExtractedFields;
+  validation_status: string;
+  issues: string[];
 }
 
 export interface BgvClearRequest {
