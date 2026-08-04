@@ -6,6 +6,7 @@ import CandidatesPage from "./pages/CandidatesPage";
 import ComingSoonPage from "./pages/ComingSoonPage";
 import InterviewsPage from "./pages/InterviewsPage";
 import JobsPage from "./pages/JobsPage";
+import SalaryPage from "./pages/SalaryPage";
 import ScreeningPage from "./pages/ScreeningPage";
 import ShortlistingPage from "./pages/ShortlistingPage";
 
@@ -22,7 +23,7 @@ export default function App() {
             <Route path="/screening" element={<ScreeningPage />} />
             <Route path="/shortlisting" element={<ShortlistingPage />} />
             <Route path="/interviews" element={<InterviewsPage />} />
-            <Route path="/salary" element={<ComingSoonPage title="Salary" />} />
+            <Route path="/salary" element={<SalaryPage />} />
             <Route path="/bgv" element={<ComingSoonPage title="BGV" />} />
             <Route path="/offers" element={<ComingSoonPage title="Offers" />} />
             <Route path="/reports" element={<ComingSoonPage title="Reports" />} />
