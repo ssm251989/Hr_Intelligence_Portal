@@ -6,11 +6,15 @@ from sqlalchemy.orm import Session
 from app.ai_services.interview_question_generator import generate_interview_questions
 from app.audit.service import log_action
 from app.auth.dependencies import get_current_user, require_roles
+from app.core.crypto import decrypt
 from app.core.database import get_db
+from app.integrations.google_calendar import GoogleCalendarError, create_calendar_event
 from app.models.application import Application
+from app.models.candidate import Candidate
 from app.models.interview import Interview
 from app.models.job_role import JobRole
 from app.models.user import User
+from app.models.user_integration import UserIntegration
 from app.schemas.interview import (
     InterviewCreate,
     InterviewFeedbackUpdate,
@@ -37,6 +41,46 @@ def _get_interview_or_404(db: Session, interview_id: uuid.UUID) -> Interview:
     return interview
 
 
+def _try_create_calendar_event(
+    db: Session, application: Application, interviewer: User, scheduled_at
+) -> dict | None:
+    """Create a real Google Calendar event if the interviewer has connected their account.
+
+    Returns None (never raises) when there's no connection or the Google API call fails,
+    so a calendar outage can't block scheduling -- callers fall back to the manual link.
+    """
+    integration = (
+        db.query(UserIntegration)
+        .filter(UserIntegration.user_id == interviewer.id, UserIntegration.provider == "google")
+        .first()
+    )
+    if not integration:
+        return None
+
+    candidate = db.get(Candidate, application.candidate_id)
+    job = db.get(JobRole, application.job_role_id)
+    attendee_emails = [email for email in (candidate.email if candidate else None, interviewer.email) if email]
+
+    try:
+        return create_calendar_event(
+            decrypt(integration.refresh_token),
+            summary=f"Interview: {candidate.full_name if candidate else 'Candidate'} — {job.title if job else 'Role'}",
+            description=f"Interview scheduled via HR Automation for application {application.id}.",
+            start=scheduled_at,
+            attendee_emails=attendee_emails,
+        )
+    except GoogleCalendarError as exc:
+        log_action(
+            db,
+            "interview",
+            application.id,
+            "calendar_event_creation_failed",
+            "system",
+            {"interviewer_id": str(interviewer.id), "error": str(exc)},
+        )
+        return None
+
+
 @router.post("/applications/{application_id}/interviews", response_model=InterviewRead, status_code=201)
 def schedule_interview(
     application_id: uuid.UUID,
@@ -50,14 +94,23 @@ def schedule_interview(
             status_code=400,
             detail="Application must be HR-selected before an interview can be scheduled",
         )
-    if payload.interviewer_id and not db.get(User, payload.interviewer_id):
-        raise HTTPException(status_code=404, detail="Interviewer not found")
+    interviewer = None
+    if payload.interviewer_id:
+        interviewer = db.get(User, payload.interviewer_id)
+        if not interviewer:
+            raise HTTPException(status_code=404, detail="Interviewer not found")
+
+    calendar_event = None
+    if interviewer:
+        calendar_event = _try_create_calendar_event(db, application, interviewer, payload.scheduled_at)
 
     interview = Interview(
         application_id=application.id,
         interviewer_id=payload.interviewer_id,
         scheduled_at=payload.scheduled_at,
         meeting_link=payload.meeting_link,
+        calendar_event_id=calendar_event["event_id"] if calendar_event else None,
+        calendar_link=calendar_event["html_link"] if calendar_event else None,
     )
     db.add(interview)
 

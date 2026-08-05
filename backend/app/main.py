@@ -5,6 +5,7 @@ from app.auth.router import router as auth_router
 from app.bgv.router import router as bgv_router
 from app.candidates.applications_router import router as applications_router
 from app.candidates.router import router as candidates_router
+from app.integrations.router import router as integrations_router
 from app.jobs.router import router as jobs_router
 from app.offers.router import router as offers_router
 from app.reports.router import router as reports_router
@@ -33,6 +34,7 @@ app.include_router(salary_router)
 app.include_router(bgv_router)
 app.include_router(offers_router)
 app.include_router(reports_router)
+app.include_router(integrations_router)
 
 
 @app.get("/health")

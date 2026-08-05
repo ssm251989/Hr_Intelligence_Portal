@@ -18,6 +18,8 @@ class Interview(Base):
     interviewer_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     scheduled_at = Column(DateTime(timezone=True))
     meeting_link = Column(Text)
+    calendar_event_id = Column(String(255))
+    calendar_link = Column(Text)
     technical_rating = Column(Integer)
     communication_rating = Column(Integer)
     overall_rating = Column(Integer)

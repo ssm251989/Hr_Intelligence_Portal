@@ -27,6 +27,8 @@ class InterviewRead(BaseModel):
     interviewer_id: Optional[uuid.UUID] = None
     scheduled_at: Optional[datetime] = None
     meeting_link: Optional[str] = None
+    calendar_event_id: Optional[str] = None
+    calendar_link: Optional[str] = None
     technical_rating: Optional[int] = None
     communication_rating: Optional[int] = None
     overall_rating: Optional[int] = None

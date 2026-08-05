@@ -6,6 +6,7 @@ from app.models.interview import Interview
 from app.models.job_role import JobRole
 from app.models.offer import Offer
 from app.models.user import User
+from app.models.user_integration import UserIntegration
 
 __all__ = [
     "Application",
@@ -16,4 +17,5 @@ __all__ = [
     "JobRole",
     "Offer",
     "User",
+    "UserIntegration",
 ]
