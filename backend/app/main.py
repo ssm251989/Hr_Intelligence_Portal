@@ -13,6 +13,7 @@ from app.salary.router import router as salary_router
 from app.scheduling.router import router as scheduling_router
 from app.screening.router import router as screening_router
 from app.shortlisting.router import router as shortlisting_router
+from app.users.router import router as users_router
 
 app = FastAPI(title="HR Automation")
 
@@ -35,6 +36,7 @@ app.include_router(bgv_router)
 app.include_router(offers_router)
 app.include_router(reports_router)
 app.include_router(integrations_router)
+app.include_router(users_router)
 
 
 @app.get("/health")

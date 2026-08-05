@@ -147,6 +147,17 @@ export interface InterviewCreate {
   meeting_link?: string | null;
 }
 
+// ---- integrations ----
+
+export interface GoogleAuthUrl {
+  auth_url: string;
+}
+
+export interface IntegrationStatus {
+  connected: boolean;
+  connected_at?: string | null;
+}
+
 export interface InterviewFeedbackUpdate {
   technical_rating?: number | null;
   communication_rating?: number | null;
@@ -161,6 +172,8 @@ export interface InterviewRead {
   interviewer_id?: UUID | null;
   scheduled_at?: string | null;
   meeting_link?: string | null;
+  calendar_event_id?: string | null;
+  calendar_link?: string | null;
   technical_rating?: number | null;
   communication_rating?: number | null;
   overall_rating?: number | null;

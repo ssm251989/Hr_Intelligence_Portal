@@ -16,7 +16,15 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
-import { ApiError, applicationsApi, candidatesApi, jobsApi, schedulingApi } from "../api/client";
+import {
+  ApiError,
+  applicationsApi,
+  candidatesApi,
+  integrationsApi,
+  jobsApi,
+  schedulingApi,
+  usersApi,
+} from "../api/client";
 import type {
   ApplicationRead,
   CandidateRead,
@@ -24,9 +32,11 @@ import type {
   InterviewQuestionsResponse,
   InterviewRead,
   JobRoleRead,
+  UserRead,
 } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
+import { istLocalInputToUtcIso } from "../utils/datetime";
 
 const SCHEDULED_STATUSES = ["interview_scheduled", "interview_selected", "interview_rejected"];
 
@@ -154,8 +164,13 @@ export default function InterviewsPage() {
   const [scheduleApp, setScheduleApp] = useState<ApplicationRead | null>(null);
   const [scheduledAt, setScheduledAt] = useState("");
   const [meetingLink, setMeetingLink] = useState("");
+  const [interviewerId, setInterviewerId] = useState("");
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [scheduling, setScheduling] = useState(false);
+
+  const [interviewers, setInterviewers] = useState<UserRead[]>([]);
+  const [interviewerCalendarConnected, setInterviewerCalendarConnected] = useState<boolean | null>(null);
+  const [checkingInterviewerCalendar, setCheckingInterviewerCalendar] = useState(false);
 
   useEffect(() => {
     jobsApi
@@ -166,7 +181,29 @@ export default function InterviewsPage() {
       .list()
       .then((data) => setCandidates(Object.fromEntries(data.map((c) => [c.id, c]))))
       .catch(() => undefined);
+    usersApi
+      .list()
+      .then(setInterviewers)
+      .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (!interviewerId) {
+      setInterviewerCalendarConnected(null);
+      return;
+    }
+    setCheckingInterviewerCalendar(true);
+    integrationsApi
+      .googleStatus(interviewerId)
+      .then((status) => setInterviewerCalendarConnected(status.connected))
+      .catch(() => setInterviewerCalendarConnected(null))
+      .finally(() => setCheckingInterviewerCalendar(false));
+  }, [interviewerId]);
+
+  const interviewerLabel = (id: string) => {
+    const interviewer = interviewers.find((u) => u.id === id);
+    return interviewer?.full_name || interviewer?.email || `Interviewer ${id.slice(0, 8)}`;
+  };
 
   const loadJobData = async (jobId: string) => {
     setLoading(true);
@@ -206,6 +243,8 @@ export default function InterviewsPage() {
     setScheduleApp(app);
     setScheduledAt("");
     setMeetingLink("");
+    setInterviewerId("");
+    setInterviewerCalendarConnected(null);
     setScheduleError(null);
   };
 
@@ -219,8 +258,9 @@ export default function InterviewsPage() {
     setScheduleError(null);
     try {
       await schedulingApi.schedule(scheduleApp.id, {
-        scheduled_at: new Date(scheduledAt).toISOString(),
+        scheduled_at: istLocalInputToUtcIso(scheduledAt),
         meeting_link: meetingLink || null,
+        interviewer_id: interviewerId || null,
       });
       setScheduleApp(null);
       await loadJobData(selectedJobId);
@@ -391,8 +431,19 @@ export default function InterviewsPage() {
                           <Divider sx={{ mb: 1.5 }} />
                           <Typography variant="body2" color="text.secondary">
                             Scheduled: {interview.scheduled_at ? new Date(interview.scheduled_at).toLocaleString() : "—"}
-                            {interview.meeting_link ? ` · ${interview.meeting_link}` : ""}
                           </Typography>
+                          {interview.calendar_link ? (
+                            <Typography variant="body2">
+                              <Chip label="Google Calendar event" size="small" color="success" sx={{ mr: 1 }} />
+                              <a href={interview.calendar_link} target="_blank" rel="noreferrer">
+                                {interview.calendar_link}
+                              </a>
+                            </Typography>
+                          ) : interview.meeting_link ? (
+                            <Typography variant="body2" color="text.secondary">
+                              Meeting link: {interview.meeting_link}
+                            </Typography>
+                          ) : null}
                           <InterviewFeedbackForm
                             interview={interview}
                             onSubmit={(payload) => handleFeedbackSubmit(app.id, interview.id, payload)}
@@ -428,7 +479,7 @@ export default function InterviewsPage() {
           <Stack spacing={2} mt={1}>
             {scheduleError && <Alert severity="error">{scheduleError}</Alert>}
             <TextField
-              label="Date & Time"
+              label="Date & Time (IST)"
               type="datetime-local"
               required
               value={scheduledAt}
@@ -437,7 +488,38 @@ export default function InterviewsPage() {
               fullWidth
             />
             <TextField
+              select
+              label="Interviewer (optional)"
+              value={interviewerId}
+              onChange={(e) => setInterviewerId(e.target.value)}
+              fullWidth
+            >
+              <MenuItem value="">— Unassigned —</MenuItem>
+              {interviewers.map((interviewer) => (
+                <MenuItem key={interviewer.id} value={interviewer.id}>
+                  {interviewer.full_name || interviewer.email} ({interviewer.role})
+                </MenuItem>
+              ))}
+            </TextField>
+            {interviewerId &&
+              (checkingInterviewerCalendar ? (
+                <Alert severity="info" icon={false}>
+                  Checking {interviewerLabel(interviewerId)}'s Google Calendar connection...
+                </Alert>
+              ) : interviewerCalendarConnected ? (
+                <Alert severity="success">
+                  {interviewerLabel(interviewerId)} has Google Calendar connected — a real Calendar event with an
+                  invite will be created automatically.
+                </Alert>
+              ) : (
+                <Alert severity="info">
+                  {interviewerLabel(interviewerId)} hasn't connected Google Calendar — the manual meeting link
+                  below will be used instead.
+                </Alert>
+              ))}
+            <TextField
               label="Meeting link (optional)"
+              helperText="Used as a fallback if the interviewer hasn't connected Google Calendar"
               value={meetingLink}
               onChange={(e) => setMeetingLink(e.target.value)}
               fullWidth

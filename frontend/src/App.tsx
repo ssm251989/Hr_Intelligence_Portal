@@ -14,6 +14,7 @@ import RegisterPage from "./pages/RegisterPage";
 import ReportsPage from "./pages/ReportsPage";
 import SalaryPage from "./pages/SalaryPage";
 import ScreeningPage from "./pages/ScreeningPage";
+import SettingsPage from "./pages/SettingsPage";
 import ShortlistingPage from "./pages/ShortlistingPage";
 
 export default function App() {
@@ -42,6 +43,7 @@ export default function App() {
               <Route path="/bgv" element={<BgvPage />} />
               <Route path="/offers" element={<OffersPage />} />
               <Route path="/reports" element={<ReportsPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
             </Route>
           </Routes>
         </AuthProvider>

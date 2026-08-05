@@ -14,3 +14,4 @@ python-docx
 python-multipart
 google-auth-oauthlib
 google-api-python-client
+tzdata

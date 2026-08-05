@@ -6,6 +6,8 @@ import type {
   BgvClearRequest,
   BgvDocumentRead,
   CandidateRead,
+  GoogleAuthUrl,
+  IntegrationStatus,
   InterviewCreate,
   InterviewFeedbackUpdate,
   InterviewQuestionsResponse,
@@ -99,6 +101,20 @@ export const authApi = {
   register: (payload: UserRegister) => post<UserRead>("/auth/register", payload),
   login: (payload: UserLogin) => post<TokenResponse>("/auth/login", payload),
   me: () => get<UserRead>("/auth/me"),
+};
+
+// ---- users ----
+
+export const usersApi = {
+  list: (role?: string) => get<UserRead[]>(`/users${role ? `?role=${role}` : ""}`),
+};
+
+// ---- integrations ----
+
+export const integrationsApi = {
+  connectGoogle: () => get<GoogleAuthUrl>("/integrations/google/connect"),
+  googleStatus: (userId?: UUID) =>
+    get<IntegrationStatus>(`/integrations/google/status${userId ? `?user_id=${userId}` : ""}`),
 };
 
 // ---- jobs ----

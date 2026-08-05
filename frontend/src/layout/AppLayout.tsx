@@ -7,6 +7,7 @@ import PaidOutlinedIcon from "@mui/icons-material/PaidOutlined";
 import VerifiedUserOutlinedIcon from "@mui/icons-material/VerifiedUserOutlined";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
+import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import type { SvgIconComponent } from "@mui/icons-material";
 import AppBar from "@mui/material/AppBar";
 import Box from "@mui/material/Box";
@@ -43,6 +44,7 @@ const MODULES: ModuleLink[] = [
   { label: "BGV", path: "/bgv", icon: VerifiedUserOutlinedIcon },
   { label: "Offers", path: "/offers", icon: DescriptionOutlinedIcon },
   { label: "Reports", path: "/reports", icon: AssessmentOutlinedIcon },
+  { label: "Settings", path: "/settings", icon: SettingsOutlinedIcon },
 ];
 
 export default function AppLayout() {
