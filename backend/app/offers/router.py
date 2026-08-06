@@ -6,12 +6,15 @@ from sqlalchemy.orm import Session
 from app.ai_services.offer_letter_generator import generate_offer_letter
 from app.audit.service import log_action
 from app.auth.dependencies import get_current_user, require_roles
+from app.core.crypto import decrypt
 from app.core.database import get_db
+from app.integrations.docusign import DocuSignError, create_envelope, get_envelope_status
 from app.models.application import Application
 from app.models.candidate import Candidate
 from app.models.job_role import JobRole
 from app.models.offer import Offer
 from app.models.user import User
+from app.models.user_integration import UserIntegration
 from app.schemas.offer import OfferGenerateRequest, OfferRead, OfferSendRequest
 
 router = APIRouter(prefix="/applications", tags=["offers"])
@@ -29,6 +32,47 @@ def _get_offer_or_404(db: Session, application_id: uuid.UUID) -> Offer:
     if not offer:
         raise HTTPException(status_code=404, detail="No offer found for this application")
     return offer
+
+
+def _get_docusign_integration(db: Session, user_id: uuid.UUID) -> UserIntegration | None:
+    return (
+        db.query(UserIntegration)
+        .filter(UserIntegration.user_id == user_id, UserIntegration.provider == "docusign")
+        .first()
+    )
+
+
+def _try_create_docusign_envelope(
+    db: Session, offer: Offer, candidate: Candidate, sender: User
+) -> str | None:
+    """Create a real DocuSign envelope if the generating user has connected DocuSign.
+
+    Returns None (never raises) when there's no connection, no candidate email, or the
+    DocuSign API call fails, so a DocuSign outage can't block offer generation -- callers
+    fall back to the existing manual "mark signed" flow.
+    """
+    integration = _get_docusign_integration(db, sender.id)
+    if not integration or not candidate.email:
+        return None
+
+    try:
+        return create_envelope(
+            decrypt(integration.refresh_token),
+            document_text=offer.offer_letter_text,
+            document_name=f"Offer Letter - {candidate.full_name}",
+            signer_email=candidate.email,
+            signer_name=candidate.full_name,
+        )
+    except DocuSignError as exc:
+        log_action(
+            db,
+            "application",
+            offer.application_id,
+            "docusign_envelope_creation_failed",
+            "system",
+            {"sender_id": str(sender.id), "error": str(exc)},
+        )
+        return None
 
 
 @router.post("/{application_id}/offer/generate", response_model=OfferRead)
@@ -80,6 +124,11 @@ def generate_offer(
         db.add(offer)
     offer.offer_letter_text = result["offer_letter_text"]
 
+    envelope_id = _try_create_docusign_envelope(db, offer, candidate, current_user)
+    if envelope_id:
+        offer.docusign_envelope_id = envelope_id
+        offer.docusign_sender_id = current_user.id
+
     application.status = "offer_sent"
     db.commit()
     db.refresh(offer)
@@ -96,9 +145,50 @@ def mark_offer_signed(
     application = _get_application_or_404(db, application_id)
     offer = _get_offer_or_404(db, application_id)
 
-    # Real DocuSign integration is out of scope for the MVP -- this endpoint
-    # just records the signed state manually (HR pastes the envelope ID from
-    # whatever channel actually collected the signature, if any).
+    if offer.docusign_sender_id is not None:
+        # A real envelope was created via the DocuSign API -- verify its actual signing
+        # status instead of accepting a manual signed=true claim.
+        integration = _get_docusign_integration(db, offer.docusign_sender_id)
+        if not integration:
+            raise HTTPException(
+                status_code=409,
+                detail="DocuSign is no longer connected for this offer's sender; cannot verify signing status",
+            )
+        try:
+            envelope_status = get_envelope_status(decrypt(integration.refresh_token), offer.docusign_envelope_id)
+        except DocuSignError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+        if envelope_status != "completed":
+            raise HTTPException(
+                status_code=409,
+                detail=f"DocuSign envelope is not yet signed (status: {envelope_status})",
+            )
+
+        offer.signed = True
+        offer.onboarding_status = "in_progress"
+        previous_status = application.status
+        application.status = "onboarding_started"
+        db.commit()
+        db.refresh(offer)
+
+        log_action(
+            db,
+            "application",
+            application.id,
+            "offer_signed",
+            "system",
+            {
+                "docusign_envelope_id": offer.docusign_envelope_id,
+                "docusign_status": envelope_status,
+                "previous_status": previous_status,
+                "new_status": "onboarding_started",
+            },
+        )
+        return offer
+
+    # Manual fallback path (no real DocuSign envelope) -- HR pastes the envelope ID from
+    # whatever channel actually collected the signature, if any.
     if payload.docusign_envelope_id is not None:
         offer.docusign_envelope_id = payload.docusign_envelope_id
     offer.signed = True

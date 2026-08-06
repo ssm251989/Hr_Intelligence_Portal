@@ -11,3 +11,7 @@ class IntegrationStatus(BaseModel):
 
 class GoogleAuthUrl(BaseModel):
     auth_url: str
+
+
+class DocuSignAuthUrl(BaseModel):
+    auth_url: str

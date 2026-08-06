@@ -14,6 +14,12 @@ class Settings:
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")
     GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
     GOOGLE_REDIRECT_URI: str = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
+    DOCUSIGN_INTEGRATION_KEY: str = os.getenv("DOCUSIGN_INTEGRATION_KEY", "")
+    DOCUSIGN_SECRET_KEY: str = os.getenv("DOCUSIGN_SECRET_KEY", "")
+    DOCUSIGN_ACCOUNT_ID: str = os.getenv("DOCUSIGN_ACCOUNT_ID", "")
+    DOCUSIGN_AUTH_BASE_URL: str = os.getenv("DOCUSIGN_AUTH_BASE_URL", "https://account-d.docusign.com")
+    DOCUSIGN_API_BASE_URL: str = os.getenv("DOCUSIGN_API_BASE_URL", "https://demo.docusign.net")
+    DOCUSIGN_REDIRECT_URI: str = os.getenv("DOCUSIGN_REDIRECT_URI", "http://localhost:8000/auth/docusign/callback")
 
 
 settings = Settings()

@@ -10,6 +10,9 @@ from app.auth.dependencies import get_current_user
 from app.core.crypto import encrypt
 from app.core.database import get_db
 from app.core.security import create_access_token, decode_access_token
+from app.integrations.docusign import DocuSignError
+from app.integrations.docusign import build_authorization_url as build_docusign_authorization_url
+from app.integrations.docusign import exchange_code_for_refresh_token as exchange_docusign_code_for_refresh_token
 from app.integrations.google_calendar import (
     GoogleCalendarError,
     build_authorization_url,
@@ -18,15 +21,15 @@ from app.integrations.google_calendar import (
 )
 from app.models.user import User
 from app.models.user_integration import UserIntegration
-from app.schemas.integration import GoogleAuthUrl, IntegrationStatus
+from app.schemas.integration import DocuSignAuthUrl, GoogleAuthUrl, IntegrationStatus
 
 router = APIRouter(tags=["integrations"])
 
 
-def _get_integration(db: Session, user_id: uuid.UUID) -> UserIntegration | None:
+def _get_integration(db: Session, user_id: uuid.UUID, provider: str) -> UserIntegration | None:
     return (
         db.query(UserIntegration)
-        .filter(UserIntegration.user_id == user_id, UserIntegration.provider == "google")
+        .filter(UserIntegration.user_id == user_id, UserIntegration.provider == provider)
         .first()
     )
 
@@ -63,7 +66,7 @@ def google_callback(code: str = Query(...), state: str = Query(...), db: Session
     except GoogleCalendarError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    integration = _get_integration(db, user.id)
+    integration = _get_integration(db, user.id, "google")
     if integration:
         integration.refresh_token = encrypt(refresh_token)
     else:
@@ -84,7 +87,59 @@ def google_status(
 ):
     # Connection status carries no secret material, so any authenticated user can look up
     # anyone else's -- e.g. a recruiter checking whether an interviewer has connected.
-    integration = _get_integration(db, user_id or current_user.id)
+    integration = _get_integration(db, user_id or current_user.id, "google")
+    return IntegrationStatus(
+        connected=integration is not None,
+        connected_at=integration.connected_at if integration else None,
+    )
+
+
+@router.get("/integrations/docusign/connect", response_model=DocuSignAuthUrl)
+def connect_docusign(current_user: User = Depends(get_current_user)):
+    # Same JSON-not-redirect reasoning as Google's /connect. This is a standard
+    # Authorization Code Grant (no PKCE) -- the DocuSign app is configured as a
+    # confidential client, so there's no code_verifier to round-trip through `state`.
+    state = create_access_token(subject=str(current_user.id))
+    return DocuSignAuthUrl(auth_url=build_docusign_authorization_url(state))
+
+
+@router.get("/auth/docusign/callback", response_class=HTMLResponse)
+def docusign_callback(code: str = Query(...), state: str = Query(...), db: Session = Depends(get_db)):
+    try:
+        payload = decode_access_token(state)
+        user_id = uuid.UUID(payload["sub"])
+    except (JWTError, KeyError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid or expired OAuth state") from exc
+
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    try:
+        refresh_token = exchange_docusign_code_for_refresh_token(code)
+    except DocuSignError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    integration = _get_integration(db, user.id, "docusign")
+    if integration:
+        integration.refresh_token = encrypt(refresh_token)
+    else:
+        integration = UserIntegration(user_id=user.id, provider="docusign", refresh_token=encrypt(refresh_token))
+        db.add(integration)
+    db.commit()
+
+    log_action(db, "user_integration", user.id, "docusign_connected", user.email, {"provider": "docusign"})
+
+    return "<html><body>DocuSign connected. You can close this tab and return to the app.</body></html>"
+
+
+@router.get("/integrations/docusign/status", response_model=IntegrationStatus)
+def docusign_status(
+    user_id: uuid.UUID | None = Query(None, description="Check another user's status; defaults to the caller"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    integration = _get_integration(db, user_id or current_user.id, "docusign")
     return IntegrationStatus(
         connected=integration is not None,
         connected_at=integration.connected_at if integration else None,

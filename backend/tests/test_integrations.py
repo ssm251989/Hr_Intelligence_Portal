@@ -207,3 +207,163 @@ def test_status_for_another_user_not_connected(client, db_session):
 
     assert response.status_code == 200
     assert response.json()["connected"] is False
+
+
+# --- DocuSign -----------------------------------------------------------------
+# Mirrors the Google Calendar OAuth flow tests above, minus PKCE (DocuSign uses a
+# standard Authorization Code Grant here).
+
+
+def test_docusign_connect_returns_auth_url_as_json(client, monkeypatch):
+    captured = {}
+
+    def fake_build_authorization_url(state):
+        captured["state"] = state
+        return "https://account-d.docusign.com/oauth/auth?fake=1"
+
+    monkeypatch.setattr("app.integrations.router.build_docusign_authorization_url", fake_build_authorization_url)
+
+    response = client.get("/integrations/docusign/connect")
+
+    assert response.status_code == 200
+    assert response.json() == {"auth_url": "https://account-d.docusign.com/oauth/auth?fake=1"}
+    assert captured["state"]
+
+
+def test_docusign_connect_requires_authentication(anonymous_client):
+    response = anonymous_client.get("/integrations/docusign/connect")
+    assert response.status_code == 401
+
+
+def test_docusign_callback_stores_encrypted_refresh_token(anonymous_client, db_session, monkeypatch):
+    user = _make_user(db_session, email="docusign-oauth-user@example.com")
+    state = create_access_token(subject=str(user.id))
+    captured = {}
+
+    def fake_exchange(code):
+        captured["code"] = code
+        return "fake-docusign-refresh-token"
+
+    monkeypatch.setattr("app.integrations.router.exchange_docusign_code_for_refresh_token", fake_exchange)
+
+    response = anonymous_client.get("/auth/docusign/callback", params={"code": "fake-code", "state": state})
+
+    assert response.status_code == 200
+    assert captured == {"code": "fake-code"}
+
+    integration = (
+        db_session.query(UserIntegration)
+        .filter(UserIntegration.user_id == user.id, UserIntegration.provider == "docusign")
+        .one()
+    )
+    assert integration.refresh_token != "fake-docusign-refresh-token"
+    assert decrypt(integration.refresh_token) == "fake-docusign-refresh-token"
+
+    audit_entry = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.entity_id == user.id, AuditLog.action == "docusign_connected")
+        .one_or_none()
+    )
+    assert audit_entry is not None
+
+
+def test_docusign_callback_reconnect_overwrites_existing_token(anonymous_client, db_session, monkeypatch):
+    user = _make_user(db_session, email="docusign-reconnect@example.com")
+    db_session.add(UserIntegration(user_id=user.id, provider="docusign", refresh_token=encrypt("old-token")))
+    db_session.commit()
+
+    state = create_access_token(subject=str(user.id))
+    monkeypatch.setattr(
+        "app.integrations.router.exchange_docusign_code_for_refresh_token",
+        lambda code: "new-refresh-token",
+    )
+
+    response = anonymous_client.get("/auth/docusign/callback", params={"code": "fake-code", "state": state})
+
+    assert response.status_code == 200
+    integration = (
+        db_session.query(UserIntegration)
+        .filter(UserIntegration.user_id == user.id, UserIntegration.provider == "docusign")
+        .one()
+    )
+    assert decrypt(integration.refresh_token) == "new-refresh-token"
+
+    # The existing Google integration path is untouched by this provider-parameterized helper.
+    google_integrations = (
+        db_session.query(UserIntegration)
+        .filter(UserIntegration.user_id == user.id, UserIntegration.provider == "google")
+        .all()
+    )
+    assert google_integrations == []
+
+
+def test_docusign_callback_rejects_invalid_state(anonymous_client):
+    response = anonymous_client.get(
+        "/auth/docusign/callback", params={"code": "fake-code", "state": "not-a-real-jwt"}
+    )
+    assert response.status_code == 400
+
+
+def test_docusign_callback_surfaces_token_exchange_failure(anonymous_client, db_session, monkeypatch):
+    from app.integrations.docusign import DocuSignError
+
+    user = _make_user(db_session, email="docusign-exchange-fail@example.com")
+    state = create_access_token(subject=str(user.id))
+
+    def fake_exchange(code):
+        raise DocuSignError("boom")
+
+    monkeypatch.setattr("app.integrations.router.exchange_docusign_code_for_refresh_token", fake_exchange)
+
+    response = anonymous_client.get("/auth/docusign/callback", params={"code": "fake-code", "state": state})
+
+    assert response.status_code == 400
+
+
+def test_docusign_callback_unknown_user_returns_404(anonymous_client):
+    import uuid
+
+    state = create_access_token(subject=str(uuid.uuid4()))
+    response = anonymous_client.get("/auth/docusign/callback", params={"code": "fake-code", "state": state})
+    assert response.status_code == 404
+
+
+def test_docusign_status_not_connected(client):
+    response = client.get("/integrations/docusign/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["connected"] is False
+    assert body["connected_at"] is None
+
+
+def test_docusign_status_connected(client, db_session):
+    admin = db_session.query(User).filter(User.email == "test-admin@example.com").one()
+    db_session.add(UserIntegration(user_id=admin.id, provider="docusign", refresh_token=encrypt("tok")))
+    db_session.commit()
+
+    response = client.get("/integrations/docusign/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["connected"] is True
+    assert body["connected_at"] is not None
+
+
+def test_docusign_status_requires_authentication(anonymous_client):
+    response = anonymous_client.get("/integrations/docusign/status")
+    assert response.status_code == 401
+
+
+def test_docusign_and_google_status_are_independent(client, db_session):
+    # Connecting DocuSign must not report as Google being connected, and vice versa --
+    # this exercises the provider-parameterized _get_integration helper shared by both.
+    admin = db_session.query(User).filter(User.email == "test-admin@example.com").one()
+    db_session.add(UserIntegration(user_id=admin.id, provider="docusign", refresh_token=encrypt("tok")))
+    db_session.commit()
+
+    docusign_status = client.get("/integrations/docusign/status")
+    google_status = client.get("/integrations/google/status")
+
+    assert docusign_status.json()["connected"] is True
+    assert google_status.json()["connected"] is False
