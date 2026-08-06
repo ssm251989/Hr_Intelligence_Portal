@@ -4,7 +4,6 @@ import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
-import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Divider from "@mui/material/Divider";
 import MuiLink from "@mui/material/Link";
@@ -14,10 +13,12 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { Link as RouterLink } from "react-router-dom";
 
-import { ApiError, applicationsApi, candidatesApi, integrationsApi, jobsApi, offersApi } from "../api/client";
+import { ApiError, applicationsApi, candidatesApi, extractErrorMessage, integrationsApi, jobsApi, offersApi } from "../api/client";
 import type { ApplicationRead, CandidateRead, JobRoleRead, OfferGenerateRequest, OfferRead } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
+import ConfirmDialog from "../components/ConfirmDialog";
+import StatusChip from "../components/StatusChip";
 
 const RELEVANT_STATUSES = ["bgv_cleared", "offer_sent", "onboarding_started", "onboarding_completed"];
 
@@ -51,7 +52,7 @@ function OfferGenerateForm({
     try {
       await onSubmit({ start_date: startDate, reporting_manager_name: reportingManagerName || null });
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to generate offer");
+      setError(extractErrorMessage(err, "Failed to generate offer"));
     } finally {
       setSaving(false);
     }
@@ -116,18 +117,20 @@ function MarkSignedForm({ onSubmit }: { onSubmit: (envelopeId: string | null) =>
   const [envelopeId, setEnvelopeId] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   if (!canEdit) {
     return null;
   }
 
   const handleSubmit = async () => {
+    setConfirmOpen(false);
     setSaving(true);
     setError(null);
     try {
       await onSubmit(envelopeId || null);
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to mark offer signed");
+      setError(extractErrorMessage(err, "Failed to mark offer signed"));
     } finally {
       setSaving(false);
     }
@@ -152,10 +155,20 @@ function MarkSignedForm({ onSubmit }: { onSubmit: (envelopeId: string | null) =>
           size="small"
           sx={{ minWidth: 240 }}
         />
-        <Button size="small" variant="contained" onClick={handleSubmit} disabled={saving}>
+        <Button size="small" variant="contained" onClick={() => setConfirmOpen(true)} disabled={saving}>
           {saving ? "Saving..." : "Mark Signed"}
         </Button>
       </Stack>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Mark offer as signed?"
+        message="This manually records the offer as signed without verifying a real signature. Only do this if you've confirmed the candidate signed through some other channel."
+        confirmLabel="Mark Signed"
+        confirming={saving}
+        onConfirm={handleSubmit}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </Box>
   );
 }
@@ -184,11 +197,11 @@ function CheckSigningStatusButton({
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         // Envelope exists but isn't fully signed yet -- an expected, non-error outcome.
-        setMessage({ severity: "info", text: String(err.detail) });
+        setMessage({ severity: "info", text: extractErrorMessage(err, "Envelope is not yet signed") });
       } else {
         setMessage({
           severity: "error",
-          text: err instanceof ApiError ? String(err.detail) : "Failed to check signing status",
+          text: extractErrorMessage(err, "Failed to check signing status"),
         });
       }
     } finally {
@@ -226,23 +239,25 @@ export default function OffersPage() {
   const [error, setError] = useState<string | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
   const [docusignConnected, setDocusignConnected] = useState<boolean | null>(null);
+  const [candidatesLoadFailed, setCandidatesLoadFailed] = useState(false);
+  const [docusignStatusLoadFailed, setDocusignStatusLoadFailed] = useState(false);
 
   useEffect(() => {
     jobsApi
       .list()
       .then(setJobs)
-      .catch((err) => setError(err instanceof ApiError ? String(err.detail) : "Failed to load jobs"));
+      .catch((err) => setError(extractErrorMessage(err, "Failed to load jobs")));
     candidatesApi
       .list()
       .then((data) => setCandidates(Object.fromEntries(data.map((c) => [c.id, c]))))
-      .catch(() => undefined);
+      .catch(() => setCandidatesLoadFailed(true));
     // Tells the generate-offer form whether the caller (whoever ends up generating the
-    // offer) has DocuSign connected -- best-effort, so a failure here just leaves the
-    // hint off rather than blocking the page.
+    // offer) has DocuSign connected. A failure here must be visible -- otherwise the
+    // "mark signed manually" guidance can silently show the wrong thing.
     integrationsApi
       .docusignStatus()
       .then((status) => setDocusignConnected(status.connected))
-      .catch(() => undefined);
+      .catch(() => setDocusignStatusLoadFailed(true));
   }, []);
 
   const loadJobData = async (jobId: string) => {
@@ -261,7 +276,7 @@ export default function OffersPage() {
       });
       setOffers(byApplication);
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to load offer data");
+      setError(extractErrorMessage(err, "Failed to load offer data"));
     } finally {
       setLoading(false);
     }
@@ -296,7 +311,7 @@ export default function OffersPage() {
       setOffers((prev) => ({ ...prev, [applicationId]: offer }));
       await loadJobData(selectedJobId);
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to complete onboarding");
+      setError(extractErrorMessage(err, "Failed to complete onboarding"));
     } finally {
       setActionId(null);
     }
@@ -331,6 +346,16 @@ export default function OffersPage() {
           {error}
         </Alert>
       )}
+      {candidatesLoadFailed && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Couldn't load candidate names — candidates below may show as raw IDs.
+        </Alert>
+      )}
+      {docusignStatusLoadFailed && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Couldn't verify your DocuSign connection status — the guidance shown below may be inaccurate.
+        </Alert>
+      )}
 
       {!selectedJobId ? (
         <Typography color="text.secondary">Select a job to manage offers and onboarding.</Typography>
@@ -347,7 +372,7 @@ export default function OffersPage() {
                 <CardContent>
                   <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
                     <Typography variant="h6">{candidateLabel(app.candidate_id)}</Typography>
-                    <Chip label={app.status} size="small" />
+                    <StatusChip status={app.status} />
                   </Stack>
 
                   {app.status === "bgv_cleared" && (

@@ -4,7 +4,6 @@ import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
-import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Divider from "@mui/material/Divider";
 import MenuItem from "@mui/material/MenuItem";
@@ -12,25 +11,16 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
-import { ApiError, applicationsApi, bgvApi, candidatesApi, jobsApi } from "../api/client";
+import { applicationsApi, bgvApi, candidatesApi, extractErrorMessage, jobsApi } from "../api/client";
 import type { ApplicationRead, BgvClearRequest, BgvDocumentRead, CandidateRead, JobRoleRead } from "../api/types";
 import { BGV_DOC_TYPES } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
+import ConfirmDialog from "../components/ConfirmDialog";
+import StatusChip from "../components/StatusChip";
 
 const RELEVANT_STATUSES = ["salary_approved", "bgv_requested", "bgv_pending", "bgv_cleared", "bgv_rejected"];
 const IN_PROGRESS_STATUSES = ["bgv_requested", "bgv_pending"];
-
-const STATUS_COLOR: Record<string, "default" | "success" | "warning" | "error"> = {
-  valid: "success",
-  needs_review: "warning",
-  invalid: "error",
-  pending: "default",
-};
-
-function statusColor(status: string) {
-  return STATUS_COLOR[status] ?? "default";
-}
 
 function BgvUploadForm({ onUpload }: { onUpload: (docType: string, file: File) => Promise<void> }) {
   const { can } = useAuth();
@@ -57,7 +47,7 @@ function BgvUploadForm({ onUpload }: { onUpload: (docType: string, file: File) =
       setFile(null);
       if (inputRef.current) inputRef.current.value = "";
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to upload document");
+      setError(extractErrorMessage(err, "Failed to upload document"));
     } finally {
       setUploading(false);
     }
@@ -99,25 +89,35 @@ function BgvClearForm({ onSubmit }: { onSubmit: (payload: BgvClearRequest) => Pr
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   if (!canEdit) {
     return null;
   }
 
-  const handleSubmit = async () => {
+  const doSubmit = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      await onSubmit({ decision: decision as "clear" | "reject", notes: notes || null });
+    } catch (err) {
+      setError(extractErrorMessage(err, "Failed to record BGV decision"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSubmit = () => {
     if (!decision) {
       setError("Choose clear or reject");
       return;
     }
-    setSaving(true);
-    setError(null);
-    try {
-      await onSubmit({ decision, notes: notes || null });
-    } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to record BGV decision");
-    } finally {
-      setSaving(false);
-    }
+    setConfirmOpen(true);
+  };
+
+  const handleConfirm = async () => {
+    setConfirmOpen(false);
+    await doSubmit();
   };
 
   return (
@@ -146,6 +146,21 @@ function BgvClearForm({ onSubmit }: { onSubmit: (payload: BgvClearRequest) => Pr
           {saving ? "Saving..." : "Submit Decision"}
         </Button>
       </Stack>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title={decision === "reject" ? "Reject BGV?" : "Clear BGV?"}
+        message={
+          decision === "reject"
+            ? "Reject this candidate's background verification? This cannot be undone."
+            : "Clear this candidate's background verification? This moves them forward to offer generation and cannot be undone."
+        }
+        confirmLabel={decision === "reject" ? "Reject" : "Clear"}
+        destructive={decision === "reject"}
+        confirming={saving}
+        onConfirm={handleConfirm}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </Box>
   );
 }
@@ -161,16 +176,17 @@ export default function BgvPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
+  const [candidatesLoadFailed, setCandidatesLoadFailed] = useState(false);
 
   useEffect(() => {
     jobsApi
       .list()
       .then(setJobs)
-      .catch((err) => setError(err instanceof ApiError ? String(err.detail) : "Failed to load jobs"));
+      .catch((err) => setError(extractErrorMessage(err, "Failed to load jobs")));
     candidatesApi
       .list()
       .then((data) => setCandidates(Object.fromEntries(data.map((c) => [c.id, c]))))
-      .catch(() => undefined);
+      .catch(() => setCandidatesLoadFailed(true));
   }, []);
 
   const loadJobData = async (jobId: string) => {
@@ -189,7 +205,7 @@ export default function BgvPage() {
       });
       setDocuments(byApplication);
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to load BGV data");
+      setError(extractErrorMessage(err, "Failed to load BGV data"));
     } finally {
       setLoading(false);
     }
@@ -212,7 +228,7 @@ export default function BgvPage() {
       setApplications((prev) => prev.map((app) => (app.id === applicationId ? updated : app)));
       setDocuments((prev) => ({ ...prev, [applicationId]: [] }));
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to request BGV");
+      setError(extractErrorMessage(err, "Failed to request BGV"));
     } finally {
       setActionId(null);
     }
@@ -235,7 +251,7 @@ export default function BgvPage() {
         [applicationId]: (prev[applicationId] || []).map((doc) => (doc.id === docId ? updated : doc)),
       }));
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to validate document");
+      setError(extractErrorMessage(err, "Failed to validate document"));
     } finally {
       setActionId(null);
     }
@@ -275,6 +291,11 @@ export default function BgvPage() {
           {error}
         </Alert>
       )}
+      {candidatesLoadFailed && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Couldn't load candidate names — candidates below may show as raw IDs.
+        </Alert>
+      )}
 
       {!selectedJobId ? (
         <Typography color="text.secondary">Select a job to manage background verification.</Typography>
@@ -291,7 +312,7 @@ export default function BgvPage() {
                 <CardContent>
                   <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
                     <Typography variant="h6">{candidateLabel(app.candidate_id)}</Typography>
-                    <Chip label={app.status} size="small" />
+                    <StatusChip status={app.status} />
                   </Stack>
 
                   {canWrite && app.status === "salary_approved" && (
@@ -329,7 +350,7 @@ export default function BgvPage() {
                                   {doc.doc_type}
                                 </Typography>
                                 <Stack direction="row" spacing={1} alignItems="center">
-                                  <Chip label={doc.validation_status} size="small" color={statusColor(doc.validation_status)} />
+                                  <StatusChip status={doc.validation_status} />
                                   {canWrite && IN_PROGRESS_STATUSES.includes(app.status) && (
                                     <Button
                                       size="small"

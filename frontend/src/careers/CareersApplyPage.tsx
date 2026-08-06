@@ -8,7 +8,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 
-import { ApiError, publicApi } from "../api/client";
+import { ApiError, extractErrorMessage, publicApi } from "../api/client";
 import type { PublicJobRead } from "../api/types";
 
 const ACCEPTED_EXTENSIONS = [".pdf", ".docx"];
@@ -63,7 +63,7 @@ export default function CareersApplyPage() {
       await publicApi.apply({ jobId: id, fullName, email, phone: phone || undefined, resume });
       navigate(`/careers/${id}/thank-you`);
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to submit your application. Please try again.");
+      setError(extractErrorMessage(err, "Failed to submit your application. Please try again."));
     } finally {
       setSubmitting(false);
     }

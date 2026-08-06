@@ -12,7 +12,7 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
-import { ApiError, applicationsApi, candidatesApi, jobsApi, screeningApi } from "../api/client";
+import { applicationsApi, candidatesApi, extractErrorMessage, jobsApi, screeningApi } from "../api/client";
 import type { ApplicationRead, CandidateRead, JobRoleRead } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
@@ -27,16 +27,17 @@ export default function ScreeningPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
+  const [candidatesLoadFailed, setCandidatesLoadFailed] = useState(false);
 
   useEffect(() => {
     jobsApi
       .list()
       .then(setJobs)
-      .catch((err) => setError(err instanceof ApiError ? String(err.detail) : "Failed to load jobs"));
+      .catch((err) => setError(extractErrorMessage(err, "Failed to load jobs")));
     candidatesApi
       .list()
       .then((data) => setCandidates(Object.fromEntries(data.map((c) => [c.id, c]))))
-      .catch(() => undefined);
+      .catch(() => setCandidatesLoadFailed(true));
   }, []);
 
   const loadApplications = async (jobId: string) => {
@@ -46,7 +47,7 @@ export default function ScreeningPage() {
       const data = await applicationsApi.list(jobId);
       setApplications(data.filter((app) => app.status === "received" || app.status === "screened"));
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to load applications");
+      setError(extractErrorMessage(err, "Failed to load applications"));
     } finally {
       setLoading(false);
     }
@@ -65,7 +66,7 @@ export default function ScreeningPage() {
       const updated = await screeningApi.screen(applicationId);
       setApplications((prev) => prev.map((app) => (app.id === applicationId ? updated : app)));
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to screen application");
+      setError(extractErrorMessage(err, "Failed to screen application"));
     } finally {
       setActionId(null);
     }
@@ -78,7 +79,7 @@ export default function ScreeningPage() {
       const updated = await screeningApi.rank(applicationId);
       setApplications((prev) => prev.map((app) => (app.id === applicationId ? updated : app)));
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to rank application");
+      setError(extractErrorMessage(err, "Failed to rank application"));
     } finally {
       setActionId(null);
     }
@@ -117,6 +118,11 @@ export default function ScreeningPage() {
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
+        </Alert>
+      )}
+      {candidatesLoadFailed && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Couldn't load candidate names — candidates below may show as raw IDs.
         </Alert>
       )}
 

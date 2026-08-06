@@ -8,6 +8,7 @@ import CareersJobDetailPage from "./careers/CareersJobDetailPage";
 import CareersLayout from "./careers/CareersLayout";
 import CareersListPage from "./careers/CareersListPage";
 import CareersThankYouPage from "./careers/CareersThankYouPage";
+import ErrorBoundary from "./components/ErrorBoundary";
 import AppLayout from "./layout/AppLayout";
 import BgvPage from "./pages/BgvPage";
 import CandidatesPage from "./pages/CandidatesPage";
@@ -24,7 +25,7 @@ import ShortlistingPage from "./pages/ShortlistingPage";
 
 export default function App() {
   return (
-    <>
+    <ErrorBoundary>
       <CssBaseline />
       <BrowserRouter>
         <AuthProvider>
@@ -59,6 +60,6 @@ export default function App() {
           </Routes>
         </AuthProvider>
       </BrowserRouter>
-    </>
+    </ErrorBoundary>
   );
 }

@@ -46,6 +46,37 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Turn a caught error into a user-displayable string.
+ *
+ * FastAPI returns `detail` as a plain string for hand-raised HTTPExceptions, but as an
+ * array of `{loc, msg, type}` objects for its own request-validation (422) errors --
+ * `String(err.detail)` on that array renders the literal text "[object Object]". This
+ * handles both shapes (plus any other unexpected shape) and always falls back to
+ * `fallback` for non-ApiError failures (network errors, etc).
+ */
+export function extractErrorMessage(err: unknown, fallback: string): string {
+  if (!(err instanceof ApiError)) {
+    return fallback;
+  }
+  const { detail } = err;
+  if (typeof detail === "string" && detail.trim()) {
+    return detail;
+  }
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) => (item && typeof item === "object" && "msg" in item ? String((item as { msg: unknown }).msg) : null))
+      .filter((msg): msg is string => Boolean(msg));
+    if (messages.length > 0) {
+      return messages.join("; ");
+    }
+  }
+  if (detail && typeof detail === "object" && "msg" in detail) {
+    return String((detail as { msg: unknown }).msg);
+  }
+  return fallback;
+}
+
 let authToken: string | null = null;
 let onUnauthorized: (() => void) | null = null;
 

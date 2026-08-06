@@ -9,7 +9,7 @@ import CircularProgress from "@mui/material/CircularProgress";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
-import { ApiError, integrationsApi } from "../api/client";
+import { extractErrorMessage, integrationsApi } from "../api/client";
 import type { IntegrationStatus } from "../api/types";
 
 function IntegrationCard({
@@ -34,7 +34,7 @@ function IntegrationCard({
     setLoading(true);
     fetchStatus()
       .then(setStatus)
-      .catch((err) => setError(err instanceof ApiError ? String(err.detail) : "Failed to load connection status"))
+      .catch((err) => setError(extractErrorMessage(err, "Failed to load connection status")))
       .finally(() => setLoading(false));
   };
 
@@ -56,7 +56,7 @@ function IntegrationCard({
       const { auth_url } = await connect();
       window.location.href = auth_url;
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : `Failed to start ${title} connection`);
+      setError(extractErrorMessage(err, `Failed to start ${title} connection`));
       setConnecting(false);
     }
   };

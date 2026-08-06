@@ -19,7 +19,7 @@ import Tabs from "@mui/material/Tabs";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
-import { ApiError, jobsApi, reportsApi } from "../api/client";
+import { extractErrorMessage, jobsApi, reportsApi } from "../api/client";
 import type { AuditLogPage, ApplicationTimelineResponse, JobRoleRead, JobSummaryResponse, PipelineResponse } from "../api/types";
 
 const AUDIT_PAGE_SIZE = 20;
@@ -77,7 +77,7 @@ function PipelineView({ jobs }: { jobs: JobRoleRead[] }) {
       const result = await reportsApi.pipeline(selectedJobId || undefined);
       setData(result);
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to load pipeline");
+      setError(extractErrorMessage(err, "Failed to load pipeline"));
     } finally {
       setLoading(false);
     }
@@ -144,7 +144,7 @@ function JobSummaryView({ jobs }: { jobs: JobRoleRead[] }) {
       const result = await reportsApi.jobSummary(value);
       setData(result);
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to load job summary");
+      setError(extractErrorMessage(err, "Failed to load job summary"));
     } finally {
       setLoading(false);
     }
@@ -216,7 +216,7 @@ function AuditTrailView() {
       setData(result);
       setOffset(nextOffset);
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to load audit trail");
+      setError(extractErrorMessage(err, "Failed to load audit trail"));
     } finally {
       setLoading(false);
     }
@@ -319,7 +319,7 @@ function TimelineView() {
       const result = await reportsApi.applicationTimeline(applicationId);
       setData(result);
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to load timeline");
+      setError(extractErrorMessage(err, "Failed to load timeline"));
       setData(null);
     } finally {
       setLoading(false);
@@ -383,7 +383,7 @@ export default function ReportsPage() {
     jobsApi
       .list()
       .then(setJobs)
-      .catch((err) => setError(err instanceof ApiError ? String(err.detail) : "Failed to load jobs"));
+      .catch((err) => setError(extractErrorMessage(err, "Failed to load jobs")));
   }, []);
 
   return (

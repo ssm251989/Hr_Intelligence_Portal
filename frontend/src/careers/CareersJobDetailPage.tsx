@@ -8,7 +8,7 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { Link as RouterLink, useParams } from "react-router-dom";
 
-import { ApiError, publicApi } from "../api/client";
+import { ApiError, extractErrorMessage, publicApi } from "../api/client";
 import type { PublicJobRead } from "../api/types";
 
 export default function CareersJobDetailPage() {
@@ -26,7 +26,7 @@ export default function CareersJobDetailPage() {
         if (err instanceof ApiError && err.status === 404) {
           setNotFound(true);
         } else {
-          setError(err instanceof ApiError ? String(err.detail) : "Failed to load this job");
+          setError(extractErrorMessage(err, "Failed to load this job"));
         }
       });
   }, [id]);

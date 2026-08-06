@@ -1,3 +1,4 @@
+import { useState } from "react";
 import WorkOutlineIcon from "@mui/icons-material/WorkOutline";
 import PeopleAltOutlinedIcon from "@mui/icons-material/PeopleAltOutlined";
 import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
@@ -25,6 +26,7 @@ import Typography from "@mui/material/Typography";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
+import ConfirmDialog from "../components/ConfirmDialog";
 
 const DRAWER_WIDTH = 240;
 
@@ -50,8 +52,10 @@ const MODULES: ModuleLink[] = [
 export default function AppLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [confirmLogoutOpen, setConfirmLogoutOpen] = useState(false);
 
   const handleLogout = () => {
+    setConfirmLogoutOpen(false);
     logout();
     navigate("/login", { replace: true });
   };
@@ -70,7 +74,7 @@ export default function AppLayout() {
                 <Chip label={user.role} size="small" color="secondary" />
               </Stack>
             )}
-            <Button color="inherit" size="small" onClick={handleLogout}>
+            <Button color="inherit" size="small" onClick={() => setConfirmLogoutOpen(true)}>
               Logout
             </Button>
           </Stack>
@@ -112,6 +116,16 @@ export default function AppLayout() {
         <Toolbar />
         <Outlet />
       </Box>
+
+      <ConfirmDialog
+        open={confirmLogoutOpen}
+        title="Log out?"
+        message="You'll need to sign in again to continue."
+        confirmLabel="Logout"
+        destructive={false}
+        onConfirm={handleLogout}
+        onCancel={() => setConfirmLogoutOpen(false)}
+      />
     </Box>
   );
 }

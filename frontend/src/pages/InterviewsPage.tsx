@@ -17,9 +17,9 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 import {
-  ApiError,
   applicationsApi,
   candidatesApi,
+  extractErrorMessage,
   integrationsApi,
   jobsApi,
   schedulingApi,
@@ -36,6 +36,8 @@ import type {
 } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
+import ConfirmDialog from "../components/ConfirmDialog";
+import StatusChip from "../components/StatusChip";
 import { istLocalInputToUtcIso } from "../utils/datetime";
 
 const SCHEDULED_STATUSES = ["interview_scheduled", "interview_selected", "interview_rejected"];
@@ -66,12 +68,14 @@ function InterviewFeedbackForm({
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   if (!canEdit) {
     return null;
   }
 
-  const handleSubmit = async () => {
+  const doSubmit = async () => {
+    setConfirmOpen(false);
     setSaving(true);
     setError(null);
     try {
@@ -83,10 +87,18 @@ function InterviewFeedbackForm({
         decision: form.decision || null,
       });
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to save feedback");
+      setError(extractErrorMessage(err, "Failed to save feedback"));
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSubmit = () => {
+    if (form.decision) {
+      setConfirmOpen(true);
+      return;
+    }
+    doSubmit();
   };
 
   const ratingField = (label: string, key: "technical_rating" | "communication_rating" | "overall_rating") => (
@@ -144,6 +156,17 @@ function InterviewFeedbackForm({
       <Button size="small" variant="outlined" sx={{ mt: 1.5 }} onClick={handleSubmit} disabled={saving}>
         {saving ? "Saving..." : "Save Feedback"}
       </Button>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Save final decision?"
+        message={`Record this interview's decision as "${form.decision}"? This moves the application to the next stage and cannot be undone.`}
+        confirmLabel="Save Decision"
+        destructive={form.decision === "rejected"}
+        confirming={saving}
+        onConfirm={doSubmit}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </Box>
   );
 }
@@ -171,32 +194,40 @@ export default function InterviewsPage() {
   const [interviewers, setInterviewers] = useState<UserRead[]>([]);
   const [interviewerCalendarConnected, setInterviewerCalendarConnected] = useState<boolean | null>(null);
   const [checkingInterviewerCalendar, setCheckingInterviewerCalendar] = useState(false);
+  const [calendarStatusCheckFailed, setCalendarStatusCheckFailed] = useState(false);
+  const [candidatesLoadFailed, setCandidatesLoadFailed] = useState(false);
+  const [interviewersLoadFailed, setInterviewersLoadFailed] = useState(false);
 
   useEffect(() => {
     jobsApi
       .list()
       .then(setJobs)
-      .catch((err) => setError(err instanceof ApiError ? String(err.detail) : "Failed to load jobs"));
+      .catch((err) => setError(extractErrorMessage(err, "Failed to load jobs")));
     candidatesApi
       .list()
       .then((data) => setCandidates(Object.fromEntries(data.map((c) => [c.id, c]))))
-      .catch(() => undefined);
+      .catch(() => setCandidatesLoadFailed(true));
     usersApi
       .list()
       .then(setInterviewers)
-      .catch(() => undefined);
+      .catch(() => setInterviewersLoadFailed(true));
   }, []);
 
   useEffect(() => {
     if (!interviewerId) {
       setInterviewerCalendarConnected(null);
+      setCalendarStatusCheckFailed(false);
       return;
     }
     setCheckingInterviewerCalendar(true);
+    setCalendarStatusCheckFailed(false);
     integrationsApi
       .googleStatus(interviewerId)
       .then((status) => setInterviewerCalendarConnected(status.connected))
-      .catch(() => setInterviewerCalendarConnected(null))
+      .catch(() => {
+        setInterviewerCalendarConnected(null);
+        setCalendarStatusCheckFailed(true);
+      })
       .finally(() => setCheckingInterviewerCalendar(false));
   }, [interviewerId]);
 
@@ -223,7 +254,7 @@ export default function InterviewsPage() {
       });
       setInterviews(byApplication);
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to load interview data");
+      setError(extractErrorMessage(err, "Failed to load interview data"));
     } finally {
       setLoading(false);
     }
@@ -265,7 +296,7 @@ export default function InterviewsPage() {
       setScheduleApp(null);
       await loadJobData(selectedJobId);
     } catch (err) {
-      setScheduleError(err instanceof ApiError ? String(err.detail) : "Failed to schedule interview");
+      setScheduleError(extractErrorMessage(err, "Failed to schedule interview"));
     } finally {
       setScheduling(false);
     }
@@ -278,7 +309,7 @@ export default function InterviewsPage() {
       const result = await schedulingApi.generateQuestions(applicationId);
       setPrepQuestions((prev) => ({ ...prev, [applicationId]: result }));
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to generate interview questions");
+      setError(extractErrorMessage(err, "Failed to generate interview questions"));
     } finally {
       setActionId(null);
     }
@@ -365,6 +396,16 @@ export default function InterviewsPage() {
           {error}
         </Alert>
       )}
+      {candidatesLoadFailed && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Couldn't load candidate names — candidates below may show as raw IDs.
+        </Alert>
+      )}
+      {interviewersLoadFailed && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Couldn't load the interviewer list — the scheduling dropdown may be incomplete.
+        </Alert>
+      )}
 
       {!selectedJobId ? (
         <Typography color="text.secondary">Select a job to manage its interviews.</Typography>
@@ -385,7 +426,7 @@ export default function InterviewsPage() {
                     <CardContent>
                       <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
                         <Typography variant="h6">{candidateLabel(app.candidate_id)}</Typography>
-                        <Chip label={app.status} size="small" />
+                        <StatusChip status={app.status} />
                       </Stack>
                       {canWrite && (
                         <Stack direction="row" spacing={1} mt={2}>
@@ -423,7 +464,7 @@ export default function InterviewsPage() {
                     <CardContent>
                       <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
                         <Typography variant="h6">{candidateLabel(app.candidate_id)}</Typography>
-                        <Chip label={app.status} size="small" />
+                        <StatusChip status={app.status} />
                       </Stack>
 
                       {(interviews[app.id] || []).map((interview) => (
@@ -505,6 +546,11 @@ export default function InterviewsPage() {
               (checkingInterviewerCalendar ? (
                 <Alert severity="info" icon={false}>
                   Checking {interviewerLabel(interviewerId)}'s Google Calendar connection...
+                </Alert>
+              ) : calendarStatusCheckFailed ? (
+                <Alert severity="warning">
+                  Couldn't verify {interviewerLabel(interviewerId)}'s Google Calendar connection — assuming the
+                  manual meeting link below will be used.
                 </Alert>
               ) : interviewerCalendarConnected ? (
                 <Alert severity="success">

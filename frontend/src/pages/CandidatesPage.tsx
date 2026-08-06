@@ -17,7 +17,7 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
-import { ApiError, applicationsApi, candidatesApi, jobsApi } from "../api/client";
+import { applicationsApi, candidatesApi, extractErrorMessage, jobsApi } from "../api/client";
 import type { CandidateRead, JobRoleRead } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
@@ -53,7 +53,7 @@ export default function CandidatesPage() {
       setCandidates(candidateData);
       setJobs(jobData);
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to load candidates");
+      setError(extractErrorMessage(err, "Failed to load candidates"));
     } finally {
       setLoading(false);
     }
@@ -76,7 +76,7 @@ export default function CandidatesPage() {
       setSelectedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (err) {
-      setUploadError(err instanceof ApiError ? String(err.detail) : "Failed to upload resume");
+      setUploadError(extractErrorMessage(err, "Failed to upload resume"));
     } finally {
       setUploading(false);
     }
@@ -89,7 +89,7 @@ export default function CandidatesPage() {
       const updated = await candidatesApi.parseResume(candidateId);
       setCandidates((prev) => prev.map((c) => (c.id === candidateId ? updated : c)));
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to parse resume");
+      setError(extractErrorMessage(err, "Failed to parse resume"));
     } finally {
       setParsingId(null);
     }
@@ -120,7 +120,7 @@ export default function CandidatesPage() {
       setLinkedMessage(`Linked ${linkCandidate.full_name || "candidate"} to ${job?.title ?? "job"}`);
       setLinkCandidate(null);
     } catch (err) {
-      setLinkError(err instanceof ApiError ? String(err.detail) : "Failed to link candidate to job");
+      setLinkError(extractErrorMessage(err, "Failed to link candidate to job"));
     } finally {
       setLinking(false);
     }

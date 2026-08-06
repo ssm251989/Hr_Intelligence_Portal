@@ -15,9 +15,10 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
-import { ApiError, jobsApi } from "../api/client";
+import { extractErrorMessage, jobsApi } from "../api/client";
 import type { JobRoleCreate, JobRoleRead } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
+import StatusChip from "../components/StatusChip";
 import { ROLE_MATRIX } from "../auth/roles";
 
 const EMPTY_FORM = {
@@ -52,7 +53,7 @@ export default function JobsPage() {
       const data = await jobsApi.list();
       setJobs(data);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to load jobs");
+      setError(extractErrorMessage(err, "Failed to load jobs"));
     } finally {
       setLoading(false);
     }
@@ -88,7 +89,7 @@ export default function JobsPage() {
       setDialogOpen(false);
       setForm(EMPTY_FORM);
     } catch (err) {
-      setFormError(err instanceof ApiError ? String(err.detail) : "Failed to create job");
+      setFormError(extractErrorMessage(err, "Failed to create job"));
     } finally {
       setCreating(false);
     }
@@ -101,7 +102,7 @@ export default function JobsPage() {
       const updated = await jobsApi.generateJd(jobId);
       setJobs((prev) => prev.map((job) => (job.id === jobId ? updated : job)));
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to generate JD");
+      setError(extractErrorMessage(err, "Failed to generate JD"));
     } finally {
       setGeneratingId(null);
     }
@@ -142,7 +143,7 @@ export default function JobsPage() {
                           "No details set"}
                       </Typography>
                     </Box>
-                    <Chip label={job.status} size="small" />
+                    <StatusChip status={job.status} />
                   </Stack>
 
                   {job.skills && job.skills.length > 0 && (

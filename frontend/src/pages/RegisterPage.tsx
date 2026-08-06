@@ -12,7 +12,7 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
-import { ApiError } from "../api/client";
+import { extractErrorMessage } from "../api/client";
 import { PUBLIC_REGISTRABLE_ROLES } from "../api/types";
 import type { UserRole } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
@@ -39,7 +39,7 @@ export default function RegisterPage() {
       await register({ email, password, full_name: fullName || null, role });
       navigate("/jobs", { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to register");
+      setError(extractErrorMessage(err, "Failed to register"));
     } finally {
       setLoading(false);
     }

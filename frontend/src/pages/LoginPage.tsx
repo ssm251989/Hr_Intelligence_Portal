@@ -11,7 +11,7 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
-import { ApiError } from "../api/client";
+import { extractErrorMessage } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 
 export default function LoginPage() {
@@ -33,7 +33,7 @@ export default function LoginPage() {
       await login(email, password);
       navigate(from, { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to log in");
+      setError(extractErrorMessage(err, "Failed to log in"));
     } finally {
       setLoading(false);
     }

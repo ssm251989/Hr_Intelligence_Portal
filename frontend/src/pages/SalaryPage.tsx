@@ -4,7 +4,6 @@ import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
-import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Divider from "@mui/material/Divider";
 import MenuItem from "@mui/material/MenuItem";
@@ -12,7 +11,7 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
-import { ApiError, applicationsApi, candidatesApi, jobsApi, salaryApi } from "../api/client";
+import { applicationsApi, candidatesApi, extractErrorMessage, jobsApi, salaryApi } from "../api/client";
 import type {
   ApplicationRead,
   CandidateRead,
@@ -22,6 +21,8 @@ import type {
 } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
+import ConfirmDialog from "../components/ConfirmDialog";
+import StatusChip from "../components/StatusChip";
 
 const RELEVANT_STATUSES = [
   "hr_selected",
@@ -48,28 +49,42 @@ function SalaryApprovalForm({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmRejectOpen, setConfirmRejectOpen] = useState(false);
 
   if (!canEdit) {
     return null;
   }
 
-  const handleSubmit = async () => {
-    if (!decision) {
-      setError("Choose approve or reject");
-      return;
-    }
+  const doSubmit = async () => {
     setSaving(true);
     setError(null);
     try {
       await onSubmit({
-        decision,
+        decision: decision as "approve" | "reject",
         approved_salary: decision === "approve" && approvedSalary ? Number(approvedSalary) : null,
       });
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to record decision");
+      setError(extractErrorMessage(err, "Failed to record decision"));
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSubmit = () => {
+    if (!decision) {
+      setError("Choose approve or reject");
+      return;
+    }
+    if (decision === "reject") {
+      setConfirmRejectOpen(true);
+      return;
+    }
+    doSubmit();
+  };
+
+  const handleConfirmReject = async () => {
+    setConfirmRejectOpen(false);
+    await doSubmit();
   };
 
   return (
@@ -106,6 +121,16 @@ function SalaryApprovalForm({
           {saving ? "Saving..." : "Submit Decision"}
         </Button>
       </Stack>
+
+      <ConfirmDialog
+        open={confirmRejectOpen}
+        title="Reject salary?"
+        message="Reject this candidate's salary? This cannot be undone."
+        confirmLabel="Reject"
+        confirming={saving}
+        onConfirm={handleConfirmReject}
+        onCancel={() => setConfirmRejectOpen(false)}
+      />
     </Box>
   );
 }
@@ -121,16 +146,17 @@ export default function SalaryPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
+  const [candidatesLoadFailed, setCandidatesLoadFailed] = useState(false);
 
   useEffect(() => {
     jobsApi
       .list()
       .then(setJobs)
-      .catch((err) => setError(err instanceof ApiError ? String(err.detail) : "Failed to load jobs"));
+      .catch((err) => setError(extractErrorMessage(err, "Failed to load jobs")));
     candidatesApi
       .list()
       .then((data) => setCandidates(Object.fromEntries(data.map((c) => [c.id, c]))))
-      .catch(() => undefined);
+      .catch(() => setCandidatesLoadFailed(true));
   }, []);
 
   const loadJobData = async (jobId: string) => {
@@ -148,7 +174,7 @@ export default function SalaryPage() {
       });
       setSalaryStatus(byApplication);
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to load salary data");
+      setError(extractErrorMessage(err, "Failed to load salary data"));
     } finally {
       setLoading(false);
     }
@@ -180,7 +206,7 @@ export default function SalaryPage() {
       const updated = await salaryApi.validate(applicationId);
       await refreshOne(applicationId, updated);
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to validate salary");
+      setError(extractErrorMessage(err, "Failed to validate salary"));
     } finally {
       setActionId(null);
     }
@@ -198,7 +224,7 @@ export default function SalaryPage() {
       const updated = await salaryApi.confirm(applicationId);
       await refreshOne(applicationId, updated);
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to confirm salary");
+      setError(extractErrorMessage(err, "Failed to confirm salary"));
     } finally {
       setActionId(null);
     }
@@ -239,6 +265,11 @@ export default function SalaryPage() {
           {error}
         </Alert>
       )}
+      {candidatesLoadFailed && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Couldn't load candidate names — candidates below may show as raw IDs.
+        </Alert>
+      )}
 
       {!selectedJobId ? (
         <Typography color="text.secondary">Select a job to manage salary validation.</Typography>
@@ -255,7 +286,7 @@ export default function SalaryPage() {
                 <CardContent>
                   <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
                     <Typography variant="h6">{candidateLabel(app.candidate_id)}</Typography>
-                    <Chip label={app.status} size="small" />
+                    <StatusChip status={app.status} />
                   </Stack>
 
                   {status && (

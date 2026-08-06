@@ -12,10 +12,11 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
-import { ApiError, candidatesApi, jobsApi, shortlistingApi } from "../api/client";
+import { candidatesApi, extractErrorMessage, jobsApi, shortlistingApi } from "../api/client";
 import type { ApplicationRead, CandidateRead, JobRoleRead } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
+import ConfirmDialog from "../components/ConfirmDialog";
 
 export default function ShortlistingPage() {
   const { can } = useAuth();
@@ -27,16 +28,17 @@ export default function ShortlistingPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
+  const [candidatesLoadFailed, setCandidatesLoadFailed] = useState(false);
 
   useEffect(() => {
     jobsApi
       .list()
       .then(setJobs)
-      .catch((err) => setError(err instanceof ApiError ? String(err.detail) : "Failed to load jobs"));
+      .catch((err) => setError(extractErrorMessage(err, "Failed to load jobs")));
     candidatesApi
       .list()
       .then((data) => setCandidates(Object.fromEntries(data.map((c) => [c.id, c]))))
-      .catch(() => undefined);
+      .catch(() => setCandidatesLoadFailed(true));
   }, []);
 
   const loadShortlist = async (jobId: string) => {
@@ -46,7 +48,7 @@ export default function ShortlistingPage() {
       const data = await shortlistingApi.list(jobId);
       setApplications(data);
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to load shortlist");
+      setError(extractErrorMessage(err, "Failed to load shortlist"));
     } finally {
       setLoading(false);
     }
@@ -65,10 +67,19 @@ export default function ShortlistingPage() {
       await shortlistingApi.decide(applicationId, { decision });
       setApplications((prev) => prev.filter((app) => app.id !== applicationId));
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to record decision");
+      setError(extractErrorMessage(err, "Failed to record decision"));
     } finally {
       setActionId(null);
     }
+  };
+
+  const [confirmRejectApp, setConfirmRejectApp] = useState<ApplicationRead | null>(null);
+
+  const handleConfirmReject = async () => {
+    if (!confirmRejectApp) return;
+    const app = confirmRejectApp;
+    setConfirmRejectApp(null);
+    await handleDecision(app.id, "reject");
   };
 
   const candidateLabel = (candidateId: string) => {
@@ -104,6 +115,11 @@ export default function ShortlistingPage() {
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
+        </Alert>
+      )}
+      {candidatesLoadFailed && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Couldn't load candidate names — candidates below may show as raw IDs.
         </Alert>
       )}
 
@@ -166,7 +182,7 @@ export default function ShortlistingPage() {
                       size="small"
                       variant="outlined"
                       color="error"
-                      onClick={() => handleDecision(app.id, "reject")}
+                      onClick={() => setConfirmRejectApp(app)}
                       disabled={actionId === app.id}
                     >
                       Reject
@@ -178,6 +194,16 @@ export default function ShortlistingPage() {
           ))}
         </Stack>
       )}
+
+      <ConfirmDialog
+        open={confirmRejectApp != null}
+        title="Reject candidate?"
+        message={`Reject ${confirmRejectApp ? candidateLabel(confirmRejectApp.candidate_id) : "this candidate"} at shortlisting? This cannot be undone.`}
+        confirmLabel="Reject"
+        confirming={actionId === confirmRejectApp?.id}
+        onConfirm={handleConfirmReject}
+        onCancel={() => setConfirmRejectApp(null)}
+      />
     </Box>
   );
 }

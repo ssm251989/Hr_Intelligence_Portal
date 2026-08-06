@@ -11,7 +11,7 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { useNavigate } from "react-router-dom";
 
-import { ApiError, publicApi } from "../api/client";
+import { extractErrorMessage, publicApi } from "../api/client";
 import type { PublicJobRead } from "../api/types";
 
 export default function CareersListPage() {
@@ -23,7 +23,7 @@ export default function CareersListPage() {
     publicApi
       .listJobs()
       .then(setJobs)
-      .catch((err) => setError(err instanceof ApiError ? String(err.detail) : "Failed to load open positions"));
+      .catch((err) => setError(extractErrorMessage(err, "Failed to load open positions")));
   }, []);
 
   return (
