@@ -1,8 +1,13 @@
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from app.ai_services.jd_generator import JDGenerationError
+from app.core.crypto import encrypt
+from app.integrations.linkedin import LinkedInError
 from app.models.audit_log import AuditLog
 from app.models.job_role import JobRole
+from app.models.user import User
+from app.models.user_integration import UserIntegration
 
 
 def _make_job(db_session, **kwargs) -> JobRole:
@@ -11,6 +16,25 @@ def _make_job(db_session, **kwargs) -> JobRole:
     db_session.commit()
     db_session.refresh(job)
     return job
+
+
+def _connect_linkedin(db_session, user, expires_at=None, member_urn="urn:li:person:abc123") -> UserIntegration:
+    integration = UserIntegration(
+        user_id=user.id,
+        provider="linkedin",
+        refresh_token=encrypt("fake-access-token"),
+        expires_at=expires_at,
+        provider_metadata={"member_urn": member_urn},
+    )
+    db_session.add(integration)
+    db_session.commit()
+    db_session.refresh(integration)
+    return integration
+
+
+def _admin_user(db_session) -> User:
+    # The `client` fixture authenticates as this user (see conftest.py).
+    return db_session.query(User).filter(User.email == "test-admin@example.com").one()
 
 
 def test_generate_job_description_ai_failure_returns_502(client, db_session, monkeypatch):
@@ -78,6 +102,173 @@ def test_publish_naukri_and_linkedin_only_record_intent(client, db_session):
     # it must never be the thing that flips status to published.
     assert body["published_platforms"] == {"naukri": True, "linkedin": True, "career_portal": False}
     assert body["status"] == "ready_for_publishing"
+
+
+# --- /jobs/{id}/publish -- real LinkedIn posting vs manual fallback ---
+
+
+def test_publish_linkedin_creates_real_post_when_connected(client, db_session, monkeypatch):
+    admin = _admin_user(db_session)
+    _connect_linkedin(db_session, admin, expires_at=datetime.now(timezone.utc) + timedelta(days=30))
+    job = _make_job(db_session, status="ready_for_publishing")
+
+    captured = {}
+
+    def fake_create_post(access_token, *, member_urn, commentary):
+        captured.update(access_token=access_token, member_urn=member_urn, commentary=commentary)
+        return "urn:li:share:99999"
+
+    monkeypatch.setattr("app.jobs.router.create_hiring_announcement_post", fake_create_post)
+
+    response = client.post(f"/jobs/{job.id}/publish", json={"naukri": False, "linkedin": True, "career_portal": False})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["linkedin_post_urn"] == "urn:li:share:99999"
+    assert body["posting_url_linkedin"] is None
+    assert captured["member_urn"] == "urn:li:person:abc123"
+    assert job.title in captured["commentary"]
+    assert f"/careers/{job.id}" in captured["commentary"]
+
+    entry = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.entity_id == job.id, AuditLog.action == "linkedin_post_created")
+        .one_or_none()
+    )
+    assert entry is not None
+    assert entry.details["post_urn"] == "urn:li:share:99999"
+
+
+def test_publish_linkedin_real_post_ignores_manual_url(client, db_session, monkeypatch):
+    # A real post has its own linkedin_post_urn -- a manually-pasted URL passed alongside
+    # it would be redundant/stale, so it must be ignored when the real post succeeds.
+    admin = _admin_user(db_session)
+    _connect_linkedin(db_session, admin, expires_at=datetime.now(timezone.utc) + timedelta(days=30))
+    job = _make_job(db_session, status="ready_for_publishing")
+
+    monkeypatch.setattr("app.jobs.router.create_hiring_announcement_post", lambda *a, **k: "urn:li:share:1")
+
+    response = client.post(
+        f"/jobs/{job.id}/publish",
+        json={
+            "naukri": False,
+            "linkedin": True,
+            "career_portal": False,
+            "posting_url_linkedin": "https://www.linkedin.com/manually-pasted",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["linkedin_post_urn"] == "urn:li:share:1"
+    assert body["posting_url_linkedin"] is None
+
+
+def test_publish_linkedin_falls_back_to_manual_url_when_post_fails(client, db_session, monkeypatch):
+    admin = _admin_user(db_session)
+    _connect_linkedin(db_session, admin, expires_at=datetime.now(timezone.utc) + timedelta(days=30))
+    job = _make_job(db_session, status="ready_for_publishing")
+
+    def fake_create_post(*a, **k):
+        raise LinkedInError("LinkedIn API is down")
+
+    monkeypatch.setattr("app.jobs.router.create_hiring_announcement_post", fake_create_post)
+
+    response = client.post(
+        f"/jobs/{job.id}/publish",
+        json={
+            "naukri": False,
+            "linkedin": True,
+            "career_portal": False,
+            "posting_url_linkedin": "https://www.linkedin.com/manually-pasted",
+        },
+    )
+
+    # Never blocks the main flow -- still a 200, just no real post.
+    assert response.status_code == 200
+    body = response.json()
+    assert body["linkedin_post_urn"] is None
+    assert body["posting_url_linkedin"] == "https://www.linkedin.com/manually-pasted"
+
+    entry = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.entity_id == job.id, AuditLog.action == "linkedin_post_failed")
+        .one_or_none()
+    )
+    assert entry is not None
+
+
+def test_publish_linkedin_falls_back_when_token_expired(client, db_session, monkeypatch):
+    admin = _admin_user(db_session)
+    _connect_linkedin(db_session, admin, expires_at=datetime.now(timezone.utc) - timedelta(days=1))
+    job = _make_job(db_session, status="ready_for_publishing")
+
+    def fail_if_called(*a, **k):
+        raise AssertionError("must not attempt a post with a known-expired token")
+
+    monkeypatch.setattr("app.jobs.router.create_hiring_announcement_post", fail_if_called)
+
+    response = client.post(
+        f"/jobs/{job.id}/publish",
+        json={
+            "naukri": False,
+            "linkedin": True,
+            "career_portal": False,
+            "posting_url_linkedin": "https://www.linkedin.com/manually-pasted",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["linkedin_post_urn"] is None
+    assert body["posting_url_linkedin"] == "https://www.linkedin.com/manually-pasted"
+
+    entry = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.entity_id == job.id, AuditLog.action == "linkedin_post_skipped_expired_token")
+        .one_or_none()
+    )
+    assert entry is not None
+
+
+def test_publish_linkedin_not_connected_falls_back_to_manual_url(client, db_session, monkeypatch):
+    job = _make_job(db_session, status="ready_for_publishing")
+
+    def fail_if_called(*a, **k):
+        raise AssertionError("must not attempt a post with no LinkedIn connection")
+
+    monkeypatch.setattr("app.jobs.router.create_hiring_announcement_post", fail_if_called)
+
+    response = client.post(
+        f"/jobs/{job.id}/publish",
+        json={
+            "naukri": False,
+            "linkedin": True,
+            "career_portal": False,
+            "posting_url_linkedin": "https://www.linkedin.com/manually-pasted",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["linkedin_post_urn"] is None
+    assert body["posting_url_linkedin"] == "https://www.linkedin.com/manually-pasted"
+
+
+def test_publish_linkedin_disabled_never_attempts_a_post(client, db_session, monkeypatch):
+    admin = _admin_user(db_session)
+    _connect_linkedin(db_session, admin, expires_at=datetime.now(timezone.utc) + timedelta(days=30))
+    job = _make_job(db_session, status="ready_for_publishing")
+
+    def fail_if_called(*a, **k):
+        raise AssertionError("must not attempt a post when the linkedin toggle is off")
+
+    monkeypatch.setattr("app.jobs.router.create_hiring_announcement_post", fail_if_called)
+
+    response = client.post(f"/jobs/{job.id}/publish", json={"naukri": False, "linkedin": False, "career_portal": False})
+
+    assert response.status_code == 200
+    assert response.json()["linkedin_post_urn"] is None
 
 
 def test_publish_stores_placeholder_settings_and_deadline(client, db_session):

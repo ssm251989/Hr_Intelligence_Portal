@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
@@ -19,9 +20,13 @@ from app.integrations.google_calendar import (
     exchange_code_for_refresh_token,
     generate_code_verifier,
 )
+from app.integrations.linkedin import LinkedInError
+from app.integrations.linkedin import build_authorization_url as build_linkedin_authorization_url
+from app.integrations.linkedin import exchange_code_for_access_token as exchange_linkedin_code_for_access_token
+from app.integrations.linkedin import get_member_urn
 from app.models.user import User
 from app.models.user_integration import UserIntegration
-from app.schemas.integration import DocuSignAuthUrl, GoogleAuthUrl, IntegrationStatus
+from app.schemas.integration import DocuSignAuthUrl, GoogleAuthUrl, IntegrationStatus, LinkedInAuthUrl
 
 router = APIRouter(tags=["integrations"])
 
@@ -143,4 +148,72 @@ def docusign_status(
     return IntegrationStatus(
         connected=integration is not None,
         connected_at=integration.connected_at if integration else None,
+    )
+
+
+@router.get("/integrations/linkedin/connect", response_model=LinkedInAuthUrl)
+def connect_linkedin(current_user: User = Depends(get_current_user)):
+    # Same JSON-not-redirect reasoning as Google/DocuSign's /connect. Standard
+    # Authorization Code Grant, no PKCE.
+    state = create_access_token(subject=str(current_user.id))
+    return LinkedInAuthUrl(auth_url=build_linkedin_authorization_url(state))
+
+
+@router.get("/auth/linkedin/callback", response_class=HTMLResponse)
+def linkedin_callback(code: str = Query(...), state: str = Query(...), db: Session = Depends(get_db)):
+    try:
+        payload = decode_access_token(state)
+        user_id = uuid.UUID(payload["sub"])
+    except (JWTError, KeyError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid or expired OAuth state") from exc
+
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    try:
+        token_data = exchange_linkedin_code_for_access_token(code)
+        member_urn = get_member_urn(token_data["access_token"])
+    except LinkedInError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    expires_at = None
+    if token_data.get("expires_in"):
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=token_data["expires_in"])
+
+    integration = _get_integration(db, user.id, "linkedin")
+    if integration:
+        integration.refresh_token = encrypt(token_data["access_token"])
+        integration.expires_at = expires_at
+        integration.provider_metadata = {"member_urn": member_urn}
+    else:
+        integration = UserIntegration(
+            user_id=user.id,
+            provider="linkedin",
+            refresh_token=encrypt(token_data["access_token"]),
+            expires_at=expires_at,
+            provider_metadata={"member_urn": member_urn},
+        )
+        db.add(integration)
+    db.commit()
+
+    log_action(db, "user_integration", user.id, "linkedin_connected", user.email, {"provider": "linkedin"})
+
+    return "<html><body>LinkedIn connected. You can close this tab and return to the app.</body></html>"
+
+
+@router.get("/integrations/linkedin/status", response_model=IntegrationStatus)
+def linkedin_status(
+    user_id: uuid.UUID | None = Query(None, description="Check another user's status; defaults to the caller"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    integration = _get_integration(db, user_id or current_user.id, "linkedin")
+    expired = None
+    if integration is not None:
+        expired = integration.expires_at is not None and integration.expires_at < datetime.now(timezone.utc)
+    return IntegrationStatus(
+        connected=integration is not None,
+        connected_at=integration.connected_at if integration else None,
+        expired=expired,
     )

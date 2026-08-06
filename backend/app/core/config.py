@@ -20,6 +20,16 @@ class Settings:
     DOCUSIGN_AUTH_BASE_URL: str = os.getenv("DOCUSIGN_AUTH_BASE_URL", "https://account-d.docusign.com")
     DOCUSIGN_API_BASE_URL: str = os.getenv("DOCUSIGN_API_BASE_URL", "https://demo.docusign.net")
     DOCUSIGN_REDIRECT_URI: str = os.getenv("DOCUSIGN_REDIRECT_URI", "http://localhost:8000/auth/docusign/callback")
+    LINKEDIN_CLIENT_ID: str = os.getenv("LINKEDIN_CLIENT_ID", "")
+    LINKEDIN_CLIENT_SECRET: str = os.getenv("LINKEDIN_CLIENT_SECRET", "")
+    LINKEDIN_REDIRECT_URI: str = os.getenv("LINKEDIN_REDIRECT_URI", "http://localhost:8000/auth/linkedin/callback")
+    # LinkedIn deprecates API versions on a rolling schedule (YYYYMM format) -- bump this
+    # via env var if LinkedIn starts rejecting requests with an "unsupported version" error,
+    # no code change needed.
+    LINKEDIN_API_VERSION: str = os.getenv("LINKEDIN_API_VERSION", "202507")
+    # Used to build the job link included in the LinkedIn hiring-announcement post
+    # (backend has no other way to know the frontend's origin).
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
 
 settings = Settings()

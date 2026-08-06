@@ -31,5 +31,9 @@ class JobRole(Base):
     publish_settings = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
     posting_url_naukri = Column(Text)
     posting_url_linkedin = Column(Text)
+    # Set only when a real LinkedIn post was created via the API (see
+    # app/jobs/router.py _try_post_to_linkedin) -- as opposed to posting_url_linkedin,
+    # which is the manually-pasted fallback link used when there's no LinkedIn connection.
+    linkedin_post_urn = Column(Text)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     created_at = Column(DateTime(timezone=True), server_default=text("now()"))

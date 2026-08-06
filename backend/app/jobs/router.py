@@ -1,15 +1,21 @@
 import uuid
+from datetime import datetime, timezone
 
+from cryptography.fernet import InvalidToken
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.ai_services.jd_generator import JDGenerationError, generate_jd
 from app.audit.service import log_action
 from app.auth.dependencies import get_current_user, require_roles
+from app.core.config import settings
+from app.core.crypto import decrypt
 from app.core.database import get_db
+from app.integrations.linkedin import LinkedInError, create_hiring_announcement_post
 from app.jobs.service import close_job_if_deadline_passed
 from app.models.job_role import JobRole
 from app.models.user import User
+from app.models.user_integration import UserIntegration
 from app.schemas.job import (
     JobFieldSuggestionsResponse,
     JobRoleCreate,
@@ -148,6 +154,46 @@ def generate_job_description(
     return job
 
 
+def _try_post_to_linkedin(db: Session, job: JobRole, current_user: User) -> bool:
+    """Create a real LinkedIn post announcing this job if the publishing user has
+    LinkedIn connected. Returns True if a post was created (job.linkedin_post_urn is set).
+
+    Never raises -- no connection, an expired token, or any API failure just means "no
+    real post," so the caller falls back to the manual posting_url_linkedin flow, same
+    "never blocks the main flow" pattern as Calendar/DocuSign elsewhere in this app.
+    """
+    integration = (
+        db.query(UserIntegration)
+        .filter(UserIntegration.user_id == current_user.id, UserIntegration.provider == "linkedin")
+        .first()
+    )
+    if not integration:
+        return False
+    if integration.expires_at is not None and integration.expires_at < datetime.now(timezone.utc):
+        log_action(db, "job_role", job.id, "linkedin_post_skipped_expired_token", "system", {})
+        return False
+
+    member_urn = (integration.provider_metadata or {}).get("member_urn")
+    if not member_urn:
+        return False
+
+    job_url = f"{settings.FRONTEND_URL}/careers/{job.id}"
+    role_line = f"Join our team as a {job.title}" + (f" in {job.department}." if job.department else ".")
+    commentary = f"We're hiring: {job.title}!\n\n{role_line} Apply now: {job_url}"
+
+    try:
+        access_token = decrypt(integration.refresh_token)
+        post_urn = create_hiring_announcement_post(access_token, member_urn=member_urn, commentary=commentary)
+    except (LinkedInError, InvalidToken) as exc:
+        error = str(exc) or "LinkedIn post creation failed"
+        log_action(db, "job_role", job.id, "linkedin_post_failed", "system", {"error": error})
+        return False
+
+    job.linkedin_post_urn = post_urn
+    log_action(db, "job_role", job.id, "linkedin_post_created", "system", {"post_urn": post_urn})
+    return True
+
+
 @router.post("/{job_id}/publish", response_model=JobRoleRead)
 def publish_job_platforms(
     job_id: uuid.UUID,
@@ -157,11 +203,13 @@ def publish_job_platforms(
 ):
     """Final step of the create-job wizard.
 
-    Naukri.com and LinkedIn have no real posting API access (no business
-    partnership) -- checking those boxes only records intent below, it never
-    calls out to either site. Only "career_portal" is real: it's the one
-    flag that flips job_roles.status, which is what makes the job appear on
-    GET /public/jobs and /careers.
+    Naukri.com has no real posting API access (no business partnership) --
+    checking it only records intent below, it never calls out to the site.
+    LinkedIn is real when the publishing user has connected their account
+    (see _try_post_to_linkedin); otherwise it falls back to the same
+    intent-only + manual-URL behavior as Naukri. "career_portal" is always
+    real: it's the one flag that flips job_roles.status, which is what makes
+    the job appear on GET /public/jobs and /careers.
     """
     job = _get_job_or_404(db, job_id)
     previous_status = job.status
@@ -179,8 +227,15 @@ def publish_job_platforms(
     }
     if payload.posting_url_naukri is not None:
         job.posting_url_naukri = payload.posting_url_naukri or None
-    if payload.posting_url_linkedin is not None:
+
+    posted_to_linkedin = False
+    if payload.linkedin:
+        posted_to_linkedin = _try_post_to_linkedin(db, job, current_user)
+    if not posted_to_linkedin and payload.posting_url_linkedin is not None:
+        # Manual URL only applies when there was no real post -- a real post has its own
+        # linkedin_post_urn, asking for a pasted URL on top of that would be redundant.
         job.posting_url_linkedin = payload.posting_url_linkedin or None
+
     job.status = "published" if payload.career_portal else "ready_for_publishing"
     db.commit()
     db.refresh(job)
@@ -195,6 +250,7 @@ def publish_job_platforms(
             "previous_status": previous_status,
             "new_status": job.status,
             "published_platforms": job.published_platforms,
+            "linkedin_post_urn": job.linkedin_post_urn,
         },
     )
     return job

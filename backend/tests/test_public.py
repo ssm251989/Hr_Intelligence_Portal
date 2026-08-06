@@ -46,16 +46,20 @@ def _make_job(db_session, title="Public QA Engineer", status="published", **kwar
 
 def test_list_public_jobs_only_shows_published(anonymous_client, db_session):
     published = _make_job(db_session, title="Published Role", status="published")
-    _make_job(db_session, title="Draft Role", status="draft")
-    _make_job(db_session, title="Ready Role", status="ready_for_publishing")
-    _make_job(db_session, title="Closed Role", status="closed")
+    draft = _make_job(db_session, title="Draft Role", status="draft")
+    ready = _make_job(db_session, title="Ready Role", status="ready_for_publishing")
+    closed = _make_job(db_session, title="Closed Role", status="closed")
 
     response = anonymous_client.get("/public/jobs")
 
     assert response.status_code == 200
-    titles = [job["title"] for job in response.json()]
-    assert titles == ["Published Role"]
-    assert response.json()[0]["id"] == str(published.id)
+    # Scoped to the ids this test created, not the full unfiltered list -- the shared
+    # dev database may already contain other real published jobs.
+    returned_ids = {job["id"] for job in response.json()}
+    assert str(published.id) in returned_ids
+    assert str(draft.id) not in returned_ids
+    assert str(ready.id) not in returned_ids
+    assert str(closed.id) not in returned_ids
 
 
 def test_list_public_jobs_excludes_internal_fields(anonymous_client, db_session):
@@ -72,12 +76,15 @@ def test_list_public_jobs_excludes_internal_fields(anonymous_client, db_session)
 
 
 def test_list_public_jobs_empty_when_none_published(anonymous_client, db_session):
-    _make_job(db_session, title="Draft Only", status="draft")
+    draft = _make_job(db_session, title="Draft Only", status="draft")
 
     response = anonymous_client.get("/public/jobs")
 
     assert response.status_code == 200
-    assert response.json() == []
+    # Scoped to this test's own job -- the shared dev database may already have other
+    # real published jobs, so asserting the whole response is empty would be brittle.
+    returned_ids = {job["id"] for job in response.json()}
+    assert str(draft.id) not in returned_ids
 
 
 # --- GET /public/jobs/{id} -----------------------------------------------------

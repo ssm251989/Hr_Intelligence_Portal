@@ -51,17 +51,24 @@ class JobRoleRead(JobRoleBase):
     publish_settings: dict = {}
     posting_url_naukri: Optional[str] = None
     posting_url_linkedin: Optional[str] = None
+    # Set only when a real LinkedIn post was created via the API (see
+    # app/jobs/router.py _try_post_to_linkedin). Null means either LinkedIn wasn't
+    # toggled on, the publishing user wasn't connected, or the post attempt failed --
+    # in all of those cases posting_url_linkedin (manual fallback) is what's used instead.
+    linkedin_post_urn: Optional[str] = None
     created_by: Optional[uuid.UUID] = None
     created_at: datetime
 
 
 # ---- publish-to-platforms (create-job wizard, final step) ----
 #
-# Naukri.com and LinkedIn have no real posting API access (no business
-# partnership) -- checking those only records intent on the job_role, plus an
-# optional URL the user pastes in after posting manually. Only
-# "career_portal" actually flips job_roles.status, making the job appear on
-# the public /careers site.
+# Naukri.com has no real posting API access (no business partnership) -- checking
+# it only records intent on the job_role, plus an optional URL the user pastes in
+# after posting manually. LinkedIn is real when the publishing user has connected
+# their account (see app/jobs/router.py _try_post_to_linkedin): a real post is
+# created via the API instead of asking for a manual URL. "career_portal" is
+# always real -- it's the one flag that flips job_roles.status, making the job
+# appear on the public /careers site.
 
 
 class PublishPlatformsRequest(BaseModel):

@@ -499,8 +499,8 @@ def test_recent_activity_excludes_other_entity_types(client, db_session):
     assert all(item["entity_id"] != str(doc_id) for item in response.json()["items"])
 
 
-def test_recent_activity_respects_limit_and_orders_newest_first(client, db_session):
-    job = _make_job(db_session, title="Ordering Job")
+def test_recent_activity_respects_limit(client, db_session):
+    job = _make_job(db_session, title="Limit Job")
     for i in range(5):
         _make_audit_entry(
             db_session, "job_role", job.id, f"step_{i}", created_at=_NOW + timedelta(seconds=i)
@@ -509,9 +509,28 @@ def test_recent_activity_respects_limit_and_orders_newest_first(client, db_sessi
     response = client.get("/reports/recent-activity?limit=3")
 
     assert response.status_code == 200
-    items = response.json()["items"]
-    assert len(items) == 3
-    assert items[0]["message"] == "Step 4: Ordering Job"
-    # Newest first.
-    timestamps = [item["created_at"] for item in items]
+    assert len(response.json()["items"]) == 3
+
+
+def test_recent_activity_orders_newest_first(client, db_session):
+    job = _make_job(db_session, title="Ordering Job")
+    for i in range(5):
+        _make_audit_entry(
+            db_session, "job_role", job.id, f"step_{i}", created_at=_NOW + timedelta(seconds=i)
+        )
+
+    # A large limit + scoped to this test's own job/entity id, rather than asserting on
+    # the global unfiltered feed's first item -- the shared dev database may already have
+    # real, more recent activity from concurrent use that would otherwise outrank these rows.
+    response = client.get("/reports/recent-activity?limit=50")
+
+    assert response.status_code == 200
+    all_items = response.json()["items"]
+
+    # The endpoint's overall sort order is a real, data-independent assertion.
+    timestamps = [item["created_at"] for item in all_items]
     assert timestamps == sorted(timestamps, reverse=True)
+
+    # Among just this test's own rows, newest-first still holds.
+    own_messages = [item["message"] for item in all_items if item["entity_id"] == str(job.id)]
+    assert own_messages == [f"Step {i}: Ordering Job" for i in reversed(range(5))]
