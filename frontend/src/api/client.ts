@@ -21,6 +21,8 @@ import type {
   OfferRead,
   OfferSendRequest,
   PipelineResponse,
+  PublicApplicationSubmitResponse,
+  PublicJobRead,
   SalaryApprovalRequest,
   SalaryStatusResponse,
   ShortlistDecisionRequest,
@@ -238,4 +240,20 @@ export const reportsApi = {
   },
   applicationTimeline: (applicationId: UUID) =>
     get<ApplicationTimelineResponse>(`/applications/${applicationId}/timeline`),
+};
+
+// ---- public careers portal (no auth) ----
+
+export const publicApi = {
+  listJobs: () => get<PublicJobRead[]>("/public/jobs"),
+  getJob: (jobId: UUID) => get<PublicJobRead>(`/public/jobs/${jobId}`),
+  apply: (payload: { jobId: UUID; fullName: string; email: string; phone?: string; resume: File }) => {
+    const form = new FormData();
+    form.append("job_id", payload.jobId);
+    form.append("full_name", payload.fullName);
+    form.append("email", payload.email);
+    if (payload.phone) form.append("phone", payload.phone);
+    form.append("resume", payload.resume);
+    return postForm<PublicApplicationSubmitResponse>("/public/apply", form);
+  },
 };

@@ -23,11 +23,44 @@ router = APIRouter(prefix="/candidates", tags=["candidates"])
 ALLOWED_EXTENSIONS = {"pdf", "docx"}
 
 
+class NoResumeUploadedError(Exception):
+    """Raised when a candidate has no resume_path to parse."""
+
+
+class ResumeFileMissingError(Exception):
+    """Raised when a candidate's resume_path doesn't resolve to a file on disk."""
+
+
 def _get_candidate_or_404(db: Session, candidate_id: uuid.UUID) -> Candidate:
     candidate = db.get(Candidate, candidate_id)
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
     return candidate
+
+
+def parse_and_apply_resume(db: Session, candidate: Candidate) -> dict:
+    """Extract text from a candidate's uploaded resume, AI-parse it, and apply the
+    result onto the candidate record. Shared by the authenticated parse-resume endpoint
+    and the public careers portal's background parsing after a direct application.
+    """
+    if not candidate.resume_path:
+        raise NoResumeUploadedError("No resume uploaded for this candidate")
+
+    file_path = resolve_resume_path(candidate.resume_path)
+    if not file_path.exists():
+        raise ResumeFileMissingError("Resume file missing on disk")
+
+    raw_text = extract_text(file_path.read_bytes(), file_path.name)
+    result = parse_resume(raw_text)
+
+    log_action(db, "candidate", candidate.id, "ai_resume_parser_scored", "system", result)
+    candidate.parsed_fields = result
+    candidate.full_name = result.get("full_name") or candidate.full_name
+    candidate.email = result.get("email") or candidate.email
+    candidate.phone = result.get("phone") or candidate.phone
+    db.commit()
+    db.refresh(candidate)
+    return result
 
 
 @router.post("/upload", response_model=CandidateRead, status_code=201)
@@ -92,25 +125,12 @@ def parse_candidate_resume(
     current_user: User = Depends(require_roles("recruiter", "admin")),
 ):
     candidate = _get_candidate_or_404(db, candidate_id)
-    if not candidate.resume_path:
-        raise HTTPException(status_code=400, detail="No resume uploaded for this candidate")
-
-    file_path = resolve_resume_path(candidate.resume_path)
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Resume file missing on disk")
-
     try:
-        raw_text = extract_text(file_path.read_bytes(), file_path.name)
+        parse_and_apply_resume(db, candidate)
+    except NoResumeUploadedError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ResumeFileMissingError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except (UnsupportedFileTypeError, ResumeExtractionError) as exc:
         raise HTTPException(status_code=400, detail=f"Could not read resume: {exc}") from exc
-
-    result = parse_resume(raw_text)
-
-    log_action(db, "candidate", candidate.id, "ai_resume_parser_scored", "system", result)
-    candidate.parsed_fields = result
-    candidate.full_name = result.get("full_name") or candidate.full_name
-    candidate.email = result.get("email") or candidate.email
-    candidate.phone = result.get("phone") or candidate.phone
-    db.commit()
-    db.refresh(candidate)
     return candidate

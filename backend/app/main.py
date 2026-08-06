@@ -8,6 +8,7 @@ from app.candidates.router import router as candidates_router
 from app.integrations.router import router as integrations_router
 from app.jobs.router import router as jobs_router
 from app.offers.router import router as offers_router
+from app.public.router import router as public_router
 from app.reports.router import router as reports_router
 from app.salary.router import router as salary_router
 from app.scheduling.router import router as scheduling_router
@@ -37,6 +38,7 @@ app.include_router(offers_router)
 app.include_router(reports_router)
 app.include_router(integrations_router)
 app.include_router(users_router)
+app.include_router(public_router)
 
 
 @app.get("/health")

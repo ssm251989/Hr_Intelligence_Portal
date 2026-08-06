@@ -3,6 +3,11 @@ import { Navigate, Route, BrowserRouter, Routes } from "react-router-dom";
 
 import { AuthProvider } from "./auth/AuthContext";
 import ProtectedRoute from "./auth/ProtectedRoute";
+import CareersApplyPage from "./careers/CareersApplyPage";
+import CareersJobDetailPage from "./careers/CareersJobDetailPage";
+import CareersLayout from "./careers/CareersLayout";
+import CareersListPage from "./careers/CareersListPage";
+import CareersThankYouPage from "./careers/CareersThankYouPage";
 import AppLayout from "./layout/AppLayout";
 import BgvPage from "./pages/BgvPage";
 import CandidatesPage from "./pages/CandidatesPage";
@@ -26,6 +31,12 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
+            <Route path="/careers" element={<CareersLayout />}>
+              <Route index element={<CareersListPage />} />
+              <Route path=":id" element={<CareersJobDetailPage />} />
+              <Route path=":id/apply" element={<CareersApplyPage />} />
+              <Route path=":id/thank-you" element={<CareersThankYouPage />} />
+            </Route>
             <Route
               element={
                 <ProtectedRoute>

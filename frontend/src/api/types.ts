@@ -311,3 +311,20 @@ export interface ApplicationTimelineResponse {
   application_id: UUID;
   events: AuditLogRead[];
 }
+
+// ---- public careers portal ----
+
+export interface PublicJobRead {
+  id: UUID;
+  title: string;
+  department?: string | null;
+  location?: string | null;
+  experience_level?: string | null;
+  skills?: string[] | null;
+  jd_text?: string | null;
+}
+
+export interface PublicApplicationSubmitResponse {
+  application_id: UUID;
+  status: string;
+}
