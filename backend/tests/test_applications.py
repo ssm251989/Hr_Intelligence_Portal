@@ -1,11 +1,13 @@
 import uuid
 
+from app.core.crypto import encrypt
 from app.models.candidate import Candidate
 from app.models.job_role import JobRole
+from app.models.user_integration import UserIntegration
 
 
-def _make_job(db_session) -> JobRole:
-    job = JobRole(title="Backend Engineer")
+def _make_job(db_session, **kwargs) -> JobRole:
+    job = JobRole(title="Backend Engineer", **kwargs)
     db_session.add(job)
     db_session.commit()
     db_session.refresh(job)
@@ -56,6 +58,49 @@ def test_create_application_missing_candidate_returns_404(client, db_session):
     )
 
     assert response.status_code == 404
+
+
+# --- email notification wiring (POST /applications) --------------------------
+
+
+def test_create_application_triggers_notification_when_owner_enabled_and_connected(
+    client, db_session, make_auth_headers, monkeypatch
+):
+    headers = make_auth_headers(role="recruiter", email="owner@example.com")
+    # The token's subject is the user id -- fetch it back out to attach as job.created_by.
+    from app.core.security import decode_access_token
+
+    owner_id = uuid.UUID(decode_access_token(headers["Authorization"].split(" ")[1])["sub"])
+    db_session.add(UserIntegration(user_id=owner_id, provider="google", refresh_token=encrypt("refresh-token")))
+    db_session.commit()
+    job = _make_job(db_session, created_by=owner_id, publish_settings={"email_notifications": True})
+    candidate = _make_candidate(db_session)
+
+    captured = {}
+    monkeypatch.setattr(
+        "app.jobs.service.send_email",
+        lambda refresh_token, **kwargs: captured.update(kwargs) or "msg_1",
+    )
+
+    response = client.post(
+        "/applications", json={"job_role_id": str(job.id), "candidate_id": str(candidate.id)}
+    )
+
+    assert response.status_code == 201
+    assert captured.get("to") == "owner@example.com"
+
+
+def test_create_application_succeeds_even_if_notification_helper_would_fail(client, db_session, monkeypatch):
+    # No integration connected at all -- create_application must still succeed; the
+    # notification is fire-and-forget and must never block the response.
+    job = _make_job(db_session, publish_settings={"email_notifications": True})
+    candidate = _make_candidate(db_session)
+
+    response = client.post(
+        "/applications", json={"job_role_id": str(job.id), "candidate_id": str(candidate.id)}
+    )
+
+    assert response.status_code == 201
 
 
 def test_list_applications_filtered_by_job_role_id(client, db_session):

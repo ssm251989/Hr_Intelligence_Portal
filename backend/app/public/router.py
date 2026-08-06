@@ -9,7 +9,11 @@ from app.candidates.resume_extraction import ResumeExtractionError, UnsupportedF
 from app.candidates.router import ALLOWED_EXTENSIONS, parse_and_apply_resume
 from app.candidates.storage import save_resume_file
 from app.core.database import SessionLocal, get_db
-from app.jobs.service import close_job_if_deadline_passed, get_application_deadline
+from app.jobs.service import (
+    close_job_if_deadline_passed,
+    get_application_deadline,
+    notify_job_owner_of_new_application,
+)
 from app.models.application import Application
 from app.models.candidate import Candidate
 from app.models.job_role import JobRole
@@ -119,6 +123,7 @@ async def submit_application(
         "public",
         {"status": application.status, "source": "careers_portal", "job_role_id": str(job.id)},
     )
+    notify_job_owner_of_new_application(db, job, candidate)
 
     background_tasks.add_task(_parse_resume_in_background, candidate.id)
 

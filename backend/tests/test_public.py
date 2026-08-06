@@ -3,10 +3,14 @@ import uuid
 
 from docx import Document
 
+from app.core.crypto import encrypt
+from app.core.security import hash_password
 from app.models.application import Application
 from app.models.audit_log import AuditLog
 from app.models.candidate import Candidate
 from app.models.job_role import JobRole
+from app.models.user import User
+from app.models.user_integration import UserIntegration
 
 
 def _make_docx_bytes(text: str) -> bytes:
@@ -29,6 +33,7 @@ def _make_job(db_session, title="Public QA Engineer", status="published", **kwar
         salary_band_min=kwargs.get("salary_band_min", 900000),
         salary_band_max=kwargs.get("salary_band_max", 1400000),
         publish_settings=kwargs.get("publish_settings", {}),
+        created_by=kwargs.get("created_by"),
     )
     db_session.add(job)
     db_session.commit()
@@ -317,6 +322,39 @@ def test_submit_application_past_deadline_returns_400_not_404(anonymous_client, 
     # published -- the job existed and was open, it just closed on its deadline.
     assert response.status_code == 400
     assert "deadline" in response.json()["detail"].lower()
+
+
+def test_submit_application_triggers_owner_notification_when_enabled_and_connected(
+    anonymous_client, db_session, monkeypatch
+):
+    owner = User(
+        email="owner-public@example.com", hashed_password=hash_password("testpassword123"),
+        full_name="Owner", role="recruiter",
+    )
+    db_session.add(owner)
+    db_session.commit()
+    db_session.add(UserIntegration(user_id=owner.id, provider="google", refresh_token=encrypt("refresh-token")))
+    db_session.commit()
+    job = _make_job(
+        db_session, title="Notify Role", status="published",
+        created_by=owner.id, publish_settings={"email_notifications": True},
+    )
+    resume_bytes = _make_docx_bytes("Notify Applicant")
+
+    captured = {}
+    monkeypatch.setattr(
+        "app.jobs.service.send_email",
+        lambda refresh_token, **kwargs: captured.update(kwargs) or "msg_1",
+    )
+
+    response = anonymous_client.post(
+        "/public/apply",
+        data={"job_id": str(job.id), "full_name": "Notify Applicant", "email": "notify@example.com"},
+        files={"resume": ("resume.docx", resume_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+    )
+
+    assert response.status_code == 201
+    assert captured.get("to") == "owner-public@example.com"
 
 
 def test_submit_application_before_deadline_still_succeeds(anonymous_client, db_session):

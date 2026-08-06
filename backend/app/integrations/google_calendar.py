@@ -9,7 +9,17 @@ from googleapiclient.discovery import build
 
 from app.core.config import settings
 
-SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
+# gmail.send was added alongside calendar.events so a single Google connection covers
+# both interview scheduling and new-application email notifications. This does NOT
+# retroactively grant gmail.send to refresh tokens obtained before this change -- Google
+# scopes are fixed at consent time, so any already-connected user must reconnect
+# (POST /integrations/google/connect again) to pick up the new scope. There is
+# deliberately no attempt to silently "upgrade" an old token; a stale connection just
+# keeps working for Calendar and fails gmail.send calls until the user reconnects.
+SCOPES = [
+    "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/gmail.send",
+]
 TOKEN_URI = "https://oauth2.googleapis.com/token"
 # Interviews default to a 1-hour slot when the caller doesn't specify one.
 DEFAULT_INTERVIEW_DURATION_MINUTES = 60

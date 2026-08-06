@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -18,7 +18,7 @@ import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
-import { extractErrorMessage, jobsApi } from "../api/client";
+import { extractErrorMessage, integrationsApi, jobsApi } from "../api/client";
 import type { JobRoleRead } from "../api/types";
 
 const STEPS = [
@@ -66,6 +66,15 @@ export default function CreateJobWizard({ open, onClose, onPublished }: Props) {
   const [generatingJd, setGeneratingJd] = useState(false);
   const [stepError, setStepError] = useState<string | null>(null);
   const [published, setPublished] = useState<JobRoleRead | null>(null);
+  const [googleConnected, setGoogleConnected] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    integrationsApi
+      .googleStatus()
+      .then((status) => setGoogleConnected(status.connected))
+      .catch(() => setGoogleConnected(false));
+  }, [open]);
 
   const set = <K extends keyof typeof EMPTY_STATE>(key: K, value: (typeof EMPTY_STATE)[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -398,7 +407,9 @@ export default function CreateJobWizard({ open, onClose, onPublished }: Props) {
         label="Email notifications"
       />
       <Typography variant="caption" color="text.secondary" sx={{ mt: -1.5, ml: 4 }}>
-        Coming soon -- your choice is saved, but no emails are sent yet.
+        {googleConnected
+          ? "Real: you'll get an email at your own inbox (via your connected Google account) when a new application comes in for this job."
+          : "Coming soon for you -- connect Google in Settings first. Once connected, this sends a real email to your inbox when a new application comes in."}
       </Typography>
       <TextField
         label="Application deadline (optional)"

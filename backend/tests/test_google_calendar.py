@@ -1,6 +1,11 @@
 from datetime import datetime, timezone
 
-from app.integrations.google_calendar import create_calendar_event
+from app.integrations.google_calendar import SCOPES, create_calendar_event
+
+
+def test_scopes_include_calendar_and_gmail_send():
+    assert "https://www.googleapis.com/auth/calendar.events" in SCOPES
+    assert "https://www.googleapis.com/auth/gmail.send" in SCOPES
 
 
 class _FakeEvents:

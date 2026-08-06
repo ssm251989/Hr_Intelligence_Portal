@@ -48,7 +48,13 @@ def create_job(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("recruiter", "admin")),
 ):
-    job = JobRole(**payload.model_dump())
+    data = payload.model_dump()
+    # Always the authenticated caller, never client-supplied -- this is who "the
+    # publishing user" means for the email_notifications feature (see
+    # app/jobs/service.py notify_job_owner_of_new_application), so it must be
+    # trustworthy rather than whatever a client happens to send.
+    data["created_by"] = current_user.id
+    job = JobRole(**data)
     db.add(job)
     db.commit()
     db.refresh(job)
