@@ -23,6 +23,22 @@ class JobSummaryResponse(BaseModel):
     average_ranking_score: Optional[float] = None
 
 
+class LabeledCount(BaseModel):
+    label: str
+    count: int
+
+
+class JobsDashboardStatsResponse(BaseModel):
+    total_jobs: int
+    active_jobs: int
+    open_positions: int
+    total_applications: int
+    hires_this_month: int
+    avg_time_to_hire_days: Optional[float] = None
+    by_department: list[LabeledCount]
+    by_location: list[LabeledCount]
+
+
 class AuditLogRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

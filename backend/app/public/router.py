@@ -1,4 +1,5 @@
 import uuid
+from datetime import date
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
@@ -8,6 +9,7 @@ from app.candidates.resume_extraction import ResumeExtractionError, UnsupportedF
 from app.candidates.router import ALLOWED_EXTENSIONS, parse_and_apply_resume
 from app.candidates.storage import save_resume_file
 from app.core.database import SessionLocal, get_db
+from app.jobs.service import close_job_if_deadline_passed, get_application_deadline
 from app.models.application import Application
 from app.models.candidate import Candidate
 from app.models.job_role import JobRole
@@ -18,6 +20,8 @@ router = APIRouter(prefix="/public", tags=["public"])
 
 def _get_published_job_or_404(db: Session, job_id: uuid.UUID) -> JobRole:
     job = db.get(JobRole, job_id)
+    if job:
+        close_job_if_deadline_passed(db, job)
     if not job or job.status != "published":
         raise HTTPException(status_code=404, detail="Job not found")
     return job
@@ -25,12 +29,12 @@ def _get_published_job_or_404(db: Session, job_id: uuid.UUID) -> JobRole:
 
 @router.get("/jobs", response_model=list[PublicJobRead])
 def list_public_jobs(db: Session = Depends(get_db)):
-    return (
-        db.query(JobRole)
-        .filter(JobRole.status == "published")
-        .order_by(JobRole.created_at.desc())
-        .all()
-    )
+    jobs = db.query(JobRole).filter(JobRole.status == "published").order_by(JobRole.created_at.desc()).all()
+    still_published = []
+    for job in jobs:
+        if not close_job_if_deadline_passed(db, job):
+            still_published.append(job)
+    return still_published
 
 
 @router.get("/jobs/{job_id}", response_model=PublicJobRead)
@@ -65,7 +69,18 @@ async def submit_application(
     resume: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
-    job = _get_published_job_or_404(db, job_id)
+    job = db.get(JobRole, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    close_job_if_deadline_passed(db, job)
+    deadline = get_application_deadline(job)
+    if deadline is not None and deadline < date.today():
+        raise HTTPException(
+            status_code=400,
+            detail="Applications are no longer being accepted for this job -- the application deadline has passed",
+        )
+    if job.status != "published":
+        raise HTTPException(status_code=404, detail="Job not found")
 
     extension = resume.filename.rsplit(".", 1)[-1].lower() if resume.filename and "." in resume.filename else ""
     if extension not in ALLOWED_EXTENSIONS:

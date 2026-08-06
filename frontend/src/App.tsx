@@ -1,5 +1,5 @@
 import CssBaseline from "@mui/material/CssBaseline";
-import { Navigate, Route, BrowserRouter, Routes } from "react-router-dom";
+import { Route, BrowserRouter, Routes } from "react-router-dom";
 
 import { AuthProvider } from "./auth/AuthContext";
 import ProtectedRoute from "./auth/ProtectedRoute";
@@ -16,6 +16,7 @@ import InterviewsPage from "./pages/InterviewsPage";
 import JobsPage from "./pages/JobsPage";
 import LoginPage from "./pages/LoginPage";
 import OffersPage from "./pages/OffersPage";
+import OverviewPage from "./pages/OverviewPage";
 import RegisterPage from "./pages/RegisterPage";
 import ReportsPage from "./pages/ReportsPage";
 import SalaryPage from "./pages/SalaryPage";
@@ -45,7 +46,7 @@ export default function App() {
                 </ProtectedRoute>
               }
             >
-              <Route index element={<Navigate to="/jobs" replace />} />
+              <Route index element={<OverviewPage />} />
               <Route path="/jobs" element={<JobsPage />} />
               <Route path="/candidates" element={<CandidatesPage />} />
               <Route path="/screening" element={<ScreeningPage />} />

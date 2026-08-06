@@ -48,6 +48,8 @@ export interface JobRoleBase {
   salary_band_min?: number | null;
   salary_band_max?: number | null;
   positions_count: number;
+  benefits?: string | null;
+  additional_notes?: string | null;
 }
 
 export interface JobRoleCreate extends JobRoleBase {
@@ -66,6 +68,10 @@ export interface JobRoleUpdate {
   positions_count?: number;
   status?: string;
   jd_text?: string | null;
+  benefits?: string | null;
+  additional_notes?: string | null;
+  posting_url_naukri?: string | null;
+  posting_url_linkedin?: string | null;
 }
 
 export interface JobRoleRead extends JobRoleBase {
@@ -73,8 +79,29 @@ export interface JobRoleRead extends JobRoleBase {
   hiring_manager_id?: UUID | null;
   jd_text?: string | null;
   status: string;
+  published_platforms: Record<string, boolean>;
+  publish_settings: Record<string, unknown>;
+  posting_url_naukri?: string | null;
+  posting_url_linkedin?: string | null;
   created_by?: UUID | null;
   created_at: string;
+}
+
+// Final step of the create-job wizard. Naukri.com and LinkedIn have no real
+// posting API access (no business partnership) -- checking those only records
+// intent server-side (plus an optional URL pasted in after posting manually),
+// they never trigger a real post. Only career_portal is real: it's what flips
+// job_roles.status to "published". application_deadline is enforced on read
+// (see backend/app/jobs/service.py); email_notifications is real when the
+// publishing user has Google connected.
+export interface PublishPlatformsRequest {
+  naukri: boolean;
+  linkedin: boolean;
+  career_portal: boolean;
+  posting_url_naukri?: string | null;
+  posting_url_linkedin?: string | null;
+  email_notifications?: boolean;
+  application_deadline?: string | null;
 }
 
 // ---- candidates ----
@@ -292,6 +319,22 @@ export interface JobSummaryResponse {
   by_status: StatusCount[];
   average_match_score?: number | null;
   average_ranking_score?: number | null;
+}
+
+export interface LabeledCount {
+  label: string;
+  count: number;
+}
+
+export interface JobsDashboardStatsResponse {
+  total_jobs: number;
+  active_jobs: number;
+  open_positions: number;
+  total_applications: number;
+  hires_this_month: number;
+  avg_time_to_hire_days?: number | null;
+  by_department: LabeledCount[];
+  by_location: LabeledCount[];
 }
 
 export interface AuditLogRead {

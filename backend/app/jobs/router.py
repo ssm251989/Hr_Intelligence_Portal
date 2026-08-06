@@ -7,9 +7,10 @@ from app.ai_services.jd_generator import JDGenerationError, generate_jd
 from app.audit.service import log_action
 from app.auth.dependencies import get_current_user, require_roles
 from app.core.database import get_db
+from app.jobs.service import close_job_if_deadline_passed
 from app.models.job_role import JobRole
 from app.models.user import User
-from app.schemas.job import JobRoleCreate, JobRoleRead, JobRoleUpdate
+from app.schemas.job import JobRoleCreate, JobRoleRead, JobRoleUpdate, PublishPlatformsRequest
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -57,12 +58,17 @@ def create_job(
 
 @router.get("", response_model=list[JobRoleRead])
 def list_jobs(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    return db.query(JobRole).order_by(JobRole.created_at.desc()).all()
+    jobs = db.query(JobRole).order_by(JobRole.created_at.desc()).all()
+    for job in jobs:
+        close_job_if_deadline_passed(db, job)
+    return jobs
 
 
 @router.get("/{job_id}", response_model=JobRoleRead)
 def get_job(job_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    return _get_job_or_404(db, job_id)
+    job = _get_job_or_404(db, job_id)
+    close_job_if_deadline_passed(db, job)
+    return job
 
 
 @router.patch("/{job_id}", response_model=JobRoleRead)
@@ -108,4 +114,56 @@ def generate_job_description(
     job.status = "ready_for_publishing"
     db.commit()
     db.refresh(job)
+    return job
+
+
+@router.post("/{job_id}/publish", response_model=JobRoleRead)
+def publish_job_platforms(
+    job_id: uuid.UUID,
+    payload: PublishPlatformsRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "admin")),
+):
+    """Final step of the create-job wizard.
+
+    Naukri.com and LinkedIn have no real posting API access (no business
+    partnership) -- checking those boxes only records intent below, it never
+    calls out to either site. Only "career_portal" is real: it's the one
+    flag that flips job_roles.status, which is what makes the job appear on
+    GET /public/jobs and /careers.
+    """
+    job = _get_job_or_404(db, job_id)
+    previous_status = job.status
+
+    job.published_platforms = {
+        "naukri": payload.naukri,
+        "linkedin": payload.linkedin,
+        "career_portal": payload.career_portal,
+    }
+    job.publish_settings = {
+        "email_notifications": payload.email_notifications,
+        "application_deadline": (
+            payload.application_deadline.isoformat() if payload.application_deadline else None
+        ),
+    }
+    if payload.posting_url_naukri is not None:
+        job.posting_url_naukri = payload.posting_url_naukri or None
+    if payload.posting_url_linkedin is not None:
+        job.posting_url_linkedin = payload.posting_url_linkedin or None
+    job.status = "published" if payload.career_portal else "ready_for_publishing"
+    db.commit()
+    db.refresh(job)
+
+    log_action(
+        db,
+        "job_role",
+        job.id,
+        "job_platforms_published",
+        "system",
+        {
+            "previous_status": previous_status,
+            "new_status": job.status,
+            "published_platforms": job.published_platforms,
+        },
+    )
     return job

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
 import WorkOutlineIcon from "@mui/icons-material/WorkOutline";
 import PeopleAltOutlinedIcon from "@mui/icons-material/PeopleAltOutlined";
 import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
@@ -37,6 +38,7 @@ interface ModuleLink {
 }
 
 const MODULES: ModuleLink[] = [
+  { label: "Overview", path: "/", icon: DashboardOutlinedIcon },
   { label: "Jobs", path: "/jobs", icon: WorkOutlineIcon },
   { label: "Candidates", path: "/candidates", icon: PeopleAltOutlinedIcon },
   { label: "Screening", path: "/screening", icon: FactCheckOutlinedIcon },
@@ -96,6 +98,7 @@ export default function AppLayout() {
               key={path}
               component={NavLink}
               to={path}
+              end={path === "/"}
               sx={{
                 "&.active": {
                   backgroundColor: "action.selected",

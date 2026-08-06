@@ -6,6 +6,16 @@ from app.models.audit_log import AuditLog
 from app.models.candidate import Candidate
 from app.models.job_role import JobRole
 
+_NOW = datetime.now(timezone.utc)
+# A timestamp guaranteed to fall in the *previous* calendar month regardless of
+# what day-of-month the test happens to run on (day 15 avoids any month-length
+# edge cases that "now minus N days" could accidentally land back in this month).
+_PREVIOUS_MONTH = (
+    datetime(_NOW.year - 1, 12, 15, tzinfo=timezone.utc)
+    if _NOW.month == 1
+    else datetime(_NOW.year, _NOW.month - 1, 15, tzinfo=timezone.utc)
+)
+
 _BASE_TIME = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
 
 
@@ -50,6 +60,10 @@ def _make_audit_entry(db_session, entity_type, entity_id, action, actor="system"
 
 def _by_status_map(body):
     return {row["status"]: row["count"] for row in body["by_status"]}
+
+
+def _labeled_map(rows):
+    return {row["label"]: row["count"] for row in rows}
 
 
 # --- /reports/pipeline ---
@@ -301,3 +315,95 @@ def test_timeline_empty_for_application_with_no_audit_entries(client, db_session
 def test_timeline_not_found(client):
     response = client.get(f"/applications/{uuid.uuid4()}/timeline")
     assert response.status_code == 404
+
+
+# --- /reports/jobs-dashboard-stats ---
+
+
+def test_jobs_dashboard_stats_counts_jobs_and_applications(client, db_session):
+    # Delta against a before-snapshot: this endpoint has no filter, so it aggregates
+    # over every job/application already in the database, not just this test's rows.
+    before = client.get("/reports/jobs-dashboard-stats").json()
+
+    _make_job(db_session, status="draft")
+    published1 = _make_job(db_session, status="published", positions_count=3)
+    published2 = _make_job(db_session, status="published", positions_count=2)
+    candidate = _make_candidate(db_session)
+    _make_application(db_session, published1, candidate, status="received")
+    _make_application(db_session, published1, candidate, status="hr_selected")
+    _make_application(db_session, published2, candidate, status="screened")
+
+    after = client.get("/reports/jobs-dashboard-stats").json()
+
+    assert after["total_jobs"] - before["total_jobs"] == 3
+    assert after["active_jobs"] - before["active_jobs"] == 2
+    assert after["open_positions"] - before["open_positions"] == 5
+    assert after["total_applications"] - before["total_applications"] == 3
+
+
+def test_jobs_dashboard_stats_department_and_location_breakdown(client, db_session):
+    before = client.get("/reports/jobs-dashboard-stats").json()
+    before_dept = _labeled_map(before["by_department"])
+    before_loc = _labeled_map(before["by_location"])
+
+    _make_job(db_session, department="Engineering", location="Chennai")
+    _make_job(db_session, department=None, location="Chennai")
+
+    after = client.get("/reports/jobs-dashboard-stats").json()
+    after_dept = _labeled_map(after["by_department"])
+    after_loc = _labeled_map(after["by_location"])
+
+    assert after_dept.get("Engineering", 0) - before_dept.get("Engineering", 0) == 1
+    assert after_dept.get("Unspecified", 0) - before_dept.get("Unspecified", 0) == 1
+    assert after_loc.get("Chennai", 0) - before_loc.get("Chennai", 0) == 2
+
+
+def test_jobs_dashboard_stats_hires_this_month_and_avg_time_to_hire(client, db_session):
+    before = client.get("/reports/jobs-dashboard-stats").json()
+    hires_before = before["hires_this_month"]
+    avg_before = before["avg_time_to_hire_days"]
+
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+
+    # Two applications "completed" this month with known, exact time-to-hire.
+    app_a = _make_application(
+        db_session, job, candidate, status="onboarding_completed",
+        created_at=_NOW - timedelta(days=100),
+    )
+    app_b = _make_application(
+        db_session, job, candidate, status="onboarding_completed",
+        created_at=_NOW - timedelta(days=200),
+    )
+    _make_audit_entry(db_session, "application", app_a.id, "onboarding_completed", created_at=_NOW)
+    _make_audit_entry(db_session, "application", app_b.id, "onboarding_completed", created_at=_NOW)
+
+    # A third completion, but recorded last month -- must be excluded from both
+    # this month's hire count and the time-to-hire average.
+    app_c = _make_application(
+        db_session, job, candidate, status="onboarding_completed",
+        created_at=_PREVIOUS_MONTH - timedelta(days=5),
+    )
+    _make_audit_entry(
+        db_session, "application", app_c.id, "onboarding_completed", created_at=_PREVIOUS_MONTH
+    )
+
+    after = client.get("/reports/jobs-dashboard-stats").json()
+
+    assert after["hires_this_month"] - hires_before == 2
+
+    # Reconstruct the expected new average from the (already-rounded) before value,
+    # rather than assuming this month had zero prior completions -- robust against
+    # a shared, already-populated database.
+    prior_sum = (avg_before or 0) * hires_before
+    expected_avg = (prior_sum + 100.0 + 200.0) / (hires_before + 2)
+    assert abs(after["avg_time_to_hire_days"] - expected_avg) < 0.1
+
+
+def test_jobs_dashboard_stats_zero_hires_this_month_has_null_avg(client):
+    # Scoped to a brand new database would be ideal, but since this endpoint has no
+    # filter, just confirm the "no completions" shape is self-consistent: whenever
+    # hires_this_month is 0, avg_time_to_hire_days must be null, never a stray number.
+    body = client.get("/reports/jobs-dashboard-stats").json()
+    if body["hires_this_month"] == 0:
+        assert body["avg_time_to_hire_days"] is None

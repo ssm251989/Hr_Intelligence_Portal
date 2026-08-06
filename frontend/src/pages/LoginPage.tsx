@@ -23,7 +23,7 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const from = (location.state as { from?: string } | null)?.from || "/jobs";
+  const from = (location.state as { from?: string } | null)?.from || "/";
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();

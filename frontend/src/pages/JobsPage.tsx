@@ -6,31 +6,18 @@ import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
-import Dialog from "@mui/material/Dialog";
-import DialogActions from "@mui/material/DialogActions";
-import DialogContent from "@mui/material/DialogContent";
-import DialogTitle from "@mui/material/DialogTitle";
 import Grid from "@mui/material/Grid";
 import Stack from "@mui/material/Stack";
-import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 import { extractErrorMessage, jobsApi } from "../api/client";
-import type { JobRoleCreate, JobRoleRead } from "../api/types";
+import type { JobRoleRead } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
+import CreateJobWizard from "../components/CreateJobWizard";
+import JobsDashboardStats from "../components/JobsDashboardStats";
+import PostingLinksEditor from "../components/PostingLinksEditor";
 import StatusChip from "../components/StatusChip";
 import { ROLE_MATRIX } from "../auth/roles";
-
-const EMPTY_FORM = {
-  title: "",
-  department: "",
-  location: "",
-  experience_level: "",
-  skills: "",
-  salary_band_min: "",
-  salary_band_max: "",
-  positions_count: "1",
-};
 
 export default function JobsPage() {
   const { can } = useAuth();
@@ -39,10 +26,8 @@ export default function JobsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [creating, setCreating] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [dashboardRefreshSignal, setDashboardRefreshSignal] = useState(0);
 
   const [generatingId, setGeneratingId] = useState<string | null>(null);
 
@@ -63,36 +48,9 @@ export default function JobsPage() {
     loadJobs();
   }, []);
 
-  const handleCreate = async () => {
-    setFormError(null);
-    if (!form.title.trim()) {
-      setFormError("Title is required");
-      return;
-    }
-    const payload: JobRoleCreate = {
-      title: form.title.trim(),
-      department: form.department.trim() || null,
-      location: form.location.trim() || null,
-      experience_level: form.experience_level.trim() || null,
-      skills: form.skills.trim()
-        ? form.skills.split(",").map((skill) => skill.trim()).filter(Boolean)
-        : null,
-      salary_band_min: form.salary_band_min ? Number(form.salary_band_min) : null,
-      salary_band_max: form.salary_band_max ? Number(form.salary_band_max) : null,
-      positions_count: form.positions_count ? Number(form.positions_count) : 1,
-    };
-
-    setCreating(true);
-    try {
-      const created = await jobsApi.create(payload);
-      setJobs((prev) => [created, ...prev]);
-      setDialogOpen(false);
-      setForm(EMPTY_FORM);
-    } catch (err) {
-      setFormError(extractErrorMessage(err, "Failed to create job"));
-    } finally {
-      setCreating(false);
-    }
+  const handleJobPublished = () => {
+    loadJobs();
+    setDashboardRefreshSignal((s) => s + 1);
   };
 
   const handleGenerateJd = async (jobId: string) => {
@@ -113,11 +71,13 @@ export default function JobsPage() {
       <Stack direction="row" justifyContent="space-between" alignItems="center" mb={3}>
         <Typography variant="h4">Jobs</Typography>
         {canWrite && (
-          <Button variant="contained" onClick={() => setDialogOpen(true)}>
+          <Button variant="contained" onClick={() => setWizardOpen(true)}>
             Create Job
           </Button>
         )}
       </Stack>
+
+      <JobsDashboardStats refreshSignal={dashboardRefreshSignal} />
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
@@ -161,6 +121,14 @@ export default function JobsPage() {
                       : ""}
                   </Typography>
 
+                  <PostingLinksEditor
+                    job={job}
+                    canWrite={canWrite}
+                    onUpdated={(updated) =>
+                      setJobs((prev) => prev.map((j) => (j.id === updated.id ? updated : j)))
+                    }
+                  />
+
                   {canWrite && (
                     <Box mt={2}>
                       <Button
@@ -194,74 +162,11 @@ export default function JobsPage() {
         </Grid>
       )}
 
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle>Create Job</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} mt={1}>
-            {formError && <Alert severity="error">{formError}</Alert>}
-            <TextField
-              label="Title"
-              required
-              value={form.title}
-              onChange={(e) => setForm({ ...form, title: e.target.value })}
-              fullWidth
-            />
-            <TextField
-              label="Department"
-              value={form.department}
-              onChange={(e) => setForm({ ...form, department: e.target.value })}
-              fullWidth
-            />
-            <TextField
-              label="Location"
-              value={form.location}
-              onChange={(e) => setForm({ ...form, location: e.target.value })}
-              fullWidth
-            />
-            <TextField
-              label="Experience level"
-              value={form.experience_level}
-              onChange={(e) => setForm({ ...form, experience_level: e.target.value })}
-              fullWidth
-            />
-            <TextField
-              label="Skills (comma-separated)"
-              value={form.skills}
-              onChange={(e) => setForm({ ...form, skills: e.target.value })}
-              fullWidth
-            />
-            <Stack direction="row" spacing={2}>
-              <TextField
-                label="Salary band min"
-                type="number"
-                value={form.salary_band_min}
-                onChange={(e) => setForm({ ...form, salary_band_min: e.target.value })}
-                fullWidth
-              />
-              <TextField
-                label="Salary band max"
-                type="number"
-                value={form.salary_band_max}
-                onChange={(e) => setForm({ ...form, salary_band_max: e.target.value })}
-                fullWidth
-              />
-            </Stack>
-            <TextField
-              label="Positions count"
-              type="number"
-              value={form.positions_count}
-              onChange={(e) => setForm({ ...form, positions_count: e.target.value })}
-              fullWidth
-            />
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={handleCreate} disabled={creating}>
-            {creating ? "Creating..." : "Create"}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <CreateJobWizard
+        open={wizardOpen}
+        onClose={() => setWizardOpen(false)}
+        onPublished={handleJobPublished}
+      />
     </Box>
   );
 }

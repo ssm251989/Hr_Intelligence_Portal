@@ -16,6 +16,7 @@ import type {
   JobRoleCreate,
   JobRoleRead,
   JobRoleUpdate,
+  JobsDashboardStatsResponse,
   JobSummaryResponse,
   OfferGenerateRequest,
   OfferRead,
@@ -23,6 +24,7 @@ import type {
   PipelineResponse,
   PublicApplicationSubmitResponse,
   PublicJobRead,
+  PublishPlatformsRequest,
   SalaryApprovalRequest,
   SalaryStatusResponse,
   ShortlistDecisionRequest,
@@ -162,6 +164,8 @@ export const jobsApi = {
   create: (payload: JobRoleCreate) => post<JobRoleRead>("/jobs", payload),
   update: (jobId: UUID, payload: JobRoleUpdate) => patch<JobRoleRead>(`/jobs/${jobId}`, payload),
   generateJd: (jobId: UUID) => post<JobRoleRead>(`/jobs/${jobId}/generate-jd`),
+  publishPlatforms: (jobId: UUID, payload: PublishPlatformsRequest) =>
+    post<JobRoleRead>(`/jobs/${jobId}/publish`, payload),
 };
 
 // ---- candidates ----
@@ -260,6 +264,7 @@ export const reportsApi = {
   pipeline: (jobRoleId?: UUID) =>
     get<PipelineResponse>(`/reports/pipeline${jobRoleId ? `?job_role_id=${jobRoleId}` : ""}`),
   jobSummary: (jobId: UUID) => get<JobSummaryResponse>(`/reports/jobs/${jobId}/summary`),
+  jobsDashboardStats: () => get<JobsDashboardStatsResponse>("/reports/jobs-dashboard-stats"),
   auditLog: (params: { entityType?: string; entityId?: UUID; action?: string; limit?: number; offset?: number } = {}) => {
     const query = new URLSearchParams();
     if (params.entityType) query.set("entity_type", params.entityType);

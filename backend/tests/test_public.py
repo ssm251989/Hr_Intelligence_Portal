@@ -28,6 +28,7 @@ def _make_job(db_session, title="Public QA Engineer", status="published", **kwar
         jd_text=kwargs.get("jd_text", "We are hiring a QA engineer..."),
         salary_band_min=kwargs.get("salary_band_min", 900000),
         salary_band_max=kwargs.get("salary_band_max", 1400000),
+        publish_settings=kwargs.get("publish_settings", {}),
     )
     db_session.add(job)
     db_session.commit()
@@ -266,3 +267,69 @@ def test_other_endpoints_still_require_authentication(anonymous_client):
     assert anonymous_client.get("/jobs").status_code == 401
     assert anonymous_client.get("/candidates").status_code == 401
     assert anonymous_client.get("/applications").status_code == 401
+
+
+# --- application deadline enforcement -------------------------------------------
+
+
+def test_list_public_jobs_excludes_job_past_deadline(anonymous_client, db_session):
+    _make_job(
+        db_session, title="Expired Role", status="published",
+        publish_settings={"application_deadline": "2020-01-01"},
+    )
+    _make_job(
+        db_session, title="Still Open Role", status="published",
+        publish_settings={"application_deadline": "2099-01-01"},
+    )
+
+    response = anonymous_client.get("/public/jobs")
+
+    titles = [job["title"] for job in response.json()]
+    assert "Expired Role" not in titles
+    assert "Still Open Role" in titles
+
+
+def test_get_public_job_detail_past_deadline_returns_404(anonymous_client, db_session):
+    job = _make_job(
+        db_session, title="Expired Detail Role", status="published",
+        publish_settings={"application_deadline": "2020-01-01"},
+    )
+
+    response = anonymous_client.get(f"/public/jobs/{job.id}")
+
+    assert response.status_code == 404
+
+
+def test_submit_application_past_deadline_returns_400_not_404(anonymous_client, db_session):
+    job = _make_job(
+        db_session, title="Expired Apply Role", status="published",
+        publish_settings={"application_deadline": "2020-01-01"},
+    )
+    resume_bytes = _make_docx_bytes("Late Applicant")
+
+    response = anonymous_client.post(
+        "/public/apply",
+        data={"job_id": str(job.id), "full_name": "Late Applicant", "email": "late@example.com"},
+        files={"resume": ("resume.docx", resume_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+    )
+
+    # Distinct from the generic "not found" 404 used for jobs that were never
+    # published -- the job existed and was open, it just closed on its deadline.
+    assert response.status_code == 400
+    assert "deadline" in response.json()["detail"].lower()
+
+
+def test_submit_application_before_deadline_still_succeeds(anonymous_client, db_session):
+    job = _make_job(
+        db_session, title="Open Apply Role", status="published",
+        publish_settings={"application_deadline": "2099-01-01"},
+    )
+    resume_bytes = _make_docx_bytes("On Time Applicant")
+
+    response = anonymous_client.post(
+        "/public/apply",
+        data={"job_id": str(job.id), "full_name": "On Time Applicant", "email": "ontime@example.com"},
+        files={"resume": ("resume.docx", resume_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+    )
+
+    assert response.status_code == 201

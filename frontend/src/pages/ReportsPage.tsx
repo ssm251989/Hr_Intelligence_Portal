@@ -128,7 +128,7 @@ function PipelineView({ jobs }: { jobs: JobRoleRead[] }) {
   );
 }
 
-function JobSummaryView({ jobs }: { jobs: JobRoleRead[] }) {
+export function JobSummaryView({ jobs }: { jobs: JobRoleRead[] }) {
   const [jobId, setJobId] = useState("");
   const [data, setData] = useState<JobSummaryResponse | null>(null);
   const [loading, setLoading] = useState(false);
