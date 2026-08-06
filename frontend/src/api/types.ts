@@ -104,6 +104,12 @@ export interface PublishPlatformsRequest {
   application_deadline?: string | null;
 }
 
+export interface JobFieldSuggestionsResponse {
+  departments: string[];
+  locations: string[];
+  skills: string[];
+}
+
 // ---- candidates ----
 
 export interface CandidateRead {

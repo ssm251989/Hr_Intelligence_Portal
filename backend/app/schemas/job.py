@@ -76,3 +76,9 @@ class PublishPlatformsRequest(BaseModel):
     # app/jobs/service.py close_job_if_deadline_passed).
     email_notifications: bool = False
     application_deadline: Optional[date] = None
+
+
+class JobFieldSuggestionsResponse(BaseModel):
+    departments: list[str]
+    locations: list[str]
+    skills: list[str]

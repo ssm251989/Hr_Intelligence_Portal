@@ -13,6 +13,7 @@ import type {
   InterviewFeedbackUpdate,
   InterviewQuestionsResponse,
   InterviewRead,
+  JobFieldSuggestionsResponse,
   JobRoleCreate,
   JobRoleRead,
   JobRoleUpdate,
@@ -166,6 +167,7 @@ export const jobsApi = {
   generateJd: (jobId: UUID) => post<JobRoleRead>(`/jobs/${jobId}/generate-jd`),
   publishPlatforms: (jobId: UUID, payload: PublishPlatformsRequest) =>
     post<JobRoleRead>(`/jobs/${jobId}/publish`, payload),
+  fieldSuggestions: () => get<JobFieldSuggestionsResponse>("/jobs/field-suggestions"),
 };
 
 // ---- candidates ----

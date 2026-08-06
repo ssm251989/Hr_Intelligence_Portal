@@ -10,7 +10,13 @@ from app.core.database import get_db
 from app.jobs.service import close_job_if_deadline_passed
 from app.models.job_role import JobRole
 from app.models.user import User
-from app.schemas.job import JobRoleCreate, JobRoleRead, JobRoleUpdate, PublishPlatformsRequest
+from app.schemas.job import (
+    JobFieldSuggestionsResponse,
+    JobRoleCreate,
+    JobRoleRead,
+    JobRoleUpdate,
+    PublishPlatformsRequest,
+)
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -68,6 +74,25 @@ def list_jobs(db: Session = Depends(get_db), current_user: User = Depends(get_cu
     for job in jobs:
         close_job_if_deadline_passed(db, job)
     return jobs
+
+
+@router.get("/field-suggestions", response_model=JobFieldSuggestionsResponse)
+def get_job_field_suggestions(
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    """Distinct department/location/skill values already in use, for the create-job
+    wizard's creatable dropdowns -- suggestions only, any free-text value is still
+    accepted (these fields have no fixed enum, unlike job status)."""
+    departments = sorted(
+        {row[0] for row in db.query(JobRole.department).filter(JobRole.department.isnot(None)).distinct().all() if row[0]}
+    )
+    locations = sorted(
+        {row[0] for row in db.query(JobRole.location).filter(JobRole.location.isnot(None)).distinct().all() if row[0]}
+    )
+    skill_lists = db.query(JobRole.skills).filter(JobRole.skills.isnot(None)).all()
+    skills = sorted({skill for (row,) in skill_lists if row for skill in row})
+
+    return JobFieldSuggestionsResponse(departments=departments, locations=locations, skills=skills)
 
 
 @router.get("/{job_id}", response_model=JobRoleRead)

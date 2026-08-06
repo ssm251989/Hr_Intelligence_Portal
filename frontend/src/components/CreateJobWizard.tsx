@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import Alert from "@mui/material/Alert";
+import Autocomplete from "@mui/material/Autocomplete";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
@@ -19,7 +20,9 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 import { extractErrorMessage, integrationsApi, jobsApi } from "../api/client";
-import type { JobRoleRead } from "../api/types";
+import type { JobFieldSuggestionsResponse, JobRoleRead } from "../api/types";
+
+const EMPTY_SUGGESTIONS: JobFieldSuggestionsResponse = { departments: [], locations: [], skills: [] };
 
 const STEPS = [
   "Job Details",
@@ -37,7 +40,7 @@ const EMPTY_STATE = {
   experienceLevel: "",
   positionsCount: "1",
   jdText: "",
-  skillsInput: "",
+  skills: [] as string[],
   salaryMin: "",
   salaryMax: "",
   benefits: "",
@@ -67,6 +70,7 @@ export default function CreateJobWizard({ open, onClose, onPublished }: Props) {
   const [stepError, setStepError] = useState<string | null>(null);
   const [published, setPublished] = useState<JobRoleRead | null>(null);
   const [googleConnected, setGoogleConnected] = useState<boolean | null>(null);
+  const [suggestions, setSuggestions] = useState<JobFieldSuggestionsResponse>(EMPTY_SUGGESTIONS);
 
   useEffect(() => {
     if (!open) return;
@@ -74,6 +78,10 @@ export default function CreateJobWizard({ open, onClose, onPublished }: Props) {
       .googleStatus()
       .then((status) => setGoogleConnected(status.connected))
       .catch(() => setGoogleConnected(false));
+    jobsApi
+      .fieldSuggestions()
+      .then(setSuggestions)
+      .catch(() => setSuggestions(EMPTY_SUGGESTIONS));
   }, [open]);
 
   const set = <K extends keyof typeof EMPTY_STATE>(key: K, value: (typeof EMPTY_STATE)[K]) =>
@@ -105,7 +113,7 @@ export default function CreateJobWizard({ open, onClose, onPublished }: Props) {
       return null;
     }
     if (step === 2) {
-      if (!form.skillsInput.trim()) return "Add at least one required skill";
+      if (form.skills.length === 0) return "Add at least one required skill";
       return null;
     }
     if (step === 3) {
@@ -158,8 +166,7 @@ export default function CreateJobWizard({ open, onClose, onPublished }: Props) {
           setJob(updated);
         }
       } else if (activeStep === 2) {
-        const skills = form.skillsInput.split(",").map((s) => s.trim()).filter(Boolean);
-        const updated = await jobsApi.update(jobId!, { skills });
+        const updated = await jobsApi.update(jobId!, { skills: form.skills });
         setJob(updated);
       } else if (activeStep === 3) {
         const updated = await jobsApi.update(jobId!, {
@@ -220,8 +227,20 @@ export default function CreateJobWizard({ open, onClose, onPublished }: Props) {
         return (
           <Stack spacing={2} mt={1}>
             <TextField label="Title" required value={form.title} onChange={(e) => set("title", e.target.value)} fullWidth autoFocus />
-            <TextField label="Department" value={form.department} onChange={(e) => set("department", e.target.value)} fullWidth />
-            <TextField label="Location" value={form.location} onChange={(e) => set("location", e.target.value)} fullWidth />
+            <Autocomplete
+              freeSolo
+              options={suggestions.departments}
+              value={form.department}
+              onInputChange={(_e, value) => set("department", value)}
+              renderInput={(params) => <TextField {...params} label="Department" fullWidth />}
+            />
+            <Autocomplete
+              freeSolo
+              options={suggestions.locations}
+              value={form.location}
+              onInputChange={(_e, value) => set("location", value)}
+              renderInput={(params) => <TextField {...params} label="Location" fullWidth />}
+            />
             <TextField
               label="Experience level"
               value={form.experienceLevel}
@@ -259,12 +278,21 @@ export default function CreateJobWizard({ open, onClose, onPublished }: Props) {
       case 2:
         return (
           <Stack spacing={2} mt={1}>
-            <TextField
-              label="Skills (comma-separated)"
-              value={form.skillsInput}
-              onChange={(e) => set("skillsInput", e.target.value)}
-              helperText="e.g. Python, SQL, AWS"
-              fullWidth
+            <Autocomplete
+              multiple
+              freeSolo
+              options={suggestions.skills}
+              value={form.skills}
+              onChange={(_e, value) => set("skills", value)}
+              renderTags={(selected, getTagProps) =>
+                selected.map((skill, index) => {
+                  const { key, ...tagProps } = getTagProps({ index });
+                  return <Chip key={key} label={skill} size="small" {...tagProps} />;
+                })
+              }
+              renderInput={(params) => (
+                <TextField {...params} label="Skills" helperText="Pick an existing skill or type a new one and press Enter" />
+              )}
             />
           </Stack>
         );
@@ -331,9 +359,9 @@ export default function CreateJobWizard({ open, onClose, onPublished }: Props) {
           Positions: {form.positionsCount}
           {form.salaryMin && form.salaryMax ? ` · Salary band: ${form.salaryMin} - ${form.salaryMax}` : ""}
         </Typography>
-        {form.skillsInput && (
+        {form.skills.length > 0 && (
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap mt={0.5}>
-            {form.skillsInput.split(",").map((s) => s.trim()).filter(Boolean).map((skill) => (
+            {form.skills.map((skill) => (
               <Chip key={skill} label={skill} size="small" variant="outlined" />
             ))}
           </Stack>

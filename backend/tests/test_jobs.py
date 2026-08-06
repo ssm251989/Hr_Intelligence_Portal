@@ -156,6 +156,37 @@ def test_publish_not_found(client):
     assert response.status_code == 404
 
 
+# --- /jobs/field-suggestions ---
+
+
+def test_field_suggestions_returns_distinct_deduped_sorted_values(client, db_session):
+    before = client.get("/jobs/field-suggestions").json()
+
+    _make_job(db_session, department="Engineering", location="Chennai", skills=["Python", "SQL"])
+    _make_job(db_session, department="Engineering", location="Remote", skills=["Python", "AWS"])
+    _make_job(db_session, department=None, location=None, skills=None)
+
+    after = client.get("/jobs/field-suggestions").json()
+
+    # Subset checks, not exact-set equality: this endpoint aggregates over every job
+    # already in the shared database, which may already contain overlapping values
+    # (e.g. "Python" from an unrelated real job) -- only assert what this test itself added.
+    assert {"Engineering"}.issubset(set(after["departments"]))
+    assert {"Chennai", "Remote"}.issubset(set(after["locations"]))
+    assert {"Python", "SQL", "AWS"}.issubset(set(after["skills"]))
+    # Deduped -- "Engineering" appears on two jobs above but only once in the response.
+    assert after["departments"].count("Engineering") == 1
+    assert after["departments"] == sorted(after["departments"])
+
+
+def test_field_suggestions_route_not_shadowed_by_job_id_route(client):
+    # /jobs/field-suggestions must resolve to this endpoint, not attempt to parse
+    # "field-suggestions" as a job_id UUID on the /jobs/{job_id} route.
+    response = client.get("/jobs/field-suggestions")
+    assert response.status_code == 200
+    assert set(response.json().keys()) == {"departments", "locations", "skills"}
+
+
 # --- application deadline enforcement (lazy, on read) ---
 
 
