@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from app.ai_services.interview_question_generator import InterviewQuestionGenerationError
 from app.core.crypto import encrypt
 from app.integrations.google_calendar import GoogleCalendarError
 from app.models.application import Application
@@ -265,6 +266,23 @@ def test_generate_interview_questions_without_jd_returns_400(client, db_session)
     assert response.status_code == 400
 
 
+def test_generate_interview_questions_ai_failure_returns_502(client, db_session, monkeypatch):
+    def fake_generate_interview_questions(jd_text, missing_skills):
+        raise InterviewQuestionGenerationError("Failed to generate interview questions: AI service timed out")
+
+    monkeypatch.setattr(
+        "app.scheduling.router.generate_interview_questions", fake_generate_interview_questions
+    )
+
+    job = _make_job(db_session, jd_text="We need a backend engineer skilled in Python and Kubernetes.")
+    candidate = _make_candidate(db_session)
+    application = _make_application(db_session, job, candidate, missing_skills=["Kubernetes"])
+
+    response = client.post(f"/applications/{application.id}/interview-questions")
+
+    assert response.status_code == 502
+
+
 def test_generate_interview_questions_application_not_found(client):
     response = client.post(f"/applications/{uuid.uuid4()}/interview-questions")
     assert response.status_code == 404
@@ -345,6 +363,43 @@ def test_schedule_interview_with_connected_calendar_creates_real_event(client, d
     # The stored refresh token was decrypted before being handed to the calendar client.
     assert captured["refresh_token"] == "refresh-token"
     assert captured["kwargs"]["attendee_emails"] == [interviewer.email]
+
+
+def test_schedule_interview_with_corrupted_google_token_falls_back_to_manual_link(client, db_session):
+    # A corrupted/invalid stored refresh token must not surface as a raw 500 -- it should
+    # hit the same "never blocks scheduling" fallback as any other calendar failure.
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application(db_session, job, candidate, status="hr_selected")
+    interviewer = _make_interviewer(db_session)
+    integration = UserIntegration(
+        user_id=interviewer.id, provider="google", refresh_token="not-a-valid-fernet-token"
+    )
+    db_session.add(integration)
+    db_session.commit()
+
+    scheduled_at = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()
+    response = client.post(
+        f"/applications/{application.id}/interviews",
+        json={
+            "interviewer_id": str(interviewer.id),
+            "scheduled_at": scheduled_at,
+            "meeting_link": "https://meet.example.com/manual",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["meeting_link"] == "https://meet.example.com/manual"
+    assert body["calendar_event_id"] is None
+    assert body["calendar_link"] is None
+
+    audit_entry = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.action == "calendar_event_creation_failed", AuditLog.entity_id == application.id)
+        .one_or_none()
+    )
+    assert audit_entry is not None
 
 
 def test_schedule_interview_calendar_failure_falls_back_to_manual_link(client, db_session, monkeypatch):

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.ai_services.resume_parser import parse_resume
+from app.ai_services.resume_parser import ResumeParsingError, parse_resume
 from app.audit.service import log_action
 from app.auth.dependencies import get_current_user, require_roles
 from app.candidates.resume_extraction import (
@@ -133,4 +133,6 @@ def parse_candidate_resume(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except (UnsupportedFileTypeError, ResumeExtractionError) as exc:
         raise HTTPException(status_code=400, detail=f"Could not read resume: {exc}") from exc
+    except ResumeParsingError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     return candidate

@@ -18,6 +18,10 @@ SYSTEM_PROMPT = (
 _client: Anthropic | None = None
 
 
+class ResumeMatchError(Exception):
+    """Raised when the AI resume-matching call fails or returns unusable output."""
+
+
 class ResumeMatchOutput(BaseModel):
     match_score: int
     skill_match_pct: int
@@ -35,11 +39,14 @@ def _get_client() -> Anthropic:
 def match_resume(jd_text: str, parsed_fields: dict) -> dict:
     client = _get_client()
     user_prompt = f"JD: {jd_text}\nParsed resume: {parsed_fields}"
-    response = client.messages.parse(
-        model=MODEL,
-        max_tokens=1024,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_prompt}],
-        output_format=ResumeMatchOutput,
-    )
+    try:
+        response = client.messages.parse(
+            model=MODEL,
+            max_tokens=1024,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_prompt}],
+            output_format=ResumeMatchOutput,
+        )
+    except Exception as exc:
+        raise ResumeMatchError(f"Failed to match resume against job description: {exc}") from exc
     return response.parsed_output.model_dump()

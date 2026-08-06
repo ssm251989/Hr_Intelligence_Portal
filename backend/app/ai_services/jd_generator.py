@@ -15,6 +15,10 @@ SYSTEM_PROMPT = (
 _client: Anthropic | None = None
 
 
+class JDGenerationError(Exception):
+    """Raised when the AI job-description generation call fails or returns unusable output."""
+
+
 class JDOutput(BaseModel):
     title: str
     summary: str
@@ -45,11 +49,14 @@ def _build_user_prompt(inputs: dict) -> str:
 
 def generate_jd(inputs: dict) -> dict:
     client = _get_client()
-    response = client.messages.parse(
-        model=MODEL,
-        max_tokens=4096,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": _build_user_prompt(inputs)}],
-        output_format=JDOutput,
-    )
+    try:
+        response = client.messages.parse(
+            model=MODEL,
+            max_tokens=4096,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": _build_user_prompt(inputs)}],
+            output_format=JDOutput,
+        )
+    except Exception as exc:
+        raise JDGenerationError(f"Failed to generate job description: {exc}") from exc
     return response.parsed_output.model_dump()

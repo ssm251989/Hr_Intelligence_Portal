@@ -15,6 +15,10 @@ SYSTEM_PROMPT = (
 _client: Anthropic | None = None
 
 
+class InterviewQuestionGenerationError(Exception):
+    """Raised when the AI interview-question generation call fails or returns unusable output."""
+
+
 class InterviewQuestionsOutput(BaseModel):
     technical_questions: list[str]
     behavioral_questions: list[str]
@@ -31,11 +35,14 @@ def _get_client() -> Anthropic:
 def generate_interview_questions(jd_text: str, missing_skills: list[str]) -> dict:
     client = _get_client()
     user_prompt = f"JD: {jd_text}\nCandidate missing skills: {missing_skills}"
-    response = client.messages.parse(
-        model=MODEL,
-        max_tokens=1536,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_prompt}],
-        output_format=InterviewQuestionsOutput,
-    )
+    try:
+        response = client.messages.parse(
+            model=MODEL,
+            max_tokens=1536,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_prompt}],
+            output_format=InterviewQuestionsOutput,
+        )
+    except Exception as exc:
+        raise InterviewQuestionGenerationError(f"Failed to generate interview questions: {exc}") from exc
     return response.parsed_output.model_dump()

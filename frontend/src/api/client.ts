@@ -187,6 +187,7 @@ export const schedulingApi = {
 
 export const salaryApi = {
   validate: (applicationId: UUID) => post<ApplicationRead>(`/applications/${applicationId}/validate-salary`),
+  confirm: (applicationId: UUID) => post<ApplicationRead>(`/applications/${applicationId}/salary/confirm`),
   approve: (applicationId: UUID, payload: SalaryApprovalRequest) =>
     post<ApplicationRead>(`/applications/${applicationId}/approve-salary`, payload),
   status: (applicationId: UUID) => get<SalaryStatusResponse>(`/applications/${applicationId}/salary-status`),

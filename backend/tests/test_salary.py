@@ -105,6 +105,47 @@ def test_validate_salary_not_found(client):
     assert response.status_code == 404
 
 
+def test_confirm_salary_transitions_salary_ok_to_salary_approved(client, db_session):
+    job = _make_job(db_session, 800000, 1200000)
+    candidate = _make_candidate(db_session)
+    application = _make_application(db_session, job, candidate, status="salary_ok", expected_salary=1000000)
+
+    response = client.post(f"/applications/{application.id}/salary/confirm")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "salary_approved"
+    assert body["approved_salary"] == 1000000.0
+    assert body["expected_salary"] == 1000000.0
+
+    audit_entry = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.entity_id == application.id, AuditLog.action == "salary_confirmed")
+        .one_or_none()
+    )
+    assert audit_entry is not None
+    assert audit_entry.details["previous_status"] == "salary_ok"
+    assert audit_entry.details["new_status"] == "salary_approved"
+    assert audit_entry.details["approved_salary"] == 1000000.0
+
+
+def test_confirm_salary_wrong_status_returns_400(client, db_session):
+    job = _make_job(db_session, 800000, 1200000)
+    candidate = _make_candidate(db_session)
+    application = _make_application(
+        db_session, job, candidate, status="salary_above_band", expected_salary=1500000
+    )
+
+    response = client.post(f"/applications/{application.id}/salary/confirm")
+
+    assert response.status_code == 400
+
+
+def test_confirm_salary_not_found(client):
+    response = client.post(f"/applications/{uuid.uuid4()}/salary/confirm")
+    assert response.status_code == 404
+
+
 def test_approve_salary_approve_with_override(client, db_session):
     job = _make_job(db_session, 800000, 1200000)
     candidate = _make_candidate(db_session)

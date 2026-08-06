@@ -50,6 +50,14 @@ def test_register_rejects_invalid_role(anonymous_client):
     assert response.status_code == 422
 
 
+def test_register_rejects_admin_role(anonymous_client):
+    response = anonymous_client.post(
+        "/auth/register",
+        json={"email": "wannabe-admin@example.com", "password": "supersecret123", "role": "admin"},
+    )
+    assert response.status_code == 422
+
+
 def test_login_returns_access_token(anonymous_client):
     anonymous_client.post(
         "/auth/register",
@@ -57,7 +65,7 @@ def test_login_returns_access_token(anonymous_client):
             "email": "login-test@example.com",
             "password": "supersecret123",
             "full_name": "Login Test",
-            "role": "admin",
+            "role": "recruiter",
         },
     )
 
@@ -107,7 +115,7 @@ def test_login_rejects_wrong_password(anonymous_client):
             "email": "wrongpw@example.com",
             "password": "supersecret123",
             "full_name": "Wrong Password",
-            "role": "admin",
+            "role": "recruiter",
         },
     )
 
@@ -143,6 +151,20 @@ def test_protected_route_rejects_expired_token(anonymous_client):
     )
 
     response = anonymous_client.get("/jobs", headers={"Authorization": f"Bearer {expired_token}"})
+
+    assert response.status_code == 401
+
+
+def test_token_with_malformed_sub_claim_is_rejected(anonymous_client):
+    # A token can decode successfully but carry a `sub` that isn't a valid UUID at all
+    # (e.g. a forged/tampered token) -- this must be a clean 401, not a raw 500.
+    malformed_token = jwt.encode(
+        {"sub": "not-a-uuid", "exp": datetime.now(timezone.utc) + timedelta(minutes=5)},
+        settings.SECRET_KEY,
+        algorithm=settings.ALGORITHM,
+    )
+
+    response = anonymous_client.get("/jobs", headers={"Authorization": f"Bearer {malformed_token}"})
 
     assert response.status_code == 401
 

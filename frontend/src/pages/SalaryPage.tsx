@@ -191,6 +191,19 @@ export default function SalaryPage() {
     await refreshOne(applicationId, updated);
   };
 
+  const handleConfirm = async (applicationId: string) => {
+    setActionId(applicationId);
+    setError(null);
+    try {
+      const updated = await salaryApi.confirm(applicationId);
+      await refreshOne(applicationId, updated);
+    } catch (err) {
+      setError(err instanceof ApiError ? String(err.detail) : "Failed to confirm salary");
+    } finally {
+      setActionId(null);
+    }
+  };
+
   const candidateLabel = (candidateId: string) => {
     const candidate = candidates[candidateId];
     return candidate?.parsed_fields?.full_name || candidate?.full_name || `Candidate ${candidateId.slice(0, 8)}`;
@@ -267,6 +280,16 @@ export default function SalaryPage() {
                           disabled={actionId === app.id}
                         >
                           {actionId === app.id ? "Validating..." : "Validate Salary"}
+                        </Button>
+                      )}
+                      {app.status === "salary_ok" && (
+                        <Button
+                          size="small"
+                          variant="contained"
+                          onClick={() => handleConfirm(app.id)}
+                          disabled={actionId === app.id}
+                        >
+                          {actionId === app.id ? "Confirming..." : "Confirm Salary"}
                         </Button>
                       )}
                     </Stack>

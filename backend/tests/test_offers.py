@@ -1,5 +1,6 @@
 import uuid
 
+from app.ai_services.offer_letter_generator import OfferLetterGenerationError
 from app.core.crypto import encrypt
 from app.integrations.docusign import DocuSignError
 from app.models.application import Application
@@ -171,6 +172,24 @@ def test_generate_offer_missing_candidate_name_returns_400(client, db_session):
     )
 
     assert response.status_code == 400
+
+
+def test_generate_offer_ai_failure_returns_502(client, db_session, monkeypatch):
+    def fake_generate_offer_letter(**kwargs):
+        raise OfferLetterGenerationError("Failed to generate offer letter: AI service timed out")
+
+    monkeypatch.setattr("app.offers.router.generate_offer_letter", fake_generate_offer_letter)
+
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application(db_session, job, candidate, status="bgv_cleared", approved_salary=1300000)
+
+    response = client.post(
+        f"/applications/{application.id}/offer/generate",
+        json={"start_date": "2026-09-01"},
+    )
+
+    assert response.status_code == 502
 
 
 def test_generate_offer_not_found(client):
@@ -543,6 +562,39 @@ def test_generate_offer_docusign_failure_falls_back_gracefully(client, db_sessio
     assert audit_entry is not None
 
 
+def test_generate_offer_corrupted_docusign_token_falls_back_gracefully(client, db_session, monkeypatch):
+    # A corrupted/invalid stored refresh token must not surface as a raw 500 -- it should
+    # hit the same "never blocks offer generation" fallback as any other DocuSign failure.
+    monkeypatch.setattr("app.offers.router.generate_offer_letter", lambda **kwargs: FAKE_OFFER_RESULT)
+
+    admin = _get_test_admin(db_session)
+    integration = UserIntegration(user_id=admin.id, provider="docusign", refresh_token="not-a-valid-fernet-token")
+    db_session.add(integration)
+    db_session.commit()
+
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session, email="jane@example.com")
+    application = _make_application(db_session, job, candidate, status="bgv_cleared", approved_salary=1300000)
+
+    response = client.post(
+        f"/applications/{application.id}/offer/generate",
+        json={"start_date": "2026-09-01"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["docusign_envelope_id"] is None
+
+    db_session.refresh(application)
+    assert application.status == "offer_sent"
+
+    audit_entry = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.action == "docusign_envelope_creation_failed", AuditLog.entity_id == application.id)
+        .one_or_none()
+    )
+    assert audit_entry is not None
+
+
 # --- DocuSign status check on /offer/mark-signed -----------------------------
 
 
@@ -639,6 +691,23 @@ def test_mark_offer_signed_real_envelope_api_error_returns_502(client, db_sessio
         raise DocuSignError("DocuSign API is down")
 
     monkeypatch.setattr("app.offers.router.get_envelope_status", fake_get_envelope_status)
+
+    response = client.post(f"/applications/{application.id}/offer/mark-signed", json={})
+
+    assert response.status_code == 502
+
+
+def test_mark_offer_signed_corrupted_docusign_token_returns_502(client, db_session):
+    # A corrupted/invalid stored refresh token should surface as a clean 502, not a raw 500.
+    admin = _get_test_admin(db_session)
+    integration = UserIntegration(user_id=admin.id, provider="docusign", refresh_token="not-a-valid-fernet-token")
+    db_session.add(integration)
+    db_session.commit()
+
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application(db_session, job, candidate, status="offer_sent")
+    _make_offer(db_session, application, docusign_envelope_id="env-real-123", docusign_sender_id=admin.id)
 
     response = client.post(f"/applications/{application.id}/offer/mark-signed", json={})
 

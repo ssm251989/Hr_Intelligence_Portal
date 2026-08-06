@@ -19,6 +19,10 @@ SYSTEM_PROMPT = (
 _client: Anthropic | None = None
 
 
+class CandidateRankingError(Exception):
+    """Raised when the AI candidate-ranking call fails or returns unusable output."""
+
+
 class CandidateRankingOutput(BaseModel):
     composite_score: int
     rank_rationale: str
@@ -41,11 +45,14 @@ def rank_candidate(jd_text: str, match_data: dict, interview_feedback: Optional[
         f"Resume match data: {match_data}\n"
         f"Interview feedback (if any): {interview_feedback or 'none'}"
     )
-    response = client.messages.parse(
-        model=MODEL,
-        max_tokens=1536,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_prompt}],
-        output_format=CandidateRankingOutput,
-    )
+    try:
+        response = client.messages.parse(
+            model=MODEL,
+            max_tokens=1536,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_prompt}],
+            output_format=CandidateRankingOutput,
+        )
+    except Exception as exc:
+        raise CandidateRankingError(f"Failed to rank candidate: {exc}") from exc
     return response.parsed_output.model_dump()

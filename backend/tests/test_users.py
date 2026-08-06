@@ -36,3 +36,38 @@ def test_list_users_filters_by_role(client, db_session):
 def test_list_users_requires_authentication(anonymous_client):
     response = anonymous_client.get("/users")
     assert response.status_code == 401
+
+
+def test_admin_can_create_admin_user(client):
+    response = client.post(
+        "/users",
+        json={"email": "new-admin@example.com", "password": "supersecret123", "role": "admin"},
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["email"] == "new-admin@example.com"
+    assert body["role"] == "admin"
+
+
+def test_non_admin_cannot_create_user(anonymous_client, make_auth_headers):
+    headers = make_auth_headers(role="recruiter", email="recruiter-cant-create@example.com")
+
+    response = anonymous_client.post(
+        "/users",
+        json={"email": "sneaky-admin@example.com", "password": "supersecret123", "role": "admin"},
+        headers=headers,
+    )
+
+    assert response.status_code == 403
+
+
+def test_create_user_rejects_duplicate_email(client, db_session):
+    _make_user(db_session, "dupe-create@example.com", "recruiter")
+
+    response = client.post(
+        "/users",
+        json={"email": "dupe-create@example.com", "password": "supersecret123", "role": "recruiter"},
+    )
+
+    assert response.status_code == 400

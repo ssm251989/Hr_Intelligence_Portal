@@ -3,7 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.ai_services.jd_generator import generate_jd
+from app.ai_services.jd_generator import JDGenerationError, generate_jd
 from app.audit.service import log_action
 from app.auth.dependencies import get_current_user, require_roles
 from app.core.database import get_db
@@ -89,17 +89,20 @@ def generate_job_description(
     current_user: User = Depends(require_roles("recruiter", "admin")),
 ):
     job = _get_job_or_404(db, job_id)
-    result = generate_jd(
-        {
-            "title": job.title,
-            "department": job.department,
-            "location": job.location,
-            "experience_level": job.experience_level,
-            "skills": job.skills,
-            "salary_band_min": job.salary_band_min,
-            "salary_band_max": job.salary_band_max,
-        }
-    )
+    try:
+        result = generate_jd(
+            {
+                "title": job.title,
+                "department": job.department,
+                "location": job.location,
+                "experience_level": job.experience_level,
+                "skills": job.skills,
+                "salary_band_min": job.salary_band_min,
+                "salary_band_max": job.salary_band_max,
+            }
+        )
+    except JDGenerationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     log_action(db, "job_role", job.id, "ai_jd_generator_scored", "system", result)
     job.jd_text = _render_jd_text(result)
     job.status = "ready_for_publishing"

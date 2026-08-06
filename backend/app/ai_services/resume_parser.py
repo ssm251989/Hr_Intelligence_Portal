@@ -16,6 +16,10 @@ SYSTEM_PROMPT = (
 _client: Anthropic | None = None
 
 
+class ResumeParsingError(Exception):
+    """Raised when the AI resume-parsing call fails or returns unusable output."""
+
+
 class EducationItem(BaseModel):
     degree: Optional[str] = None
     institution: Optional[str] = None
@@ -48,11 +52,14 @@ def _get_client() -> Anthropic:
 
 def parse_resume(raw_resume_text: str) -> dict:
     client = _get_client()
-    response = client.messages.parse(
-        model=MODEL,
-        max_tokens=2048,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": f"Resume text:\n{raw_resume_text}"}],
-        output_format=ResumeParserOutput,
-    )
+    try:
+        response = client.messages.parse(
+            model=MODEL,
+            max_tokens=2048,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": f"Resume text:\n{raw_resume_text}"}],
+            output_format=ResumeParserOutput,
+        )
+    except Exception as exc:
+        raise ResumeParsingError(f"Failed to parse resume: {exc}") from exc
     return response.parsed_output.model_dump()

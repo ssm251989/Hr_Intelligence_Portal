@@ -17,6 +17,10 @@ SYSTEM_PROMPT = (
 _client: Anthropic | None = None
 
 
+class DocumentValidationError(Exception):
+    """Raised when the AI document-validation call fails or returns unusable output."""
+
+
 class ExtractedFields(BaseModel):
     name: Optional[str] = None
     id_number: Optional[str] = None
@@ -41,11 +45,14 @@ def _get_client() -> Anthropic:
 def validate_document(expected_doc_type: str, ocr_text: str) -> dict:
     client = _get_client()
     user_prompt = f"Expected document type: {expected_doc_type}\nOCR extracted text: {ocr_text}"
-    response = client.messages.parse(
-        model=MODEL,
-        max_tokens=1024,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_prompt}],
-        output_format=DocumentValidatorOutput,
-    )
+    try:
+        response = client.messages.parse(
+            model=MODEL,
+            max_tokens=1024,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_prompt}],
+            output_format=DocumentValidatorOutput,
+        )
+    except Exception as exc:
+        raise DocumentValidationError(f"Failed to validate document: {exc}") from exc
     return response.parsed_output.model_dump()

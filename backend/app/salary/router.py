@@ -72,6 +72,40 @@ def validate_salary(
     return application
 
 
+@router.post("/{application_id}/salary/confirm", response_model=ApplicationRead)
+def confirm_salary(
+    application_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("hiring_manager", "admin")),
+):
+    application = _get_application_or_404(db, application_id)
+    if application.status != "salary_ok":
+        raise HTTPException(
+            status_code=400,
+            detail="Application must be in salary_ok status to confirm salary",
+        )
+
+    previous_status = application.status
+    application.approved_salary = application.expected_salary
+    application.status = "salary_approved"
+    db.commit()
+    db.refresh(application)
+
+    log_action(
+        db,
+        "application",
+        application.id,
+        "salary_confirmed",
+        current_user.email,
+        {
+            "approved_salary": float(application.approved_salary) if application.approved_salary is not None else None,
+            "previous_status": previous_status,
+            "new_status": application.status,
+        },
+    )
+    return application
+
+
 @router.post("/{application_id}/approve-salary", response_model=ApplicationRead)
 def approve_salary(
     application_id: uuid.UUID,

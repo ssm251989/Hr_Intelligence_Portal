@@ -13,7 +13,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 import { ApiError } from "../api/client";
-import { USER_ROLES } from "../api/types";
+import { PUBLIC_REGISTRABLE_ROLES } from "../api/types";
 import type { UserRole } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 
@@ -93,7 +93,7 @@ export default function RegisterPage() {
                 onChange={(e) => setRole(e.target.value as UserRole)}
                 fullWidth
               >
-                {USER_ROLES.map((r) => (
+                {PUBLIC_REGISTRABLE_ROLES.map((r) => (
                   <MenuItem key={r} value={r}>
                     {r}
                   </MenuItem>

@@ -1,9 +1,10 @@
 import uuid
 
+from cryptography.fernet import InvalidToken
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.ai_services.offer_letter_generator import generate_offer_letter
+from app.ai_services.offer_letter_generator import OfferLetterGenerationError, generate_offer_letter
 from app.audit.service import log_action
 from app.auth.dependencies import get_current_user, require_roles
 from app.core.crypto import decrypt
@@ -63,14 +64,15 @@ def _try_create_docusign_envelope(
             signer_email=candidate.email,
             signer_name=candidate.full_name,
         )
-    except DocuSignError as exc:
+    except (DocuSignError, InvalidToken) as exc:
+        error = str(exc) or "Stored DocuSign refresh token could not be decrypted"
         log_action(
             db,
             "application",
             offer.application_id,
             "docusign_envelope_creation_failed",
             "system",
-            {"sender_id": str(sender.id), "error": str(exc)},
+            {"sender_id": str(sender.id), "error": error},
         )
         return None
 
@@ -108,13 +110,16 @@ def generate_offer(
             reporting_manager_name = hiring_manager.full_name or hiring_manager.email
     reporting_manager_name = reporting_manager_name or "Not specified"
 
-    result = generate_offer_letter(
-        candidate_name=candidate.full_name,
-        job_title=job.title if job else "Unknown role",
-        approved_salary=str(float(salary_value)),
-        start_date=payload.start_date,
-        reporting_manager_name=reporting_manager_name,
-    )
+    try:
+        result = generate_offer_letter(
+            candidate_name=candidate.full_name,
+            job_title=job.title if job else "Unknown role",
+            approved_salary=str(float(salary_value)),
+            start_date=payload.start_date,
+            reporting_manager_name=reporting_manager_name,
+        )
+    except OfferLetterGenerationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     log_action(db, "application", application.id, "ai_offer_letter_generated", "system", result)
 
@@ -156,8 +161,9 @@ def mark_offer_signed(
             )
         try:
             envelope_status = get_envelope_status(decrypt(integration.refresh_token), offer.docusign_envelope_id)
-        except DocuSignError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        except (DocuSignError, InvalidToken) as exc:
+            detail = str(exc) or "Stored DocuSign refresh token could not be decrypted"
+            raise HTTPException(status_code=502, detail=detail) from exc
 
         if envelope_status != "completed":
             raise HTTPException(

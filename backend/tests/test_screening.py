@@ -1,5 +1,7 @@
 import uuid
 
+from app.ai_services.candidate_ranker import CandidateRankingError
+from app.ai_services.resume_matcher import ResumeMatchError
 from app.models.application import Application
 from app.models.audit_log import AuditLog
 from app.models.candidate import Candidate
@@ -91,6 +93,21 @@ def test_screen_application_without_parsed_resume_returns_400(client, db_session
     assert response.status_code == 400
 
 
+def test_screen_application_ai_failure_returns_502(client, db_session, monkeypatch):
+    def fake_match_resume(jd_text, parsed_fields):
+        raise ResumeMatchError("Failed to match resume against job description: AI service timed out")
+
+    monkeypatch.setattr("app.screening.router.match_resume", fake_match_resume)
+
+    job = _make_job(db_session, jd_text="We need a backend engineer skilled in Python and FastAPI.")
+    candidate = _make_candidate(db_session, parsed_fields={"skills": ["Python", "FastAPI"]})
+    application = _make_application(db_session, job, candidate)
+
+    response = client.post(f"/applications/{application.id}/screen")
+
+    assert response.status_code == 502
+
+
 def test_screen_application_not_found_returns_404(client):
     response = client.post(f"/applications/{uuid.uuid4()}/screen")
     assert response.status_code == 404
@@ -126,6 +143,21 @@ def test_rank_application_success(client, db_session, monkeypatch):
     )
     assert audit_entry is not None
     assert audit_entry.details == {**FAKE_RANKING_RESULT, "composite_score": 82.0}
+
+
+def test_rank_application_ai_failure_returns_502(client, db_session, monkeypatch):
+    def fake_rank_candidate(jd_text, match_data, interview_feedback):
+        raise CandidateRankingError("Failed to rank candidate: AI service timed out")
+
+    monkeypatch.setattr("app.screening.router.rank_candidate", fake_rank_candidate)
+
+    job = _make_job(db_session, jd_text="We need a backend engineer skilled in Python and FastAPI.")
+    candidate = _make_candidate(db_session, parsed_fields={"skills": ["Python", "FastAPI"]})
+    application = _make_application(db_session, job, candidate, match_score=78)
+
+    response = client.post(f"/applications/{application.id}/rank")
+
+    assert response.status_code == 502
 
 
 def test_rank_application_before_screening_returns_400(client, db_session):

@@ -3,7 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
-from app.ai_services.document_validator import validate_document
+from app.ai_services.document_validator import DocumentValidationError, validate_document
 from app.audit.service import log_action
 from app.auth.dependencies import get_current_user, require_roles
 from app.bgv.document_extraction import extract_bgv_text
@@ -150,7 +150,10 @@ def validate_bgv_document(
     except (UnsupportedFileTypeError, ResumeExtractionError) as exc:
         raise HTTPException(status_code=400, detail=f"Could not read document: {exc}") from exc
 
-    result = validate_document(document.doc_type, ocr_text)
+    try:
+        result = validate_document(document.doc_type, ocr_text)
+    except DocumentValidationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     log_action(db, "bgv_document", document.id, "ai_document_validator_scored", "system", result)
     # Pass validation_status through as-is -- 'needs_review' must never be

@@ -1,9 +1,13 @@
 import uuid
 
+from cryptography.fernet import InvalidToken
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.ai_services.interview_question_generator import generate_interview_questions
+from app.ai_services.interview_question_generator import (
+    InterviewQuestionGenerationError,
+    generate_interview_questions,
+)
 from app.audit.service import log_action
 from app.auth.dependencies import get_current_user, require_roles
 from app.core.crypto import decrypt
@@ -69,14 +73,15 @@ def _try_create_calendar_event(
             start=scheduled_at,
             attendee_emails=attendee_emails,
         )
-    except GoogleCalendarError as exc:
+    except (GoogleCalendarError, InvalidToken) as exc:
+        error = str(exc) or "Stored Google refresh token could not be decrypted"
         log_action(
             db,
             "interview",
             application.id,
             "calendar_event_creation_failed",
             "system",
-            {"interviewer_id": str(interviewer.id), "error": str(exc)},
+            {"interviewer_id": str(interviewer.id), "error": error},
         )
         return None
 
@@ -207,7 +212,10 @@ def generate_questions(
         raise HTTPException(status_code=400, detail="Job description not yet generated")
 
     missing_skills = application.missing_skills or []
-    result = generate_interview_questions(job.jd_text, missing_skills)
+    try:
+        result = generate_interview_questions(job.jd_text, missing_skills)
+    except InterviewQuestionGenerationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     log_action(db, "application", application.id, "ai_interview_questions_generated", "system", result)
     return result

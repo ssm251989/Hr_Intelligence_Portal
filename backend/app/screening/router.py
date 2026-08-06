@@ -3,8 +3,8 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.ai_services.candidate_ranker import rank_candidate
-from app.ai_services.resume_matcher import match_resume
+from app.ai_services.candidate_ranker import CandidateRankingError, rank_candidate
+from app.ai_services.resume_matcher import ResumeMatchError, match_resume
 from app.audit.service import log_action
 from app.auth.dependencies import require_roles
 from app.core.database import get_db
@@ -55,7 +55,10 @@ def screen_application(
     if not candidate or not candidate.parsed_fields:
         raise HTTPException(status_code=400, detail="Candidate resume not yet parsed")
 
-    result = match_resume(job.jd_text, candidate.parsed_fields)
+    try:
+        result = match_resume(job.jd_text, candidate.parsed_fields)
+    except ResumeMatchError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     log_action(db, "application", application.id, "ai_resume_matcher_scored", "system", result)
     application.match_score = result["match_score"]
@@ -98,7 +101,10 @@ def rank_application(
         for interview in interviews
     ] or None
 
-    result = rank_candidate(job.jd_text, match_data, interview_feedback)
+    try:
+        result = rank_candidate(job.jd_text, match_data, interview_feedback)
+    except CandidateRankingError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     ranking_score = float(result["composite_score"])
 
     log_action(

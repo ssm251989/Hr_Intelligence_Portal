@@ -5,9 +5,17 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 USER_ROLES = ("recruiter", "hiring_manager", "interviewer", "admin")
+PUBLIC_REGISTRABLE_ROLES = ("recruiter", "hiring_manager", "interviewer")
 
 
 class UserRegister(BaseModel):
+    email: str
+    password: str = Field(min_length=8)
+    full_name: Optional[str] = None
+    role: Literal["recruiter", "hiring_manager", "interviewer"]
+
+
+class AdminUserCreate(BaseModel):
     email: str
     password: str = Field(min_length=8)
     full_name: Optional[str] = None

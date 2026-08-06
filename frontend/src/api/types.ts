@@ -8,6 +8,10 @@ export type UserRole = "recruiter" | "hiring_manager" | "interviewer" | "admin";
 
 export const USER_ROLES: UserRole[] = ["recruiter", "hiring_manager", "interviewer", "admin"];
 
+// Roles a user may pick for themselves on the public Register page.
+// "admin" accounts can only be created by an existing admin (see users/router.py POST /users).
+export const PUBLIC_REGISTRABLE_ROLES: UserRole[] = ["recruiter", "hiring_manager", "interviewer"];
+
 export interface UserRegister {
   email: string;
   password: string;

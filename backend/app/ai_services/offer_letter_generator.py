@@ -14,6 +14,10 @@ SYSTEM_PROMPT = (
 _client: Anthropic | None = None
 
 
+class OfferLetterGenerationError(Exception):
+    """Raised when the AI offer-letter generation call fails or returns unusable output."""
+
+
 class KeyTermsSummary(BaseModel):
     role: str
     salary: str
@@ -44,11 +48,14 @@ def generate_offer_letter(
         f"Start date: {start_date}\n"
         f"Reporting manager: {reporting_manager_name}"
     )
-    response = client.messages.parse(
-        model=MODEL,
-        max_tokens=2048,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_prompt}],
-        output_format=OfferLetterOutput,
-    )
+    try:
+        response = client.messages.parse(
+            model=MODEL,
+            max_tokens=2048,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_prompt}],
+            output_format=OfferLetterOutput,
+        )
+    except Exception as exc:
+        raise OfferLetterGenerationError(f"Failed to generate offer letter: {exc}") from exc
     return response.parsed_output.model_dump()

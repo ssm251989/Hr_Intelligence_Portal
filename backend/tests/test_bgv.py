@@ -4,6 +4,7 @@ import uuid
 import pytest
 from docx import Document
 
+from app.ai_services.document_validator import DocumentValidationError
 from app.models.application import Application
 from app.models.audit_log import AuditLog
 from app.models.bgv_document import BgvDocument
@@ -298,6 +299,27 @@ def test_validate_bgv_document_needs_review_passthrough(client, db_session, monk
     assert response.status_code == 200
     # 'needs_review' must be passed through exactly, never coerced to 'invalid'.
     assert response.json()["validation_status"] == "needs_review"
+
+
+def test_validate_bgv_document_ai_failure_returns_502(client, db_session, monkeypatch):
+    def fake_validate_document(expected_doc_type, ocr_text):
+        raise DocumentValidationError("Failed to validate document: AI service timed out")
+
+    monkeypatch.setattr("app.bgv.router.validate_document", fake_validate_document)
+
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application(db_session, job, candidate, status="bgv_requested")
+    upload_resp = client.post(
+        f"/applications/{application.id}/bgv/documents",
+        data={"doc_type": "aadhaar"},
+        files={"file": ("doc.docx", _make_docx_bytes(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+    )
+    doc_id = upload_resp.json()["id"]
+
+    response = client.post(f"/applications/{application.id}/bgv/documents/{doc_id}/validate")
+
+    assert response.status_code == 502
 
 
 def test_validate_bgv_document_not_found(client, db_session):

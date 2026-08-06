@@ -32,10 +32,11 @@ def get_current_user(
         user_id = payload.get("sub")
         if user_id is None:
             raise _unauthorized()
-    except JWTError:
+        user_uuid = uuid.UUID(user_id)
+    except (JWTError, ValueError):
         raise _unauthorized()
 
-    user = db.get(User, uuid.UUID(user_id))
+    user = db.get(User, user_uuid)
     if user is None:
         raise _unauthorized()
     return user
