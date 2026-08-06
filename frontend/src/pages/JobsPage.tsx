@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -14,9 +15,12 @@ import { extractErrorMessage, jobsApi } from "../api/client";
 import type { JobRoleRead } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import CreateJobWizard from "../components/CreateJobWizard";
+import JobFiltersPanel, { applyJobFilters, EMPTY_JOB_FILTERS } from "../components/JobFiltersPanel";
+import type { JobFilters } from "../components/JobFiltersPanel";
 import JobsDashboardStats from "../components/JobsDashboardStats";
 import PostingLinksEditor from "../components/PostingLinksEditor";
 import StatusChip from "../components/StatusChip";
+import { downloadCsv } from "../utils/csv";
 import { ROLE_MATRIX } from "../auth/roles";
 
 export default function JobsPage() {
@@ -28,8 +32,11 @@ export default function JobsPage() {
 
   const [wizardOpen, setWizardOpen] = useState(false);
   const [dashboardRefreshSignal, setDashboardRefreshSignal] = useState(0);
+  const [filters, setFilters] = useState<JobFilters>(EMPTY_JOB_FILTERS);
 
   const [generatingId, setGeneratingId] = useState<string | null>(null);
+
+  const filteredJobs = useMemo(() => applyJobFilters(jobs, filters), [jobs, filters]);
 
   const loadJobs = async () => {
     setLoading(true);
@@ -51,6 +58,24 @@ export default function JobsPage() {
   const handleJobPublished = () => {
     loadJobs();
     setDashboardRefreshSignal((s) => s + 1);
+  };
+
+  const handleExportCsv = () => {
+    downloadCsv(
+      "jobs.csv",
+      ["Title", "Department", "Location", "Experience Level", "Status", "Positions", "Salary Min", "Salary Max", "Created At"],
+      filteredJobs.map((job) => [
+        job.title,
+        job.department,
+        job.location,
+        job.experience_level,
+        job.status,
+        job.positions_count,
+        job.salary_band_min,
+        job.salary_band_max,
+        job.created_at,
+      ]),
+    );
   };
 
   const handleGenerateJd = async (jobId: string) => {
@@ -77,7 +102,7 @@ export default function JobsPage() {
         )}
       </Stack>
 
-      <JobsDashboardStats refreshSignal={dashboardRefreshSignal} />
+      <JobsDashboardStats refreshSignal={dashboardRefreshSignal} onCreateJob={() => setWizardOpen(true)} />
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
@@ -85,13 +110,27 @@ export default function JobsPage() {
         </Alert>
       )}
 
+      <Stack direction="row" spacing={2} alignItems="center" mb={2}>
+        <JobFiltersPanel jobs={jobs} filters={filters} onChange={setFilters} />
+        <Button variant="outlined" startIcon={<DownloadOutlinedIcon />} onClick={handleExportCsv} disabled={filteredJobs.length === 0}>
+          Export CSV
+        </Button>
+        {filteredJobs.length !== jobs.length && (
+          <Typography variant="body2" color="text.secondary">
+            Showing {filteredJobs.length} of {jobs.length} jobs
+          </Typography>
+        )}
+      </Stack>
+
       {loading ? (
         <CircularProgress />
-      ) : jobs.length === 0 ? (
-        <Typography color="text.secondary">No jobs yet. Create one to get started.</Typography>
+      ) : filteredJobs.length === 0 ? (
+        <Typography color="text.secondary">
+          {jobs.length === 0 ? "No jobs yet. Create one to get started." : "No jobs match the current filters."}
+        </Typography>
       ) : (
         <Grid container spacing={2}>
-          {jobs.map((job) => (
+          {filteredJobs.map((job) => (
             <Grid key={job.id} size={{ xs: 12, md: 6 }}>
               <Card variant="outlined">
                 <CardContent>

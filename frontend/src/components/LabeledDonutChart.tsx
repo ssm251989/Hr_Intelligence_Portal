@@ -55,9 +55,11 @@ export default function LabeledDonutChart({ title, rows }: { title: string; rows
 
   return (
     <Box>
-      <Typography variant="h6" mb={2}>
-        {title}
-      </Typography>
+      {title && (
+        <Typography variant="h6" mb={2}>
+          {title}
+        </Typography>
+      )}
       {total === 0 ? (
         <Typography color="text.secondary">No jobs yet.</Typography>
       ) : (

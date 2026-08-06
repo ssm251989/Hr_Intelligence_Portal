@@ -26,6 +26,7 @@ import type {
   PublicApplicationSubmitResponse,
   PublicJobRead,
   PublishPlatformsRequest,
+  RecentActivityResponse,
   SalaryApprovalRequest,
   SalaryStatusResponse,
   ShortlistDecisionRequest,
@@ -267,6 +268,8 @@ export const reportsApi = {
     get<PipelineResponse>(`/reports/pipeline${jobRoleId ? `?job_role_id=${jobRoleId}` : ""}`),
   jobSummary: (jobId: UUID) => get<JobSummaryResponse>(`/reports/jobs/${jobId}/summary`),
   jobsDashboardStats: () => get<JobsDashboardStatsResponse>("/reports/jobs-dashboard-stats"),
+  recentActivity: (limit?: number) =>
+    get<RecentActivityResponse>(`/reports/recent-activity${limit ? `?limit=${limit}` : ""}`),
   auditLog: (params: { entityType?: string; entityId?: UUID; action?: string; limit?: number; offset?: number } = {}) => {
     const query = new URLSearchParams();
     if (params.entityType) query.set("entity_type", params.entityType);

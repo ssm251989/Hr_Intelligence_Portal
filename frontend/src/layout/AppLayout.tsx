@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
+import NotificationsOutlinedIcon from "@mui/icons-material/NotificationsOutlined";
 import WorkOutlineIcon from "@mui/icons-material/WorkOutline";
 import PeopleAltOutlinedIcon from "@mui/icons-material/PeopleAltOutlined";
 import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
@@ -12,22 +13,27 @@ import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import type { SvgIconComponent } from "@mui/icons-material";
 import AppBar from "@mui/material/AppBar";
+import Badge from "@mui/material/Badge";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
 import Drawer from "@mui/material/Drawer";
+import IconButton from "@mui/material/IconButton";
 import List from "@mui/material/List";
 import ListItemButton from "@mui/material/ListItemButton";
 import ListItemIcon from "@mui/material/ListItemIcon";
 import ListItemText from "@mui/material/ListItemText";
+import Popover from "@mui/material/Popover";
 import Stack from "@mui/material/Stack";
 import Toolbar from "@mui/material/Toolbar";
 import Typography from "@mui/material/Typography";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 
+import { reportsApi } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import ConfirmDialog from "../components/ConfirmDialog";
+import RecentActivityFeed from "../components/RecentActivityFeed";
 
 const DRAWER_WIDTH = 240;
 
@@ -55,6 +61,15 @@ export default function AppLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [confirmLogoutOpen, setConfirmLogoutOpen] = useState(false);
+  const [activityAnchor, setActivityAnchor] = useState<HTMLElement | null>(null);
+  const [activityCount, setActivityCount] = useState(0);
+
+  useEffect(() => {
+    reportsApi
+      .recentActivity(9)
+      .then((res) => setActivityCount(res.items.length))
+      .catch(() => setActivityCount(0));
+  }, []);
 
   const handleLogout = () => {
     setConfirmLogoutOpen(false);
@@ -70,6 +85,15 @@ export default function AppLayout() {
             HR Automation
           </Typography>
           <Stack direction="row" spacing={2} alignItems="center">
+            <IconButton
+              color="inherit"
+              onClick={(e) => setActivityAnchor(e.currentTarget)}
+              aria-label="Recent activity"
+            >
+              <Badge badgeContent={activityCount} color="secondary" max={9}>
+                <NotificationsOutlinedIcon />
+              </Badge>
+            </IconButton>
             {user && (
               <Stack direction="row" spacing={1} alignItems="center">
                 <Typography variant="body2">{user.full_name || user.email}</Typography>
@@ -129,6 +153,21 @@ export default function AppLayout() {
         onConfirm={handleLogout}
         onCancel={() => setConfirmLogoutOpen(false)}
       />
+
+      <Popover
+        open={Boolean(activityAnchor)}
+        anchorEl={activityAnchor}
+        onClose={() => setActivityAnchor(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        transformOrigin={{ vertical: "top", horizontal: "right" }}
+      >
+        <Box sx={{ width: 340, p: 2 }}>
+          <Typography variant="subtitle1" mb={1}>
+            Recent Activity
+          </Typography>
+          <RecentActivityFeed limit={10} dense />
+        </Box>
+      </Popover>
     </Box>
   );
 }

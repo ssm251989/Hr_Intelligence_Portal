@@ -19,8 +19,8 @@ _PREVIOUS_MONTH = (
 _BASE_TIME = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
 
 
-def _make_job(db_session, **kwargs) -> JobRole:
-    job = JobRole(title="Backend Engineer", **kwargs)
+def _make_job(db_session, title="Backend Engineer", **kwargs) -> JobRole:
+    job = JobRole(title=title, **kwargs)
     db_session.add(job)
     db_session.commit()
     db_session.refresh(job)
@@ -407,3 +407,111 @@ def test_jobs_dashboard_stats_zero_hires_this_month_has_null_avg(client):
     body = client.get("/reports/jobs-dashboard-stats").json()
     if body["hires_this_month"] == 0:
         assert body["avg_time_to_hire_days"] is None
+
+
+def test_jobs_dashboard_stats_top_jobs_ranked_by_application_count(client, db_session):
+    job_most = _make_job(db_session, title="Most Applied Role")
+    job_mid = _make_job(db_session, title="Mid Applied Role")
+    job_none = _make_job(db_session, title="No Applications Role")
+    candidate = _make_candidate(db_session)
+
+    for _ in range(3):
+        _make_application(db_session, job_most, candidate)
+    _make_application(db_session, job_mid, candidate)
+
+    body = client.get("/reports/jobs-dashboard-stats").json()
+    top_jobs_by_id = {row["job_id"]: row for row in body["top_jobs"]}
+
+    # job_none may or may not appear (top 5 overall, and other real jobs may already
+    # have applications) -- what must hold is the relative ranking among these three.
+    assert str(job_most.id) in top_jobs_by_id
+    assert top_jobs_by_id[str(job_most.id)]["application_count"] >= 3
+    assert top_jobs_by_id[str(job_most.id)]["title"] == "Most Applied Role"
+    if str(job_mid.id) in top_jobs_by_id:
+        assert top_jobs_by_id[str(job_mid.id)]["application_count"] >= 1
+    if str(job_none.id) in top_jobs_by_id:
+        assert top_jobs_by_id[str(job_none.id)]["application_count"] == 0
+
+    ordered_counts = [row["application_count"] for row in body["top_jobs"]]
+    assert ordered_counts == sorted(ordered_counts, reverse=True)
+    assert len(body["top_jobs"]) <= 5
+
+
+# --- /reports/recent-activity ---
+
+
+def test_recent_activity_describes_job_role_events(client, db_session):
+    job = _make_job(db_session, title="Recent Activity Job")
+    _make_audit_entry(
+        db_session, "job_role", job.id, "job_role_created", created_at=_NOW,
+        details={"status": "draft"},
+    )
+    _make_audit_entry(
+        db_session, "job_role", job.id, "job_platforms_published", created_at=_NOW + timedelta(seconds=1),
+        details={"previous_status": "ready_for_publishing", "new_status": "published"},
+    )
+
+    response = client.get("/reports/recent-activity?limit=50")
+
+    assert response.status_code == 200
+    messages = [item["message"] for item in response.json()["items"] if item["entity_id"] == str(job.id)]
+    assert "Job created: Recent Activity Job" in messages
+    assert "Job published: Recent Activity Job" in messages
+
+
+def test_recent_activity_describes_application_events(client, db_session):
+    job = _make_job(db_session, title="App Activity Job")
+    candidate = _make_candidate(db_session, full_name="Riley Applicant")
+    application = _make_application(db_session, job, candidate)
+    _make_audit_entry(
+        db_session, "application", application.id, "application_created", created_at=_NOW,
+    )
+    _make_audit_entry(
+        db_session, "application", application.id, "onboarding_completed", created_at=_NOW + timedelta(seconds=1),
+    )
+
+    response = client.get("/reports/recent-activity?limit=50")
+
+    assert response.status_code == 200
+    messages = [
+        item["message"] for item in response.json()["items"] if item["entity_id"] == str(application.id)
+    ]
+    assert "New application: Riley Applicant for App Activity Job" in messages
+    assert "Hire completed: Riley Applicant for App Activity Job" in messages
+
+
+def test_recent_activity_falls_back_to_humanized_action_for_unmapped_actions(client, db_session):
+    job = _make_job(db_session, title="Unmapped Action Job")
+    _make_audit_entry(db_session, "job_role", job.id, "job_role_updated", created_at=_NOW)
+
+    response = client.get("/reports/recent-activity?limit=50")
+
+    messages = [item["message"] for item in response.json()["items"] if item["entity_id"] == str(job.id)]
+    assert "Job role updated: Unmapped Action Job" in messages
+
+
+def test_recent_activity_excludes_other_entity_types(client, db_session):
+    doc_id = uuid.uuid4()
+    _make_audit_entry(db_session, "bgv_document", doc_id, "bgv_document_uploaded", created_at=_NOW)
+
+    response = client.get("/reports/recent-activity?limit=50")
+
+    assert all(item["entity_id"] != str(doc_id) for item in response.json()["items"])
+
+
+def test_recent_activity_respects_limit_and_orders_newest_first(client, db_session):
+    job = _make_job(db_session, title="Ordering Job")
+    for i in range(5):
+        _make_audit_entry(
+            db_session, "job_role", job.id, f"step_{i}", created_at=_NOW + timedelta(seconds=i)
+        )
+
+    response = client.get("/reports/recent-activity?limit=3")
+
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert len(items) == 3
+    assert items[0]["message"] == "Step 4: Ordering Job"
+    # Newest first.
+    timestamps = [item["created_at"] for item in items]
+    assert timestamps == sorted(timestamps, reverse=True)

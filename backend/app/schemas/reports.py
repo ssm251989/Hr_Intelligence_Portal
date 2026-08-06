@@ -28,6 +28,12 @@ class LabeledCount(BaseModel):
     count: int
 
 
+class TopJobItem(BaseModel):
+    job_id: uuid.UUID
+    title: str
+    application_count: int
+
+
 class JobsDashboardStatsResponse(BaseModel):
     total_jobs: int
     active_jobs: int
@@ -37,6 +43,19 @@ class JobsDashboardStatsResponse(BaseModel):
     avg_time_to_hire_days: Optional[float] = None
     by_department: list[LabeledCount]
     by_location: list[LabeledCount]
+    top_jobs: list[TopJobItem]
+
+
+class RecentActivityItem(BaseModel):
+    id: uuid.UUID
+    created_at: datetime
+    message: str
+    entity_type: Optional[str] = None
+    entity_id: Optional[uuid.UUID] = None
+
+
+class RecentActivityResponse(BaseModel):
+    items: list[RecentActivityItem]
 
 
 class AuditLogRead(BaseModel):

@@ -332,6 +332,12 @@ export interface LabeledCount {
   count: number;
 }
 
+export interface TopJobItem {
+  job_id: UUID;
+  title: string;
+  application_count: number;
+}
+
 export interface JobsDashboardStatsResponse {
   total_jobs: number;
   active_jobs: number;
@@ -341,6 +347,19 @@ export interface JobsDashboardStatsResponse {
   avg_time_to_hire_days?: number | null;
   by_department: LabeledCount[];
   by_location: LabeledCount[];
+  top_jobs: TopJobItem[];
+}
+
+export interface RecentActivityItem {
+  id: UUID;
+  created_at: string;
+  message: string;
+  entity_type?: string | null;
+  entity_id?: UUID | null;
+}
+
+export interface RecentActivityResponse {
+  items: RecentActivityItem[];
 }
 
 export interface AuditLogRead {

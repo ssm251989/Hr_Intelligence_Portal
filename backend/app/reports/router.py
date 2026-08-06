@@ -11,6 +11,7 @@ from app.core.database import get_db
 from app.jobs.service import close_job_if_deadline_passed
 from app.models.application import APPLICATION_STATUSES, Application
 from app.models.audit_log import AuditLog
+from app.models.candidate import Candidate
 from app.models.job_role import JobRole
 from app.models.user import User
 from app.schemas.reports import (
@@ -20,7 +21,10 @@ from app.schemas.reports import (
     JobSummaryResponse,
     LabeledCount,
     PipelineResponse,
+    RecentActivityItem,
+    RecentActivityResponse,
     StatusCount,
+    TopJobItem,
 )
 
 router = APIRouter(tags=["reports"])
@@ -156,6 +160,15 @@ def get_jobs_dashboard_stats(
     location_label = func.coalesce(JobRole.location, "Unspecified")
     by_location = db.query(location_label, func.count(JobRole.id)).group_by(location_label).all()
 
+    top_job_rows = (
+        db.query(JobRole.id, JobRole.title, func.count(Application.id))
+        .outerjoin(Application, Application.job_role_id == JobRole.id)
+        .group_by(JobRole.id, JobRole.title)
+        .order_by(func.count(Application.id).desc())
+        .limit(5)
+        .all()
+    )
+
     return JobsDashboardStatsResponse(
         total_jobs=total_jobs,
         active_jobs=active_jobs,
@@ -165,7 +178,88 @@ def get_jobs_dashboard_stats(
         avg_time_to_hire_days=avg_time_to_hire_days,
         by_department=[LabeledCount(label=label, count=count) for label, count in by_department],
         by_location=[LabeledCount(label=label, count=count) for label, count in by_location],
+        top_jobs=[
+            TopJobItem(job_id=job_id, title=title, application_count=count)
+            for job_id, title, count in top_job_rows
+        ],
     )
+
+
+def _humanize_action(action: Optional[str]) -> str:
+    text = (action or "").replace("_", " ").strip()
+    return text[:1].upper() + text[1:] if text else "Activity"
+
+
+def _describe_job_role_entry(db: Session, entry: AuditLog) -> str:
+    job = db.get(JobRole, entry.entity_id) if entry.entity_id else None
+    title = job.title if job else "a job"
+    if entry.action == "job_role_created":
+        return f"Job created: {title}"
+    if entry.action == "job_platforms_published":
+        new_status = (entry.details or {}).get("new_status")
+        return f"Job published: {title}" if new_status == "published" else f"Job unpublished: {title}"
+    if entry.action == "job_auto_closed_deadline_passed":
+        return f"Job auto-closed (deadline passed): {title}"
+    return f"{_humanize_action(entry.action)}: {title}"
+
+
+def _describe_application_entry(db: Session, entry: AuditLog) -> str:
+    application = db.get(Application, entry.entity_id) if entry.entity_id else None
+    candidate_name = "A candidate"
+    job_title = "a job"
+    if application:
+        candidate = db.get(Candidate, application.candidate_id)
+        if candidate and candidate.full_name:
+            candidate_name = candidate.full_name
+        job = db.get(JobRole, application.job_role_id)
+        if job:
+            job_title = job.title
+    if entry.action == "application_created":
+        return f"New application: {candidate_name} for {job_title}"
+    if entry.action == "onboarding_completed":
+        return f"Hire completed: {candidate_name} for {job_title}"
+    return f"{_humanize_action(entry.action)}: {candidate_name} — {job_title}"
+
+
+@router.get("/reports/recent-activity", response_model=RecentActivityResponse)
+def get_recent_activity(
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Human-readable activity feed for the dashboard + header notification bell.
+
+    Scoped to job/application audit_log rows (the two entity types recruiters care
+    about day to day) and resolves job titles/candidate names server-side so the
+    frontend doesn't need N+1 lookups. Only a handful of well-known actions per
+    entity type get a tailored message; anything else falls back to a humanized
+    version of the raw action string rather than going unlabeled.
+    """
+    entries = (
+        db.query(AuditLog)
+        .filter(AuditLog.entity_type.in_(["job_role", "application"]))
+        .order_by(AuditLog.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+    items = []
+    for entry in entries:
+        message = (
+            _describe_job_role_entry(db, entry)
+            if entry.entity_type == "job_role"
+            else _describe_application_entry(db, entry)
+        )
+        items.append(
+            RecentActivityItem(
+                id=entry.id,
+                created_at=entry.created_at,
+                message=message,
+                entity_type=entry.entity_type,
+                entity_id=entry.entity_id,
+            )
+        )
+    return RecentActivityResponse(items=items)
 
 
 @router.get("/reports/audit", response_model=AuditLogPage)
