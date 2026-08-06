@@ -12,7 +12,19 @@ import Typography from "@mui/material/Typography";
 import { ApiError, integrationsApi } from "../api/client";
 import type { IntegrationStatus } from "../api/types";
 
-export default function SettingsPage() {
+function IntegrationCard({
+  title,
+  description,
+  connectLabel,
+  fetchStatus,
+  connect,
+}: {
+  title: string;
+  description: string;
+  connectLabel: string;
+  fetchStatus: () => Promise<IntegrationStatus>;
+  connect: () => Promise<{ auth_url: string }>;
+}) {
   const [status, setStatus] = useState<IntegrationStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
@@ -20,8 +32,7 @@ export default function SettingsPage() {
 
   const loadStatus = () => {
     setLoading(true);
-    integrationsApi
-      .googleStatus()
+    fetchStatus()
       .then(setStatus)
       .catch((err) => setError(err instanceof ApiError ? String(err.detail) : "Failed to load connection status"))
       .finally(() => setLoading(false));
@@ -29,71 +40,92 @@ export default function SettingsPage() {
 
   useEffect(() => {
     loadStatus();
-    // The Google OAuth callback lands on a page served by the backend, not this app --
-    // re-check status whenever the user comes back to this tab so "Connected" shows up
-    // without requiring a manual refresh.
+    // The OAuth callback lands on a page served by the backend, not this app -- re-check
+    // status whenever the user comes back to this tab so "Connected" shows up without
+    // requiring a manual refresh.
     const handleFocus = () => loadStatus();
     window.addEventListener("focus", handleFocus);
     return () => window.removeEventListener("focus", handleFocus);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleConnect = async () => {
     setConnecting(true);
     setError(null);
     try {
-      const { auth_url } = await integrationsApi.connectGoogle();
+      const { auth_url } = await connect();
       window.location.href = auth_url;
     } catch (err) {
-      setError(err instanceof ApiError ? String(err.detail) : "Failed to start Google connection");
+      setError(err instanceof ApiError ? String(err.detail) : `Failed to start ${title} connection`);
       setConnecting(false);
     }
   };
 
+  return (
+    <Card variant="outlined" sx={{ maxWidth: 480 }}>
+      <CardContent>
+        <Typography variant="h6" gutterBottom>
+          {title}
+        </Typography>
+        <Typography variant="body2" color="text.secondary" mb={2}>
+          {description}
+        </Typography>
+
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>
+        )}
+
+        {loading ? (
+          <CircularProgress size={24} />
+        ) : (
+          <Stack direction="row" spacing={2} alignItems="center">
+            <Chip
+              label={status?.connected ? "Connected" : "Not connected"}
+              color={status?.connected ? "success" : "default"}
+              size="small"
+            />
+            {status?.connected && status.connected_at && (
+              <Typography variant="body2" color="text.secondary">
+                since {new Date(status.connected_at).toLocaleString()}
+              </Typography>
+            )}
+            {!status?.connected && (
+              <Button size="small" variant="contained" onClick={handleConnect} disabled={connecting}>
+                {connecting ? "Redirecting..." : connectLabel}
+              </Button>
+            )}
+          </Stack>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+export default function SettingsPage() {
   return (
     <Box>
       <Typography variant="h4" mb={3}>
         Settings
       </Typography>
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
-
-      <Card variant="outlined" sx={{ maxWidth: 480 }}>
-        <CardContent>
-          <Typography variant="h6" gutterBottom>
-            Google Calendar
-          </Typography>
-          <Typography variant="body2" color="text.secondary" mb={2}>
-            Connect your Google account so interviews scheduled for you create a real Calendar
-            event with an invite, instead of relying on a manually pasted meeting link.
-          </Typography>
-
-          {loading ? (
-            <CircularProgress size={24} />
-          ) : (
-            <Stack direction="row" spacing={2} alignItems="center">
-              <Chip
-                label={status?.connected ? "Connected" : "Not connected"}
-                color={status?.connected ? "success" : "default"}
-                size="small"
-              />
-              {status?.connected && status.connected_at && (
-                <Typography variant="body2" color="text.secondary">
-                  since {new Date(status.connected_at).toLocaleString()}
-                </Typography>
-              )}
-              {!status?.connected && (
-                <Button size="small" variant="contained" onClick={handleConnect} disabled={connecting}>
-                  {connecting ? "Redirecting..." : "Connect Google Calendar"}
-                </Button>
-              )}
-            </Stack>
-          )}
-        </CardContent>
-      </Card>
+      <Stack spacing={3}>
+        <IntegrationCard
+          title="Google Calendar"
+          description="Connect your Google account so interviews scheduled for you create a real Calendar event with an invite, instead of relying on a manually pasted meeting link."
+          connectLabel="Connect Google Calendar"
+          fetchStatus={integrationsApi.googleStatus}
+          connect={integrationsApi.connectGoogle}
+        />
+        <IntegrationCard
+          title="DocuSign"
+          description="Connect your DocuSign account so offers you generate are sent as a real e-signature envelope to the candidate, instead of relying on a manually recorded signature."
+          connectLabel="Connect DocuSign"
+          fetchStatus={integrationsApi.docusignStatus}
+          connect={integrationsApi.connectDocusign}
+        />
+      </Stack>
     </Box>
   );
 }

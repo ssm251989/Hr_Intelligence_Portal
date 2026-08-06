@@ -7,19 +7,29 @@ import CardContent from "@mui/material/CardContent";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Divider from "@mui/material/Divider";
+import MuiLink from "@mui/material/Link";
 import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import { Link as RouterLink } from "react-router-dom";
 
-import { ApiError, applicationsApi, candidatesApi, jobsApi, offersApi } from "../api/client";
+import { ApiError, applicationsApi, candidatesApi, integrationsApi, jobsApi, offersApi } from "../api/client";
 import type { ApplicationRead, CandidateRead, JobRoleRead, OfferGenerateRequest, OfferRead } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
 
 const RELEVANT_STATUSES = ["bgv_cleared", "offer_sent", "onboarding_started", "onboarding_completed"];
 
-function OfferGenerateForm({ onSubmit }: { onSubmit: (payload: OfferGenerateRequest) => Promise<void> }) {
+function OfferGenerateForm({
+  onSubmit,
+  docusignConnected,
+  candidateEmail,
+}: {
+  onSubmit: (payload: OfferGenerateRequest) => Promise<void>;
+  docusignConnected: boolean | null;
+  candidateEmail?: string | null;
+}) {
   const { can } = useAuth();
   const canEdit = can(ROLE_MATRIX.offersWrite);
   const [startDate, setStartDate] = useState("");
@@ -52,6 +62,27 @@ function OfferGenerateForm({ onSubmit }: { onSubmit: (payload: OfferGenerateRequ
       {error && (
         <Alert severity="error" sx={{ mb: 1.5 }}>
           {error}
+        </Alert>
+      )}
+      {docusignConnected === true && candidateEmail && (
+        <Alert severity="info" sx={{ mb: 1.5 }}>
+          DocuSign is connected — a real signature envelope will be sent to {candidateEmail} once this offer
+          is generated.
+        </Alert>
+      )}
+      {docusignConnected === true && !candidateEmail && (
+        <Alert severity="warning" sx={{ mb: 1.5 }}>
+          DocuSign is connected, but this candidate has no email on file, so a real envelope can't be sent —
+          this offer will need to be marked as signed manually.
+        </Alert>
+      )}
+      {docusignConnected === false && (
+        <Alert severity="info" sx={{ mb: 1.5 }}>
+          DocuSign isn't connected for your account, so this offer will need to be marked as signed manually.{" "}
+          <MuiLink component={RouterLink} to="/settings">
+            Connect DocuSign
+          </MuiLink>
+          .
         </Alert>
       )}
       <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
@@ -110,8 +141,8 @@ function MarkSignedForm({ onSubmit }: { onSubmit: (envelopeId: string | null) =>
         </Alert>
       )}
       <Typography variant="caption" color="text.secondary" display="block" mb={1}>
-        Real DocuSign integration is out of scope for the MVP — paste an envelope ID here manually if one
-        exists from whatever channel collected the signature, or leave blank.
+        No real DocuSign envelope was sent for this offer — paste an envelope ID here manually if one exists
+        from whatever channel collected the signature, or leave blank.
       </Typography>
       <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
         <TextField
@@ -129,6 +160,60 @@ function MarkSignedForm({ onSubmit }: { onSubmit: (envelopeId: string | null) =>
   );
 }
 
+function CheckSigningStatusButton({
+  envelopeId,
+  onCheck,
+}: {
+  envelopeId: string | null | undefined;
+  onCheck: () => Promise<void>;
+}) {
+  const { can } = useAuth();
+  const canEdit = can(ROLE_MATRIX.offersWrite);
+  const [checking, setChecking] = useState(false);
+  const [message, setMessage] = useState<{ severity: "info" | "error"; text: string } | null>(null);
+
+  if (!canEdit) {
+    return null;
+  }
+
+  const handleCheck = async () => {
+    setChecking(true);
+    setMessage(null);
+    try {
+      await onCheck();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        // Envelope exists but isn't fully signed yet -- an expected, non-error outcome.
+        setMessage({ severity: "info", text: String(err.detail) });
+      } else {
+        setMessage({
+          severity: "error",
+          text: err instanceof ApiError ? String(err.detail) : "Failed to check signing status",
+        });
+      }
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  return (
+    <Box mt={2}>
+      {message && (
+        <Alert severity={message.severity} sx={{ mb: 1.5 }}>
+          {message.text}
+        </Alert>
+      )}
+      <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+        A real DocuSign envelope ({envelopeId}) was sent for signature — check its live status via DocuSign
+        instead of marking this signed manually.
+      </Typography>
+      <Button size="small" variant="contained" onClick={handleCheck} disabled={checking}>
+        {checking ? "Checking..." : "Check Signing Status"}
+      </Button>
+    </Box>
+  );
+}
+
 export default function OffersPage() {
   const { can } = useAuth();
   const canWrite = can(ROLE_MATRIX.offersWrite);
@@ -140,6 +225,7 @@ export default function OffersPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
+  const [docusignConnected, setDocusignConnected] = useState<boolean | null>(null);
 
   useEffect(() => {
     jobsApi
@@ -149,6 +235,13 @@ export default function OffersPage() {
     candidatesApi
       .list()
       .then((data) => setCandidates(Object.fromEntries(data.map((c) => [c.id, c]))))
+      .catch(() => undefined);
+    // Tells the generate-offer form whether the caller (whoever ends up generating the
+    // offer) has DocuSign connected -- best-effort, so a failure here just leaves the
+    // hint off rather than blocking the page.
+    integrationsApi
+      .docusignStatus()
+      .then((status) => setDocusignConnected(status.connected))
       .catch(() => undefined);
   }, []);
 
@@ -258,7 +351,11 @@ export default function OffersPage() {
                   </Stack>
 
                   {app.status === "bgv_cleared" && (
-                    <OfferGenerateForm onSubmit={(payload) => handleGenerate(app.id, payload)} />
+                    <OfferGenerateForm
+                      onSubmit={(payload) => handleGenerate(app.id, payload)}
+                      docusignConnected={docusignConnected}
+                      candidateEmail={candidates[app.candidate_id]?.email}
+                    />
                   )}
 
                   {offer && (
@@ -266,7 +363,8 @@ export default function OffersPage() {
                       <Divider sx={{ mb: 1.5 }} />
                       <Typography variant="body2" color="text.secondary">
                         Signed: {offer.signed ? "yes" : "no"}
-                        {offer.docusign_envelope_id && ` · Envelope: ${offer.docusign_envelope_id}`}
+                        {offer.docusign_envelope_id &&
+                          ` · Envelope: ${offer.docusign_envelope_id} (${offer.docusign_sender_id ? "DocuSign" : "manual"})`}
                         {" · "}Onboarding: {offer.onboarding_status}
                       </Typography>
                       {offer.offer_letter_text && (
@@ -282,7 +380,13 @@ export default function OffersPage() {
                     </Box>
                   )}
 
-                  {app.status === "offer_sent" && (
+                  {app.status === "offer_sent" && offer?.docusign_sender_id && (
+                    <CheckSigningStatusButton
+                      envelopeId={offer.docusign_envelope_id}
+                      onCheck={() => handleMarkSigned(app.id, null)}
+                    />
+                  )}
+                  {app.status === "offer_sent" && !offer?.docusign_sender_id && (
                     <MarkSignedForm onSubmit={(envelopeId) => handleMarkSigned(app.id, envelopeId)} />
                   )}
 

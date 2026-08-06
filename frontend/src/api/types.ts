@@ -153,6 +153,10 @@ export interface GoogleAuthUrl {
   auth_url: string;
 }
 
+export interface DocuSignAuthUrl {
+  auth_url: string;
+}
+
 export interface IntegrationStatus {
   connected: boolean;
   connected_at?: string | null;
@@ -258,6 +262,9 @@ export interface OfferRead {
   application_id: UUID;
   offer_letter_text?: string | null;
   docusign_envelope_id?: string | null;
+  // Set only when docusign_envelope_id was created for real via the DocuSign API, as
+  // opposed to a manually-pasted envelope ID.
+  docusign_sender_id?: UUID | null;
   signed: boolean;
   onboarding_status: string;
   created_at: string;

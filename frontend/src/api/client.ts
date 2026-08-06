@@ -6,6 +6,7 @@ import type {
   BgvClearRequest,
   BgvDocumentRead,
   CandidateRead,
+  DocuSignAuthUrl,
   GoogleAuthUrl,
   IntegrationStatus,
   InterviewCreate,
@@ -115,6 +116,9 @@ export const integrationsApi = {
   connectGoogle: () => get<GoogleAuthUrl>("/integrations/google/connect"),
   googleStatus: (userId?: UUID) =>
     get<IntegrationStatus>(`/integrations/google/status${userId ? `?user_id=${userId}` : ""}`),
+  connectDocusign: () => get<DocuSignAuthUrl>("/integrations/docusign/connect"),
+  docusignStatus: (userId?: UUID) =>
+    get<IntegrationStatus>(`/integrations/docusign/status${userId ? `?user_id=${userId}` : ""}`),
 };
 
 // ---- jobs ----

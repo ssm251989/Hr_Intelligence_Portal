@@ -21,6 +21,9 @@ class OfferRead(BaseModel):
     application_id: uuid.UUID
     offer_letter_text: Optional[str] = None
     docusign_envelope_id: Optional[str] = None
+    # Set only when docusign_envelope_id was created for real via the DocuSign API, as
+    # opposed to a manually-pasted envelope ID -- lets clients tell the two apart.
+    docusign_sender_id: Optional[uuid.UUID] = None
     signed: bool
     onboarding_status: str
     created_at: datetime

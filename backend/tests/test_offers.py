@@ -454,6 +454,7 @@ def test_generate_offer_creates_real_docusign_envelope_when_sender_connected(cli
     assert response.status_code == 200
     body = response.json()
     assert body["docusign_envelope_id"] == "env-real-123"
+    assert body["docusign_sender_id"] == str(admin.id)
 
     offer = db_session.query(Offer).filter(Offer.application_id == application.id).one()
     assert offer.docusign_sender_id == admin.id
