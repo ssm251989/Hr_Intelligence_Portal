@@ -34,6 +34,28 @@ class TopJobItem(BaseModel):
     application_count: int
 
 
+class MonthlyPoint(BaseModel):
+    month: str  # "YYYY-MM"
+    value: Optional[float] = None
+
+
+class StatTrend(BaseModel):
+    # Oldest -> newest, 12 points, the last of which is the current (in-progress) month.
+    series: list[MonthlyPoint]
+    compare_month: str  # "YYYY-MM" actually used for the comparison below
+    compare_value: Optional[float] = None
+    pct_change: Optional[float] = None
+    # True for stats derived from *current* status rather than a real historical
+    # snapshot (active_jobs, open_positions) -- see app/reports/stats.py.
+    is_approximate: bool = False
+
+
+class JobStatusOverviewResponse(BaseModel):
+    period: str  # "this_month" | "last_3_months" | "this_year" | "all_time"
+    total: int
+    by_status: list[LabeledCount]
+
+
 class JobsDashboardStatsResponse(BaseModel):
     total_jobs: int
     active_jobs: int
@@ -41,6 +63,12 @@ class JobsDashboardStatsResponse(BaseModel):
     total_applications: int
     hires_this_month: int
     avg_time_to_hire_days: Optional[float] = None
+    total_jobs_trend: StatTrend
+    active_jobs_trend: StatTrend
+    open_positions_trend: StatTrend
+    total_applications_trend: StatTrend
+    hires_this_month_trend: StatTrend
+    avg_time_to_hire_trend: StatTrend
     by_department: list[LabeledCount]
     by_location: list[LabeledCount]
     top_jobs: list[TopJobItem]

@@ -1,10 +1,60 @@
 import "leaflet/dist/leaflet.css";
-import { CircleMarker, MapContainer, TileLayer, Tooltip as LeafletTooltip } from "react-leaflet";
+import { useEffect } from "react";
+import { latLngBounds, type LatLngBoundsExpression } from "leaflet";
+import { CircleMarker, MapContainer, TileLayer, Tooltip as LeafletTooltip, useMap } from "react-leaflet";
 import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
 import type { LabeledCount } from "../api/types";
+
+// India's approximate bounding box -- keeps the map (and the user's panning/zooming)
+// scoped to the one country this app's data lives in, per the India-only lookup table
+// below, rather than letting the view wander off into the rest of the world. This is an
+// outer limit on panning/zooming-out only; it is not what frames the initial view (see
+// MapAutoFit) -- a fixed center/zoom guess had no reason to actually contain wherever
+// the real data's markers happen to be.
+const INDIA_BOUNDS: LatLngBoundsExpression = [
+  [6, 68],
+  [37.5, 97.5],
+];
+
+// Two problems, both now fixed here:
+//
+// 1. Leaflet measures its container's pixel size once, synchronously, at mount. This map
+//    sits several levels deep in the page's layout, so on first render the surrounding
+//    flex/grid may not have settled into its final size yet -- Leaflet then computes the
+//    wrong viewport. invalidateSize() on the next frame, and again on any later resize,
+//    fixes that without touching the layout itself.
+// 2. A *fixed* center/zoom (previously [22.5, 80] at zoom 5) has no relationship to where
+//    the real data's markers actually are -- e.g. all 4 of this app's current cities sit
+//    5-9.5 degrees of latitude south of that point, which is more than half the ~12-degree
+//    span a 280px-tall box shows at zoom 5. That's a framing bug, not a rendering one: the
+//    markers were placed correctly, just outside the visible viewport (one nearly outside
+//    it, three fully outside it). fitBounds() on the actual resolved marker coordinates
+//    replaces the guess with a view that's always correct for whatever data is present.
+function MapAutoFit({ points }: { points: [number, number][] }) {
+  const map = useMap();
+  const pointsKey = points.map((p) => p.join(",")).join("|");
+
+  useEffect(() => {
+    const fit = () => {
+      map.invalidateSize();
+      if (points.length > 0) {
+        map.fitBounds(latLngBounds(points), { padding: [28, 28], maxZoom: 6 });
+      }
+    };
+    const raf = requestAnimationFrame(fit);
+    const resizeObserver = new ResizeObserver(fit);
+    resizeObserver.observe(map.getContainer());
+    return () => {
+      cancelAnimationFrame(raf);
+      resizeObserver.disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, pointsKey]);
+  return null;
+}
 
 // Small curated lookup, not a live geocoding service -- there's no API key and no
 // geocoding budget here. Locations that don't match (e.g. "Remote", or a city not in
@@ -71,7 +121,17 @@ const CITY_COORDINATES: Record<string, [number, number]> = {
   panaji: [15.4909, 73.8278],
 };
 
-const CATEGORICAL_BLUE = "#2a78d6";
+// Categorical slot 7 (violet) -- deliberately distinct from the blue used for the
+// donut/legend's first slot, since bubble size (not color) is what carries meaning here;
+// a single consistent accent for every bubble keeps size comparisons the only variable.
+const BUBBLE_VIOLET = "#4a3aa7";
+
+// Radius still scales with a location's share of the busiest location's count, but the
+// min/max band is deliberately tight (was 8-24px) -- a high-count city's bubble should
+// stay legible and not visually swallow nearby cities on the map, so readability wins
+// over dramatic size differences between locations.
+const MIN_MARKER_RADIUS = 6;
+const MAX_MARKER_RADIUS = 14;
 
 function resolveCoordinates(location: string): [number, number] | null {
   return CITY_COORDINATES[location.trim().toLowerCase()] ?? null;
@@ -95,17 +155,26 @@ export default function JobsLocationMap({ rows }: { rows: LabeledCount[] }) {
   return (
     <Box>
       <Box sx={{ height: 280, borderRadius: 1, overflow: "hidden" }}>
-        <MapContainer center={[22.5, 79]} zoom={4.5} style={{ height: "100%", width: "100%" }} scrollWheelZoom={false}>
+        <MapContainer
+          center={[22.5, 80]}
+          zoom={5}
+          minZoom={4}
+          maxBounds={INDIA_BOUNDS}
+          maxBoundsViscosity={1.0}
+          style={{ height: "100%", width: "100%" }}
+          scrollWheelZoom={false}
+        >
+          <MapAutoFit points={resolved.map((row) => row.coords)} />
           <TileLayer
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
           />
           {resolved.map((row) => (
             <CircleMarker
               key={row.label}
               center={row.coords}
-              radius={8 + (row.count / maxCount) * 16}
-              pathOptions={{ color: CATEGORICAL_BLUE, fillColor: CATEGORICAL_BLUE, fillOpacity: 0.55, weight: 1 }}
+              radius={MIN_MARKER_RADIUS + (row.count / maxCount) * (MAX_MARKER_RADIUS - MIN_MARKER_RADIUS)}
+              pathOptions={{ color: BUBBLE_VIOLET, fillColor: BUBBLE_VIOLET, fillOpacity: 0.4, weight: 1.5 }}
             >
               <LeafletTooltip>
                 {row.label}: {row.count} {row.count === 1 ? "job" : "jobs"}

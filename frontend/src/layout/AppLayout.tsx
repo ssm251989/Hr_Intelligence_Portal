@@ -1,21 +1,28 @@
 import { useEffect, useState } from "react";
-import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
-import NotificationsOutlinedIcon from "@mui/icons-material/NotificationsOutlined";
-import WorkOutlineIcon from "@mui/icons-material/WorkOutline";
-import PeopleAltOutlinedIcon from "@mui/icons-material/PeopleAltOutlined";
-import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
-import PlaylistAddCheckOutlinedIcon from "@mui/icons-material/PlaylistAddCheckOutlined";
-import EventOutlinedIcon from "@mui/icons-material/EventOutlined";
-import PaidOutlinedIcon from "@mui/icons-material/PaidOutlined";
-import VerifiedUserOutlinedIcon from "@mui/icons-material/VerifiedUserOutlined";
-import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
+import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
+import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
+import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
+import EventOutlinedIcon from "@mui/icons-material/EventOutlined";
+import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
+import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
+import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
+import NotificationsOutlinedIcon from "@mui/icons-material/NotificationsOutlined";
+import PaidOutlinedIcon from "@mui/icons-material/PaidOutlined";
+import PeopleAltOutlinedIcon from "@mui/icons-material/PeopleAltOutlined";
+import PlaylistAddCheckOutlinedIcon from "@mui/icons-material/PlaylistAddCheckOutlined";
+import SearchIcon from "@mui/icons-material/Search";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
+import VerifiedUserOutlinedIcon from "@mui/icons-material/VerifiedUserOutlined";
+import WorkOutlineIcon from "@mui/icons-material/WorkOutline";
 import type { SvgIconComponent } from "@mui/icons-material";
+import Autocomplete from "@mui/material/Autocomplete";
 import AppBar from "@mui/material/AppBar";
+import Avatar from "@mui/material/Avatar";
 import Badge from "@mui/material/Badge";
 import Box from "@mui/material/Box";
-import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
 import Drawer from "@mui/material/Drawer";
@@ -26,16 +33,23 @@ import ListItemIcon from "@mui/material/ListItemIcon";
 import ListItemText from "@mui/material/ListItemText";
 import Popover from "@mui/material/Popover";
 import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
+import Tooltip from "@mui/material/Tooltip";
 import Toolbar from "@mui/material/Toolbar";
 import Typography from "@mui/material/Typography";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 
 import { reportsApi } from "../api/client";
+import type { RecentActivityItem } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import ConfirmDialog from "../components/ConfirmDialog";
 import RecentActivityFeed from "../components/RecentActivityFeed";
+import { useThemeMode } from "../theme/ThemeModeContext";
 
-const DRAWER_WIDTH = 240;
+const DRAWER_WIDTH = 200;
+const RAIL_WIDTH = 72;
+const SIDEBAR_STORAGE_KEY = "hr-automation-sidebar-expanded";
+const ACTIVITY_LAST_SEEN_KEY = "hr-automation-activity-last-seen";
 
 interface ModuleLink {
   label: string;
@@ -57,19 +71,54 @@ const MODULES: ModuleLink[] = [
   { label: "Settings", path: "/settings", icon: SettingsOutlinedIcon },
 ];
 
+function initials(nameOrEmail: string): string {
+  const trimmed = nameOrEmail.trim();
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return trimmed.slice(0, 2).toUpperCase();
+}
+
 export default function AppLayout() {
   const { user, logout } = useAuth();
+  const { mode, toggleMode } = useThemeMode();
   const navigate = useNavigate();
   const [confirmLogoutOpen, setConfirmLogoutOpen] = useState(false);
   const [activityAnchor, setActivityAnchor] = useState<HTMLElement | null>(null);
-  const [activityCount, setActivityCount] = useState(0);
+  const [activityItems, setActivityItems] = useState<RecentActivityItem[]>([]);
+  // Real "unread" tracking: a timestamp (ms) of the last time the dropdown was opened,
+  // persisted so it survives a reload. Never opened before -> 0, which makes every
+  // currently-fetched item count as unread (same total the old static activityCount gave
+  // on first-ever load), not an arbitrary "nothing is unread" default.
+  const [lastSeenAt, setLastSeenAt] = useState<number>(() => {
+    const stored = window.localStorage.getItem(ACTIVITY_LAST_SEEN_KEY);
+    return stored ? Number(stored) : 0;
+  });
+  const [expanded, setExpanded] = useState(() => {
+    const stored = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
+    return stored === null ? true : stored === "true";
+  });
 
   useEffect(() => {
     reportsApi
       .recentActivity(9)
-      .then((res) => setActivityCount(res.items.length))
-      .catch(() => setActivityCount(0));
+      .then((res) => setActivityItems(res.items))
+      .catch(() => setActivityItems([]));
   }, []);
+
+  const unreadActivityCount = activityItems.filter(
+    (item) => new Date(item.created_at).getTime() > lastSeenAt,
+  ).length;
+
+  const handleOpenActivity = (event: { currentTarget: HTMLElement }) => {
+    setActivityAnchor(event.currentTarget);
+    const now = Date.now();
+    setLastSeenAt(now);
+    window.localStorage.setItem(ACTIVITY_LAST_SEEN_KEY, String(now));
+  };
+
+  useEffect(() => {
+    window.localStorage.setItem(SIDEBAR_STORAGE_KEY, String(expanded));
+  }, [expanded]);
 
   const handleLogout = () => {
     setConfirmLogoutOpen(false);
@@ -77,69 +126,187 @@ export default function AppLayout() {
     navigate("/login", { replace: true });
   };
 
+  const drawerWidth = expanded ? DRAWER_WIDTH : RAIL_WIDTH;
+
   return (
     <Box sx={{ display: "flex" }}>
-      <AppBar position="fixed" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1 }}>
-        <Toolbar sx={{ justifyContent: "space-between" }}>
-          <Typography variant="h6" noWrap component="div">
-            HR Automation
-          </Typography>
-          <Stack direction="row" spacing={2} alignItems="center">
-            <IconButton
-              color="inherit"
-              onClick={(e) => setActivityAnchor(e.currentTarget)}
-              aria-label="Recent activity"
+      <AppBar
+        position="fixed"
+        color="default"
+        sx={{ zIndex: (theme) => theme.zIndex.drawer + 1, bgcolor: "background.paper" }}
+      >
+        <Toolbar sx={{ justifyContent: "space-between", gap: 2 }}>
+          <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexShrink: 0 }}>
+            <Box
+              sx={{
+                width: 32,
+                height: 32,
+                borderRadius: "10px",
+                bgcolor: "primary.main",
+                color: "primary.contrastText",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontWeight: 700,
+                fontSize: 13,
+                flexShrink: 0,
+              }}
             >
-              <Badge badgeContent={activityCount} color="secondary" max={9}>
+              CTD
+            </Box>
+            <Box sx={{ display: { xs: "none", sm: "block" } }}>
+              <Typography variant="subtitle1" fontWeight={700} lineHeight={1.1}>
+                CTD Techs
+              </Typography>
+              <Typography variant="caption" color="text.secondary" lineHeight={1}>
+                HR Automation
+              </Typography>
+            </Box>
+          </Stack>
+
+          {/* Real navigation, not a decorative search box -- filters MODULES by label and
+              jumps straight to the matching page. A full cross-entity search would need a
+              backend index this app doesn't have; this is the honest scope for now. */}
+          <Autocomplete
+            options={MODULES}
+            getOptionLabel={(option) => option.label}
+            onChange={(_event, value) => value && navigate(value.path)}
+            blurOnSelect
+            clearOnBlur
+            size="small"
+            sx={{ width: 260, display: { xs: "none", md: "block" } }}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                placeholder="Jump to a module..."
+                slotProps={{
+                  input: {
+                    ...params.InputProps,
+                    startAdornment: <SearchIcon fontSize="small" sx={{ color: "text.secondary", mr: 0.5 }} />,
+                  },
+                }}
+              />
+            )}
+          />
+
+          <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
+            <Tooltip title={mode === "dark" ? "Switch to light mode" : "Switch to dark mode"}>
+              <IconButton color="inherit" onClick={toggleMode} aria-label="Toggle color mode">
+                {mode === "dark" ? <LightModeOutlinedIcon /> : <DarkModeOutlinedIcon />}
+              </IconButton>
+            </Tooltip>
+            <IconButton color="inherit" onClick={handleOpenActivity} aria-label="Recent activity">
+              <Badge badgeContent={unreadActivityCount} color="secondary" max={9}>
                 <NotificationsOutlinedIcon />
               </Badge>
             </IconButton>
-            {user && (
-              <Stack direction="row" spacing={1} alignItems="center">
-                <Typography variant="body2">{user.full_name || user.email}</Typography>
-                <Chip label={user.role} size="small" color="secondary" />
-              </Stack>
-            )}
-            <Button color="inherit" size="small" onClick={() => setConfirmLogoutOpen(true)}>
-              Logout
-            </Button>
           </Stack>
         </Toolbar>
       </AppBar>
       <Drawer
         variant="permanent"
         sx={{
-          width: DRAWER_WIDTH,
+          width: drawerWidth,
           flexShrink: 0,
-          [`& .MuiDrawer-paper`]: { width: DRAWER_WIDTH, boxSizing: "border-box" },
+          whiteSpace: "nowrap",
+          [`& .MuiDrawer-paper`]: {
+            width: drawerWidth,
+            boxSizing: "border-box",
+            overflowX: "hidden",
+            transition: (theme) => theme.transitions.create("width", { duration: 220 }),
+            display: "flex",
+            flexDirection: "column",
+          },
         }}
       >
         <Toolbar />
+        <Box sx={{ display: "flex", justifyContent: expanded ? "flex-end" : "center", px: 1, py: 0.5 }}>
+          <Tooltip title={expanded ? "Collapse sidebar" : "Expand sidebar"}>
+            <IconButton size="small" onClick={() => setExpanded((prev) => !prev)}>
+              {expanded ? <ChevronLeftIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
+            </IconButton>
+          </Tooltip>
+        </Box>
         <Divider />
-        <List>
-          {MODULES.map(({ label, path, icon: Icon }) => (
-            <ListItemButton
-              key={path}
-              component={NavLink}
-              to={path}
-              end={path === "/"}
-              sx={{
-                "&.active": {
-                  backgroundColor: "action.selected",
-                  borderRight: "3px solid",
-                  borderColor: "primary.main",
-                },
-              }}
-            >
-              <ListItemIcon>
-                <Icon />
-              </ListItemIcon>
-              <ListItemText primary={label} />
-            </ListItemButton>
-          ))}
+        <List sx={{ flexGrow: 1 }}>
+          {MODULES.map(({ label, path, icon: Icon }) => {
+            const item = (
+              <ListItemButton
+                key={path}
+                component={NavLink}
+                to={path}
+                end={path === "/"}
+                sx={{
+                  justifyContent: expanded ? "flex-start" : "center",
+                  px: expanded ? 2 : 1.5,
+                  transition: "background-color 180ms ease",
+                  "&.active": {
+                    backgroundColor: "action.selected",
+                    borderRight: "3px solid",
+                    borderColor: "primary.main",
+                  },
+                }}
+              >
+                <ListItemIcon sx={{ minWidth: expanded ? 40 : "auto", justifyContent: "center" }}>
+                  <Icon />
+                </ListItemIcon>
+                {expanded && <ListItemText primary={label} />}
+              </ListItemButton>
+            );
+            return expanded ? (
+              item
+            ) : (
+              <Tooltip key={path} title={label} placement="right">
+                <span>{item}</span>
+              </Tooltip>
+            );
+          })}
         </List>
+
+        {/* Sidebar user footer -- replaces the name/role/logout that used to live in the
+            top AppBar. Collapses to just an avatar (with the same info on hover, and
+            logout still one click away) when the rail is collapsed. */}
+        <Divider />
+        {user && (
+          <Box sx={{ p: expanded ? 1.5 : 1, py: 1.5 }}>
+            <Stack
+              direction="row"
+              spacing={1.25}
+              alignItems="center"
+              justifyContent={expanded ? "flex-start" : "center"}
+            >
+              <Tooltip title={expanded ? "" : `${user.full_name || user.email} (${user.role})`}>
+                <Avatar sx={{ width: 32, height: 32, bgcolor: "primary.main", fontSize: 13 }}>
+                  {initials(user.full_name || user.email)}
+                </Avatar>
+              </Tooltip>
+              {expanded && (
+                <>
+                  <Box sx={{ minWidth: 0, flexGrow: 1 }}>
+                    <Typography variant="body2" noWrap fontWeight={600}>
+                      {user.full_name || user.email}
+                    </Typography>
+                    <Chip label={user.role} size="small" sx={{ height: 18, fontSize: 11 }} />
+                  </Box>
+                  <Tooltip title="Log out">
+                    <IconButton size="small" onClick={() => setConfirmLogoutOpen(true)} aria-label="Log out">
+                      <LogoutOutlinedIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </>
+              )}
+            </Stack>
+            {!expanded && (
+              <Stack alignItems="center" mt={0.5}>
+                <IconButton size="small" onClick={() => setConfirmLogoutOpen(true)} aria-label="Log out">
+                  <LogoutOutlinedIcon fontSize="small" />
+                </IconButton>
+              </Stack>
+            )}
+          </Box>
+        )}
       </Drawer>
-      <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
+      <Box component="main" sx={{ flexGrow: 1, p: 3, minWidth: 0 }}>
         <Toolbar />
         <Outlet />
       </Box>

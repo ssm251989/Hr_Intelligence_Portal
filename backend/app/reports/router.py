@@ -12,12 +12,14 @@ from app.jobs.service import close_job_if_deadline_passed
 from app.models.application import APPLICATION_STATUSES, Application
 from app.models.audit_log import AuditLog
 from app.models.candidate import Candidate
-from app.models.job_role import JobRole
+from app.models.job_role import JOB_ROLE_STATUSES, JobRole
 from app.models.user import User
+from app.reports import stats
 from app.schemas.reports import (
     ApplicationTimelineResponse,
     AuditLogPage,
     JobsDashboardStatsResponse,
+    JobStatusOverviewResponse,
     JobSummaryResponse,
     LabeledCount,
     PipelineResponse,
@@ -85,7 +87,13 @@ def get_job_summary(
 
 @router.get("/reports/jobs-dashboard-stats", response_model=JobsDashboardStatsResponse)
 def get_jobs_dashboard_stats(
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+    compare_month: Optional[str] = Query(
+        None,
+        description="YYYY-MM month to compare the current values against. Must be one "
+        "of the past 12 completed months; defaults to last month.",
+    ),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     # Lazily enforce application deadlines before counting -- there's no
     # scheduler in this app, so a published job whose deadline has passed only
@@ -96,25 +104,24 @@ def get_jobs_dashboard_stats(
     for job in published_jobs:
         close_job_if_deadline_passed(db, job)
 
-    total_jobs = db.query(func.count(JobRole.id)).scalar() or 0
-    active_jobs = (
-        db.query(func.count(JobRole.id)).filter(JobRole.status == "published").scalar() or 0
-    )
-    open_positions = (
-        db.query(func.coalesce(func.sum(JobRole.positions_count), 0))
-        .filter(JobRole.status == "published")
-        .scalar()
-        or 0
-    )
-    total_applications = db.query(func.count(Application.id)).scalar() or 0
-
     now = datetime.now(timezone.utc)
-    month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
-    next_month_start = (
-        datetime(now.year + 1, 1, 1, tzinfo=timezone.utc)
-        if now.month == 12
-        else datetime(now.year, now.month + 1, 1, tzinfo=timezone.utc)
-    )
+    try:
+        compare_month_start = stats.parse_compare_month(compare_month, now)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    compare_month_end = stats.shift_months(compare_month_start, 1)
+
+    # Last 12 calendar months, oldest first, ending with the current (in-progress) one --
+    # the sparkline series. month_ends[i] is the exclusive upper bound ("as of month-end")
+    # for month_starts[i]; the last entry is always > now, so it behaves as "no cutoff"
+    # for the current-month point -- i.e. the true current value, not an approximation.
+    month_starts = stats.last_12_month_starts(now)
+    month_ends = [stats.shift_months(month_start, 1) for month_start in month_starts]
+    current_month_start, current_month_end = month_starts[-1], month_ends[-1]
+
+    total_jobs = stats.cumulative_count_as_of(db, JobRole, current_month_end)
+    total_applications = stats.cumulative_count_as_of(db, Application, current_month_end)
+    active_jobs, open_positions = stats.published_snapshot_as_of(db, current_month_end)
 
     # applications.updated_at has no onupdate trigger (it's set once at insert and
     # never touched again), so it can't tell us *when* an application reached
@@ -122,36 +129,72 @@ def get_jobs_dashboard_stats(
     # app/offers/router.py complete_onboarding) is timestamped at the moment the
     # transition actually happened, so we use that instead for both the monthly
     # count and the time-to-hire calculation below.
-    completion_rows = (
-        db.query(AuditLog.entity_id, AuditLog.created_at)
-        .filter(
-            AuditLog.entity_type == "application",
-            AuditLog.action == "onboarding_completed",
-            AuditLog.created_at >= month_start,
-            AuditLog.created_at < next_month_start,
-        )
-        .all()
+    hires_this_month, avg_time_to_hire_days = stats.hires_and_avg_time_to_hire(
+        db, current_month_start, current_month_end
     )
-    hires_this_month = len(completion_rows)
 
-    # Time to hire = days between application.created_at and the audit_log
-    # timestamp of that same application's onboarding_completed transition,
-    # averaged over completions recorded this calendar month.
-    avg_time_to_hire_days = None
-    if completion_rows:
-        app_ids = [row.entity_id for row in completion_rows]
-        created_at_by_id = dict(
-            db.query(Application.id, Application.created_at)
-            .filter(Application.id.in_(app_ids))
-            .all()
-        )
-        deltas = [
-            (completed_at - created_at_by_id[entity_id]).total_seconds() / 86400
-            for entity_id, completed_at in completion_rows
-            if entity_id in created_at_by_id
-        ]
-        if deltas:
-            avg_time_to_hire_days = round(sum(deltas) / len(deltas), 1)
+    total_jobs_series = [stats.cumulative_count_as_of(db, JobRole, end) for end in month_ends]
+    total_applications_series = [
+        stats.cumulative_count_as_of(db, Application, end) for end in month_ends
+    ]
+    active_jobs_series: list[float] = []
+    open_positions_series: list[float] = []
+    for end in month_ends:
+        active_snapshot, open_snapshot = stats.published_snapshot_as_of(db, end)
+        active_jobs_series.append(active_snapshot)
+        open_positions_series.append(open_snapshot)
+    hires_series: list[float] = []
+    avg_time_series: list[Optional[float]] = []
+    for month_start_i, month_end_i in zip(month_starts, month_ends):
+        month_hires, month_avg = stats.hires_and_avg_time_to_hire(db, month_start_i, month_end_i)
+        hires_series.append(month_hires)
+        avg_time_series.append(month_avg)
+
+    compare_total_jobs = stats.cumulative_count_as_of(db, JobRole, compare_month_end)
+    compare_total_applications = stats.cumulative_count_as_of(db, Application, compare_month_end)
+    compare_active_jobs, compare_open_positions = stats.published_snapshot_as_of(
+        db, compare_month_end
+    )
+    compare_hires, compare_avg_time = stats.hires_and_avg_time_to_hire(
+        db, compare_month_start, compare_month_end
+    )
+
+    total_jobs_trend = stats.build_trend(
+        month_starts, total_jobs_series, compare_month_start, compare_total_jobs, total_jobs
+    )
+    active_jobs_trend = stats.build_trend(
+        month_starts,
+        active_jobs_series,
+        compare_month_start,
+        compare_active_jobs,
+        active_jobs,
+        is_approximate=True,
+    )
+    open_positions_trend = stats.build_trend(
+        month_starts,
+        open_positions_series,
+        compare_month_start,
+        compare_open_positions,
+        open_positions,
+        is_approximate=True,
+    )
+    total_applications_trend = stats.build_trend(
+        month_starts,
+        total_applications_series,
+        compare_month_start,
+        compare_total_applications,
+        total_applications,
+    )
+    hires_this_month_trend = stats.build_trend(
+        month_starts, hires_series, compare_month_start, compare_hires, hires_this_month
+    )
+    avg_time_to_hire_trend = stats.build_trend(
+        month_starts,
+        avg_time_series,
+        compare_month_start,
+        compare_avg_time,
+        avg_time_to_hire_days,
+    )
 
     department_label = func.coalesce(JobRole.department, "Unspecified")
     by_department = (
@@ -176,6 +219,12 @@ def get_jobs_dashboard_stats(
         total_applications=total_applications,
         hires_this_month=hires_this_month,
         avg_time_to_hire_days=avg_time_to_hire_days,
+        total_jobs_trend=total_jobs_trend,
+        active_jobs_trend=active_jobs_trend,
+        open_positions_trend=open_positions_trend,
+        total_applications_trend=total_applications_trend,
+        hires_this_month_trend=hires_this_month_trend,
+        avg_time_to_hire_trend=avg_time_to_hire_trend,
         by_department=[LabeledCount(label=label, count=count) for label, count in by_department],
         by_location=[LabeledCount(label=label, count=count) for label, count in by_location],
         top_jobs=[
@@ -183,6 +232,32 @@ def get_jobs_dashboard_stats(
             for job_id, title, count in top_job_rows
         ],
     )
+
+
+@router.get("/reports/job-status-overview", response_model=JobStatusOverviewResponse)
+def get_job_status_overview(
+    period: str = Query(
+        "this_month",
+        description=f"One of {stats.JOB_STATUS_OVERVIEW_PERIODS}; scopes the breakdown to jobs created in that window.",
+    ),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    now = datetime.now(timezone.utc)
+    try:
+        period_start = stats.job_status_period_start(period, now)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    query = db.query(JobRole.status, func.count(JobRole.id))
+    if period_start is not None:
+        query = query.filter(JobRole.created_at >= period_start)
+    rows = dict(query.group_by(JobRole.status).all())
+
+    # Every real status always appears, even at 0 -- this is an "overview" of the full
+    # status enum for the period, not just whichever statuses happen to have jobs in it.
+    by_status = [LabeledCount(label=status, count=rows.get(status, 0)) for status in JOB_ROLE_STATUSES]
+    return JobStatusOverviewResponse(period=period, total=sum(row.count for row in by_status), by_status=by_status)
 
 
 def _humanize_action(action: Optional[str]) -> str:

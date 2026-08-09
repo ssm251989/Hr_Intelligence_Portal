@@ -4,7 +4,8 @@ from datetime import datetime, timedelta, timezone
 from app.models.application import Application
 from app.models.audit_log import AuditLog
 from app.models.candidate import Candidate
-from app.models.job_role import JobRole
+from app.models.job_role import JOB_ROLE_STATUSES, JobRole
+from app.reports import stats
 
 _NOW = datetime.now(timezone.utc)
 # A timestamp guaranteed to fall in the *previous* calendar month regardless of
@@ -17,6 +18,20 @@ _PREVIOUS_MONTH = (
 )
 
 _BASE_TIME = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+
+def _months_ago(n: int, day: int = 10) -> datetime:
+    """A timestamp on day `day` of the IST calendar month `n` months before now (day 10
+    is safe for every month length, including February).
+
+    Deliberately built by offsetting from the month-start *boundary instant* rather than
+    reading `.year`/`.month` off it directly: that boundary is "00:00 IST on day 1" (see
+    app/reports/stats.py), which in UTC terms lands on the *last day of the previous*
+    month whenever IST is ahead of UTC's own calendar date -- reading its `.month` would
+    silently produce a timestamp one month too early.
+    """
+    month_start_boundary = stats.shift_months(stats.month_start(_NOW), -n)
+    return month_start_boundary + timedelta(days=day - 1, hours=12)
 
 
 def _make_job(db_session, title="Backend Engineer", **kwargs) -> JobRole:
@@ -437,6 +452,231 @@ def test_jobs_dashboard_stats_top_jobs_ranked_by_application_count(client, db_se
     assert len(body["top_jobs"]) <= 5
 
 
+# --- /reports/jobs-dashboard-stats: monthly series + comparison-month trend ---
+
+_TREND_FIELDS = [
+    "total_jobs_trend",
+    "active_jobs_trend",
+    "open_positions_trend",
+    "total_applications_trend",
+    "hires_this_month_trend",
+    "avg_time_to_hire_trend",
+]
+
+
+def test_jobs_dashboard_stats_monthly_series_has_12_points_ending_this_month(client):
+    body = client.get("/reports/jobs-dashboard-stats").json()
+    current_key = stats.month_key(stats.month_start(_NOW))
+
+    for field in _TREND_FIELDS:
+        series = body[field]["series"]
+        assert len(series) == 12
+        assert series[-1]["month"] == current_key
+        months = [point["month"] for point in series]
+        assert months == sorted(months)
+        assert len(set(months)) == 12
+
+
+def test_jobs_dashboard_stats_default_compare_month_is_last_month(client):
+    body = client.get("/reports/jobs-dashboard-stats").json()
+    expected = stats.month_key(stats.shift_months(stats.month_start(_NOW), -1))
+    for field in _TREND_FIELDS:
+        assert body[field]["compare_month"] == expected
+
+
+def test_jobs_dashboard_stats_invalid_compare_month_format_rejected(client):
+    response = client.get("/reports/jobs-dashboard-stats?compare_month=not-a-month")
+    assert response.status_code == 400
+
+
+def test_jobs_dashboard_stats_compare_month_out_of_range_rejected(client):
+    # The current (in-progress) month isn't a valid comparison target -- it isn't over yet.
+    current_key = stats.month_key(stats.month_start(_NOW))
+    response = client.get(f"/reports/jobs-dashboard-stats?compare_month={current_key}")
+    assert response.status_code == 400
+
+    # Nor is anything older than 12 months back.
+    too_old_key = stats.month_key(stats.shift_months(stats.month_start(_NOW), -13))
+    response = client.get(f"/reports/jobs-dashboard-stats?compare_month={too_old_key}")
+    assert response.status_code == 400
+
+
+def test_jobs_dashboard_stats_total_jobs_cumulative_series_and_compare_value(client, db_session):
+    # Total Jobs is creation-timestamp-based: the series is a running total "as of"
+    # each month-end, so a job created 6 months ago should raise every point from
+    # that month onward (including this one), while a job created this month should
+    # raise only the current point.
+    target_key = stats.month_key(stats.shift_months(stats.month_start(_NOW), -6))
+
+    before = client.get("/reports/jobs-dashboard-stats").json()
+    before_point = next(p for p in before["total_jobs_trend"]["series"] if p["month"] == target_key)
+
+    _make_job(db_session, created_at=_months_ago(6))
+    _make_job(db_session, created_at=_NOW)
+
+    after = client.get("/reports/jobs-dashboard-stats").json()
+    after_point = next(p for p in after["total_jobs_trend"]["series"] if p["month"] == target_key)
+
+    assert after["total_jobs"] - before["total_jobs"] == 2
+    assert after_point["value"] - before_point["value"] == 1
+
+
+def test_jobs_dashboard_stats_compare_month_pct_change_matches_formula(client, db_session):
+    target_key = stats.month_key(stats.shift_months(stats.month_start(_NOW), -8))
+
+    before = client.get(f"/reports/jobs-dashboard-stats?compare_month={target_key}").json()
+
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    # Counts toward both the target month's comparison value and the current total.
+    _make_application(db_session, job, candidate, created_at=_months_ago(8))
+    # Created this month -- counts toward the current total only.
+    _make_application(db_session, job, candidate, created_at=_NOW)
+
+    after = client.get(f"/reports/jobs-dashboard-stats?compare_month={target_key}").json()
+    trend = after["total_applications_trend"]
+
+    assert trend["compare_month"] == target_key
+    assert after["total_applications"] - before["total_applications"] == 2
+    assert trend["compare_value"] - before["total_applications_trend"]["compare_value"] == 1
+
+    expected_pct = round(
+        (after["total_applications"] - trend["compare_value"]) / trend["compare_value"] * 100, 1
+    )
+    assert trend["pct_change"] == expected_pct
+
+
+def test_jobs_dashboard_stats_hires_series_is_monthly_not_cumulative(client, db_session):
+    target_ms = stats.shift_months(stats.month_start(_NOW), -3)
+    target_key = stats.month_key(target_ms)
+    target_mid = _months_ago(3)
+
+    before = client.get(f"/reports/jobs-dashboard-stats?compare_month={target_key}").json()
+    hires_before_point = next(
+        p for p in before["hires_this_month_trend"]["series"] if p["month"] == target_key
+    )
+    avg_before_point = next(
+        p for p in before["avg_time_to_hire_trend"]["series"] if p["month"] == target_key
+    )
+
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application(
+        db_session, job, candidate, status="onboarding_completed",
+        created_at=target_mid - timedelta(days=50),
+    )
+    _make_audit_entry(
+        db_session, "application", application.id, "onboarding_completed", created_at=target_mid
+    )
+
+    after = client.get(f"/reports/jobs-dashboard-stats?compare_month={target_key}").json()
+
+    # This month's flat hires_this_month is untouched -- the new completion is 3
+    # calendar months old, not this month.
+    assert after["hires_this_month"] == before["hires_this_month"]
+
+    hires_after_point = next(
+        p for p in after["hires_this_month_trend"]["series"] if p["month"] == target_key
+    )
+    avg_after_point = next(
+        p for p in after["avg_time_to_hire_trend"]["series"] if p["month"] == target_key
+    )
+    assert hires_after_point["value"] - hires_before_point["value"] == 1
+
+    prior_sum = (avg_before_point["value"] or 0) * hires_before_point["value"]
+    expected_avg = (prior_sum + 50.0) / (hires_before_point["value"] + 1)
+    assert abs(avg_after_point["value"] - expected_avg) < 0.1
+
+    # compare_value for the selected month must track that same series point exactly.
+    assert after["hires_this_month_trend"]["compare_value"] == hires_after_point["value"]
+
+
+def test_jobs_dashboard_stats_active_jobs_trend_is_approximated_from_current_status(client, db_session):
+    target_key = stats.month_key(stats.shift_months(stats.month_start(_NOW), -4))
+
+    before = client.get(f"/reports/jobs-dashboard-stats?compare_month={target_key}").json()
+    assert before["active_jobs_trend"]["is_approximate"] is True
+    assert before["open_positions_trend"]["is_approximate"] is True
+    # Every other stat is exact, computed from real creation timestamps.
+    assert before["total_jobs_trend"]["is_approximate"] is False
+    assert before["total_applications_trend"]["is_approximate"] is False
+    assert before["hires_this_month_trend"]["is_approximate"] is False
+    assert before["avg_time_to_hire_trend"]["is_approximate"] is False
+
+    # This job is published *now*, but there's no historical record of whether it was
+    # published back in the target month too -- the approximation has no choice but to
+    # assume its current status held then as well, which is exactly the caveat the
+    # is_approximate flag exists to surface.
+    _make_job(db_session, status="published", positions_count=2, created_at=_months_ago(4))
+    # Published now, but created *this* month -- must not affect the target month's
+    # approximated snapshot, since it didn't exist as of that cutoff.
+    _make_job(db_session, status="published", positions_count=5, created_at=_NOW)
+
+    after = client.get(f"/reports/jobs-dashboard-stats?compare_month={target_key}").json()
+
+    assert after["active_jobs"] - before["active_jobs"] == 2
+    assert after["open_positions"] - before["open_positions"] == 7
+    assert (
+        after["active_jobs_trend"]["compare_value"] - before["active_jobs_trend"]["compare_value"] == 1
+    )
+    assert (
+        after["open_positions_trend"]["compare_value"]
+        - before["open_positions_trend"]["compare_value"]
+        == 2
+    )
+
+    before_point = next(p for p in before["active_jobs_trend"]["series"] if p["month"] == target_key)
+    after_point = next(p for p in after["active_jobs_trend"]["series"] if p["month"] == target_key)
+    assert after_point["value"] - before_point["value"] == 1
+
+
+# --- app/reports/stats: IST month-boundary correctness ---
+#
+# This app is India-only, so "today"/"this month" must be IST's calendar, not UTC's.
+# These use explicit, hand-picked `now` instants (never the real wall clock) so the
+# assertions are exact and don't depend on when the suite happens to run -- in
+# particular they exercise the ~5.5 hour window at the start of each month (IST is
+# UTC+5:30) where naively reading `some_utc_datetime.month` is a whole month behind
+# what an India-based user sees on their own clock.
+
+
+def test_month_start_uses_ist_calendar_not_utc_during_month_rollover_window():
+    # 2026-07-31 20:00 UTC == 2026-08-01 01:30 IST -- IST has already rolled into
+    # August while UTC's calendar date is still the last day of July.
+    fragile_now = datetime(2026, 7, 31, 20, 0, 0, tzinfo=timezone.utc)
+    assert stats.month_key(stats.month_start(fragile_now)) == "2026-08"
+
+    # And safely *before* that rollover (still July on both clocks), it must stay July.
+    safe_now = datetime(2026, 7, 31, 10, 0, 0, tzinfo=timezone.utc)
+    assert stats.month_key(stats.month_start(safe_now)) == "2026-07"
+
+
+def test_default_compare_month_is_previous_calendar_month_relative_to_ist_today():
+    cases = [
+        # (now_utc, expected current month, expected default compare_month)
+        (datetime(2026, 8, 9, 6, 0, 0, tzinfo=timezone.utc), "2026-08", "2026-07"),  # ordinary midday case
+        # The exact bug this guards against: today is "early August" on an IST clock
+        # (2026-08-01 01:30 IST), but UTC's own calendar still reads July 31 -- the old
+        # code used UTC's month directly and defaulted to "vs June 2026" here instead
+        # of the correct "vs July 2026".
+        (datetime(2026, 7, 31, 20, 0, 0, tzinfo=timezone.utc), "2026-08", "2026-07"),
+        (datetime(2026, 7, 31, 10, 0, 0, tzinfo=timezone.utc), "2026-07", "2026-06"),
+        # Same rollover window, but at a year boundary.
+        (datetime(2025, 12, 31, 19, 0, 0, tzinfo=timezone.utc), "2026-01", "2025-12"),
+    ]
+    for now_utc, expected_current, expected_compare in cases:
+        assert stats.month_key(stats.month_start(now_utc)) == expected_current
+        assert stats.month_key(stats.parse_compare_month(None, now_utc)) == expected_compare
+
+
+def test_last_12_month_series_ends_on_ist_current_month_during_rollover_window():
+    fragile_now = datetime(2026, 7, 31, 20, 0, 0, tzinfo=timezone.utc)
+    month_starts = stats.last_12_month_starts(fragile_now)
+    assert len(month_starts) == 12
+    assert stats.month_key(month_starts[-1]) == "2026-08"
+    assert stats.month_key(month_starts[-2]) == "2026-07"
+
+
 # --- /reports/recent-activity ---
 
 
@@ -534,3 +774,83 @@ def test_recent_activity_orders_newest_first(client, db_session):
     # Among just this test's own rows, newest-first still holds.
     own_messages = [item["message"] for item in all_items if item["entity_id"] == str(job.id)]
     assert own_messages == [f"Step {i}: Ordering Job" for i in reversed(range(5))]
+
+
+# --- /reports/job-status-overview ---
+
+
+def test_job_status_overview_includes_every_real_status_even_at_zero(client):
+    body = client.get("/reports/job-status-overview?period=all_time").json()
+    labels = [row["label"] for row in body["by_status"]]
+
+    assert labels == list(JOB_ROLE_STATUSES)
+    assert body["total"] == sum(row["count"] for row in body["by_status"])
+
+
+def test_job_status_overview_invalid_period_rejected(client):
+    response = client.get("/reports/job-status-overview?period=next_week")
+    assert response.status_code == 400
+
+
+def test_job_status_overview_default_period_is_this_month(client, db_session):
+    before = client.get("/reports/job-status-overview").json()
+    before_counts = {row["label"]: row["count"] for row in before["by_status"]}
+
+    _make_job(db_session, status="draft", created_at=_NOW)
+    _make_job(db_session, status="published", created_at=_NOW)
+    # Backdated to last month -- must be excluded from the default (this month) period.
+    _make_job(db_session, status="draft", created_at=_months_ago(1))
+
+    after = client.get("/reports/job-status-overview").json()
+    after_counts = {row["label"]: row["count"] for row in after["by_status"]}
+
+    assert after_counts["draft"] - before_counts["draft"] == 1
+    assert after_counts["published"] - before_counts["published"] == 1
+    assert after["total"] - before["total"] == 2
+
+
+def test_job_status_overview_last_3_months_includes_current_and_two_prior_excludes_older(client, db_session):
+    before = client.get("/reports/job-status-overview?period=last_3_months").json()
+    before_total = before["total"]
+
+    _make_job(db_session, status="published", created_at=_NOW)
+    _make_job(db_session, status="closed", created_at=_months_ago(2))
+    # One month further back than the window reaches -- must be excluded.
+    excluded_job = _make_job(db_session, status="closed", created_at=_months_ago(3))
+
+    after = client.get("/reports/job-status-overview?period=last_3_months").json()
+
+    assert after["total"] - before_total == 2
+
+    # Sanity: that excluded job really does exist and really is outside the window --
+    # confirmed via all_time, which has no lower bound at all.
+    all_time = client.get("/reports/job-status-overview?period=all_time").json()
+    assert all_time["total"] >= after["total"]
+    assert excluded_job.created_at < _months_ago(2)
+
+
+def test_job_status_overview_this_year_excludes_prior_year(client, db_session):
+    before = client.get("/reports/job-status-overview?period=this_year").json()
+    before_total = before["total"]
+
+    ist_now = _NOW + stats._IST_OFFSET
+    january_this_year = stats._ist_month_boundary(ist_now.year, 1) + timedelta(days=9, hours=12)
+    december_last_year = stats._ist_month_boundary(ist_now.year, 1) - timedelta(days=5)
+
+    _make_job(db_session, status="ready_for_publishing", created_at=january_this_year)
+    _make_job(db_session, status="ready_for_publishing", created_at=december_last_year)
+
+    after = client.get("/reports/job-status-overview?period=this_year").json()
+
+    assert after["total"] - before_total == 1
+
+
+def test_job_status_overview_all_time_has_no_lower_bound(client, db_session):
+    before = client.get("/reports/job-status-overview?period=all_time").json()
+    before_total = before["total"]
+
+    _make_job(db_session, status="closed", created_at=_BASE_TIME)
+
+    after = client.get("/reports/job-status-overview?period=all_time").json()
+
+    assert after["total"] - before_total == 1
