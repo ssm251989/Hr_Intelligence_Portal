@@ -50,6 +50,7 @@ export interface JobRoleBase {
   positions_count: number;
   benefits?: string | null;
   additional_notes?: string | null;
+  job_type: string;
 }
 
 export interface JobRoleCreate extends JobRoleBase {
@@ -67,6 +68,7 @@ export interface JobRoleUpdate {
   salary_band_max?: number | null;
   positions_count?: number;
   status?: string;
+  job_type?: string;
   jd_text?: string | null;
   benefits?: string | null;
   additional_notes?: string | null;
@@ -89,6 +91,12 @@ export interface JobRoleRead extends JobRoleBase {
   linkedin_post_urn?: string | null;
   created_by?: UUID | null;
   created_at: string;
+  // Computed per-job stats for the jobs list table -- not real columns (see
+  // app/jobs/router.py list_jobs), so any other job-returning call may just carry the
+  // defaults (0 / null) rather than a real number.
+  application_count: number;
+  applications_pct_change?: number | null;
+  avg_time_to_hire_days?: number | null;
 }
 
 // Final step of the create-job wizard. Naukri.com has no real posting API access (no
@@ -350,6 +358,22 @@ export interface TopJobItem {
   application_count: number;
 }
 
+export interface MonthlyPoint {
+  month: string; // "YYYY-MM"
+  value: number | null;
+}
+
+export interface StatTrend {
+  // Oldest -> newest, 12 points, the last of which is the current (in-progress) month.
+  series: MonthlyPoint[];
+  compare_month: string; // "YYYY-MM" actually used for the comparison below
+  compare_value: number | null;
+  pct_change: number | null;
+  // True when this trend is derived from *current* status rather than a real
+  // historical snapshot (active_jobs, open_positions) -- see backend app/reports/stats.py.
+  is_approximate: boolean;
+}
+
 export interface JobsDashboardStatsResponse {
   total_jobs: number;
   active_jobs: number;
@@ -357,9 +381,21 @@ export interface JobsDashboardStatsResponse {
   total_applications: number;
   hires_this_month: number;
   avg_time_to_hire_days?: number | null;
+  total_jobs_trend: StatTrend;
+  active_jobs_trend: StatTrend;
+  open_positions_trend: StatTrend;
+  total_applications_trend: StatTrend;
+  hires_this_month_trend: StatTrend;
+  avg_time_to_hire_trend: StatTrend;
   by_department: LabeledCount[];
   by_location: LabeledCount[];
   top_jobs: TopJobItem[];
+}
+
+export interface JobStatusOverviewResponse {
+  period: string; // "this_month" | "last_3_months" | "this_year" | "all_time"
+  total: number;
+  by_status: LabeledCount[];
 }
 
 export interface RecentActivityItem {

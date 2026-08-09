@@ -12,6 +12,30 @@ from app.models.user import User
 from app.models.user_integration import UserIntegration
 
 
+def validate_status_transition(current_status: str, new_status: str) -> None:
+    """Guards only the transitions that touch 'on_hold' -- every other status pairing
+    (draft/ready_for_publishing/published/closed among themselves) keeps its existing,
+    unrestricted behavior; that predates this status and isn't part of this change.
+
+    Raises ValueError (callers map this to HTTP 400) with a message naming the specific
+    rule that was violated.
+    """
+    if current_status == new_status:
+        return
+    if new_status == "on_hold":
+        if current_status != "published":
+            raise ValueError(
+                f"A job can only be put on hold from 'published', not '{current_status}'."
+            )
+        return
+    if current_status == "on_hold":
+        if new_status not in ("published", "closed"):
+            raise ValueError(
+                f"An on-hold job can only resume to 'published' or move to 'closed', not '{new_status}'."
+            )
+        return
+
+
 def get_application_deadline(job: JobRole) -> date | None:
     raw = (job.publish_settings or {}).get("application_deadline")
     if not raw:
@@ -50,6 +74,42 @@ def close_job_if_deadline_passed(db: Session, job: JobRole) -> bool:
         {"previous_status": previous_status, "application_deadline": deadline.isoformat()},
     )
     return True
+
+
+def hold_job(db: Session, job: JobRole) -> None:
+    """published -> on_hold. Raises ValueError if the job isn't currently published."""
+    validate_status_transition(job.status, "on_hold")
+    previous_status = job.status
+    job.status = "on_hold"
+    db.commit()
+    db.refresh(job)
+    log_action(
+        db, "job_role", job.id, "job_put_on_hold", "system",
+        {"previous_status": previous_status, "new_status": "on_hold"},
+    )
+
+
+def resume_job(db: Session, job: JobRole) -> None:
+    """on_hold -> published. Raises ValueError if the job isn't currently on hold.
+
+    Doesn't rely on validate_status_transition alone: that function only restricts
+    transitions that touch 'on_hold' on *either* side, so on its own it would let
+    resume_job "resume" a job from any non-on_hold status straight to published (since
+    neither side of e.g. draft -> published touches on_hold, that pairing is
+    unrestricted by design). "Resume" specifically only makes sense starting from
+    on_hold, so that precondition is checked explicitly here.
+    """
+    if job.status != "on_hold":
+        raise ValueError(f"Only an on-hold job can be resumed, not '{job.status}'.")
+    validate_status_transition(job.status, "published")
+    previous_status = job.status
+    job.status = "published"
+    db.commit()
+    db.refresh(job)
+    log_action(
+        db, "job_role", job.id, "job_resumed_from_hold", "system",
+        {"previous_status": previous_status, "new_status": "published"},
+    )
 
 
 def notify_job_owner_of_new_application(db: Session, job: JobRole, candidate: Candidate) -> None:

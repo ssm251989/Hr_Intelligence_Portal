@@ -26,11 +26,12 @@ const STATUS_COLOR_MAP: Record<string, StatusColor> = {
   offer_sent: "default",
   onboarding_started: "default",
   onboarding_completed: "success",
-  // job postings (backend/app/models/job_role.py)
+  // job postings (backend/app/models/job_role.py JOB_ROLE_STATUSES)
   draft: "default",
   ready_for_publishing: "warning",
   published: "success",
   closed: "error",
+  on_hold: "info",
   // BGV document validation (backend/app/schemas/bgv.py)
   valid: "success",
   invalid: "error",

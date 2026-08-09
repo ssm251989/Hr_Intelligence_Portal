@@ -18,6 +18,7 @@ import type {
   JobRoleRead,
   JobRoleUpdate,
   JobsDashboardStatsResponse,
+  JobStatusOverviewResponse,
   JobSummaryResponse,
   LinkedInAuthUrl,
   OfferGenerateRequest,
@@ -132,6 +133,7 @@ const post = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: "POST", body: body !== undefined ? JSON.stringify(body) : undefined });
 const patch = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: "PATCH", body: body !== undefined ? JSON.stringify(body) : undefined });
+const del = <T>(path: string) => request<T>(path, { method: "DELETE" });
 const postForm = <T>(path: string, form: FormData) => request<T>(path, { method: "POST", body: form });
 
 // ---- auth ----
@@ -169,9 +171,12 @@ export const jobsApi = {
   get: (jobId: UUID) => get<JobRoleRead>(`/jobs/${jobId}`),
   create: (payload: JobRoleCreate) => post<JobRoleRead>("/jobs", payload),
   update: (jobId: UUID, payload: JobRoleUpdate) => patch<JobRoleRead>(`/jobs/${jobId}`, payload),
+  delete: (jobId: UUID) => del<void>(`/jobs/${jobId}`),
   generateJd: (jobId: UUID) => post<JobRoleRead>(`/jobs/${jobId}/generate-jd`),
   publishPlatforms: (jobId: UUID, payload: PublishPlatformsRequest) =>
     post<JobRoleRead>(`/jobs/${jobId}/publish`, payload),
+  hold: (jobId: UUID) => post<JobRoleRead>(`/jobs/${jobId}/hold`),
+  resume: (jobId: UUID) => post<JobRoleRead>(`/jobs/${jobId}/resume`),
   fieldSuggestions: () => get<JobFieldSuggestionsResponse>("/jobs/field-suggestions"),
 };
 
@@ -271,7 +276,12 @@ export const reportsApi = {
   pipeline: (jobRoleId?: UUID) =>
     get<PipelineResponse>(`/reports/pipeline${jobRoleId ? `?job_role_id=${jobRoleId}` : ""}`),
   jobSummary: (jobId: UUID) => get<JobSummaryResponse>(`/reports/jobs/${jobId}/summary`),
-  jobsDashboardStats: () => get<JobsDashboardStatsResponse>("/reports/jobs-dashboard-stats"),
+  jobsDashboardStats: (compareMonth?: string) =>
+    get<JobsDashboardStatsResponse>(
+      `/reports/jobs-dashboard-stats${compareMonth ? `?compare_month=${compareMonth}` : ""}`
+    ),
+  jobStatusOverview: (period?: string) =>
+    get<JobStatusOverviewResponse>(`/reports/job-status-overview${period ? `?period=${period}` : ""}`),
   recentActivity: (limit?: number) =>
     get<RecentActivityResponse>(`/reports/recent-activity${limit ? `?limit=${limit}` : ""}`),
   auditLog: (params: { entityType?: string; entityId?: UUID; action?: string; limit?: number; offset?: number } = {}) => {

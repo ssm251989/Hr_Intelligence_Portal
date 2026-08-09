@@ -16,6 +16,9 @@ class JobRoleBase(BaseModel):
     positions_count: int = 1
     benefits: Optional[str] = None
     additional_notes: Optional[str] = None
+    # No application-level enum validation, same as `status` -- the DB CheckConstraint
+    # (JOB_TYPES in app/models/job_role.py) is the one source of truth.
+    job_type: str = "Full-time"
 
 
 class JobRoleCreate(JobRoleBase):
@@ -33,6 +36,7 @@ class JobRoleUpdate(BaseModel):
     salary_band_max: Optional[float] = None
     positions_count: Optional[int] = None
     status: Optional[str] = None
+    job_type: Optional[str] = None
     jd_text: Optional[str] = None
     benefits: Optional[str] = None
     additional_notes: Optional[str] = None
@@ -58,6 +62,12 @@ class JobRoleRead(JobRoleBase):
     linkedin_post_urn: Optional[str] = None
     created_by: Optional[uuid.UUID] = None
     created_at: datetime
+    # Computed per-job stats for the jobs list table (see app/jobs/router.py list_jobs) --
+    # not real columns, so every other endpoint that returns a bare JobRole (create/update/
+    # publish/hold/resume/generate-jd) just gets these defaults rather than a real number.
+    application_count: int = 0
+    applications_pct_change: Optional[float] = None
+    avg_time_to_hire_days: Optional[float] = None
 
 
 # ---- publish-to-platforms (create-job wizard, final step) ----

@@ -4,10 +4,15 @@ from datetime import datetime, timedelta, timezone
 from app.ai_services.jd_generator import JDGenerationError
 from app.core.crypto import encrypt
 from app.integrations.linkedin import LinkedInError
+from app.models.application import Application
 from app.models.audit_log import AuditLog
+from app.models.candidate import Candidate
 from app.models.job_role import JobRole
 from app.models.user import User
 from app.models.user_integration import UserIntegration
+from app.reports import stats
+
+_NOW = datetime.now(timezone.utc)
 
 
 def _make_job(db_session, **kwargs) -> JobRole:
@@ -16,6 +21,42 @@ def _make_job(db_session, **kwargs) -> JobRole:
     db_session.commit()
     db_session.refresh(job)
     return job
+
+
+def _make_candidate(db_session, full_name="Jane Doe") -> Candidate:
+    candidate = Candidate(full_name=full_name)
+    db_session.add(candidate)
+    db_session.commit()
+    db_session.refresh(candidate)
+    return candidate
+
+
+def _make_application(db_session, job, candidate, status="received", **kwargs) -> Application:
+    application = Application(job_role_id=job.id, candidate_id=candidate.id, status=status, **kwargs)
+    db_session.add(application)
+    db_session.commit()
+    db_session.refresh(application)
+    return application
+
+
+def _make_audit_entry(db_session, entity_type, entity_id, action, actor="system", details=None, created_at=None):
+    entry = AuditLog(
+        entity_type=entity_type,
+        entity_id=entity_id,
+        action=action,
+        actor=actor,
+        details=details,
+        created_at=created_at or _NOW,
+    )
+    db_session.add(entry)
+    db_session.commit()
+    db_session.refresh(entry)
+    return entry
+
+
+def _months_ago(n: int, day: int = 10) -> datetime:
+    month_start_boundary = stats.shift_months(stats.month_start(_NOW), -n)
+    return month_start_boundary + timedelta(days=day - 1, hours=12)
 
 
 def _connect_linkedin(db_session, user, expires_at=None, member_urn="urn:li:person:abc123") -> UserIntegration:
@@ -50,8 +91,159 @@ def test_generate_job_description_ai_failure_returns_502(client, db_session, mon
     assert response.status_code == 502
 
 
+def test_generate_job_description_passes_full_role_inputs(client, db_session, monkeypatch):
+    # Requirements/salary/benefits/additional-notes are collected in earlier wizard steps
+    # now (see CreateJobWizard's reordered STEPS) specifically so they're available by
+    # the time JD generation runs -- this proves the router actually forwards all of it,
+    # not just title/department/location/experience_level as before that reorder.
+    captured = {}
+
+    def fake_generate_jd(inputs):
+        captured.update(inputs)
+        return {
+            "title": "Backend Engineer",
+            "summary": "x",
+            "responsibilities": ["x"],
+            "required_skills": ["x"],
+            "nice_to_have": [],
+            "experience_required": "x",
+            "compensation_and_benefits": "Salary: 1500000-2200000. Benefits: Health insurance, WFH stipend.",
+            "additional_notes_section": "Team is fully remote-first",
+        }
+
+    monkeypatch.setattr("app.jobs.router.generate_jd", fake_generate_jd)
+
+    job = _make_job(
+        db_session,
+        department="Engineering",
+        location="Hyderabad",
+        experience_level="Senior",
+        skills=["Python", "FastAPI"],
+        salary_band_min=1500000,
+        salary_band_max=2200000,
+        benefits="Health insurance, WFH stipend",
+        additional_notes="Team is fully remote-first",
+    )
+
+    response = client.post(f"/jobs/{job.id}/generate-jd")
+
+    assert response.status_code == 200
+    assert captured["skills"] == ["Python", "FastAPI"]
+    assert captured["salary_band_min"] == 1500000
+    assert captured["salary_band_max"] == 2200000
+    assert captured["benefits"] == "Health insurance, WFH stipend"
+    assert captured["additional_notes"] == "Team is fully remote-first"
+
+    # The AI's compensation/notes output must actually make it into the rendered
+    # jd_text -- passing the inputs to the model isn't enough if the render step
+    # drops them, which is exactly what happened before these output fields were added.
+    jd_text = response.json()["jd_text"]
+    assert "Compensation & Benefits:" in jd_text
+    assert "Health insurance, WFH stipend" in jd_text
+    assert "Additional Notes:" in jd_text
+    assert "Team is fully remote-first" in jd_text
+
+
+def test_generate_job_description_omits_compensation_section_when_not_provided(
+    client, db_session, monkeypatch
+):
+    # When the model has nothing to say (no salary/benefits/notes were input), it
+    # returns null for these fields per the system prompt's "don't fabricate" rule --
+    # the renderer must skip the section entirely rather than printing an empty header.
+    def fake_generate_jd(inputs):
+        return {
+            "title": "Backend Engineer",
+            "summary": "x",
+            "responsibilities": ["x"],
+            "required_skills": ["x"],
+            "nice_to_have": [],
+            "experience_required": "x",
+            "compensation_and_benefits": None,
+            "additional_notes_section": None,
+        }
+
+    monkeypatch.setattr("app.jobs.router.generate_jd", fake_generate_jd)
+
+    job = _make_job(db_session)
+    response = client.post(f"/jobs/{job.id}/generate-jd")
+
+    assert response.status_code == 200
+    jd_text = response.json()["jd_text"]
+    assert "Compensation & Benefits:" not in jd_text
+    assert "Additional Notes:" not in jd_text
+
+
 def test_generate_job_description_not_found(client):
     response = client.post(f"/jobs/{uuid.uuid4()}/generate-jd")
+    assert response.status_code == 404
+
+
+# --- DELETE /jobs/{id} ---
+
+
+def test_delete_draft_job_succeeds(client, db_session):
+    job = _make_job(db_session, status="draft")
+    job_id = job.id
+
+    response = client.delete(f"/jobs/{job_id}")
+
+    assert response.status_code == 204
+    assert db_session.get(JobRole, job_id) is None
+
+
+def test_delete_ready_for_publishing_job_succeeds(client, db_session):
+    job = _make_job(db_session, status="ready_for_publishing")
+    job_id = job.id
+
+    response = client.delete(f"/jobs/{job_id}")
+
+    assert response.status_code == 204
+    assert db_session.get(JobRole, job_id) is None
+
+
+def test_delete_published_job_blocked(client, db_session):
+    job = _make_job(db_session, status="published")
+
+    response = client.delete(f"/jobs/{job.id}")
+
+    assert response.status_code == 400
+    assert db_session.get(JobRole, job.id) is not None
+
+
+def test_delete_on_hold_job_blocked(client, db_session):
+    job = _make_job(db_session, status="on_hold")
+
+    response = client.delete(f"/jobs/{job.id}")
+
+    assert response.status_code == 400
+    assert db_session.get(JobRole, job.id) is not None
+
+
+def test_delete_closed_job_blocked(client, db_session):
+    job = _make_job(db_session, status="closed")
+
+    response = client.delete(f"/jobs/{job.id}")
+
+    assert response.status_code == 400
+    assert db_session.get(JobRole, job.id) is not None
+
+
+def test_delete_draft_job_with_applications_blocked(client, db_session):
+    # A draft/ready_for_publishing job with real applications (e.g. created via direct
+    # API use before ever being published) must not be deletable -- that would silently
+    # destroy application data rather than just an empty, never-used job posting.
+    job = _make_job(db_session, status="draft")
+    candidate = _make_candidate(db_session)
+    _make_application(db_session, job, candidate)
+
+    response = client.delete(f"/jobs/{job.id}")
+
+    assert response.status_code == 400
+    assert db_session.get(JobRole, job.id) is not None
+
+
+def test_delete_job_not_found(client):
+    response = client.delete(f"/jobs/{uuid.uuid4()}")
     assert response.status_code == 404
 
 
@@ -425,3 +617,288 @@ def test_list_jobs_closes_expired_jobs_too(client, db_session):
 
     db_session.refresh(job)
     assert job.status == "closed"
+
+
+# --- on_hold status transitions -------------------------------------------------
+
+
+def test_hold_job_from_published_succeeds(client, db_session):
+    job = _make_job(db_session, status="published")
+
+    response = client.post(f"/jobs/{job.id}/hold")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "on_hold"
+    db_session.refresh(job)
+    assert job.status == "on_hold"
+
+
+def test_hold_job_logs_audit_entry(client, db_session):
+    job = _make_job(db_session, status="published")
+
+    client.post(f"/jobs/{job.id}/hold")
+
+    entry = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.entity_id == job.id, AuditLog.action == "job_put_on_hold")
+        .one()
+    )
+    assert entry.details["previous_status"] == "published"
+    assert entry.details["new_status"] == "on_hold"
+
+
+def test_hold_job_from_non_published_status_rejected(client, db_session):
+    job = _make_job(db_session, status="draft")
+
+    response = client.post(f"/jobs/{job.id}/hold")
+
+    assert response.status_code == 400
+    db_session.refresh(job)
+    assert job.status == "draft"
+
+
+def test_resume_job_from_on_hold_succeeds(client, db_session):
+    job = _make_job(db_session, status="on_hold")
+
+    response = client.post(f"/jobs/{job.id}/resume")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "published"
+    db_session.refresh(job)
+    assert job.status == "published"
+
+
+def test_resume_job_logs_audit_entry(client, db_session):
+    job = _make_job(db_session, status="on_hold")
+
+    client.post(f"/jobs/{job.id}/resume")
+
+    entry = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.entity_id == job.id, AuditLog.action == "job_resumed_from_hold")
+        .one()
+    )
+    assert entry.details["previous_status"] == "on_hold"
+    assert entry.details["new_status"] == "published"
+
+
+def test_resume_job_from_non_on_hold_status_rejected(client, db_session):
+    job = _make_job(db_session, status="published")
+
+    response = client.post(f"/jobs/{job.id}/resume")
+
+    assert response.status_code == 400
+    db_session.refresh(job)
+    assert job.status == "published"
+
+
+def test_patch_status_on_hold_to_closed_succeeds(client, db_session):
+    job = _make_job(db_session, status="on_hold")
+
+    response = client.patch(f"/jobs/{job.id}", json={"status": "closed"})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "closed"
+
+
+def test_patch_status_draft_to_on_hold_rejected(client, db_session):
+    job = _make_job(db_session, status="draft")
+
+    response = client.patch(f"/jobs/{job.id}", json={"status": "on_hold"})
+
+    assert response.status_code == 400
+    db_session.refresh(job)
+    assert job.status == "draft"
+
+
+def test_patch_status_on_hold_to_draft_rejected(client, db_session):
+    job = _make_job(db_session, status="on_hold")
+
+    response = client.patch(f"/jobs/{job.id}", json={"status": "draft"})
+
+    assert response.status_code == 400
+    db_session.refresh(job)
+    assert job.status == "on_hold"
+
+
+def test_patch_status_on_hold_to_ready_for_publishing_rejected(client, db_session):
+    job = _make_job(db_session, status="on_hold")
+
+    response = client.patch(f"/jobs/{job.id}", json={"status": "ready_for_publishing"})
+
+    assert response.status_code == 400
+    db_session.refresh(job)
+    assert job.status == "on_hold"
+
+
+def test_patch_status_transitions_not_touching_on_hold_remain_unrestricted(client, db_session):
+    # Pre-existing behavior, not part of this change -- draft straight to closed (skipping
+    # every intermediate status) was already unvalidated before on_hold existed, and stays
+    # that way; only transitions that touch on_hold are newly guarded.
+    job = _make_job(db_session, status="draft")
+
+    response = client.patch(f"/jobs/{job.id}", json={"status": "closed"})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "closed"
+
+
+def test_generate_jd_on_held_job_rejected(client, db_session, monkeypatch):
+    job = _make_job(db_session, status="on_hold")
+
+    response = client.post(f"/jobs/{job.id}/generate-jd")
+
+    assert response.status_code == 400
+    db_session.refresh(job)
+    assert job.status == "on_hold"
+    assert job.jd_text is None
+
+
+def test_publish_on_held_job_rejected(client, db_session):
+    job = _make_job(db_session, status="on_hold")
+
+    response = client.post(
+        f"/jobs/{job.id}/publish", json={"naukri": False, "linkedin": False, "career_portal": True}
+    )
+
+    assert response.status_code == 400
+    db_session.refresh(job)
+    assert job.status == "on_hold"
+
+
+# --- job_type ---------------------------------------------------------------------
+
+
+def test_create_job_defaults_job_type_to_full_time(client):
+    response = client.post("/jobs", json={"title": "Default Job Type Role"})
+
+    assert response.status_code == 201
+    assert response.json()["job_type"] == "Full-time"
+
+
+def test_create_job_with_explicit_job_type(client):
+    response = client.post("/jobs", json={"title": "Contract Role", "job_type": "Contract"})
+
+    assert response.status_code == 201
+    assert response.json()["job_type"] == "Contract"
+
+
+def test_update_job_type(client, db_session):
+    job = _make_job(db_session)
+
+    response = client.patch(f"/jobs/{job.id}", json={"job_type": "Part-time"})
+
+    assert response.status_code == 200
+    assert response.json()["job_type"] == "Part-time"
+
+
+def test_existing_row_backfilled_to_full_time_job_type(db_session):
+    # Built directly from the model (bypassing the API/schema default entirely) to prove
+    # the *migration's* DB-level server_default is what backfills pre-existing rows --
+    # not just the Pydantic schema default, which a raw model instantiation skips.
+    job = JobRole(title="Pre-migration Role")
+    db_session.add(job)
+    db_session.commit()
+    db_session.refresh(job)
+
+    assert job.job_type == "Full-time"
+
+
+# --- per-job table stats: application_count / applications_pct_change / avg_time_to_hire_days
+
+
+def test_list_jobs_includes_application_count(client, db_session):
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    _make_application(db_session, job, candidate)
+    _make_application(db_session, job, candidate)
+
+    body = client.get("/jobs").json()
+    row = next(j for j in body if j["id"] == str(job.id))
+
+    assert row["application_count"] == 2
+
+
+def test_list_jobs_application_trend_compares_to_last_month(client, db_session):
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    # One application last month (the "before" baseline this job's trend compares
+    # against), one more this month (on top of it).
+    _make_application(db_session, job, candidate, created_at=_months_ago(1))
+    _make_application(db_session, job, candidate, created_at=_NOW)
+
+    body = client.get("/jobs").json()
+    row = next(j for j in body if j["id"] == str(job.id))
+
+    assert row["application_count"] == 2
+    # current=2, compare(as of last month-end)=1 -> +100%
+    assert row["applications_pct_change"] == 100.0
+
+
+def test_list_jobs_application_trend_null_when_nothing_to_compare(client, db_session):
+    job = _make_job(db_session)
+
+    body = client.get("/jobs").json()
+    row = next(j for j in body if j["id"] == str(job.id))
+
+    assert row["application_count"] == 0
+    # 0 vs 0 -- a real, computed "no change", not "nothing to compare".
+    assert row["applications_pct_change"] == 0.0
+
+
+def test_list_jobs_avg_time_to_hire_for_completed_hires(client, db_session):
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    app_a = _make_application(db_session, job, candidate, created_at=_NOW - timedelta(days=20))
+    app_b = _make_application(db_session, job, candidate, created_at=_NOW - timedelta(days=40))
+    _make_audit_entry(db_session, "application", app_a.id, "onboarding_completed", created_at=_NOW)
+    _make_audit_entry(db_session, "application", app_b.id, "onboarding_completed", created_at=_NOW)
+
+    body = client.get("/jobs").json()
+    row = next(j for j in body if j["id"] == str(job.id))
+
+    assert row["avg_time_to_hire_days"] == 30.0
+
+
+def test_list_jobs_avg_time_to_hire_not_scoped_to_current_month(client, db_session):
+    # Unlike the dashboard-wide Avg Time to Hire (scoped to this calendar month), the
+    # per-job column is a real all-time average -- a hire completed months ago must
+    # still count, not disappear the moment the calendar month rolls over.
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application(db_session, job, candidate, created_at=_months_ago(6) - timedelta(days=25))
+    _make_audit_entry(
+        db_session, "application", application.id, "onboarding_completed", created_at=_months_ago(6)
+    )
+
+    body = client.get("/jobs").json()
+    row = next(j for j in body if j["id"] == str(job.id))
+
+    assert row["avg_time_to_hire_days"] == 25.0
+
+
+def test_list_jobs_avg_time_to_hire_null_when_no_completed_hires(client, db_session):
+    job = _make_job(db_session)
+    _make_application(db_session, job, _make_candidate(db_session), status="screened")
+
+    body = client.get("/jobs").json()
+    row = next(j for j in body if j["id"] == str(job.id))
+
+    assert row["avg_time_to_hire_days"] is None
+
+
+def test_list_jobs_table_stats_are_scoped_per_job_not_global(client, db_session):
+    # Two jobs, each with their own application -- job A's count must not leak into job B.
+    job_a = _make_job(db_session)
+    job_b = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    _make_application(db_session, job_a, candidate)
+    _make_application(db_session, job_a, candidate)
+    _make_application(db_session, job_b, candidate)
+
+    body = client.get("/jobs").json()
+    row_a = next(j for j in body if j["id"] == str(job_a.id))
+    row_b = next(j for j in body if j["id"] == str(job_b.id))
+
+    assert row_a["application_count"] == 2
+    assert row_b["application_count"] == 1

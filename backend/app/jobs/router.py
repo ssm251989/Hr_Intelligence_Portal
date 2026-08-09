@@ -12,10 +12,12 @@ from app.core.config import settings
 from app.core.crypto import decrypt
 from app.core.database import get_db
 from app.integrations.linkedin import LinkedInError, create_hiring_announcement_post
-from app.jobs.service import close_job_if_deadline_passed
+from app.jobs.service import close_job_if_deadline_passed, hold_job, resume_job, validate_status_transition
+from app.models.application import Application
 from app.models.job_role import JobRole
 from app.models.user import User
 from app.models.user_integration import UserIntegration
+from app.reports import stats
 from app.schemas.job import (
     JobFieldSuggestionsResponse,
     JobRoleCreate,
@@ -31,6 +33,19 @@ def _get_job_or_404(db: Session, job_id: uuid.UUID) -> JobRole:
     job = db.get(JobRole, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job role not found")
+    return job
+
+
+def _attach_table_stats(db: Session, job: JobRole, now: datetime) -> JobRole:
+    """Sets the three computed, non-column fields JobRoleRead expects for the jobs list
+    table (application_count, applications_pct_change, avg_time_to_hire_days) as plain
+    instance attributes -- SQLAlchemy doesn't track or persist these as real columns,
+    Pydantic's from_attributes reads them the same as any other attribute.
+    """
+    count, pct = stats.job_application_count_and_trend(db, job.id, now)
+    job.application_count = count
+    job.applications_pct_change = pct
+    job.avg_time_to_hire_days = stats.job_avg_time_to_hire(db, job.id)
     return job
 
 
@@ -51,6 +66,15 @@ def _render_jd_text(jd: dict) -> str:
         "",
         f"Experience required: {jd['experience_required']}",
     ]
+    # Both are optional (None) whenever the corresponding role inputs -- salary
+    # band/benefits, additional notes -- weren't provided; the model is instructed
+    # not to fabricate either, so a section only appears when there's real content.
+    compensation = jd.get("compensation_and_benefits")
+    if compensation:
+        sections += ["", "Compensation & Benefits:", compensation]
+    additional_notes_section = jd.get("additional_notes_section")
+    if additional_notes_section:
+        sections += ["", "Additional Notes:", additional_notes_section]
     return "\n".join(sections)
 
 
@@ -77,8 +101,10 @@ def create_job(
 @router.get("", response_model=list[JobRoleRead])
 def list_jobs(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     jobs = db.query(JobRole).order_by(JobRole.created_at.desc()).all()
+    now = datetime.now(timezone.utc)
     for job in jobs:
         close_job_if_deadline_passed(db, job)
+        _attach_table_stats(db, job, now)
     return jobs
 
 
@@ -117,12 +143,45 @@ def update_job(
 ):
     job = _get_job_or_404(db, job_id)
     updates = payload.model_dump(exclude_unset=True)
+    if "status" in updates and updates["status"] != job.status:
+        try:
+            validate_status_transition(job.status, updates["status"])
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     for field, value in updates.items():
         setattr(job, field, value)
     db.commit()
     db.refresh(job)
     log_action(db, "job_role", job.id, "job_role_updated", "system", updates)
     return job
+
+
+@router.delete("/{job_id}", status_code=204)
+def delete_job(
+    job_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "admin")),
+):
+    """Only draft/ready_for_publishing jobs can be deleted -- anything that has ever been
+    published (published, on_hold, closed) must be retained for history, same reasoning
+    as why there's no "unpublish" action. Also blocked if the job has real applications
+    even while still unpublished (e.g. a draft that already collected applications via
+    direct API use) -- deleting it would silently orphan/destroy that application data.
+    """
+    job = _get_job_or_404(db, job_id)
+    if job.status not in ("draft", "ready_for_publishing"):
+        raise HTTPException(
+            status_code=400, detail=f"Cannot delete a job with status '{job.status}'."
+        )
+    has_applications = (
+        db.query(Application).filter(Application.job_role_id == job.id).first() is not None
+    )
+    if has_applications:
+        raise HTTPException(status_code=400, detail="Cannot delete a job that has applications.")
+
+    log_action(db, "job_role", job.id, "job_role_deleted", "system", {"status": job.status})
+    db.delete(job)
+    db.commit()
 
 
 @router.post("/{job_id}/generate-jd", response_model=JobRoleRead)
@@ -132,6 +191,8 @@ def generate_job_description(
     current_user: User = Depends(require_roles("recruiter", "admin")),
 ):
     job = _get_job_or_404(db, job_id)
+    if job.status == "on_hold":
+        raise HTTPException(status_code=400, detail="Resume this job before generating a JD.")
     try:
         result = generate_jd(
             {
@@ -142,6 +203,8 @@ def generate_job_description(
                 "skills": job.skills,
                 "salary_band_min": job.salary_band_min,
                 "salary_band_max": job.salary_band_max,
+                "benefits": job.benefits,
+                "additional_notes": job.additional_notes,
             }
         )
     except JDGenerationError as exc:
@@ -212,6 +275,8 @@ def publish_job_platforms(
     the job appear on GET /public/jobs and /careers.
     """
     job = _get_job_or_404(db, job_id)
+    if job.status == "on_hold":
+        raise HTTPException(status_code=400, detail="Resume this job before publishing.")
     previous_status = job.status
 
     job.published_platforms = {
@@ -253,4 +318,36 @@ def publish_job_platforms(
             "linkedin_post_urn": job.linkedin_post_urn,
         },
     )
+    return job
+
+
+@router.post("/{job_id}/hold", response_model=JobRoleRead)
+def put_job_on_hold(
+    job_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "admin")),
+):
+    """published -> on_hold. Pulls the job off /public/jobs immediately (that endpoint
+    only ever allow-lists status == 'published', so on_hold is excluded automatically,
+    same as every other non-published status)."""
+    job = _get_job_or_404(db, job_id)
+    try:
+        hold_job(db, job)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return job
+
+
+@router.post("/{job_id}/resume", response_model=JobRoleRead)
+def resume_job_from_hold(
+    job_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "admin")),
+):
+    """on_hold -> published."""
+    job = _get_job_or_404(db, job_id)
+    try:
+        resume_job(db, job)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return job

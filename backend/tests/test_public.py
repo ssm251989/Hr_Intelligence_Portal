@@ -49,6 +49,7 @@ def test_list_public_jobs_only_shows_published(anonymous_client, db_session):
     draft = _make_job(db_session, title="Draft Role", status="draft")
     ready = _make_job(db_session, title="Ready Role", status="ready_for_publishing")
     closed = _make_job(db_session, title="Closed Role", status="closed")
+    on_hold = _make_job(db_session, title="On Hold Role", status="on_hold")
 
     response = anonymous_client.get("/public/jobs")
 
@@ -60,6 +61,7 @@ def test_list_public_jobs_only_shows_published(anonymous_client, db_session):
     assert str(draft.id) not in returned_ids
     assert str(ready.id) not in returned_ids
     assert str(closed.id) not in returned_ids
+    assert str(on_hold.id) not in returned_ids
 
 
 def test_list_public_jobs_excludes_internal_fields(anonymous_client, db_session):
@@ -112,6 +114,14 @@ def test_get_public_job_detail_draft_returns_404(anonymous_client, db_session):
 
 def test_get_public_job_detail_closed_returns_404(anonymous_client, db_session):
     job = _make_job(db_session, title="Closed Detail Role", status="closed")
+
+    response = anonymous_client.get(f"/public/jobs/{job.id}")
+
+    assert response.status_code == 404
+
+
+def test_get_public_job_detail_on_hold_returns_404(anonymous_client, db_session):
+    job = _make_job(db_session, title="On Hold Detail Role", status="on_hold")
 
     response = anonymous_client.get(f"/public/jobs/{job.id}")
 

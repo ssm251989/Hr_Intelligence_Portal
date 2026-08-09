@@ -11,6 +11,7 @@ import DialogTitle from "@mui/material/DialogTitle";
 import Divider from "@mui/material/Divider";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import MuiLink from "@mui/material/Link";
+import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
 import Step from "@mui/material/Step";
 import StepLabel from "@mui/material/StepLabel";
@@ -24,20 +25,26 @@ import type { JobFieldSuggestionsResponse, JobRoleRead } from "../api/types";
 
 const EMPTY_SUGGESTIONS: JobFieldSuggestionsResponse = { departments: [], locations: [], skills: [] };
 
+// JD generation moved to step 4 (after Requirements/Salary/Additional Info, not
+// immediately after Job Details) specifically so the AI has skills, salary band,
+// benefits, and additional notes to draw on -- see app/ai_services/jd_generator.py.
 const STEPS = [
   "Job Details",
-  "Job Description",
   "Requirements",
   "Salary & Benefits",
   "Additional Info",
+  "Job Description",
   "Review & Publish",
 ];
+
+const JOB_TYPES = ["Full-time", "Part-time", "Contract"];
 
 const EMPTY_STATE = {
   title: "",
   department: "",
   location: "",
   experienceLevel: "",
+  jobType: "Full-time",
   positionsCount: "1",
   jdText: "",
   skills: [] as string[],
@@ -54,13 +61,46 @@ const EMPTY_STATE = {
   applicationDeadline: "",
 };
 
+// Converts an existing job back into the wizard's flat form shape, for the jobs table's
+// "Edit" action -- reopens this same wizard (rather than a separate edit screen) pre-filled
+// so every step's existing save-as-you-go logic (jobId set -> update, not create) just works.
+function formFromJob(job: JobRoleRead): typeof EMPTY_STATE {
+  const platforms = job.published_platforms as Record<string, boolean>;
+  const settings = job.publish_settings as Record<string, unknown>;
+  return {
+    ...EMPTY_STATE,
+    title: job.title,
+    department: job.department || "",
+    location: job.location || "",
+    experienceLevel: job.experience_level || "",
+    jobType: job.job_type || "Full-time",
+    positionsCount: String(job.positions_count ?? 1),
+    jdText: job.jd_text || "",
+    skills: job.skills || [],
+    salaryMin: job.salary_band_min != null ? String(job.salary_band_min) : "",
+    salaryMax: job.salary_band_max != null ? String(job.salary_band_max) : "",
+    benefits: job.benefits || "",
+    additionalNotes: job.additional_notes || "",
+    naukri: Boolean(platforms?.naukri),
+    linkedin: Boolean(platforms?.linkedin),
+    careerPortal: Boolean(platforms?.career_portal),
+    postingUrlNaukri: job.posting_url_naukri || "",
+    postingUrlLinkedin: job.posting_url_linkedin || "",
+    emailNotifications: Boolean(settings?.email_notifications),
+    applicationDeadline: (settings?.application_deadline as string) || "",
+  };
+}
+
 interface Props {
   open: boolean;
   onClose: () => void;
   onPublished: (job: JobRoleRead) => void;
+  // When set, the wizard opens pre-filled for this existing job (the jobs table's "Edit"
+  // action) instead of starting a new one.
+  initialJob?: JobRoleRead | null;
 }
 
-export default function CreateJobWizard({ open, onClose, onPublished }: Props) {
+export default function CreateJobWizard({ open, onClose, onPublished, initialJob }: Props) {
   const [activeStep, setActiveStep] = useState(0);
   const [jobId, setJobId] = useState<string | null>(null);
   const [job, setJob] = useState<JobRoleRead | null>(null);
@@ -76,6 +116,11 @@ export default function CreateJobWizard({ open, onClose, onPublished }: Props) {
 
   useEffect(() => {
     if (!open) return;
+    if (initialJob) {
+      setJobId(initialJob.id);
+      setJob(initialJob);
+      setForm(formFromJob(initialJob));
+    }
     integrationsApi
       .googleStatus()
       .then((status) => setGoogleConnected(status.connected))
@@ -91,7 +136,8 @@ export default function CreateJobWizard({ open, onClose, onPublished }: Props) {
       .fieldSuggestions()
       .then(setSuggestions)
       .catch(() => setSuggestions(EMPTY_SUGGESTIONS));
-  }, [open]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialJob]);
 
   const set = <K extends keyof typeof EMPTY_STATE>(key: K, value: (typeof EMPTY_STATE)[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -118,20 +164,40 @@ export default function CreateJobWizard({ open, onClose, onPublished }: Props) {
       return null;
     }
     if (step === 1) {
-      if (!form.jdText.trim()) return "Generate or write a job description before continuing";
-      return null;
-    }
-    if (step === 2) {
       if (form.skills.length === 0) return "Add at least one required skill";
       return null;
     }
-    if (step === 3) {
+    if (step === 2) {
       if (form.salaryMin && form.salaryMax && Number(form.salaryMax) < Number(form.salaryMin)) {
         return "Salary max must be greater than or equal to salary min";
       }
       return null;
     }
+    if (step === 4) {
+      if (!form.jdText.trim()) return "Generate or write a job description before continuing";
+      return null;
+    }
     return null;
+  };
+
+  // freeSolo + multiple normally adds whatever was typed/pasted as a single chip verbatim
+  // -- "createOption" fires with the raw text as the newest entry in `newValue`, and
+  // "blur" (via the Autocomplete's autoSelect prop below) fires the same way when focus
+  // leaves without pressing Enter first. Splitting only on those two reasons -- never on
+  // "selectOption"/"removeOption"/"clear" -- leaves picking a dropdown suggestion or
+  // removing a chip completely untouched.
+  const handleSkillsChange = (newValue: string[], reason: string) => {
+    const committedNewText = reason === "createOption" || reason === "blur";
+    const raw = newValue[newValue.length - 1];
+    if (committedNewText && typeof raw === "string" && raw.includes(",")) {
+      const segments = raw
+        .split(",")
+        .map((segment) => segment.trim())
+        .filter(Boolean);
+      set("skills", Array.from(new Set([...newValue.slice(0, -1), ...segments])));
+      return;
+    }
+    set("skills", newValue);
   };
 
   const handleGenerateJd = async () => {
@@ -164,31 +230,32 @@ export default function CreateJobWizard({ open, onClose, onPublished }: Props) {
           department: form.department.trim() || null,
           location: form.location.trim() || null,
           experience_level: form.experienceLevel.trim() || null,
+          job_type: form.jobType,
           positions_count: Number(form.positionsCount) || 1,
         };
         const updated = jobId ? await jobsApi.update(jobId, payload) : await jobsApi.create(payload);
         setJobId(updated.id);
         setJob(updated);
       } else if (activeStep === 1) {
-        if (jobId && job && job.jd_text !== form.jdText) {
-          const updated = await jobsApi.update(jobId, { jd_text: form.jdText });
-          setJob(updated);
-        }
-      } else if (activeStep === 2) {
         const updated = await jobsApi.update(jobId!, { skills: form.skills });
         setJob(updated);
-      } else if (activeStep === 3) {
+      } else if (activeStep === 2) {
         const updated = await jobsApi.update(jobId!, {
           salary_band_min: form.salaryMin ? Number(form.salaryMin) : null,
           salary_band_max: form.salaryMax ? Number(form.salaryMax) : null,
           benefits: form.benefits.trim() || null,
         });
         setJob(updated);
-      } else if (activeStep === 4) {
+      } else if (activeStep === 3) {
         const updated = await jobsApi.update(jobId!, {
           additional_notes: form.additionalNotes.trim() || null,
         });
         setJob(updated);
+      } else if (activeStep === 4) {
+        if (jobId && job && job.jd_text !== form.jdText) {
+          const updated = await jobsApi.update(jobId, { jd_text: form.jdText });
+          setJob(updated);
+        }
       }
       setActiveStep((s) => s + 1);
     } catch (err) {
@@ -257,6 +324,19 @@ export default function CreateJobWizard({ open, onClose, onPublished }: Props) {
               fullWidth
             />
             <TextField
+              select
+              label="Job type"
+              value={form.jobType}
+              onChange={(e) => set("jobType", e.target.value)}
+              fullWidth
+            >
+              {JOB_TYPES.map((type) => (
+                <MenuItem key={type} value={type}>
+                  {type}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
               label="Positions count"
               type="number"
               value={form.positionsCount}
@@ -268,31 +348,13 @@ export default function CreateJobWizard({ open, onClose, onPublished }: Props) {
       case 1:
         return (
           <Stack spacing={2} mt={1}>
-            <Typography variant="body2" color="text.secondary">
-              Generate a job description with AI, or write your own below.
-            </Typography>
-            <Button variant="outlined" onClick={handleGenerateJd} disabled={generatingJd} sx={{ alignSelf: "flex-start" }}>
-              {generatingJd ? "Generating..." : "Generate JD"}
-            </Button>
-            <TextField
-              label="Job description"
-              value={form.jdText}
-              onChange={(e) => set("jdText", e.target.value)}
-              multiline
-              minRows={8}
-              fullWidth
-            />
-          </Stack>
-        );
-      case 2:
-        return (
-          <Stack spacing={2} mt={1}>
             <Autocomplete
               multiple
               freeSolo
+              autoSelect
               options={suggestions.skills}
               value={form.skills}
-              onChange={(_e, value) => set("skills", value)}
+              onChange={(_e, value, reason) => handleSkillsChange(value, reason)}
               renderTags={(selected, getTagProps) =>
                 selected.map((skill, index) => {
                   const { key, ...tagProps } = getTagProps({ index });
@@ -300,12 +362,16 @@ export default function CreateJobWizard({ open, onClose, onPublished }: Props) {
                 })
               }
               renderInput={(params) => (
-                <TextField {...params} label="Skills" helperText="Pick an existing skill or type a new one and press Enter" />
+                <TextField
+                  {...params}
+                  label="Skills"
+                  helperText="Pick an existing skill, or type one (or several, comma-separated) and press Enter"
+                />
               )}
             />
           </Stack>
         );
-      case 3:
+      case 2:
         return (
           <Stack spacing={2} mt={1}>
             <Stack direction="row" spacing={2}>
@@ -334,7 +400,7 @@ export default function CreateJobWizard({ open, onClose, onPublished }: Props) {
             />
           </Stack>
         );
-      case 4:
+      case 3:
         return (
           <Stack spacing={2} mt={1}>
             <TextField
@@ -343,6 +409,27 @@ export default function CreateJobWizard({ open, onClose, onPublished }: Props) {
               onChange={(e) => set("additionalNotes", e.target.value)}
               multiline
               minRows={4}
+              fullWidth
+            />
+          </Stack>
+        );
+      case 4:
+        return (
+          <Stack spacing={2} mt={1}>
+            <Typography variant="body2" color="text.secondary">
+              Generate a job description with AI, using everything collected so far
+              (requirements, salary band, benefits, and additional notes), or write your
+              own below.
+            </Typography>
+            <Button variant="outlined" onClick={handleGenerateJd} disabled={generatingJd} sx={{ alignSelf: "flex-start" }}>
+              {generatingJd ? "Generating..." : "Generate JD"}
+            </Button>
+            <TextField
+              label="Job description"
+              value={form.jdText}
+              onChange={(e) => set("jdText", e.target.value)}
+              multiline
+              minRows={8}
               fullWidth
             />
           </Stack>
@@ -365,7 +452,7 @@ export default function CreateJobWizard({ open, onClose, onPublished }: Props) {
           {[form.department, form.location, form.experienceLevel].filter(Boolean).join(" · ") || "No details set"}
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Positions: {form.positionsCount}
+          {form.jobType} · Positions: {form.positionsCount}
           {form.salaryMin && form.salaryMax ? ` · Salary band: ${form.salaryMin} - ${form.salaryMax}` : ""}
         </Typography>
         {form.skills.length > 0 && (
@@ -548,7 +635,7 @@ export default function CreateJobWizard({ open, onClose, onPublished }: Props) {
 
   return (
     <Dialog open={open} onClose={handleClose} fullWidth maxWidth="md">
-      <DialogTitle>Create Job</DialogTitle>
+      <DialogTitle>{initialJob ? "Edit Job" : "Create Job"}</DialogTitle>
       <DialogContent>
         <Stepper activeStep={activeStep} sx={{ mt: 1, mb: 2 }}>
           {STEPS.map((label) => (

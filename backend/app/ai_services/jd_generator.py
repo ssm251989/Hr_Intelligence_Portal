@@ -9,7 +9,14 @@ MODEL = "claude-sonnet-5"
 
 SYSTEM_PROMPT = (
     "You are an HR job-description writer. Given structured role inputs, "
-    "produce a complete, professional job description."
+    "produce a complete, professional job description. You must actively use "
+    "every input provided, not just title/department/location/skills: if a "
+    "salary band and/or benefits are given, write a 'compensation_and_benefits' "
+    "section that states the salary range and lists the benefits; if "
+    "additional notes are given, fold them into an 'additional_notes_section' "
+    "so the information is not lost. Never invent a salary band, benefits, or "
+    "notes that were not provided in the input -- leave the corresponding "
+    "output field null instead of fabricating one."
 )
 
 _client: Anthropic | None = None
@@ -26,6 +33,8 @@ class JDOutput(BaseModel):
     required_skills: list[str]
     nice_to_have: list[str]
     experience_required: str
+    compensation_and_benefits: str | None = None
+    additional_notes_section: str | None = None
 
 
 def _get_client() -> Anthropic:
@@ -43,7 +52,9 @@ def _build_user_prompt(inputs: dict) -> str:
         f"Location: {inputs.get('location')}\n"
         f"Experience level: {inputs.get('experience_level')}\n"
         f"Skills: {inputs.get('skills')}\n"
-        f"Salary band: {inputs.get('salary_band_min')}-{inputs.get('salary_band_max')}"
+        f"Salary band: {inputs.get('salary_band_min')}-{inputs.get('salary_band_max')}\n"
+        f"Benefits: {inputs.get('benefits')}\n"
+        f"Additional notes: {inputs.get('additional_notes')}"
     )
 
 

@@ -3,13 +3,20 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from app.core.database import Base
 
+JOB_ROLE_STATUSES = ("draft", "ready_for_publishing", "published", "closed", "on_hold")
+JOB_TYPES = ("Full-time", "Part-time", "Contract")
+
 
 class JobRole(Base):
     __tablename__ = "job_roles"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('draft','ready_for_publishing','published','closed')",
+            "status IN (" + ",".join(f"'{s}'" for s in JOB_ROLE_STATUSES) + ")",
             name="job_roles_status_check",
+        ),
+        CheckConstraint(
+            "job_type IN (" + ",".join(f"'{t}'" for t in JOB_TYPES) + ")",
+            name="job_roles_job_type_check",
         ),
     )
 
@@ -25,6 +32,7 @@ class JobRole(Base):
     positions_count = Column(Integer, server_default=text("1"))
     jd_text = Column(Text)
     status = Column(String(50), server_default=text("'draft'"))
+    job_type = Column(String(50), nullable=False, server_default=text("'Full-time'"))
     benefits = Column(Text)
     additional_notes = Column(Text)
     published_platforms = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
