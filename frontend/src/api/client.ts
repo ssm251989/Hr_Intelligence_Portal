@@ -19,6 +19,7 @@ import type {
   JobRoleUpdate,
   JobsDashboardStatsResponse,
   JobSummaryResponse,
+  LinkedInAuthUrl,
   OfferGenerateRequest,
   OfferRead,
   OfferSendRequest,
@@ -156,6 +157,9 @@ export const integrationsApi = {
   connectDocusign: () => get<DocuSignAuthUrl>("/integrations/docusign/connect"),
   docusignStatus: (userId?: UUID) =>
     get<IntegrationStatus>(`/integrations/docusign/status${userId ? `?user_id=${userId}` : ""}`),
+  connectLinkedin: () => get<LinkedInAuthUrl>("/integrations/linkedin/connect"),
+  linkedinStatus: (userId?: UUID) =>
+    get<IntegrationStatus>(`/integrations/linkedin/status${userId ? `?user_id=${userId}` : ""}`),
 };
 
 // ---- jobs ----

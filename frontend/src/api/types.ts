@@ -83,14 +83,19 @@ export interface JobRoleRead extends JobRoleBase {
   publish_settings: Record<string, unknown>;
   posting_url_naukri?: string | null;
   posting_url_linkedin?: string | null;
+  // Set only when a real LinkedIn post was created via the API. Null means either
+  // LinkedIn wasn't enabled, the publishing user wasn't connected, or the post attempt
+  // failed -- in all those cases posting_url_linkedin (manual fallback) is used instead.
+  linkedin_post_urn?: string | null;
   created_by?: UUID | null;
   created_at: string;
 }
 
-// Final step of the create-job wizard. Naukri.com and LinkedIn have no real
-// posting API access (no business partnership) -- checking those only records
-// intent server-side (plus an optional URL pasted in after posting manually),
-// they never trigger a real post. Only career_portal is real: it's what flips
+// Final step of the create-job wizard. Naukri.com has no real posting API access (no
+// business partnership) -- checking it only records intent server-side, plus an
+// optional URL pasted in after posting manually. LinkedIn is real when the publishing
+// user has connected their account: a real post is created via the API instead of
+// asking for a manual URL. career_portal is always real: it's what flips
 // job_roles.status to "published". application_deadline is enforced on read
 // (see backend/app/jobs/service.py); email_notifications is real when the
 // publishing user has Google connected.
@@ -194,9 +199,16 @@ export interface DocuSignAuthUrl {
   auth_url: string;
 }
 
+export interface LinkedInAuthUrl {
+  auth_url: string;
+}
+
 export interface IntegrationStatus {
   connected: boolean;
   connected_at?: string | null;
+  // Only meaningful when connected=true and the provider's credential actually expires
+  // (LinkedIn) -- null for providers that don't track expiry (Google, DocuSign).
+  expired?: boolean | null;
 }
 
 export interface InterviewFeedbackUpdate {

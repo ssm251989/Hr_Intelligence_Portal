@@ -80,10 +80,10 @@ function IntegrationCard({
         {loading ? (
           <CircularProgress size={24} />
         ) : (
-          <Stack direction="row" spacing={2} alignItems="center">
+          <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
             <Chip
-              label={status?.connected ? "Connected" : "Not connected"}
-              color={status?.connected ? "success" : "default"}
+              label={status?.connected ? (status.expired ? "Expired" : "Connected") : "Not connected"}
+              color={status?.connected ? (status.expired ? "warning" : "success") : "default"}
               size="small"
             />
             {status?.connected && status.connected_at && (
@@ -91,9 +91,14 @@ function IntegrationCard({
                 since {new Date(status.connected_at).toLocaleString()}
               </Typography>
             )}
-            {!status?.connected && (
+            {status?.expired && (
+              <Typography variant="body2" color="text.secondary">
+                Your connection expired -- reconnect to keep using this integration.
+              </Typography>
+            )}
+            {(!status?.connected || status.expired) && (
               <Button size="small" variant="contained" onClick={handleConnect} disabled={connecting}>
-                {connecting ? "Redirecting..." : connectLabel}
+                {connecting ? "Redirecting..." : status?.expired ? `Reconnect ${title}` : connectLabel}
               </Button>
             )}
           </Stack>
@@ -124,6 +129,13 @@ export default function SettingsPage() {
           connectLabel="Connect DocuSign"
           fetchStatus={integrationsApi.docusignStatus}
           connect={integrationsApi.connectDocusign}
+        />
+        <IntegrationCard
+          title="LinkedIn"
+          description="Connect your LinkedIn account so publishing a job with the LinkedIn toggle enabled shares a real hiring announcement to your own feed, instead of asking for a manually pasted posting link. LinkedIn only grants a ~60-day access token with no auto-renewal, so you'll need to reconnect periodically."
+          connectLabel="Connect LinkedIn"
+          fetchStatus={integrationsApi.linkedinStatus}
+          connect={integrationsApi.connectLinkedin}
         />
       </Stack>
     </Box>

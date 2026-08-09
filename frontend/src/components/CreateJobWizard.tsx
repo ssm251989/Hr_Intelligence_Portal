@@ -70,6 +70,8 @@ export default function CreateJobWizard({ open, onClose, onPublished }: Props) {
   const [stepError, setStepError] = useState<string | null>(null);
   const [published, setPublished] = useState<JobRoleRead | null>(null);
   const [googleConnected, setGoogleConnected] = useState<boolean | null>(null);
+  const [linkedinConnected, setLinkedinConnected] = useState<boolean | null>(null);
+  const [linkedinExpired, setLinkedinExpired] = useState(false);
   const [suggestions, setSuggestions] = useState<JobFieldSuggestionsResponse>(EMPTY_SUGGESTIONS);
 
   useEffect(() => {
@@ -78,6 +80,13 @@ export default function CreateJobWizard({ open, onClose, onPublished }: Props) {
       .googleStatus()
       .then((status) => setGoogleConnected(status.connected))
       .catch(() => setGoogleConnected(false));
+    integrationsApi
+      .linkedinStatus()
+      .then((status) => {
+        setLinkedinConnected(status.connected);
+        setLinkedinExpired(Boolean(status.expired));
+      })
+      .catch(() => setLinkedinConnected(false));
     jobsApi
       .fieldSuggestions()
       .then(setSuggestions)
@@ -403,9 +412,13 @@ export default function CreateJobWizard({ open, onClose, onPublished }: Props) {
         label="LinkedIn"
       />
       <Typography variant="caption" color="text.secondary" sx={{ mt: -1.5, ml: 4 }}>
-        No posting API access available -- will be marked as posted here, but posting must be done manually on LinkedIn.
+        {linkedinConnected && !linkedinExpired
+          ? "Real: a hiring announcement will be posted to your own LinkedIn feed."
+          : linkedinExpired
+            ? "Your LinkedIn connection has expired -- reconnect in Settings for a real post, or paste a manual link below for now."
+            : "No LinkedIn connection -- connect in Settings for a real post, or paste a manual link below."}
       </Typography>
-      {form.linkedin && (
+      {form.linkedin && !(linkedinConnected && !linkedinExpired) && (
         <TextField
           label="Job posting URL (paste after posting manually)"
           value={form.postingUrlLinkedin}
@@ -422,6 +435,22 @@ export default function CreateJobWizard({ open, onClose, onPublished }: Props) {
       <Typography variant="caption" color="text.secondary" sx={{ mt: -1.5, ml: 4 }}>
         Real: checking this publishes the job live on the public careers page immediately; unchecking un-publishes it.
       </Typography>
+      {form.careerPortal && (
+        <Box sx={{ ml: 4 }}>
+          {job?.status === "published" ? (
+            <Typography variant="body2">
+              Live on Career Portal:{" "}
+              <MuiLink href={`${window.location.origin}/careers/${job.id}`} target="_blank" rel="noopener noreferrer">
+                {`${window.location.origin}/careers/${job.id}`}
+              </MuiLink>
+            </Typography>
+          ) : (
+            <Typography variant="caption" color="text.secondary">
+              Will be live on the Career Portal once published.
+            </Typography>
+          )}
+        </Box>
+      )}
 
       <Divider />
 
@@ -454,13 +483,17 @@ export default function CreateJobWizard({ open, onClose, onPublished }: Props) {
   const renderSuccess = () => {
     if (!published) return null;
     const platforms = published.published_platforms as Record<string, boolean>;
+    const careersUrl = `${window.location.origin}/careers/${published.id}`;
     return (
       <Stack spacing={2} mt={1}>
         <Alert severity="success">Job published!</Alert>
         <Stack spacing={1}>
           {platforms.career_portal && (
             <Typography variant="body2">
-              <strong>Career Portal</strong> — Published (now visible on the public careers page)
+              <strong>Career Portal</strong> — Published:{" "}
+              <MuiLink href={careersUrl} target="_blank" rel="noopener noreferrer">
+                {careersUrl}
+              </MuiLink>
             </Typography>
           )}
           {platforms.naukri && (
@@ -479,14 +512,29 @@ export default function CreateJobWizard({ open, onClose, onPublished }: Props) {
           )}
           {platforms.linkedin && (
             <Typography variant="body2">
-              <strong>LinkedIn</strong> — Marked for manual posting (no automated posting; post this manually on
-              LinkedIn)
-              {published.posting_url_linkedin && (
+              <strong>LinkedIn</strong>{" "}
+              {published.linkedin_post_urn ? (
                 <>
-                  {" — "}
-                  <MuiLink href={published.posting_url_linkedin} target="_blank" rel="noopener noreferrer">
-                    view posting
+                  — Published to your LinkedIn feed:{" "}
+                  <MuiLink
+                    href={`https://www.linkedin.com/feed/update/${published.linkedin_post_urn}/`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    view post
                   </MuiLink>
+                </>
+              ) : (
+                <>
+                  — Marked for manual posting (no automated posting; post this manually on LinkedIn)
+                  {published.posting_url_linkedin && (
+                    <>
+                      {" — "}
+                      <MuiLink href={published.posting_url_linkedin} target="_blank" rel="noopener noreferrer">
+                        view posting
+                      </MuiLink>
+                    </>
+                  )}
                 </>
               )}
             </Typography>
