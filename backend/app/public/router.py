@@ -98,7 +98,9 @@ async def submit_application(
 
     resume_path = save_resume_file(file_bytes, extension)
 
-    candidate = Candidate(full_name=full_name, email=email, phone=phone, resume_path=resume_path)
+    candidate = Candidate(
+        full_name=full_name, email=email, phone=phone, resume_path=resume_path, source="career_portal"
+    )
     db.add(candidate)
     db.commit()
     db.refresh(candidate)

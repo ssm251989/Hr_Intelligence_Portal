@@ -5,7 +5,14 @@ import type {
   AuditLogPage,
   BgvClearRequest,
   BgvDocumentRead,
+  CandidateApplicationDetail,
+  CandidateMessageRequest,
+  CandidateMessageResponse,
   CandidateRead,
+  CandidatesDashboardStatsResponse,
+  CandidatesListPage,
+  CandidateTimelineResponse,
+  CsvImportSummary,
   DocuSignAuthUrl,
   GoogleAuthUrl,
   IntegrationStatus,
@@ -20,7 +27,9 @@ import type {
   JobsDashboardStatsResponse,
   JobStatusOverviewResponse,
   JobSummaryResponse,
+  LabeledCount,
   LinkedInAuthUrl,
+  NextAction,
   OfferGenerateRequest,
   OfferRead,
   OfferSendRequest,
@@ -136,6 +145,19 @@ const patch = <T>(path: string, body?: unknown) =>
 const del = <T>(path: string) => request<T>(path, { method: "DELETE" });
 const postForm = <T>(path: string, form: FormData) => request<T>(path, { method: "POST", body: form });
 
+// Executes a "one_click" NextAction (see api/types.ts) exactly as the backend described
+// it -- the method/endpoint/body all come from app/candidates/pipeline_actions.py's
+// lookup, so this is a dispatcher, not a place that invents its own request shape.
+export function runNextAction<T>(action: NextAction): Promise<T> {
+  if (!action.endpoint) {
+    throw new Error(`NextAction "${action.key}" has no endpoint to call`);
+  }
+  if (action.method === "PATCH") {
+    return patch<T>(action.endpoint, action.body ?? undefined);
+  }
+  return post<T>(action.endpoint, action.body ?? undefined);
+}
+
 // ---- auth ----
 
 export const authApi = {
@@ -182,6 +204,16 @@ export const jobsApi = {
 
 // ---- candidates ----
 
+export interface CandidateApplicationsListParams {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  jobRoleId?: UUID;
+  status?: string;
+  source?: string;
+  location?: string;
+}
+
 export const candidatesApi = {
   list: () => get<CandidateRead[]>("/candidates"),
   get: (candidateId: UUID) => get<CandidateRead>(`/candidates/${candidateId}`),
@@ -192,6 +224,24 @@ export const candidatesApi = {
   },
   resumeDownloadUrl: (candidateId: UUID) => `${BASE_URL}/candidates/${candidateId}/resume`,
   parseResume: (candidateId: UUID) => post<CandidateRead>(`/candidates/${candidateId}/parse-resume`),
+  // One row per (candidate, application) pairing -- the Candidates List page's data source.
+  listApplications: (params: CandidateApplicationsListParams = {}) => {
+    const query = new URLSearchParams();
+    query.set("page", String(params.page ?? 1));
+    query.set("page_size", String(params.pageSize ?? 10));
+    if (params.search) query.set("search", params.search);
+    if (params.jobRoleId) query.set("job_role_id", params.jobRoleId);
+    if (params.status) query.set("status", params.status);
+    if (params.source) query.set("source", params.source);
+    if (params.location) query.set("location", params.location);
+    return get<CandidatesListPage>(`/candidates/applications?${query.toString()}`);
+  },
+  importCsv: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return postForm<CsvImportSummary>("/candidates/import-csv", form);
+  },
+  timeline: (candidateId: UUID) => get<CandidateTimelineResponse>(`/candidates/${candidateId}/timeline`),
 };
 
 // ---- applications ----
@@ -200,6 +250,10 @@ export const applicationsApi = {
   list: (jobRoleId?: UUID) =>
     get<ApplicationRead[]>(`/applications${jobRoleId ? `?job_role_id=${jobRoleId}` : ""}`),
   create: (payload: ApplicationCreate) => post<ApplicationRead>("/applications", payload),
+  candidateDetail: (applicationId: UUID) =>
+    get<CandidateApplicationDetail>(`/applications/${applicationId}/candidate-detail`),
+  message: (applicationId: UUID, payload: CandidateMessageRequest) =>
+    post<CandidateMessageResponse>(`/applications/${applicationId}/message`, payload),
 };
 
 // ---- screening ----
@@ -296,6 +350,13 @@ export const reportsApi = {
   },
   applicationTimeline: (applicationId: UUID) =>
     get<ApplicationTimelineResponse>(`/applications/${applicationId}/timeline`),
+  candidatesDashboardStats: (compareMonth?: string) =>
+    get<CandidatesDashboardStatsResponse>(
+      `/reports/candidates-dashboard-stats${compareMonth ? `?compare_month=${compareMonth}` : ""}`
+    ),
+  // Omit `limit` for every distinct skill -- backs "View all skills".
+  candidatesTopSkills: (limit?: number) =>
+    get<LabeledCount[]>(`/reports/candidates-top-skills${limit ? `?limit=${limit}` : ""}`),
 };
 
 // ---- public careers portal (no auth) ----

@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
@@ -11,13 +11,21 @@ from app.core.database import get_db
 from app.jobs.service import close_job_if_deadline_passed
 from app.models.application import APPLICATION_STATUSES, Application
 from app.models.audit_log import AuditLog
+from app.models.bgv_document import BgvDocument
 from app.models.candidate import Candidate
+from app.models.interview import Interview
 from app.models.job_role import JOB_ROLE_STATUSES, JobRole
 from app.models.user import User
 from app.reports import stats
+from app.schemas.candidates_dashboard import (
+    CandidateApplicationRow,
+    CandidateDataSourceStatus,
+    CandidatesDashboardStatsResponse,
+)
 from app.schemas.reports import (
     ApplicationTimelineResponse,
     AuditLogPage,
+    CandidateTimelineResponse,
     JobsDashboardStatsResponse,
     JobStatusOverviewResponse,
     JobSummaryResponse,
@@ -375,3 +383,169 @@ def get_application_timeline(
         .all()
     )
     return ApplicationTimelineResponse(application_id=application_id, events=events)
+
+
+def _candidate_application_row(application: Application, candidate: Candidate, job_title: str) -> CandidateApplicationRow:
+    experience_years = None
+    if candidate.parsed_fields:
+        experience_years = candidate.parsed_fields.get("total_experience_years")
+    return CandidateApplicationRow(
+        application_id=application.id,
+        candidate_id=candidate.id,
+        candidate_name=candidate.full_name,
+        candidate_email=candidate.email,
+        job_role_id=application.job_role_id,
+        job_title=job_title,
+        status=application.status,
+        source=candidate.source,
+        location=candidate.location,
+        applied_on=application.created_at,
+        match_score=float(application.match_score) if application.match_score is not None else None,
+        experience_years=float(experience_years) if experience_years is not None else None,
+        resume_path=candidate.resume_path,
+    )
+
+
+def _candidate_data_sources(db: Session) -> list[CandidateDataSourceStatus]:
+    """Real connection status per sourcing channel -- Career Portal is always connected
+    (it's this app's own pipeline); CSV Upload is connected only once an import has
+    actually run; LinkedIn/Naukri have no real candidate-import access at all (separate
+    from the job-posting LinkedIn integration elsewhere in this app, which doesn't grant
+    candidate import), so they're never shown as connected."""
+    career_portal_last_sync = (
+        db.query(func.max(Candidate.created_at)).filter(Candidate.source == "career_portal").scalar()
+    )
+    csv_last_sync = db.query(func.max(Candidate.created_at)).filter(Candidate.source == "csv_import").scalar()
+    return [
+        CandidateDataSourceStatus(
+            source="career_portal", label="Career Portal", connected=True, last_sync=career_portal_last_sync
+        ),
+        CandidateDataSourceStatus(
+            source="csv_import", label="CSV Upload", connected=csv_last_sync is not None, last_sync=csv_last_sync
+        ),
+        CandidateDataSourceStatus(source="linkedin", label="LinkedIn", connected=False, last_sync=None),
+        CandidateDataSourceStatus(source="naukri", label="Naukri", connected=False, last_sync=None),
+    ]
+
+
+@router.get("/reports/candidates-dashboard-stats", response_model=CandidatesDashboardStatsResponse)
+def get_candidates_dashboard_stats(
+    compare_month: Optional[str] = Query(
+        None,
+        description="YYYY-MM month to compare the current values against. Must be one "
+        "of the past 12 completed months; defaults to last month.",
+    ),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    now = datetime.now(timezone.utc)
+    try:
+        compare_month_start = stats.parse_compare_month(compare_month, now)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    compare_month_end = stats.shift_months(compare_month_start, 1)
+
+    month_starts = stats.last_12_month_starts(now)
+    month_ends = [stats.shift_months(month_start, 1) for month_start in month_starts]
+    current_month_start, current_month_end = month_starts[-1], month_ends[-1]
+
+    total_candidates = stats.cumulative_count_as_of(db, Candidate, current_month_end)
+    new_this_month = stats.count_created_in_window(db, Candidate, current_month_start, current_month_end)
+
+    total_candidates_series = [stats.cumulative_count_as_of(db, Candidate, end) for end in month_ends]
+    new_this_month_series = [
+        stats.count_created_in_window(db, Candidate, start, end) for start, end in zip(month_starts, month_ends)
+    ]
+
+    compare_total_candidates = stats.cumulative_count_as_of(db, Candidate, compare_month_end)
+    compare_new_candidates = stats.count_created_in_window(db, Candidate, compare_month_start, compare_month_end)
+
+    total_candidates_trend = stats.build_trend(
+        month_starts, total_candidates_series, compare_month_start, compare_total_candidates, total_candidates
+    )
+    new_this_month_trend = stats.build_trend(
+        month_starts, new_this_month_series, compare_month_start, compare_new_candidates, new_this_month
+    )
+
+    source_counts = dict(stats.candidate_source_breakdown(db))
+    from_career_portal = source_counts.get("career_portal", 0)
+    manually_added = sum(source_counts.get(source, 0) for source in stats.MANUALLY_ADDED_SOURCES)
+    active_candidates = stats.active_candidates_count(db)
+
+    data_sources = _candidate_data_sources(db)
+
+    recent_rows = (
+        db.query(Application, Candidate, JobRole.title)
+        .join(Candidate, Candidate.id == Application.candidate_id)
+        .join(JobRole, JobRole.id == Application.job_role_id)
+        .order_by(Application.created_at.desc())
+        .limit(8)
+        .all()
+    )
+
+    return CandidatesDashboardStatsResponse(
+        total_candidates=total_candidates,
+        new_this_month=new_this_month,
+        from_career_portal=from_career_portal,
+        manually_added=manually_added,
+        active_candidates=active_candidates,
+        total_candidates_trend=total_candidates_trend,
+        new_this_month_trend=new_this_month_trend,
+        by_source=[LabeledCount(label=source, count=count) for source, count in stats.candidate_source_breakdown(db)],
+        top_skills=[LabeledCount(label=skill, count=count) for skill, count in stats.top_skills(db, limit=5)],
+        match_score_distribution=[
+            LabeledCount(label=bucket, count=count) for bucket, count in stats.match_score_distribution(db)
+        ],
+        data_sources=data_sources,
+        recent_candidates=[_candidate_application_row(app, cand, title) for app, cand, title in recent_rows],
+    )
+
+
+@router.get("/reports/candidates-top-skills", response_model=list[LabeledCount])
+def get_candidates_top_skills(
+    limit: Optional[int] = Query(None, ge=1, le=1000, description="Omit for every distinct skill"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Backs the dashboard's "View all skills" link -- the dashboard-stats endpoint itself
+    only ever returns the top 5, so this is a separate call rather than re-fetching the
+    whole dashboard payload just to see more skills."""
+    return [LabeledCount(label=skill, count=count) for skill, count in stats.top_skills(db, limit=limit)]
+
+
+@router.get("/candidates/{candidate_id}/timeline", response_model=CandidateTimelineResponse)
+def get_candidate_timeline(
+    candidate_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    """Unions audit_log rows for the candidate itself, every application they've submitted,
+    and every interview/BGV document tied to those applications -- the entity types that
+    can appear in a candidate's history but are logged under their own id rather than the
+    application's (see app/scheduling/router.py and app/bgv/router.py)."""
+    candidate = db.get(Candidate, candidate_id)
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    application_ids = [
+        row[0] for row in db.query(Application.id).filter(Application.candidate_id == candidate_id).all()
+    ]
+    interview_ids = (
+        [row[0] for row in db.query(Interview.id).filter(Interview.application_id.in_(application_ids)).all()]
+        if application_ids
+        else []
+    )
+    bgv_document_ids = (
+        [row[0] for row in db.query(BgvDocument.id).filter(BgvDocument.application_id.in_(application_ids)).all()]
+        if application_ids
+        else []
+    )
+
+    conditions = [and_(AuditLog.entity_type == "candidate", AuditLog.entity_id == candidate_id)]
+    if application_ids:
+        conditions.append(and_(AuditLog.entity_type == "application", AuditLog.entity_id.in_(application_ids)))
+    if interview_ids:
+        conditions.append(and_(AuditLog.entity_type == "interview", AuditLog.entity_id.in_(interview_ids)))
+    if bgv_document_ids:
+        conditions.append(and_(AuditLog.entity_type == "bgv_document", AuditLog.entity_id.in_(bgv_document_ids)))
+
+    events = db.query(AuditLog).filter(or_(*conditions)).order_by(AuditLog.created_at.asc()).all()
+    return CandidateTimelineResponse(candidate_id=candidate_id, events=events)

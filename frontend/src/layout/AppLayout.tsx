@@ -6,6 +6,8 @@ import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
 import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import EventOutlinedIcon from "@mui/icons-material/EventOutlined";
+import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
@@ -24,6 +26,7 @@ import Avatar from "@mui/material/Avatar";
 import Badge from "@mui/material/Badge";
 import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
+import Collapse from "@mui/material/Collapse";
 import Divider from "@mui/material/Divider";
 import Drawer from "@mui/material/Drawer";
 import IconButton from "@mui/material/IconButton";
@@ -37,7 +40,7 @@ import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
 import Toolbar from "@mui/material/Toolbar";
 import Typography from "@mui/material/Typography";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import { reportsApi } from "../api/client";
 import type { RecentActivityItem } from "../api/types";
@@ -51,16 +54,33 @@ const RAIL_WIDTH = 72;
 const SIDEBAR_STORAGE_KEY = "hr-automation-sidebar-expanded";
 const ACTIVITY_LAST_SEEN_KEY = "hr-automation-activity-last-seen";
 
+interface ModuleChild {
+  label: string;
+  path: string;
+}
+
 interface ModuleLink {
   label: string;
   path: string;
   icon: SvgIconComponent;
+  // Candidate Detail is a drill-down reached by clicking a row in the List sub-item, not
+  // a fourth entry here -- these three are the only real destinations under Candidates.
+  children?: ModuleChild[];
 }
 
 const MODULES: ModuleLink[] = [
   { label: "Overview", path: "/", icon: DashboardOutlinedIcon },
   { label: "Jobs", path: "/jobs", icon: WorkOutlineIcon },
-  { label: "Candidates", path: "/candidates", icon: PeopleAltOutlinedIcon },
+  {
+    label: "Candidates",
+    path: "/candidates",
+    icon: PeopleAltOutlinedIcon,
+    children: [
+      { label: "Dashboard", path: "/candidates/dashboard" },
+      { label: "Candidates List", path: "/candidates/list" },
+      { label: "Import from Source", path: "/candidates/import" },
+    ],
+  },
   { label: "Screening", path: "/screening", icon: FactCheckOutlinedIcon },
   { label: "Shortlisting", path: "/shortlisting", icon: PlaylistAddCheckOutlinedIcon },
   { label: "Interviews", path: "/interviews", icon: EventOutlinedIcon },
@@ -70,6 +90,13 @@ const MODULES: ModuleLink[] = [
   { label: "Reports", path: "/reports", icon: AssessmentOutlinedIcon },
   { label: "Settings", path: "/settings", icon: SettingsOutlinedIcon },
 ];
+
+// Flattened for the "Jump to a module" search -- sub-items get a real, direct jump target
+// too, not just their parent.
+const SEARCHABLE_MODULES = MODULES.flatMap((module) => [
+  { label: module.label, path: module.path },
+  ...(module.children ?? []).map((child) => ({ label: `${module.label} — ${child.label}`, path: child.path })),
+]);
 
 function initials(nameOrEmail: string): string {
   const trimmed = nameOrEmail.trim();
@@ -82,6 +109,7 @@ export default function AppLayout() {
   const { user, logout } = useAuth();
   const { mode, toggleMode } = useThemeMode();
   const navigate = useNavigate();
+  const location = useLocation();
   const [confirmLogoutOpen, setConfirmLogoutOpen] = useState(false);
   const [activityAnchor, setActivityAnchor] = useState<HTMLElement | null>(null);
   const [activityItems, setActivityItems] = useState<RecentActivityItem[]>([]);
@@ -97,6 +125,29 @@ export default function AppLayout() {
     const stored = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
     return stored === null ? true : stored === "true";
   });
+
+  // Real, independent open/closed state per parent module (keyed by its path) -- collapsed
+  // by default. This is intentionally separate from "which section's route is currently
+  // active": that's used only to decide *when to auto-expand*, never to compute the
+  // rendered open/closed state directly, so a manual collapse sticks while navigating
+  // between that section's own sub-pages.
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
+  const toggleSection = (path: string) =>
+    setOpenSections((prev) => ({ ...prev, [path]: !prev[path] }));
+
+  // The parent module (if any) whose section the current route falls under -- null outside
+  // any such section. Moving between sibling sub-pages (e.g. Dashboard -> List) yields the
+  // same value here, so the auto-expand effect below only fires on actually *entering* or
+  // *leaving* a section, not on every in-section navigation.
+  const activeParentPath = MODULES.find((module) => module.children && location.pathname.startsWith(module.path))?.path ?? null;
+
+  useEffect(() => {
+    if (activeParentPath) {
+      setOpenSections((prev) => (prev[activeParentPath] ? prev : { ...prev, [activeParentPath]: true }));
+    }
+    // Deliberately keyed on activeParentPath, not location.pathname -- see comment above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeParentPath]);
 
   useEffect(() => {
     reportsApi
@@ -168,7 +219,7 @@ export default function AppLayout() {
               jumps straight to the matching page. A full cross-entity search would need a
               backend index this app doesn't have; this is the honest scope for now. */}
           <Autocomplete
-            options={MODULES}
+            options={SEARCHABLE_MODULES}
             getOptionLabel={(option) => option.label}
             onChange={(_event, value) => value && navigate(value.path)}
             blurOnSelect
@@ -229,36 +280,92 @@ export default function AppLayout() {
         </Box>
         <Divider />
         <List sx={{ flexGrow: 1 }}>
-          {MODULES.map(({ label, path, icon: Icon }) => {
-            const item = (
-              <ListItemButton
-                key={path}
-                component={NavLink}
-                to={path}
-                end={path === "/"}
-                sx={{
-                  justifyContent: expanded ? "flex-start" : "center",
-                  px: expanded ? 2 : 1.5,
-                  transition: "background-color 180ms ease",
-                  "&.active": {
-                    backgroundColor: "action.selected",
-                    borderRight: "3px solid",
-                    borderColor: "primary.main",
-                  },
-                }}
-              >
-                <ListItemIcon sx={{ minWidth: expanded ? 40 : "auto", justifyContent: "center" }}>
-                  <Icon />
-                </ListItemIcon>
-                {expanded && <ListItemText primary={label} />}
-              </ListItemButton>
-            );
-            return expanded ? (
+          {MODULES.map(({ label, path, icon: Icon, children }) => {
+            const isSectionRoute = activeParentPath === path;
+            const isOpen = Boolean(children) && Boolean(openSections[path]);
+
+            // With children AND room to show them (rail expanded): the row is a pure
+            // disclosure toggle, not a navigation link -- there's no standalone page for
+            // "Candidates" itself to navigate to that would be distinct from expanding it.
+            // In the icon-only rail, there's no room to show sub-items at all, so it falls
+            // back to a normal NavLink (like every leaf item) so the icon still does
+            // something useful.
+            const activeSx = {
+              backgroundColor: "action.selected",
+              borderRight: "3px solid",
+              borderColor: "primary.main",
+            };
+            const item =
+              children && expanded ? (
+                <ListItemButton
+                  key={path}
+                  onClick={() => toggleSection(path)}
+                  sx={{
+                    justifyContent: "flex-start",
+                    px: 2,
+                    transition: "background-color 180ms ease",
+                    ...(isSectionRoute ? activeSx : {}),
+                  }}
+                >
+                  <ListItemIcon sx={{ minWidth: 40, justifyContent: "center" }}>
+                    <Icon />
+                  </ListItemIcon>
+                  <ListItemText primary={label} />
+                  {isOpen ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+                </ListItemButton>
+              ) : (
+                <ListItemButton
+                  key={path}
+                  component={NavLink}
+                  to={path}
+                  end={path === "/"}
+                  sx={{
+                    justifyContent: expanded ? "flex-start" : "center",
+                    px: expanded ? 2 : 1.5,
+                    transition: "background-color 180ms ease",
+                    "&.active": activeSx,
+                  }}
+                >
+                  <ListItemIcon sx={{ minWidth: expanded ? 40 : "auto", justifyContent: "center" }}>
+                    <Icon />
+                  </ListItemIcon>
+                  {expanded && <ListItemText primary={label} />}
+                </ListItemButton>
+              );
+            const wrapped = expanded ? (
               item
             ) : (
               <Tooltip key={path} title={label} placement="right">
                 <span>{item}</span>
               </Tooltip>
+            );
+            if (!children) {
+              return wrapped;
+            }
+            return (
+              <Box key={path}>
+                {wrapped}
+                {expanded && (
+                  <Collapse in={isOpen} timeout="auto" unmountOnExit>
+                    <List disablePadding>
+                      {children.map((child) => (
+                        <ListItemButton
+                          key={child.path}
+                          component={NavLink}
+                          to={child.path}
+                          sx={{
+                            pl: 5,
+                            py: 0.75,
+                            "&.active": activeSx,
+                          }}
+                        >
+                          <ListItemText primary={child.label} slotProps={{ primary: { variant: "body2" } }} />
+                        </ListItemButton>
+                      ))}
+                    </List>
+                  </Collapse>
+                )}
+              </Box>
             );
           })}
         </List>

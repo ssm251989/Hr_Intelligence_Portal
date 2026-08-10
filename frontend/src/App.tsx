@@ -1,4 +1,4 @@
-import { Route, BrowserRouter, Routes } from "react-router-dom";
+import { Navigate, Route, BrowserRouter, Routes } from "react-router-dom";
 
 import { AuthProvider } from "./auth/AuthContext";
 import { AppThemeProvider } from "./theme/ThemeModeContext";
@@ -11,7 +11,10 @@ import CareersThankYouPage from "./careers/CareersThankYouPage";
 import ErrorBoundary from "./components/ErrorBoundary";
 import AppLayout from "./layout/AppLayout";
 import BgvPage from "./pages/BgvPage";
-import CandidatesPage from "./pages/CandidatesPage";
+import CandidateDetailPage from "./pages/CandidateDetailPage";
+import CandidatesDashboardPage from "./pages/CandidatesDashboardPage";
+import CandidatesImportPage from "./pages/CandidatesImportPage";
+import CandidatesListPage from "./pages/CandidatesListPage";
 import InterviewsPage from "./pages/InterviewsPage";
 import JobsPage from "./pages/JobsPage";
 import LoginPage from "./pages/LoginPage";
@@ -48,7 +51,11 @@ export default function App() {
               >
                 <Route index element={<OverviewPage />} />
                 <Route path="/jobs" element={<JobsPage />} />
-                <Route path="/candidates" element={<CandidatesPage />} />
+                <Route path="/candidates" element={<Navigate to="/candidates/dashboard" replace />} />
+                <Route path="/candidates/dashboard" element={<CandidatesDashboardPage />} />
+                <Route path="/candidates/list" element={<CandidatesListPage />} />
+                <Route path="/candidates/import" element={<CandidatesImportPage />} />
+                <Route path="/candidates/:applicationId" element={<CandidateDetailPage />} />
                 <Route path="/screening" element={<ScreeningPage />} />
                 <Route path="/shortlisting" element={<ShortlistingPage />} />
                 <Route path="/interviews" element={<InterviewsPage />} />

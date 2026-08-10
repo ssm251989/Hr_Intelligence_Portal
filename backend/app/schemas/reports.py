@@ -108,3 +108,8 @@ class AuditLogPage(BaseModel):
 class ApplicationTimelineResponse(BaseModel):
     application_id: uuid.UUID
     events: list[AuditLogRead]
+
+
+class CandidateTimelineResponse(BaseModel):
+    candidate_id: uuid.UUID
+    events: list[AuditLogRead]

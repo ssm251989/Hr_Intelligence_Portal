@@ -1,20 +1,38 @@
 import uuid
 from typing import Optional
 
+from cryptography.fernet import InvalidToken
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.audit.service import log_action
 from app.auth.dependencies import get_current_user, require_roles
+from app.candidates.pipeline_actions import compute_next_actions
+from app.core.crypto import decrypt
 from app.core.database import get_db
+from app.integrations.gmail import GmailError, send_email
 from app.jobs.service import notify_job_owner_of_new_application
 from app.models.application import Application
 from app.models.candidate import Candidate
 from app.models.job_role import JobRole
 from app.models.user import User
+from app.models.user_integration import UserIntegration
 from app.schemas.application import ApplicationCreate, ApplicationRead
+from app.schemas.candidates_dashboard import (
+    CandidateApplicationDetail,
+    CandidateMessageRequest,
+    CandidateMessageResponse,
+    OtherApplicationItem,
+)
 
 router = APIRouter(prefix="/applications", tags=["applications"])
+
+
+def _get_application_or_404(db: Session, application_id: uuid.UUID) -> Application:
+    application = db.get(Application, application_id)
+    if not application:
+        raise HTTPException(status_code=404, detail="Application not found")
+    return application
 
 
 @router.post("", response_model=ApplicationRead, status_code=201)
@@ -55,3 +73,81 @@ def list_applications(
     if job_role_id is not None:
         query = query.filter(Application.job_role_id == job_role_id)
     return query.order_by(Application.created_at.desc()).all()
+
+
+@router.get("/{application_id}/candidate-detail", response_model=CandidateApplicationDetail)
+def get_candidate_application_detail(
+    application_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    application = _get_application_or_404(db, application_id)
+    job = db.get(JobRole, application.job_role_id)
+    candidate = db.get(Candidate, application.candidate_id)
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    other_rows = (
+        db.query(Application, JobRole.title)
+        .join(JobRole, JobRole.id == Application.job_role_id)
+        .filter(Application.candidate_id == candidate.id, Application.id != application_id)
+        .order_by(Application.created_at.desc())
+        .all()
+    )
+
+    return CandidateApplicationDetail(
+        application=application,
+        job_title=job.title if job else "Unknown role",
+        candidate=candidate,
+        next_actions=compute_next_actions(db, application),
+        other_applications=[
+            OtherApplicationItem(
+                application_id=other_app.id,
+                job_role_id=other_app.job_role_id,
+                job_title=title,
+                status=other_app.status,
+                applied_on=other_app.created_at,
+            )
+            for other_app, title in other_rows
+        ],
+    )
+
+
+@router.post("/{application_id}/message", response_model=CandidateMessageResponse)
+def message_candidate(
+    application_id: uuid.UUID,
+    payload: CandidateMessageRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "hiring_manager", "admin")),
+):
+    """Sends a real email to the candidate via the current user's connected Gmail
+    (the same 'google' UserIntegration used for Calendar). There is no separate bypass
+    here -- if the recruiter hasn't connected Google, this fails the same way any other
+    Gmail-backed action in the app does, and the frontend gates the button on connection
+    status beforehand (see app/jobs/service.py's notification pattern)."""
+    application = _get_application_or_404(db, application_id)
+    candidate = db.get(Candidate, application.candidate_id)
+    if not candidate or not candidate.email:
+        raise HTTPException(status_code=400, detail="Candidate has no email on file")
+
+    integration = (
+        db.query(UserIntegration)
+        .filter(UserIntegration.user_id == current_user.id, UserIntegration.provider == "google")
+        .first()
+    )
+    if not integration:
+        raise HTTPException(status_code=400, detail="Connect Google in Settings to send email to candidates")
+
+    try:
+        send_email(decrypt(integration.refresh_token), to=candidate.email, subject=payload.subject, body=payload.body)
+    except (GmailError, InvalidToken) as exc:
+        detail = str(exc) or "Stored Google refresh token could not be decrypted"
+        raise HTTPException(status_code=502, detail=detail) from exc
+
+    log_action(
+        db,
+        "application",
+        application.id,
+        "candidate_email_sent",
+        current_user.email,
+        {"to": candidate.email, "subject": payload.subject},
+    )
+    return CandidateMessageResponse(sent=True, to=candidate.email)

@@ -1,7 +1,11 @@
+import csv
+import io
 import uuid
+from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.ai_services.resume_parser import ResumeParsingError, parse_resume
@@ -14,13 +18,22 @@ from app.candidates.resume_extraction import (
 )
 from app.candidates.storage import resolve_resume_path, save_resume_file
 from app.core.database import get_db
+from app.models.application import Application
 from app.models.candidate import Candidate
+from app.models.job_role import JobRole
 from app.models.user import User
 from app.schemas.candidate import CandidateRead
+from app.schemas.candidates_dashboard import (
+    CandidateApplicationRow,
+    CandidatesListPage,
+    CsvImportRowError,
+    CsvImportSummary,
+)
 
 router = APIRouter(prefix="/candidates", tags=["candidates"])
 
 ALLOWED_EXTENSIONS = {"pdf", "docx"}
+CSV_MAX_ROWS = 2000
 
 
 class NoResumeUploadedError(Exception):
@@ -82,7 +95,7 @@ async def upload_resume(
 
     resume_path = save_resume_file(file_bytes, extension)
 
-    candidate = Candidate(resume_path=resume_path)
+    candidate = Candidate(resume_path=resume_path, source="manual")
     db.add(candidate)
     db.commit()
     db.refresh(candidate)
@@ -94,6 +107,184 @@ async def upload_resume(
 @router.get("", response_model=list[CandidateRead])
 def list_candidates(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return db.query(Candidate).order_by(Candidate.created_at.desc()).all()
+
+
+def _row_to_item(application: Application, candidate: Candidate, job_title: str) -> CandidateApplicationRow:
+    experience_years = None
+    if candidate.parsed_fields:
+        experience_years = candidate.parsed_fields.get("total_experience_years")
+    return CandidateApplicationRow(
+        application_id=application.id,
+        candidate_id=candidate.id,
+        candidate_name=candidate.full_name,
+        candidate_email=candidate.email,
+        job_role_id=application.job_role_id,
+        job_title=job_title,
+        status=application.status,
+        source=candidate.source,
+        location=candidate.location,
+        applied_on=application.created_at,
+        match_score=float(application.match_score) if application.match_score is not None else None,
+        experience_years=float(experience_years) if experience_years is not None else None,
+        resume_path=candidate.resume_path,
+    )
+
+
+# NOTE: registered before the "/{candidate_id}" routes below -- FastAPI/Starlette match
+# routes in registration order using the default string convertor for un-annotated path
+# segments, so a literal path like "/applications" or "/import-csv" registered *after*
+# "/{candidate_id}" would be swallowed by that param route first (and 422 trying to parse
+# "applications" as a UUID) rather than ever reaching this handler.
+@router.get("/applications", response_model=CandidatesListPage)
+def list_candidate_applications(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=200),
+    search: Optional[str] = Query(None, description="Matches candidate name or email"),
+    job_role_id: Optional[uuid.UUID] = Query(None),
+    status: Optional[str] = Query(None),
+    source: Optional[str] = Query(None),
+    location: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """One row per (candidate, application) pairing -- the data source for the Candidates
+    List page. A candidate who applied to multiple jobs appears once per job, since Job
+    Applied/Stage/Match Score are all per-application concepts."""
+    query = (
+        db.query(Application, Candidate, JobRole.title)
+        .join(Candidate, Candidate.id == Application.candidate_id)
+        .join(JobRole, JobRole.id == Application.job_role_id)
+    )
+    if job_role_id is not None:
+        query = query.filter(Application.job_role_id == job_role_id)
+    if status is not None:
+        query = query.filter(Application.status == status)
+    if source is not None:
+        query = query.filter(Candidate.source == source)
+    if location is not None:
+        query = query.filter(Candidate.location.ilike(f"%{location}%"))
+    if search is not None:
+        query = query.filter(
+            or_(Candidate.full_name.ilike(f"%{search}%"), Candidate.email.ilike(f"%{search}%"))
+        )
+
+    total = query.count()
+    rows = (
+        query.order_by(Application.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    items = [_row_to_item(application, candidate, title) for application, candidate, title in rows]
+    return CandidatesListPage(total=total, page=page, page_size=page_size, items=items)
+
+
+_CSV_COLUMN_ALIASES = {
+    "name": "name",
+    "full_name": "name",
+    "fullname": "name",
+    "candidate_name": "name",
+    "email": "email",
+    "email_address": "email",
+    "phone": "phone",
+    "phone_number": "phone",
+    "mobile": "phone",
+    "resume": "resume",
+    "resume_link": "resume",
+    "resume_url": "resume",
+    "resume_path": "resume",
+}
+
+
+def _normalize_csv_row(raw_row: dict) -> dict:
+    normalized: dict = {}
+    for key, value in raw_row.items():
+        if key is None:
+            continue
+        alias_key = key.strip().lower().replace(" ", "_")
+        field = _CSV_COLUMN_ALIASES.get(alias_key)
+        if field:
+            normalized[field] = (value or "").strip()
+    return normalized
+
+
+@router.post("/import-csv", response_model=CsvImportSummary, status_code=201)
+async def import_candidates_csv(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "admin")),
+):
+    """Bulk-creates real Candidate rows from a CSV (name, email, phone, resume link are
+    the recognized columns; header names are matched case-insensitively). Never reads an
+    arbitrary server filesystem path from the file -- a 'resume' column is only honored
+    when it's an http(s) URL, since a bare filename in someone's CSV can't refer to
+    anything meaningful on the server. Every row either becomes a candidate or is recorded
+    in the returned summary with a reason; nothing is silently dropped."""
+    extension = file.filename.rsplit(".", 1)[-1].lower() if file.filename and "." in file.filename else ""
+    if extension != "csv":
+        raise HTTPException(status_code=400, detail="Only .csv files are supported")
+
+    raw_bytes = await file.read()
+    try:
+        text = raw_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Could not read CSV file (expected UTF-8 encoding)") from exc
+
+    reader = list(csv.DictReader(io.StringIO(text)))
+    if len(reader) > CSV_MAX_ROWS:
+        raise HTTPException(status_code=400, detail=f"CSV has too many rows (max {CSV_MAX_ROWS})")
+
+    seen_emails: set[str] = set()
+    imported_ids: list[uuid.UUID] = []
+    errors: list[CsvImportRowError] = []
+
+    for index, raw_row in enumerate(reader, start=1):
+        row = _normalize_csv_row(raw_row)
+        name = row.get("name")
+        email = row.get("email")
+
+        if not name or not email:
+            errors.append(CsvImportRowError(row=index, reason="Missing required name or email"))
+            continue
+        if "@" not in email or "." not in email.split("@")[-1]:
+            errors.append(CsvImportRowError(row=index, reason=f"Invalid email: {email}"))
+            continue
+
+        email_key = email.lower()
+        if email_key in seen_emails:
+            errors.append(CsvImportRowError(row=index, reason=f"Duplicate email in this file: {email}"))
+            continue
+        existing = db.query(Candidate).filter(Candidate.email.ilike(email)).first()
+        if existing:
+            errors.append(CsvImportRowError(row=index, reason=f"Candidate with this email already exists: {email}"))
+            continue
+
+        resume = row.get("resume")
+        resume_path = resume if resume and resume.lower().startswith(("http://", "https://")) else None
+
+        candidate = Candidate(
+            full_name=name,
+            email=email,
+            phone=row.get("phone") or None,
+            resume_path=resume_path,
+            source="csv_import",
+        )
+        db.add(candidate)
+        db.commit()
+        db.refresh(candidate)
+
+        log_action(
+            db, "candidate", candidate.id, "candidate_csv_imported", current_user.email, {"row": index, "email": email}
+        )
+        seen_emails.add(email_key)
+        imported_ids.append(candidate.id)
+
+    return CsvImportSummary(
+        imported=len(imported_ids),
+        skipped=len(errors),
+        errors=errors,
+        imported_candidate_ids=imported_ids,
+    )
 
 
 @router.get("/{candidate_id}", response_model=CandidateRead)

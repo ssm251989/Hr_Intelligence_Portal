@@ -3,7 +3,9 @@ from datetime import datetime, timedelta, timezone
 
 from app.models.application import Application
 from app.models.audit_log import AuditLog
-from app.models.candidate import Candidate
+from app.models.bgv_document import BgvDocument
+from app.models.candidate import CANDIDATE_SOURCES, Candidate
+from app.models.interview import Interview
 from app.models.job_role import JOB_ROLE_STATUSES, JobRole
 from app.reports import stats
 
@@ -42,8 +44,8 @@ def _make_job(db_session, title="Backend Engineer", **kwargs) -> JobRole:
     return job
 
 
-def _make_candidate(db_session, full_name="Jane Doe") -> Candidate:
-    candidate = Candidate(full_name=full_name)
+def _make_candidate(db_session, full_name="Jane Doe", **kwargs) -> Candidate:
+    candidate = Candidate(full_name=full_name, **kwargs)
     db_session.add(candidate)
     db_session.commit()
     db_session.refresh(candidate)
@@ -854,3 +856,276 @@ def test_job_status_overview_all_time_has_no_lower_bound(client, db_session):
     after = client.get("/reports/job-status-overview?period=all_time").json()
 
     assert after["total"] - before_total == 1
+
+
+# --- /reports/candidates-dashboard-stats ---
+
+
+def test_candidates_dashboard_stats_counts_and_source_split(client, db_session):
+    before = client.get("/reports/candidates-dashboard-stats").json()
+
+    _make_candidate(db_session, source="career_portal", created_at=_NOW)
+    _make_candidate(db_session, source="manual", created_at=_NOW)
+    _make_candidate(db_session, source="csv_import", created_at=_NOW)
+    # Backdated to last month -- must not count toward new_this_month.
+    _make_candidate(db_session, source="manual", created_at=_PREVIOUS_MONTH)
+
+    after = client.get("/reports/candidates-dashboard-stats").json()
+
+    assert after["total_candidates"] - before["total_candidates"] == 4
+    assert after["new_this_month"] - before["new_this_month"] == 3
+    assert after["from_career_portal"] - before["from_career_portal"] == 1
+    # "Manually Added" folds both manual and csv_import together.
+    assert after["manually_added"] - before["manually_added"] == 3
+
+
+def test_candidates_dashboard_stats_by_source_includes_every_defined_source(client):
+    body = client.get("/reports/candidates-dashboard-stats").json()
+    labels = [row["label"] for row in body["by_source"]]
+    assert labels == list(CANDIDATE_SOURCES)
+    assert body["total_candidates"] == sum(row["count"] for row in body["by_source"])
+
+
+def test_candidates_dashboard_stats_active_candidates_definition(client, db_session):
+    # Active := has at least one application not in a terminal status. A candidate whose
+    # only application is terminal (hr_rejected here) must NOT count as active, and a
+    # candidate with zero applications at all must not count either.
+    before = client.get("/reports/candidates-dashboard-stats").json()
+
+    job = _make_job(db_session)
+    active_candidate = _make_candidate(db_session, full_name="Active One")
+    _make_application(db_session, job, active_candidate, status="screened")
+
+    terminal_candidate = _make_candidate(db_session, full_name="Terminal One")
+    _make_application(db_session, job, terminal_candidate, status="hr_rejected")
+
+    no_application_candidate = _make_candidate(db_session, full_name="No Application")
+
+    after = client.get("/reports/candidates-dashboard-stats").json()
+
+    assert after["active_candidates"] - before["active_candidates"] == 1
+    assert after["total_candidates"] - before["total_candidates"] == 3
+    assert no_application_candidate.id is not None  # created, just deliberately never referenced
+
+
+def test_candidates_dashboard_stats_top_skills_frequency(client, db_session):
+    # Distinctive, made-up tokens (never organically present in real seed data) with a
+    # comfortable count margin -- the dashboard card is limited to the top 5, and the
+    # shared dev database may already have several real skills tied at a low count that
+    # would otherwise make a real skill name's rank (and thus its top-5 placement)
+    # nondeterministic.
+    before = client.get("/reports/candidates-dashboard-stats").json()
+    before_skills = {row["label"]: row["count"] for row in before["top_skills"]}
+
+    for _ in range(20):
+        _make_candidate(db_session, parsed_fields={"skills": ["QaZzTestSkillAlpha", "QaZzTestSkillBeta"]})
+    for _ in range(12):
+        _make_candidate(db_session, parsed_fields={"skills": ["QaZzTestSkillAlpha"]})
+    _make_candidate(db_session, parsed_fields=None)
+
+    after = client.get("/reports/candidates-dashboard-stats").json()
+    after_skills = {row["label"]: row["count"] for row in after["top_skills"]}
+
+    assert len(after["top_skills"]) <= 5
+    assert after_skills.get("QaZzTestSkillAlpha", 0) - before_skills.get("QaZzTestSkillAlpha", 0) == 32
+    assert after_skills.get("QaZzTestSkillBeta", 0) - before_skills.get("QaZzTestSkillBeta", 0) == 20
+
+
+def test_candidates_dashboard_stats_match_score_distribution_buckets(client, db_session):
+    before = client.get("/reports/candidates-dashboard-stats").json()
+    before_buckets = {row["label"]: row["count"] for row in before["match_score_distribution"]}
+
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    _make_application(db_session, job, candidate, match_score=95)
+    _make_application(db_session, job, candidate, match_score=75)
+    _make_application(db_session, job, candidate, match_score=55)
+    _make_application(db_session, job, candidate, match_score=35)
+    _make_application(db_session, job, candidate, match_score=15)
+    _make_application(db_session, job, candidate, match_score=None)  # never bucketed
+
+    after = client.get("/reports/candidates-dashboard-stats").json()
+    after_buckets = {row["label"]: row["count"] for row in after["match_score_distribution"]}
+
+    assert [row["label"] for row in after["match_score_distribution"]] == list(stats.MATCH_SCORE_BUCKETS)
+    for bucket in ("90-100", "70-89", "50-69", "30-49", "0-29"):
+        assert after_buckets[bucket] - before_buckets.get(bucket, 0) == 1
+
+
+def _data_source_map(body):
+    return {row["source"]: row for row in body["data_sources"]}
+
+
+def test_candidates_dashboard_stats_data_sources_linkedin_and_naukri_never_connected(client):
+    body = client.get("/reports/candidates-dashboard-stats").json()
+    sources = _data_source_map(body)
+
+    assert sources["linkedin"]["connected"] is False
+    assert sources["linkedin"]["last_sync"] is None
+    assert sources["naukri"]["connected"] is False
+    assert sources["naukri"]["last_sync"] is None
+
+
+def test_candidates_dashboard_stats_data_sources_career_portal_always_connected(client, db_session):
+    before = client.get("/reports/candidates-dashboard-stats").json()
+    assert _data_source_map(before)["career_portal"]["connected"] is True  # true even with none yet
+
+    portal_candidate = _make_candidate(db_session, source="career_portal", created_at=_NOW)
+
+    after = client.get("/reports/candidates-dashboard-stats").json()
+    after_source = _data_source_map(after)["career_portal"]
+    assert after_source["connected"] is True
+    last_sync = datetime.fromisoformat(after_source["last_sync"].replace("Z", "+00:00"))
+    # Postgres timestamptz round-tripping can shave sub-second precision -- compare to the
+    # second, not byte-for-byte, to avoid a flaky assertion on exact microseconds.
+    assert abs((last_sync - portal_candidate.created_at).total_seconds()) < 1
+
+
+def test_candidates_dashboard_stats_data_sources_csv_upload_connected_only_after_a_real_import(client):
+    before = client.get("/reports/candidates-dashboard-stats").json()
+    before_csv = _data_source_map(before)["csv_import"]
+    # If some earlier test/run already imported a CSV in this shared database, csv_import
+    # is legitimately already connected -- only assert the "never connected" shape when
+    # it's genuinely never happened.
+    if not before_csv["connected"]:
+        assert before_csv["last_sync"] is None
+
+    import_response = client.post(
+        "/candidates/import-csv",
+        files={"file": ("c.csv", b"name,email\nData Source Test,datasourcetest@example.com\n", "text/csv")},
+    )
+    assert import_response.status_code == 201
+
+    after = client.get("/reports/candidates-dashboard-stats").json()
+    after_csv = _data_source_map(after)["csv_import"]
+    assert after_csv["connected"] is True
+    assert after_csv["last_sync"] is not None
+
+
+# --- /reports/candidates-top-skills ---
+
+
+def test_candidates_top_skills_no_limit_param_returns_every_skill(client, db_session):
+    # No `limit` query param at all -- the dedicated endpoint's default is "everything"
+    # (unlike the dashboard card, which always requests limit=5 explicitly). This is what
+    # backs "View all skills."
+    for _ in range(15):
+        _make_candidate(db_session, parsed_fields={"skills": ["QaZzTopSkillsNoLimitParam"]})
+
+    body = client.get("/reports/candidates-top-skills").json()
+    assert len(body) > 5
+    labels = {row["label"] for row in body}
+    assert "QaZzTopSkillsNoLimitParam" in labels
+
+
+def test_candidates_top_skills_unlimited_returns_more_than_five(client, db_session):
+    # Six distinctive skills, each on its own candidate -- with no limit, all six must
+    # come back, proving the "view all skills" call isn't silently capped at the
+    # dashboard card's top-5.
+    for i in range(6):
+        _make_candidate(db_session, parsed_fields={"skills": [f"QaZzUnlimitedSkill{i}"]})
+
+    body = client.get("/reports/candidates-top-skills").json()
+    labels = {row["label"] for row in body}
+    for i in range(6):
+        assert f"QaZzUnlimitedSkill{i}" in labels
+
+
+def test_candidates_top_skills_explicit_limit(client, db_session):
+    before = client.get("/reports/candidates-top-skills?limit=3").json()
+    assert len(before) <= 3
+
+    for _ in range(5):
+        _make_candidate(db_session, parsed_fields={"skills": ["QaZzExplicitLimitSkill"]})
+
+    after = client.get("/reports/candidates-top-skills?limit=3").json()
+    assert len(after) <= 3
+    assert after[0]["count"] >= 5
+
+
+def test_candidates_dashboard_stats_monthly_series_has_12_points_ending_this_month(client):
+    body = client.get("/reports/candidates-dashboard-stats").json()
+    current_key = stats.month_key(stats.month_start(_NOW))
+    for field in ("total_candidates_trend", "new_this_month_trend"):
+        series = body[field]["series"]
+        assert len(series) == 12
+        assert series[-1]["month"] == current_key
+
+
+def test_candidates_dashboard_stats_recent_candidates_shape(client, db_session):
+    job = _make_job(db_session, title="Recent Candidates Job")
+    candidate = _make_candidate(
+        db_session,
+        full_name="Recent Applicant",
+        email="recent@example.com",
+        source="career_portal",
+        parsed_fields={"skills": ["Python"], "total_experience_years": 3.5},
+    )
+    application = _make_application(db_session, job, candidate, match_score=88)
+
+    body = client.get("/reports/candidates-dashboard-stats").json()
+    row = next((r for r in body["recent_candidates"] if r["application_id"] == str(application.id)), None)
+
+    assert row is not None
+    assert row["candidate_name"] == "Recent Applicant"
+    assert row["job_title"] == "Recent Candidates Job"
+    assert row["source"] == "career_portal"
+    assert row["match_score"] == 88.0
+    assert row["experience_years"] == 3.5
+
+
+# --- /candidates/{id}/timeline ---
+
+
+def test_candidate_timeline_unions_candidate_application_interview_and_bgv_entries(client, db_session):
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session, full_name="Timeline Candidate")
+    application = _make_application(db_session, job, candidate)
+    other_candidate_application = _make_application(db_session, job, _make_candidate(db_session, full_name="Other"))
+
+    interview = Interview(application_id=application.id)
+    db_session.add(interview)
+    db_session.commit()
+    db_session.refresh(interview)
+
+    bgv_document = BgvDocument(application_id=application.id, doc_type="pan")
+    db_session.add(bgv_document)
+    db_session.commit()
+    db_session.refresh(bgv_document)
+
+    _make_audit_entry(db_session, "candidate", candidate.id, "candidate_uploaded", created_at=_BASE_TIME)
+    _make_audit_entry(
+        db_session, "application", application.id, "application_created", created_at=_BASE_TIME + timedelta(minutes=1)
+    )
+    _make_audit_entry(
+        db_session, "interview", interview.id, "interview_scheduled", created_at=_BASE_TIME + timedelta(minutes=2)
+    )
+    _make_audit_entry(
+        db_session, "bgv_document", bgv_document.id, "bgv_document_uploaded", created_at=_BASE_TIME + timedelta(minutes=3)
+    )
+    # Must not leak into this candidate's timeline.
+    _make_audit_entry(
+        db_session, "application", other_candidate_application.id, "application_created", created_at=_BASE_TIME
+    )
+
+    response = client.get(f"/candidates/{candidate.id}/timeline")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["candidate_id"] == str(candidate.id)
+    actions = [event["action"] for event in body["events"]]
+    assert actions == [
+        "candidate_uploaded", "application_created", "interview_scheduled", "bgv_document_uploaded",
+    ]
+
+
+def test_candidate_timeline_not_found(client):
+    response = client.get(f"/candidates/{uuid.uuid4()}/timeline")
+    assert response.status_code == 404
+
+
+def test_candidate_timeline_empty_for_candidate_with_no_activity(client, db_session):
+    candidate = _make_candidate(db_session)
+    response = client.get(f"/candidates/{candidate.id}/timeline")
+    assert response.status_code == 200
+    assert response.json()["events"] == []

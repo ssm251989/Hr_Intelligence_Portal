@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -174,6 +175,7 @@ function InterviewFeedbackForm({
 export default function InterviewsPage() {
   const { can } = useAuth();
   const canWrite = can(ROLE_MATRIX.interviewsWrite);
+  const [searchParams] = useSearchParams();
   const [jobs, setJobs] = useState<JobRoleRead[]>([]);
   const [selectedJobId, setSelectedJobId] = useState("");
   const [applications, setApplications] = useState<ApplicationRead[]>([]);
@@ -269,6 +271,17 @@ export default function InterviewsPage() {
       setInterviews({});
     }
   };
+
+  // Deep-link support for the Candidate Detail page's "Move Stage" -> Schedule Interview
+  // action (see components/CandidateFiltersPanel's sibling, app/candidates/pipeline_actions.py's
+  // "navigate" actions): preselects the job so the recruiter doesn't have to find it again.
+  useEffect(() => {
+    const jobId = searchParams.get("jobId");
+    if (jobId && jobId !== selectedJobId && jobs.some((job) => job.id === jobId)) {
+      handleJobChange(jobId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobs, searchParams]);
 
   const openScheduleDialog = (app: ApplicationRead) => {
     setScheduleApp(app);

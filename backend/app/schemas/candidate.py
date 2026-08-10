@@ -12,6 +12,8 @@ class CandidateRead(BaseModel):
     full_name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
+    location: Optional[str] = None
     resume_path: Optional[str] = None
     parsed_fields: Optional[dict] = None
+    source: str
     created_at: datetime

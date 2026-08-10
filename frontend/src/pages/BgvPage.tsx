@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -168,6 +169,7 @@ function BgvClearForm({ onSubmit }: { onSubmit: (payload: BgvClearRequest) => Pr
 export default function BgvPage() {
   const { can } = useAuth();
   const canWrite = can(ROLE_MATRIX.bgvWrite);
+  const [searchParams] = useSearchParams();
   const [jobs, setJobs] = useState<JobRoleRead[]>([]);
   const [selectedJobId, setSelectedJobId] = useState("");
   const [applications, setApplications] = useState<ApplicationRead[]>([]);
@@ -219,6 +221,16 @@ export default function BgvPage() {
       setDocuments({});
     }
   };
+
+  // Deep-link support for the Candidate Detail page's "Move Stage" -> Manage BGV
+  // Documents action (see app/candidates/pipeline_actions.py's "navigate" actions).
+  useEffect(() => {
+    const jobId = searchParams.get("jobId");
+    if (jobId && jobId !== selectedJobId && jobs.some((job) => job.id === jobId)) {
+      handleJobChange(jobId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobs, searchParams]);
 
   const handleRequestBgv = async (applicationId: string) => {
     setActionId(applicationId);

@@ -11,6 +11,15 @@ APPLICATION_STATUSES = (
     "offer_sent", "onboarding_started", "onboarding_completed",
 )
 
+# No further transition endpoint exists in the codebase for any of these -- confirmed by
+# grepping every screening/shortlisting/scheduling/salary/bgv/offers router for each string
+# as a precondition. "Terminal" by omission (no code path leaves them), not by a flag on
+# the row. Used to define "active candidate" (has >=1 application not in this set) and by
+# the next-actions lookup (see app/candidates/pipeline_actions.py).
+TERMINAL_APPLICATION_STATUSES = (
+    "hr_rejected", "interview_rejected", "salary_rejected", "bgv_rejected", "onboarding_completed",
+)
+
 
 class Application(Base):
     __tablename__ = "applications"

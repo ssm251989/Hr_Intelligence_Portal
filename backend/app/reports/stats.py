@@ -5,14 +5,16 @@ logic can be reasoned about (and tested) independently of the FastAPI/session wi
 """
 
 import uuid
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Sequence
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models.application import Application
+from app.models.application import TERMINAL_APPLICATION_STATUSES, Application
 from app.models.audit_log import AuditLog
+from app.models.candidate import CANDIDATE_SOURCES, Candidate
 from app.models.job_role import JobRole
 from app.schemas.reports import MonthlyPoint, StatTrend
 
@@ -234,3 +236,80 @@ def job_avg_time_to_hire(db: Session, job_id: uuid.UUID) -> Optional[float]:
         if entity_id in created_at_by_id
     ]
     return round(sum(deltas) / len(deltas), 1) if deltas else None
+
+
+def count_created_in_window(db: Session, model, start: datetime, end: datetime) -> int:
+    """New rows of `model` created within [start, end) -- the monthly-count counterpart to
+    cumulative_count_as_of's running total. Works for any model with a created_at column."""
+    return (
+        db.query(func.count(model.id)).filter(model.created_at >= start, model.created_at < end).scalar() or 0
+    )
+
+
+# "Manually Added" folds csv_import into manual: both are internal, recruiter-initiated
+# creation paths (as opposed to career_portal, or a future sourcing integration), even
+# though the source breakdown below keeps them as distinct labels.
+MANUALLY_ADDED_SOURCES = ("manual", "csv_import")
+
+
+def active_candidates_count(db: Session) -> int:
+    """Candidates with at least one application not yet in a terminal status. A candidate
+    with zero applications (uploaded but never linked to a job) does not count as active --
+    there's no in-flight pipeline to be active in."""
+    return (
+        db.query(func.count(func.distinct(Application.candidate_id)))
+        .filter(~Application.status.in_(TERMINAL_APPLICATION_STATUSES))
+        .scalar()
+        or 0
+    )
+
+
+def candidate_source_breakdown(db: Session) -> list[tuple[str, int]]:
+    """Every defined source always appears, even at 0 -- so LinkedIn/Naukri/Indeed/Monster/
+    Shine show up as real (zero) slices the moment those integrations start writing
+    candidates, with no schema or endpoint change needed here."""
+    counts = dict(db.query(Candidate.source, func.count(Candidate.id)).group_by(Candidate.source).all())
+    return [(source, counts.get(source, 0)) for source in CANDIDATE_SOURCES]
+
+
+def top_skills(db: Session, limit: Optional[int] = 10) -> list[tuple[str, int]]:
+    """Skill frequency across every candidate's parsed_fields.skills, sorted descending.
+    `limit=None` returns every distinct skill (Counter.most_common(None) sorts the full
+    set rather than truncating) -- used for the "view all skills" list. Done in Python
+    (rather than a jsonb_array_elements SQL aggregate) since candidate counts here are
+    small and it keeps the counting logic portable/testable without a live Postgres
+    JSONB-specific query."""
+    counter: Counter = Counter()
+    rows = db.query(Candidate.parsed_fields).filter(Candidate.parsed_fields.isnot(None)).all()
+    for (parsed_fields,) in rows:
+        for skill in (parsed_fields or {}).get("skills") or []:
+            if skill:
+                counter[skill] += 1
+    return counter.most_common(limit)
+
+
+MATCH_SCORE_BUCKETS = ("90-100", "70-89", "50-69", "30-49", "0-29")
+
+
+def _match_score_bucket(score: float) -> str:
+    if score >= 90:
+        return "90-100"
+    if score >= 70:
+        return "70-89"
+    if score >= 50:
+        return "50-69"
+    if score >= 30:
+        return "30-49"
+    return "0-29"
+
+
+def match_score_distribution(db: Session) -> list[tuple[str, int]]:
+    """Buckets every application's real match_score -- all 5 buckets always appear, even
+    at 0, so the chart's axis never reflows as data comes in."""
+    counter: Counter = Counter()
+    scores = db.query(Application.match_score).filter(Application.match_score.isnot(None)).all()
+    for (score,) in scores:
+        counter[_match_score_bucket(float(score))] += 1
+    return [(bucket, counter.get(bucket, 0)) for bucket in MATCH_SCORE_BUCKETS]
+
+

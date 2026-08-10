@@ -30,9 +30,28 @@ function DonutTooltip({
   );
 }
 
-export default function LabeledDonutChart({ title, rows }: { title: string; rows: LabeledCount[] }) {
+export default function LabeledDonutChart({
+  title,
+  rows,
+  size = 200,
+  legendMinWidth = 160,
+  spacing = 3,
+}: {
+  title: string;
+  rows: LabeledCount[];
+  // Lets a narrower host column (e.g. a 4-across dashboard row) shrink the chart+legend
+  // footprint so the side-by-side layout still fits without the legend wrapping below --
+  // the defaults reproduce this component's original fixed 200px/160px/24px sizing
+  // exactly, so existing callers (Jobs by Department, Job Status Overview) are unaffected.
+  size?: number;
+  legendMinWidth?: number;
+  spacing?: number;
+}) {
   const slices = toBreakdownSlices(rows);
   const total = slices.reduce((sum, row) => sum + row.count, 0);
+  const innerRadius = Math.round(size * 0.275);
+  const outerRadius = Math.round(size * 0.45);
+  const compact = size < 160;
 
   return (
     <Box>
@@ -42,17 +61,17 @@ export default function LabeledDonutChart({ title, rows }: { title: string; rows
         </Typography>
       )}
       {total === 0 ? (
-        <Typography color="text.secondary">No jobs yet.</Typography>
+        <Typography color="text.secondary">No data yet.</Typography>
       ) : (
-        <Stack direction="row" spacing={3} alignItems="center" flexWrap="wrap" useFlexGap>
-          <Box sx={{ position: "relative", width: 200, height: 200, flexShrink: 0 }}>
-            <PieChart width={200} height={200}>
+        <Stack direction="row" spacing={spacing} alignItems="center" flexWrap="wrap" useFlexGap>
+          <Box sx={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
+            <PieChart width={size} height={size}>
               <Pie
                 data={slices}
                 dataKey="count"
                 nameKey="label"
-                innerRadius={55}
-                outerRadius={90}
+                innerRadius={innerRadius}
+                outerRadius={outerRadius}
                 paddingAngle={2}
                 stroke="none"
                 isAnimationActive={false}
@@ -77,7 +96,7 @@ export default function LabeledDonutChart({ title, rows }: { title: string; rows
                 pointerEvents: "none",
               }}
             >
-              <Typography variant="h5" fontWeight="bold">
+              <Typography variant={compact ? "body1" : "h5"} fontWeight="bold">
                 {total}
               </Typography>
               <Typography variant="caption" color="text.secondary">
@@ -87,7 +106,7 @@ export default function LabeledDonutChart({ title, rows }: { title: string; rows
           </Box>
           {/* Text legend doubles as the table-view equivalent -- every count/percent
               is readable without hovering, not gated behind the tooltip. */}
-          <Box sx={{ flexGrow: 1, minWidth: 160 }}>
+          <Box sx={{ flexGrow: 1, minWidth: legendMinWidth }}>
             <BreakdownLegend slices={slices} total={total} />
           </Box>
         </Stack>

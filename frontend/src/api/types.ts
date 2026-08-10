@@ -125,13 +125,42 @@ export interface JobFieldSuggestionsResponse {
 
 // ---- candidates ----
 
+// Defined-but-currently-zero sources (linkedin/naukri/indeed/monster/shine) are here so
+// the real sourcing integrations can slot in later with no schema/type change -- nothing
+// writes them yet (see backend/app/models/candidate.py CANDIDATE_SOURCES).
+export const CANDIDATE_SOURCES = [
+  "career_portal", "manual", "csv_import",
+  "linkedin", "naukri", "indeed", "monster", "shine",
+] as const;
+export type CandidateSource = (typeof CANDIDATE_SOURCES)[number];
+
+// Sources with a real, working import path today -- everything else in
+// CANDIDATE_SOURCES renders as "Coming soon" in the Import wizard/dropdown.
+export const CONNECTED_CANDIDATE_SOURCES: CandidateSource[] = ["career_portal", "csv_import"];
+
+export function candidateSourceLabel(source: string): string {
+  const labels: Record<string, string> = {
+    career_portal: "Career Portal",
+    manual: "Manual",
+    csv_import: "CSV Import",
+    linkedin: "LinkedIn",
+    naukri: "Naukri",
+    indeed: "Indeed",
+    monster: "Monster",
+    shine: "Shine",
+  };
+  return labels[source] ?? source;
+}
+
 export interface CandidateRead {
   id: UUID;
   full_name?: string | null;
   email?: string | null;
   phone?: string | null;
+  location?: string | null;
   resume_path?: string | null;
   parsed_fields?: ParsedResumeFields | null;
+  source: string;
   created_at: string;
 }
 
@@ -161,6 +190,29 @@ export interface ParsedResumeFields {
 
 // ---- applications ----
 
+// backend/app/models/application.py APPLICATION_STATUSES -- the entire real pipeline
+// state machine (DB-enforced by a CHECK constraint). Used for filter dropdowns; the
+// actual valid *next* status for any one application comes from the backend's
+// NextAction lookup, never guessed client-side.
+export const APPLICATION_STATUSES = [
+  "received", "screened", "hr_selected", "hr_rejected",
+  "interview_scheduled", "interview_selected", "interview_rejected",
+  "salary_ok", "salary_above_band", "salary_approved", "salary_rejected",
+  "bgv_requested", "bgv_pending", "bgv_cleared", "bgv_rejected",
+  "offer_sent", "onboarding_started", "onboarding_completed",
+] as const;
+
+// backend/app/models/application.py TERMINAL_APPLICATION_STATUSES -- no further
+// transition endpoint exists for any of these. Drives the Candidates list/dashboard's
+// "active" vs "inactive" reading of a pipeline stage.
+export const TERMINAL_APPLICATION_STATUSES = [
+  "hr_rejected", "interview_rejected", "salary_rejected", "bgv_rejected", "onboarding_completed",
+] as const;
+
+export function isTerminalApplicationStatus(status: string): boolean {
+  return (TERMINAL_APPLICATION_STATUSES as readonly string[]).includes(status);
+}
+
 export interface ApplicationCreate {
   job_role_id: UUID;
   candidate_id: UUID;
@@ -187,6 +239,113 @@ export interface ShortlistDecisionRequest {
   decision: "select" | "reject";
   notes?: string | null;
   decided_by?: string | null;
+}
+
+// One (candidate, application) pairing -- the row shape shared by the Candidates
+// dashboard's Recent Candidates table, the full Candidates List page, and a candidate's
+// "other applications" on their detail page. A candidate with N applications appears as
+// N separate rows, one per job.
+export interface CandidateApplicationRow {
+  application_id: UUID;
+  candidate_id: UUID;
+  candidate_name?: string | null;
+  candidate_email?: string | null;
+  job_role_id: UUID;
+  job_title: string;
+  status: string;
+  source: string;
+  location?: string | null;
+  applied_on: string;
+  match_score?: number | null;
+  experience_years?: number | null;
+  resume_path?: string | null;
+}
+
+export interface CandidatesListPage {
+  total: number;
+  page: number;
+  page_size: number;
+  items: CandidateApplicationRow[];
+}
+
+// Real connection status for one candidate-sourcing channel -- LinkedIn/Naukri have no
+// real candidate-import access today (separate from the job-posting LinkedIn integration
+// elsewhere in this app, which doesn't grant candidate import), so they always report
+// connected=false.
+export interface CandidateDataSourceStatus {
+  source: string;
+  label: string;
+  connected: boolean;
+  last_sync?: string | null;
+}
+
+export interface CandidatesDashboardStatsResponse {
+  total_candidates: number;
+  new_this_month: number;
+  from_career_portal: number;
+  manually_added: number;
+  active_candidates: number;
+  total_candidates_trend: StatTrend;
+  new_this_month_trend: StatTrend;
+  by_source: LabeledCount[];
+  top_skills: LabeledCount[];
+  match_score_distribution: LabeledCount[];
+  data_sources: CandidateDataSourceStatus[];
+  recent_candidates: CandidateApplicationRow[];
+}
+
+// A shortcut into an application's real pipeline endpoints -- never a status bypass.
+// "one_click" actions can be executed directly (see api/client.ts runNextAction);
+// "navigate" actions need real input an existing page already collects, so they just
+// carry a route to send the recruiter to instead.
+export interface NextAction {
+  key: string;
+  label: string;
+  kind: "one_click" | "navigate";
+  method?: "POST" | "PATCH" | null;
+  endpoint?: string | null;
+  body?: Record<string, unknown> | null;
+  route?: string | null;
+  confirm: boolean;
+  description?: string | null;
+}
+
+export interface OtherApplicationItem {
+  application_id: UUID;
+  job_role_id: UUID;
+  job_title: string;
+  status: string;
+  applied_on: string;
+}
+
+export interface CandidateApplicationDetail {
+  application: ApplicationRead;
+  job_title: string;
+  candidate: CandidateRead;
+  next_actions: NextAction[];
+  other_applications: OtherApplicationItem[];
+}
+
+export interface CandidateMessageRequest {
+  subject: string;
+  body: string;
+}
+
+export interface CandidateMessageResponse {
+  sent: boolean;
+  to: string;
+}
+
+export interface CsvImportRowError {
+  row: number;
+  reason: string;
+}
+
+export interface CsvImportSummary {
+  imported: number;
+  skipped: number;
+  errors: CsvImportRowError[];
+  imported_candidate_ids: UUID[];
 }
 
 // ---- interviews / scheduling ----
@@ -429,6 +588,11 @@ export interface AuditLogPage {
 
 export interface ApplicationTimelineResponse {
   application_id: UUID;
+  events: AuditLogRead[];
+}
+
+export interface CandidateTimelineResponse {
+  candidate_id: UUID;
   events: AuditLogRead[];
 }
 
