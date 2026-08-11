@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.ai_services.offer_letter_generator import OfferLetterGenerationError, generate_offer_letter
 from app.audit.service import log_action
 from app.auth.dependencies import get_current_user, require_roles
+from app.candidates.hold import assert_application_not_on_hold
 from app.core.crypto import decrypt
 from app.core.database import get_db
 from app.integrations.docusign import DocuSignError, create_envelope, get_envelope_status
@@ -85,6 +86,7 @@ def generate_offer(
     current_user: User = Depends(require_roles("recruiter", "admin")),
 ):
     application = _get_application_or_404(db, application_id)
+    assert_application_not_on_hold(application)
     if application.status != "bgv_cleared":
         raise HTTPException(
             status_code=400, detail="Application must be bgv_cleared before an offer can be generated"
@@ -148,6 +150,7 @@ def mark_offer_signed(
     current_user: User = Depends(require_roles("recruiter", "admin")),
 ):
     application = _get_application_or_404(db, application_id)
+    assert_application_not_on_hold(application)
     offer = _get_offer_or_404(db, application_id)
 
     if offer.docusign_sender_id is not None:
@@ -228,6 +231,7 @@ def complete_onboarding(
     current_user: User = Depends(require_roles("recruiter", "admin")),
 ):
     application = _get_application_or_404(db, application_id)
+    assert_application_not_on_hold(application)
     if application.status != "onboarding_started":
         raise HTTPException(
             status_code=400, detail="Application must be onboarding_started before onboarding can complete"

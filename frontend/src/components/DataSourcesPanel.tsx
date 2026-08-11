@@ -1,9 +1,9 @@
-import CheckCircleIcon from "@mui/icons-material/CheckCircle";
-import CancelIcon from "@mui/icons-material/Cancel";
+import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
 import type { CandidateDataSourceStatus } from "../api/types";
+import { candidateSourceIcon, candidateSourceIconColor } from "../utils/candidateSourceIcons";
 
 function timeAgo(isoTimestamp: string): string {
   const seconds = Math.max(0, (Date.now() - new Date(isoTimestamp).getTime()) / 1000);
@@ -22,22 +22,53 @@ function timeAgo(isoTimestamp: string): string {
 // integration built elsewhere in this app, which doesn't grant candidate import).
 export default function DataSourcesPanel({ rows }: { rows: CandidateDataSourceStatus[] }) {
   return (
-    <Stack spacing={1.75}>
-      {rows.map((row) => (
-        <Stack key={row.source} direction="row" justifyContent="space-between" alignItems="center">
-          <Stack direction="row" spacing={1} alignItems="center">
-            {row.connected ? (
-              <CheckCircleIcon sx={{ fontSize: 18, color: "success.main" }} />
-            ) : (
-              <CancelIcon sx={{ fontSize: 18, color: "text.disabled" }} />
+    <Stack spacing={2}>
+      {rows.map((row) => {
+        const Icon = candidateSourceIcon(row.source);
+        const color = candidateSourceIconColor(row.source);
+        return (
+          <Stack key={row.source} direction="row" spacing={1.5} alignItems="center">
+            {Icon && (
+              <Box
+                sx={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: "10px",
+                  bgcolor: color ? `${color}1A` : "action.selected",
+                  color: color ?? "action.active",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <Icon fontSize="small" />
+              </Box>
             )}
-            <Typography variant="body2">{row.label}</Typography>
+            <Box sx={{ minWidth: 0, flexGrow: 1 }}>
+              <Stack direction="row" spacing={0.75} alignItems="baseline" flexWrap="wrap">
+                <Typography variant="body2" fontWeight={600} noWrap>
+                  {row.label}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  sx={{ color: row.connected ? "success.main" : "error.main", fontWeight: 600 }}
+                >
+                  {row.connected ? "Connected" : "Not connected"}
+                </Typography>
+              </Stack>
+              {/* Only for genuinely connected sources with a real sync timestamp -- never a
+                  fabricated time for a source that isn't connected (LinkedIn/Naukri) or
+                  hasn't synced anything yet. */}
+              {row.connected && (
+                <Typography variant="caption" color="text.secondary" display="block">
+                  {row.last_sync ? `Last sync: ${timeAgo(row.last_sync)}` : "No candidates synced yet"}
+                </Typography>
+              )}
+            </Box>
           </Stack>
-          <Typography variant="caption" color="text.secondary">
-            {row.connected ? (row.last_sync ? `Synced ${timeAgo(row.last_sync)}` : "Connected") : "Not connected"}
-          </Typography>
-        </Stack>
-      ))}
+        );
+      })}
     </Stack>
   );
 }

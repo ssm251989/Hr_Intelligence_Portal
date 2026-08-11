@@ -8,6 +8,7 @@ from app.audit.service import log_action
 from app.auth.dependencies import get_current_user, require_roles
 from app.bgv.document_extraction import extract_bgv_text
 from app.bgv.storage import resolve_bgv_path, save_bgv_file
+from app.candidates.hold import assert_application_not_on_hold
 from app.candidates.resume_extraction import ResumeExtractionError, UnsupportedFileTypeError
 from app.core.database import get_db
 from app.models.application import Application
@@ -43,6 +44,7 @@ def request_bgv(
     current_user: User = Depends(require_roles("recruiter", "admin")),
 ):
     application = _get_application_or_404(db, application_id)
+    assert_application_not_on_hold(application)
     if application.status != "salary_approved":
         raise HTTPException(
             status_code=400,
@@ -77,6 +79,7 @@ async def upload_bgv_document(
         raise HTTPException(status_code=400, detail=f"doc_type must be one of {sorted(BGV_DOC_TYPES)}")
 
     application = _get_application_or_404(db, application_id)
+    assert_application_not_on_hold(application)
     if application.status not in BGV_IN_PROGRESS_STATUSES:
         raise HTTPException(
             status_code=400,
@@ -138,7 +141,8 @@ def validate_bgv_document(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("recruiter", "admin")),
 ):
-    _get_application_or_404(db, application_id)
+    application = _get_application_or_404(db, application_id)
+    assert_application_not_on_hold(application)
     document = _get_document_or_404(db, application_id, doc_id)
 
     file_path = resolve_bgv_path(document.file_path)
@@ -173,6 +177,7 @@ def clear_bgv(
     current_user: User = Depends(require_roles("recruiter", "admin")),
 ):
     application = _get_application_or_404(db, application_id)
+    assert_application_not_on_hold(application)
     if application.status not in BGV_IN_PROGRESS_STATUSES:
         raise HTTPException(status_code=400, detail="Application is not awaiting a BGV clearance decision")
 

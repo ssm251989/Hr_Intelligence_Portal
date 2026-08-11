@@ -7,6 +7,7 @@ from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
+from app.candidates.router import row_to_item
 from app.core.database import get_db
 from app.jobs.service import close_job_if_deadline_passed
 from app.models.application import APPLICATION_STATUSES, Application
@@ -18,7 +19,6 @@ from app.models.job_role import JOB_ROLE_STATUSES, JobRole
 from app.models.user import User
 from app.reports import stats
 from app.schemas.candidates_dashboard import (
-    CandidateApplicationRow,
     CandidateDataSourceStatus,
     CandidatesDashboardStatsResponse,
 )
@@ -385,43 +385,27 @@ def get_application_timeline(
     return ApplicationTimelineResponse(application_id=application_id, events=events)
 
 
-def _candidate_application_row(application: Application, candidate: Candidate, job_title: str) -> CandidateApplicationRow:
-    experience_years = None
-    if candidate.parsed_fields:
-        experience_years = candidate.parsed_fields.get("total_experience_years")
-    return CandidateApplicationRow(
-        application_id=application.id,
-        candidate_id=candidate.id,
-        candidate_name=candidate.full_name,
-        candidate_email=candidate.email,
-        job_role_id=application.job_role_id,
-        job_title=job_title,
-        status=application.status,
-        source=candidate.source,
-        location=candidate.location,
-        applied_on=application.created_at,
-        match_score=float(application.match_score) if application.match_score is not None else None,
-        experience_years=float(experience_years) if experience_years is not None else None,
-        resume_path=candidate.resume_path,
-    )
-
-
 def _candidate_data_sources(db: Session) -> list[CandidateDataSourceStatus]:
     """Real connection status per sourcing channel -- Career Portal is always connected
-    (it's this app's own pipeline); CSV Upload is connected only once an import has
+    (it's this app's own pipeline); Local Import is connected only once an import has
     actually run; LinkedIn/Naukri have no real candidate-import access at all (separate
     from the job-posting LinkedIn integration elsewhere in this app, which doesn't grant
     candidate import), so they're never shown as connected."""
     career_portal_last_sync = (
         db.query(func.max(Candidate.created_at)).filter(Candidate.source == "career_portal").scalar()
     )
-    csv_last_sync = db.query(func.max(Candidate.created_at)).filter(Candidate.source == "csv_import").scalar()
+    local_import_last_sync = (
+        db.query(func.max(Candidate.created_at)).filter(Candidate.source == "local_import").scalar()
+    )
     return [
         CandidateDataSourceStatus(
             source="career_portal", label="Career Portal", connected=True, last_sync=career_portal_last_sync
         ),
         CandidateDataSourceStatus(
-            source="csv_import", label="CSV Upload", connected=csv_last_sync is not None, last_sync=csv_last_sync
+            source="local_import",
+            label="Local Import",
+            connected=local_import_last_sync is not None,
+            last_sync=local_import_last_sync,
         ),
         CandidateDataSourceStatus(source="linkedin", label="LinkedIn", connected=False, last_sync=None),
         CandidateDataSourceStatus(source="naukri", label="Naukri", connected=False, last_sync=None),
@@ -467,10 +451,35 @@ def get_candidates_dashboard_stats(
         month_starts, new_this_month_series, compare_month_start, compare_new_candidates, new_this_month
     )
 
+    avg_match_score_series = [stats.avg_match_score_as_of(db, end) for end in month_ends]
+    avg_match_score = avg_match_score_series[-1]
+    compare_avg_match_score = stats.avg_match_score_as_of(db, compare_month_end)
+    avg_match_score_trend = stats.build_trend(
+        month_starts, avg_match_score_series, compare_month_start, compare_avg_match_score, avg_match_score
+    )
+
     source_counts = dict(stats.candidate_source_breakdown(db))
     from_career_portal = source_counts.get("career_portal", 0)
     manually_added = sum(source_counts.get(source, 0) for source in stats.MANUALLY_ADDED_SOURCES)
     active_candidates = stats.active_candidates_count(db)
+
+    from_career_portal_series: list[float] = []
+    manually_added_series: list[float] = []
+    for end in month_ends:
+        counts_as_of = stats.candidate_source_counts_as_of(db, end)
+        from_career_portal_series.append(counts_as_of.get("career_portal", 0))
+        manually_added_series.append(sum(counts_as_of.get(source, 0) for source in stats.MANUALLY_ADDED_SOURCES))
+
+    compare_source_counts = stats.candidate_source_counts_as_of(db, compare_month_end)
+    compare_from_career_portal = compare_source_counts.get("career_portal", 0)
+    compare_manually_added = sum(compare_source_counts.get(source, 0) for source in stats.MANUALLY_ADDED_SOURCES)
+
+    from_career_portal_trend = stats.build_trend(
+        month_starts, from_career_portal_series, compare_month_start, compare_from_career_portal, from_career_portal
+    )
+    manually_added_trend = stats.build_trend(
+        month_starts, manually_added_series, compare_month_start, compare_manually_added, manually_added
+    )
 
     data_sources = _candidate_data_sources(db)
 
@@ -489,15 +498,19 @@ def get_candidates_dashboard_stats(
         from_career_portal=from_career_portal,
         manually_added=manually_added,
         active_candidates=active_candidates,
+        avg_match_score=avg_match_score,
         total_candidates_trend=total_candidates_trend,
         new_this_month_trend=new_this_month_trend,
+        from_career_portal_trend=from_career_portal_trend,
+        manually_added_trend=manually_added_trend,
+        avg_match_score_trend=avg_match_score_trend,
         by_source=[LabeledCount(label=source, count=count) for source, count in stats.candidate_source_breakdown(db)],
         top_skills=[LabeledCount(label=skill, count=count) for skill, count in stats.top_skills(db, limit=5)],
         match_score_distribution=[
             LabeledCount(label=bucket, count=count) for bucket, count in stats.match_score_distribution(db)
         ],
         data_sources=data_sources,
-        recent_candidates=[_candidate_application_row(app, cand, title) for app, cand, title in recent_rows],
+        recent_candidates=[row_to_item(app, cand, title) for app, cand, title in recent_rows],
     )
 
 

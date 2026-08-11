@@ -1,5 +1,9 @@
+import io
 import uuid
 from datetime import datetime, timedelta, timezone
+
+from docx import Document
+from sqlalchemy import func
 
 from app.models.application import Application
 from app.models.audit_log import AuditLog
@@ -20,6 +24,14 @@ _PREVIOUS_MONTH = (
 )
 
 _BASE_TIME = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+
+def _make_docx_bytes(text: str) -> bytes:
+    document = Document()
+    document.add_paragraph(text)
+    buffer = io.BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
 
 
 def _months_ago(n: int, day: int = 10) -> datetime:
@@ -866,7 +878,7 @@ def test_candidates_dashboard_stats_counts_and_source_split(client, db_session):
 
     _make_candidate(db_session, source="career_portal", created_at=_NOW)
     _make_candidate(db_session, source="manual", created_at=_NOW)
-    _make_candidate(db_session, source="csv_import", created_at=_NOW)
+    _make_candidate(db_session, source="local_import", created_at=_NOW)
     # Backdated to last month -- must not count toward new_this_month.
     _make_candidate(db_session, source="manual", created_at=_PREVIOUS_MONTH)
 
@@ -875,7 +887,7 @@ def test_candidates_dashboard_stats_counts_and_source_split(client, db_session):
     assert after["total_candidates"] - before["total_candidates"] == 4
     assert after["new_this_month"] - before["new_this_month"] == 3
     assert after["from_career_portal"] - before["from_career_portal"] == 1
-    # "Manually Added" folds both manual and csv_import together.
+    # "Manually Added" folds both manual and local_import together.
     assert after["manually_added"] - before["manually_added"] == 3
 
 
@@ -906,6 +918,42 @@ def test_candidates_dashboard_stats_active_candidates_definition(client, db_sess
     assert after["active_candidates"] - before["active_candidates"] == 1
     assert after["total_candidates"] - before["total_candidates"] == 3
     assert no_application_candidate.id is not None  # created, just deliberately never referenced
+
+
+def test_candidates_dashboard_stats_avg_match_score(client, db_session):
+    # avg_match_score is a cumulative, all-time average (no exposed count to diff
+    # against), so reconstruct the expected value from a direct DB query taken before
+    # mutating -- robust against a shared, already-populated database, same idea as
+    # test_jobs_dashboard_stats_hires_this_month_and_avg_time_to_hire's prior_sum trick.
+    prior_count, prior_sum = (
+        db_session.query(func.count(Application.match_score), func.coalesce(func.sum(Application.match_score), 0))
+        .filter(Application.match_score.isnot(None))
+        .one()
+    )
+
+    job = _make_job(db_session)
+    candidate_a = _make_candidate(db_session, full_name="Scored A")
+    candidate_b = _make_candidate(db_session, full_name="Scored B")
+    unscored_candidate = _make_candidate(db_session, full_name="Unscored")
+    _make_application(db_session, job, candidate_a, match_score=80.0)
+    _make_application(db_session, job, candidate_b, match_score=40.0)
+    # Never counted -- an unscored application must not drag the average down as if it
+    # scored 0.
+    _make_application(db_session, job, unscored_candidate, match_score=None)
+
+    body = client.get("/reports/candidates-dashboard-stats").json()
+
+    expected_avg = (float(prior_sum) + 80.0 + 40.0) / (prior_count + 2)
+    assert abs(body["avg_match_score"] - expected_avg) < 0.05
+
+
+def test_candidates_dashboard_stats_avg_match_score_null_when_no_scores(client):
+    # Not testable end-to-end against a shared, possibly-populated database, but the
+    # null-vs-zero contract itself is self-consistent: whenever nothing is scored yet,
+    # avg_match_score must be null, never a stray 0.
+    body = client.get("/reports/candidates-dashboard-stats").json()
+    if body["match_score_distribution"] and sum(row["count"] for row in body["match_score_distribution"]) == 0:
+        assert body["avg_match_score"] is None
 
 
 def test_candidates_dashboard_stats_top_skills_frequency(client, db_session):
@@ -981,25 +1029,26 @@ def test_candidates_dashboard_stats_data_sources_career_portal_always_connected(
     assert abs((last_sync - portal_candidate.created_at).total_seconds()) < 1
 
 
-def test_candidates_dashboard_stats_data_sources_csv_upload_connected_only_after_a_real_import(client):
+def test_candidates_dashboard_stats_data_sources_local_import_connected_only_after_a_real_import(client):
     before = client.get("/reports/candidates-dashboard-stats").json()
-    before_csv = _data_source_map(before)["csv_import"]
-    # If some earlier test/run already imported a CSV in this shared database, csv_import
-    # is legitimately already connected -- only assert the "never connected" shape when
-    # it's genuinely never happened.
-    if not before_csv["connected"]:
-        assert before_csv["last_sync"] is None
+    before_local = _data_source_map(before)["local_import"]
+    # If some earlier test/run already imported locally in this shared database,
+    # local_import is legitimately already connected -- only assert the "never connected"
+    # shape when it's genuinely never happened.
+    if not before_local["connected"]:
+        assert before_local["last_sync"] is None
 
     import_response = client.post(
-        "/candidates/import-csv",
-        files={"file": ("c.csv", b"name,email\nData Source Test,datasourcetest@example.com\n", "text/csv")},
+        "/candidates/upload",
+        data={"source": "local_import"},
+        files={"file": ("resume.docx", _make_docx_bytes("Data Source Test"), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
     )
     assert import_response.status_code == 201
 
     after = client.get("/reports/candidates-dashboard-stats").json()
-    after_csv = _data_source_map(after)["csv_import"]
-    assert after_csv["connected"] is True
-    assert after_csv["last_sync"] is not None
+    after_local = _data_source_map(after)["local_import"]
+    assert after_local["connected"] is True
+    assert after_local["last_sync"] is not None
 
 
 # --- /reports/candidates-top-skills ---
@@ -1046,10 +1095,29 @@ def test_candidates_top_skills_explicit_limit(client, db_session):
 def test_candidates_dashboard_stats_monthly_series_has_12_points_ending_this_month(client):
     body = client.get("/reports/candidates-dashboard-stats").json()
     current_key = stats.month_key(stats.month_start(_NOW))
-    for field in ("total_candidates_trend", "new_this_month_trend"):
+    for field in (
+        "total_candidates_trend",
+        "new_this_month_trend",
+        "from_career_portal_trend",
+        "manually_added_trend",
+        "avg_match_score_trend",
+    ):
         series = body[field]["series"]
         assert len(series) == 12
         assert series[-1]["month"] == current_key
+
+
+def test_candidates_dashboard_stats_source_trends_track_current_counts(client, db_session):
+    _make_candidate(db_session, source="career_portal", created_at=_NOW)
+    _make_candidate(db_session, source="manual", created_at=_NOW)
+
+    body = client.get("/reports/candidates-dashboard-stats").json()
+
+    # The trend series' current (last) point is a running cumulative count, so it must
+    # always agree with the plain from_career_portal / manually_added totals returned
+    # alongside it -- same invariant already relied on for total_candidates_trend.
+    assert body["from_career_portal_trend"]["series"][-1]["value"] == body["from_career_portal"]
+    assert body["manually_added_trend"]["series"][-1]["value"] == body["manually_added"]
 
 
 def test_candidates_dashboard_stats_recent_candidates_shape(client, db_session):
@@ -1072,6 +1140,25 @@ def test_candidates_dashboard_stats_recent_candidates_shape(client, db_session):
     assert row["source"] == "career_portal"
     assert row["match_score"] == 88.0
     assert row["experience_years"] == 3.5
+
+
+def test_candidates_dashboard_stats_recent_candidates_includes_photo_and_inferred_gender(client, db_session):
+    # Regression test: recent_candidates used to be built by its own separate,
+    # independently-maintained row constructor (reports/router.py's
+    # _candidate_application_row) instead of candidates/router.py's row_to_item -- so when
+    # photo_path/inferred_gender were added to the latter, this endpoint's response
+    # silently never picked them up even though GET /candidates/applications did. Both now
+    # share the same function; this pins that down.
+    job = _make_job(db_session, title="Gendered Recent Candidate Job")
+    candidate = _make_candidate(db_session, full_name="John Smith", email="john.recent@example.com")
+    application = _make_application(db_session, job, candidate)
+
+    body = client.get("/reports/candidates-dashboard-stats").json()
+    row = next((r for r in body["recent_candidates"] if r["application_id"] == str(application.id)), None)
+
+    assert row is not None
+    assert row["inferred_gender"] == "male"
+    assert row["photo_path"] is None
 
 
 # --- /candidates/{id}/timeline ---

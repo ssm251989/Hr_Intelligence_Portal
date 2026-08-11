@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.audit.service import log_action
 from app.auth.dependencies import get_current_user, require_roles
+from app.candidates.hold import assert_application_not_on_hold
 from app.core.database import get_db
 from app.models.application import Application
 from app.models.job_role import JobRole
@@ -31,6 +32,7 @@ def validate_salary(
     current_user: User = Depends(require_roles("hiring_manager", "admin")),
 ):
     application = _get_application_or_404(db, application_id)
+    assert_application_not_on_hold(application)
     if application.status not in VALIDATABLE_STATUSES:
         raise HTTPException(
             status_code=400,
@@ -79,6 +81,7 @@ def confirm_salary(
     current_user: User = Depends(require_roles("hiring_manager", "admin")),
 ):
     application = _get_application_or_404(db, application_id)
+    assert_application_not_on_hold(application)
     if application.status != "salary_ok":
         raise HTTPException(
             status_code=400,
@@ -114,6 +117,7 @@ def approve_salary(
     current_user: User = Depends(require_roles("hiring_manager", "admin")),
 ):
     application = _get_application_or_404(db, application_id)
+    assert_application_not_on_hold(application)
     if application.status != "salary_above_band":
         raise HTTPException(
             status_code=400,

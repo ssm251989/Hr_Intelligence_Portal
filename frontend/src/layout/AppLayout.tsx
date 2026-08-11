@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
@@ -141,12 +141,30 @@ export default function AppLayout() {
   // *leaving* a section, not on every in-section navigation.
   const activeParentPath = MODULES.find((module) => module.children && location.pathname.startsWith(module.path))?.path ?? null;
 
+  // Previous render's activeParentPath -- lets the effect below tell "just entered/left a
+  // section" apart from "still inside the same section" (a sibling-to-sibling navigation,
+  // where activeParentPath doesn't change at all and the effect must NOT re-fire).
+  const prevActiveParentPathRef = useRef<string | null>(null);
+
   useEffect(() => {
-    if (activeParentPath) {
-      setOpenSections((prev) => (prev[activeParentPath] ? prev : { ...prev, [activeParentPath]: true }));
+    const prev = prevActiveParentPathRef.current;
+    if (prev !== activeParentPath) {
+      setOpenSections((prevSections) => {
+        const next = { ...prevSections };
+        // Leaving a section entirely (including a full-page load that lands outside any
+        // section, where prev is already null) collapses it back down -- AppLayout never
+        // remounts on client-side navigation, so without this a section auto-expanded once
+        // stays stuck open in openSections for the rest of the SPA session even after
+        // browsing away to an unrelated module.
+        if (prev) next[prev] = false;
+        // Entering a section from outside it auto-expands it. Moving between that same
+        // section's own sub-pages never reaches this branch (prev === activeParentPath),
+        // so a manual collapse while already inside the section sticks.
+        if (activeParentPath) next[activeParentPath] = true;
+        return next;
+      });
     }
-    // Deliberately keyed on activeParentPath, not location.pathname -- see comment above.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    prevActiveParentPathRef.current = activeParentPath;
   }, [activeParentPath]);
 
   useEffect(() => {

@@ -3,9 +3,7 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
-import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
 import Alert from "@mui/material/Alert";
-import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
@@ -29,15 +27,14 @@ import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 
-import { applicationsApi, candidatesApi, extractErrorMessage, integrationsApi, runNextAction } from "../api/client";
-import type { AuditLogRead, CandidateApplicationDetail, NextAction } from "../api/types";
-import ConfirmDialog from "../components/ConfirmDialog";
+import { applicationsApi, candidatesApi, extractErrorMessage, integrationsApi } from "../api/client";
+import type { AuditLogRead, CandidateApplicationDetail } from "../api/types";
+import CandidateAvatar from "../components/CandidateAvatar";
 import SourceChip from "../components/SourceChip";
 import StatusChip from "../components/StatusChip";
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
-import { initials } from "../utils/avatar";
-import { resumeHref } from "../utils/resume";
+import { downloadResume } from "../utils/resume";
 
 function TabPanel({ active, children }: { active: boolean; children: ReactNode }) {
   if (!active) return null;
@@ -72,10 +69,6 @@ export default function CandidateDetailPage() {
   const [tab, setTab] = useState(0);
 
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null);
-  const [moveStageAnchor, setMoveStageAnchor] = useState<HTMLElement | null>(null);
-  const [pendingAction, setPendingAction] = useState<NextAction | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [actionRunning, setActionRunning] = useState(false);
 
   const [googleConnected, setGoogleConnected] = useState<boolean | null>(null);
   const [messageOpen, setMessageOpen] = useState(false);
@@ -89,6 +82,8 @@ export default function CandidateDetailPage() {
   const [timelineError, setTimelineError] = useState<string | null>(null);
 
   const [parsing, setParsing] = useState(false);
+  const [resumeDownloading, setResumeDownloading] = useState(false);
+  const [resumeError, setResumeError] = useState<string | null>(null);
 
   const load = () => {
     if (!applicationId) return;
@@ -143,33 +138,18 @@ export default function CandidateDetailPage() {
 
   const { application, candidate, job_title, next_actions, other_applications } = detail;
   const parsed = candidate.parsed_fields;
-  const href = resumeHref(candidate.id, candidate.resume_path);
+  const hasResume = Boolean(candidate.resume_path);
 
-  const runOneClick = async (action: NextAction) => {
-    setActionRunning(true);
-    setActionError(null);
+  const handleDownloadResume = async () => {
+    setResumeDownloading(true);
+    setResumeError(null);
     try {
-      await runNextAction(action);
-      load();
+      await downloadResume(candidate.id, candidate.resume_path, candidate.full_name);
     } catch (err) {
-      setActionError(extractErrorMessage(err, `Failed to ${action.label.toLowerCase()}`));
+      setResumeError(extractErrorMessage(err, "Failed to download resume"));
     } finally {
-      setActionRunning(false);
-      setPendingAction(null);
+      setResumeDownloading(false);
     }
-  };
-
-  const handleActionClick = (action: NextAction) => {
-    setMoveStageAnchor(null);
-    if (action.kind === "navigate") {
-      if (action.route) navigate(action.route);
-      return;
-    }
-    if (action.confirm) {
-      setPendingAction(action);
-      return;
-    }
-    runOneClick(action);
   };
 
   const openMessageDialog = () => {
@@ -216,9 +196,13 @@ export default function CandidateDetailPage() {
         <CardContent>
           <Stack direction="row" justifyContent="space-between" alignItems="flex-start" flexWrap="wrap" gap={2}>
             <Stack direction="row" spacing={2} alignItems="center">
-              <Avatar sx={{ width: 56, height: 56, fontSize: 20, bgcolor: "primary.main" }}>
-                {initials(candidate.full_name || candidate.email || "?")}
-              </Avatar>
+              <CandidateAvatar
+                candidateId={candidate.id}
+                photoPath={candidate.photo_path}
+                name={candidate.full_name}
+                email={candidate.email}
+                sx={{ width: 56, height: 56, fontSize: 20 }}
+              />
               <Box>
                 <Typography variant="h5">{candidate.full_name || "Unnamed candidate"}</Typography>
                 <Stack direction="row" spacing={1} alignItems="center" mt={0.5} flexWrap="wrap" useFlexGap>
@@ -232,46 +216,18 @@ export default function CandidateDetailPage() {
             </Stack>
 
             <Stack direction="row" spacing={1}>
-              <Tooltip title={href ? "" : "No resume on file"}>
+              <Tooltip title={hasResume ? "" : "No resume on file"}>
                 <span>
                   <Button
                     variant="outlined"
                     startIcon={<DescriptionOutlinedIcon />}
-                    component="a"
-                    href={href ?? undefined}
-                    target="_blank"
-                    rel="noreferrer"
-                    disabled={!href}
+                    onClick={handleDownloadResume}
+                    disabled={!hasResume || resumeDownloading}
                   >
-                    Download Resume
+                    {resumeDownloading ? "Downloading..." : "Download Resume"}
                   </Button>
                 </span>
               </Tooltip>
-              {canWrite && (
-                <Button
-                  variant="outlined"
-                  startIcon={<SwapHorizIcon />}
-                  onClick={(e) => setMoveStageAnchor(e.currentTarget)}
-                  disabled={next_actions.length === 0}
-                >
-                  Move Stage
-                </Button>
-              )}
-              <Menu anchorEl={moveStageAnchor} open={Boolean(moveStageAnchor)} onClose={() => setMoveStageAnchor(null)}>
-                {next_actions.map((action) => (
-                  <MenuItem key={action.key} onClick={() => handleActionClick(action)}>
-                    <Box>
-                      <Typography variant="body2">{action.label}</Typography>
-                      {action.description && (
-                        <Typography variant="caption" color="text.secondary" display="block">
-                          {action.description}
-                        </Typography>
-                      )}
-                    </Box>
-                  </MenuItem>
-                ))}
-              </Menu>
-
               <Tooltip title={googleConnected ? "" : "Connect Google in Settings to send email"}>
                 <span>
                   <Button
@@ -311,14 +267,16 @@ export default function CandidateDetailPage() {
 
           {next_actions.length === 0 && (
             <Alert severity="info" sx={{ mt: 2 }}>
-              {application.status.endsWith("_completed")
-                ? "This application has completed the pipeline -- onboarding is done."
-                : "This application is at a terminal stage -- no further pipeline action is available."}
+              {application.status === "on_hold"
+                ? "This application is on hold -- resume it from the Candidates List page to continue the pipeline."
+                : application.status.endsWith("_completed")
+                  ? "This application has completed the pipeline -- onboarding is done."
+                  : "This application is at a terminal stage -- no further pipeline action is available."}
             </Alert>
           )}
-          {actionError && (
-            <Alert severity="error" sx={{ mt: 2 }} onClose={() => setActionError(null)}>
-              {actionError}
+          {resumeError && (
+            <Alert severity="error" sx={{ mt: 2 }} onClose={() => setResumeError(null)}>
+              {resumeError}
             </Alert>
           )}
         </CardContent>
@@ -407,8 +365,13 @@ export default function CandidateDetailPage() {
           <TabPanel active={tab === 1}>
             {candidate.resume_path ? (
               <Stack spacing={2} alignItems="flex-start">
-                <Button variant="contained" startIcon={<DescriptionOutlinedIcon />} component="a" href={href ?? undefined} target="_blank" rel="noreferrer">
-                  Open Resume
+                <Button
+                  variant="contained"
+                  startIcon={<DescriptionOutlinedIcon />}
+                  onClick={handleDownloadResume}
+                  disabled={resumeDownloading}
+                >
+                  {resumeDownloading ? "Downloading..." : "Download Resume"}
                 </Button>
                 {canWrite && !parsed && (
                   <Button variant="outlined" onClick={handleParseResume} disabled={parsing}>
@@ -482,20 +445,6 @@ export default function CandidateDetailPage() {
           </TabPanel>
         </CardContent>
       </Card>
-
-      <ConfirmDialog
-        open={Boolean(pendingAction)}
-        title={pendingAction?.label ?? ""}
-        message={
-          pendingAction
-            ? `${pendingAction.description || `Run "${pendingAction.label}" for this application?`} This calls the real pipeline endpoint and cannot be undone.`
-            : ""
-        }
-        confirmLabel={pendingAction?.label ?? "Confirm"}
-        confirming={actionRunning}
-        onConfirm={() => pendingAction && runOneClick(pendingAction)}
-        onCancel={() => setPendingAction(null)}
-      />
 
       <Dialog open={messageOpen} onClose={() => setMessageOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>Message {candidate.full_name || "Candidate"}</DialogTitle>

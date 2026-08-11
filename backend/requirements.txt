@@ -10,7 +10,9 @@ python-dotenv
 pytest
 httpx
 pypdf
+Pillow
 python-docx
+gender-guesser
 python-multipart
 google-auth-oauthlib
 google-api-python-client

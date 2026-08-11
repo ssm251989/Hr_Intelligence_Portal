@@ -7,6 +7,7 @@ from app.ai_services.candidate_ranker import CandidateRankingError, rank_candida
 from app.ai_services.resume_matcher import ResumeMatchError, match_resume
 from app.audit.service import log_action
 from app.auth.dependencies import require_roles
+from app.candidates.hold import assert_application_not_on_hold
 from app.core.database import get_db
 from app.models.application import Application
 from app.models.candidate import Candidate
@@ -47,6 +48,7 @@ def screen_application(
     current_user: User = Depends(require_roles("recruiter", "hiring_manager", "admin")),
 ):
     application = _get_application_or_404(db, application_id)
+    assert_application_not_on_hold(application)
     job = db.get(JobRole, application.job_role_id)
     candidate = db.get(Candidate, application.candidate_id)
 
@@ -77,6 +79,7 @@ def rank_application(
     current_user: User = Depends(require_roles("recruiter", "hiring_manager", "admin")),
 ):
     application = _get_application_or_404(db, application_id)
+    assert_application_not_on_hold(application)
     job = db.get(JobRole, application.job_role_id)
 
     if application.match_score is None:

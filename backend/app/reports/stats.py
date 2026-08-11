@@ -246,10 +246,10 @@ def count_created_in_window(db: Session, model, start: datetime, end: datetime) 
     )
 
 
-# "Manually Added" folds csv_import into manual: both are internal, recruiter-initiated
+# "Manually Added" folds local_import into manual: both are internal, recruiter-initiated
 # creation paths (as opposed to career_portal, or a future sourcing integration), even
 # though the source breakdown below keeps them as distinct labels.
-MANUALLY_ADDED_SOURCES = ("manual", "csv_import")
+MANUALLY_ADDED_SOURCES = ("manual", "local_import")
 
 
 def active_candidates_count(db: Session) -> int:
@@ -270,6 +270,18 @@ def candidate_source_breakdown(db: Session) -> list[tuple[str, int]]:
     candidates, with no schema or endpoint change needed here."""
     counts = dict(db.query(Candidate.source, func.count(Candidate.id)).group_by(Candidate.source).all())
     return [(source, counts.get(source, 0)) for source in CANDIDATE_SOURCES]
+
+
+def candidate_source_counts_as_of(db: Session, cutoff: datetime) -> dict[str, int]:
+    """Per-source candidate counts among candidates created before `cutoff` -- the
+    "From Career Portals" / "Manually Added" trend counterpart to candidate_source_breakdown
+    (which is always all-time), used to build monthly cumulative series for those cards."""
+    return dict(
+        db.query(Candidate.source, func.count(Candidate.id))
+        .filter(Candidate.created_at < cutoff)
+        .group_by(Candidate.source)
+        .all()
+    )
 
 
 def top_skills(db: Session, limit: Optional[int] = 10) -> list[tuple[str, int]]:
@@ -311,5 +323,18 @@ def match_score_distribution(db: Session) -> list[tuple[str, int]]:
     for (score,) in scores:
         counter[_match_score_bucket(float(score))] += 1
     return [(bucket, counter.get(bucket, 0)) for bucket in MATCH_SCORE_BUCKETS]
+
+
+def avg_match_score_as_of(db: Session, cutoff: datetime) -> Optional[float]:
+    """Average real match_score across every application created before `cutoff` -- the
+    candidates-dashboard counterpart to cumulative_count_as_of, but averaging instead of
+    counting. None once no scored applications exist yet by that cutoff (a percentage
+    average from zero scored applications is undefined, not 0)."""
+    avg = (
+        db.query(func.avg(Application.match_score))
+        .filter(Application.match_score.isnot(None), Application.created_at < cutoff)
+        .scalar()
+    )
+    return round(float(avg), 1) if avg is not None else None
 
 

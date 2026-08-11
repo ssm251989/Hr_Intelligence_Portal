@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.audit.service import log_action
 from app.auth.dependencies import get_current_user, require_roles
+from app.candidates.hold import assert_application_not_on_hold
 from app.core.database import get_db
 from app.models.application import Application
 from app.models.user import User
@@ -33,6 +34,7 @@ def make_shortlist_decision(
     application = db.get(Application, application_id)
     if not application:
         raise HTTPException(status_code=404, detail="Application not found")
+    assert_application_not_on_hold(application)
     if application.status != "screened":
         raise HTTPException(
             status_code=400,

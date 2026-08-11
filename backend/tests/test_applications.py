@@ -1,6 +1,10 @@
 import uuid
 
+import pytest
+
 from app.core.crypto import encrypt
+from app.models.application import Application, TERMINAL_APPLICATION_STATUSES
+from app.models.audit_log import AuditLog
 from app.models.candidate import Candidate
 from app.models.job_role import JobRole
 from app.models.user_integration import UserIntegration
@@ -367,4 +371,243 @@ def test_message_candidate_not_found(client):
     response = client.post(
         f"/applications/{uuid.uuid4()}/message", json={"subject": "Hi", "body": "Hello"}
     )
+    assert response.status_code == 404
+
+
+# --- POST /applications/{id}/hold, /resume -- on_hold status transitions ---
+
+
+@pytest.mark.parametrize(
+    "status", ["received", "screened", "hr_selected", "interview_scheduled", "salary_ok", "bgv_pending", "offer_sent", "onboarding_started"]
+)
+def test_hold_application_from_non_terminal_status_succeeds(client, db_session, status):
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application_with_status(db_session, job, candidate, status)
+
+    response = client.post(f"/applications/{application.id}/hold")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "on_hold"
+    assert body["previous_status"] == status
+    db_session.refresh(application)
+    assert application.status == "on_hold"
+    assert application.previous_status == status
+
+
+def test_hold_application_logs_audit_entry(client, db_session):
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application_with_status(db_session, job, candidate, "screened")
+
+    client.post(f"/applications/{application.id}/hold")
+
+    entry = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.entity_id == application.id, AuditLog.action == "application_put_on_hold")
+        .one()
+    )
+    assert entry.details["previous_status"] == "screened"
+
+
+@pytest.mark.parametrize("status", list(TERMINAL_APPLICATION_STATUSES))
+def test_hold_application_from_terminal_status_blocked(client, db_session, status):
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application_with_status(db_session, job, candidate, status)
+
+    response = client.post(f"/applications/{application.id}/hold")
+
+    assert response.status_code == 400
+    db_session.refresh(application)
+    assert application.status == status
+    assert application.previous_status is None
+
+
+def test_hold_application_already_on_hold_blocked(client, db_session):
+    # Re-holding an already on-hold application must be rejected, not a silent no-op --
+    # doing so would overwrite previous_status with 'on_hold' itself, permanently losing
+    # the real status resume should restore.
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application_with_status(db_session, job, candidate, "on_hold", previous_status="screened")
+
+    response = client.post(f"/applications/{application.id}/hold")
+
+    assert response.status_code == 400
+    db_session.refresh(application)
+    assert application.status == "on_hold"
+    assert application.previous_status == "screened"
+
+
+def test_hold_application_not_found(client):
+    response = client.post(f"/applications/{uuid.uuid4()}/hold")
+    assert response.status_code == 404
+
+
+def test_resume_application_from_hold_succeeds(client, db_session):
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application_with_status(db_session, job, candidate, "on_hold", previous_status="hr_selected")
+
+    response = client.post(f"/applications/{application.id}/resume")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "hr_selected"
+    assert body["previous_status"] is None
+    db_session.refresh(application)
+    assert application.status == "hr_selected"
+    assert application.previous_status is None
+
+
+def test_resume_application_logs_audit_entry(client, db_session):
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application_with_status(db_session, job, candidate, "on_hold", previous_status="bgv_pending")
+
+    client.post(f"/applications/{application.id}/resume")
+
+    entry = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.entity_id == application.id, AuditLog.action == "application_resumed_from_hold")
+        .one()
+    )
+    assert entry.details["restored_status"] == "bgv_pending"
+
+
+def test_resume_application_from_non_on_hold_status_rejected(client, db_session):
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application_with_status(db_session, job, candidate, "screened")
+
+    response = client.post(f"/applications/{application.id}/resume")
+
+    assert response.status_code == 400
+    db_session.refresh(application)
+    assert application.status == "screened"
+
+
+def test_resume_application_not_found(client):
+    response = client.post(f"/applications/{uuid.uuid4()}/resume")
+    assert response.status_code == 404
+
+
+# --- on_hold blocks other pipeline actions ---
+
+
+def test_on_hold_blocks_screen(client, db_session):
+    job = _make_job(db_session, jd_text="A real JD")
+    candidate = _make_candidate(db_session, parsed_fields={"skills": []})
+    application = _make_application_with_status(db_session, job, candidate, "on_hold", previous_status="received")
+
+    response = client.post(f"/applications/{application.id}/screen")
+
+    assert response.status_code == 400
+    assert "on hold" in response.json()["detail"].lower()
+
+
+def test_on_hold_blocks_shortlist_decision(client, db_session):
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application_with_status(db_session, job, candidate, "on_hold", previous_status="screened")
+
+    response = client.post(
+        f"/applications/{application.id}/shortlist-decision", json={"decision": "select"}
+    )
+
+    assert response.status_code == 400
+    assert "on hold" in response.json()["detail"].lower()
+
+
+def test_on_hold_blocks_schedule_interview(client, db_session):
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application_with_status(db_session, job, candidate, "on_hold", previous_status="hr_selected")
+
+    response = client.post(
+        f"/applications/{application.id}/interviews", json={"scheduled_at": "2026-09-01T10:00:00Z"}
+    )
+
+    assert response.status_code == 400
+    assert "on hold" in response.json()["detail"].lower()
+
+
+def test_on_hold_blocks_validate_salary(client, db_session):
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application_with_status(
+        db_session, job, candidate, "on_hold", previous_status="hr_selected", expected_salary=100000
+    )
+
+    response = client.post(f"/applications/{application.id}/validate-salary")
+
+    assert response.status_code == 400
+    assert "on hold" in response.json()["detail"].lower()
+
+
+def test_on_hold_blocks_bgv_request(client, db_session):
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application_with_status(db_session, job, candidate, "on_hold", previous_status="salary_approved")
+
+    response = client.post(f"/applications/{application.id}/bgv/request")
+
+    assert response.status_code == 400
+    assert "on hold" in response.json()["detail"].lower()
+
+
+def test_on_hold_blocks_offer_generate(client, db_session):
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session, full_name="Jane Doe")
+    application = _make_application_with_status(db_session, job, candidate, "on_hold", previous_status="bgv_cleared")
+
+    response = client.post(
+        f"/applications/{application.id}/offer/generate", json={"start_date": "2026-09-01"}
+    )
+
+    assert response.status_code == 400
+    assert "on hold" in response.json()["detail"].lower()
+
+
+# --- DELETE /applications/{id} ---
+
+
+def test_delete_received_application_succeeds(client, db_session):
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application_with_status(db_session, job, candidate, "received")
+    application_id = application.id
+
+    response = client.delete(f"/applications/{application_id}")
+
+    assert response.status_code == 204
+    assert db_session.get(Application, application_id) is None
+
+
+def test_delete_screened_application_blocked(client, db_session):
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application_with_status(db_session, job, candidate, "screened")
+
+    response = client.delete(f"/applications/{application.id}")
+
+    assert response.status_code == 400
+    assert db_session.get(Application, application.id) is not None
+
+
+def test_delete_on_hold_application_blocked(client, db_session):
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application_with_status(db_session, job, candidate, "on_hold", previous_status="received")
+
+    response = client.delete(f"/applications/{application.id}")
+
+    assert response.status_code == 400
+    assert db_session.get(Application, application.id) is not None
+
+
+def test_delete_application_not_found(client):
+    response = client.delete(f"/applications/{uuid.uuid4()}")
     assert response.status_code == 404

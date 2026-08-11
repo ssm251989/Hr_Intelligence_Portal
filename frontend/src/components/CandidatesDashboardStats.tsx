@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import BarChartOutlinedIcon from "@mui/icons-material/BarChartOutlined";
 import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
 import LanguageOutlinedIcon from "@mui/icons-material/LanguageOutlined";
+import PercentOutlinedIcon from "@mui/icons-material/PercentOutlined";
 import PersonAddAltOutlinedIcon from "@mui/icons-material/PersonAddAltOutlined";
 import UploadFileOutlinedIcon from "@mui/icons-material/UploadFileOutlined";
 import Alert from "@mui/material/Alert";
@@ -39,6 +39,7 @@ const BLUE = "#2a78d6";
 const ORANGE = "#eb6834";
 const AQUA = "#1baf7a";
 const YELLOW = "#eda100";
+const MAGENTA = "#e87ba4";
 
 // refreshSignal is optional -- the Dashboard now lives on its own route (/candidates/dashboard),
 // so navigating to it after an import on the separate Import page already remounts this
@@ -72,13 +73,13 @@ export default function CandidatesDashboardStats({ refreshSignal = 0 }: { refres
         <Grid container spacing={2} mb={3}>
           {Array.from({ length: 5 }).map((_, i) => (
             <Grid key={i} size={{ xs: 12, sm: 6, md: 2.4 }}>
-              <StatCardSkeleton />
+              <StatCardSkeleton variant="compact" />
             </Grid>
           ))}
         </Grid>
-        <Grid container spacing={3}>
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Grid key={i} size={{ xs: 12, md: 6, lg: 3 }}>
+        <Grid container spacing={3} mb={3}>
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Grid key={i} size={{ xs: 12, md: 4 }}>
               <Card variant="outlined" sx={{ height: "100%" }}>
                 <CardContent>
                   <Skeleton variant="text" width="50%" height={32} sx={{ mb: 2 }} />
@@ -87,6 +88,24 @@ export default function CandidatesDashboardStats({ refreshSignal = 0 }: { refres
               </Card>
             </Grid>
           ))}
+        </Grid>
+        <Grid container spacing={3}>
+          <Grid size={{ xs: 12, md: 8.5 }}>
+            <Card variant="outlined" sx={{ height: "100%" }}>
+              <CardContent>
+                <Skeleton variant="text" width="30%" height={32} sx={{ mb: 2 }} />
+                <Skeleton variant="rounded" height={220} />
+              </CardContent>
+            </Card>
+          </Grid>
+          <Grid size={{ xs: 12, md: 3.5 }}>
+            <Card variant="outlined" sx={{ height: "100%" }}>
+              <CardContent>
+                <Skeleton variant="text" width="50%" height={32} sx={{ mb: 2 }} />
+                <Skeleton variant="rounded" height={220} />
+              </CardContent>
+            </Card>
+          </Grid>
         </Grid>
       </Box>
     );
@@ -129,16 +148,17 @@ export default function CandidatesDashboardStats({ refreshSignal = 0 }: { refres
       <Grid container spacing={2} mb={3}>
         <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
           <StatCard
+            variant="compact"
             label="Total Candidates"
             value={stats.total_candidates}
             icon={GroupsOutlinedIcon}
             color={BLUE}
             trend={stats.total_candidates_trend}
-            hero
           />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
           <StatCard
+            variant="compact"
             label="New This Month"
             value={stats.new_this_month}
             icon={PersonAddAltOutlinedIcon}
@@ -147,36 +167,46 @@ export default function CandidatesDashboardStats({ refreshSignal = 0 }: { refres
           />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
-          <StatCard label="From Career Portal" value={stats.from_career_portal} icon={LanguageOutlinedIcon} color={AQUA} />
-        </Grid>
-        <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
-          <StatCard label="Manually Added" value={stats.manually_added} icon={UploadFileOutlinedIcon} color={YELLOW} />
+          <StatCard
+            variant="compact"
+            label="From Career Portals"
+            value={stats.from_career_portal}
+            icon={LanguageOutlinedIcon}
+            color={AQUA}
+            trend={stats.from_career_portal_trend}
+          />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
           <StatCard
-            label="Active Candidates"
-            value={stats.active_candidates}
-            icon={BarChartOutlinedIcon}
-            color="#e87ba4"
+            variant="compact"
+            label="Manually Added"
+            value={stats.manually_added}
+            icon={UploadFileOutlinedIcon}
+            color={YELLOW}
+            trend={stats.manually_added_trend}
+          />
+        </Grid>
+        <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
+          <StatCard
+            variant="compact"
+            label="Avg Match Score"
+            value={stats.avg_match_score != null ? `${Math.round(stats.avg_match_score)}%` : "—"}
+            icon={PercentOutlinedIcon}
+            color={MAGENTA}
+            trend={stats.avg_match_score_trend}
           />
         </Grid>
       </Grid>
 
       <Grid container spacing={3} mb={3}>
-        <Grid size={{ xs: 12, md: 6, lg: 3 }}>
+        <Grid size={{ xs: 12, md: 4 }}>
           <Card variant="outlined" sx={{ height: "100%" }}>
             <CardContent>
-              <LabeledDonutChart
-                title="Candidates by Source"
-                rows={sourceRows}
-                size={110}
-                legendMinWidth={90}
-                spacing={1}
-              />
+              <LabeledDonutChart title="Candidates by Source" rows={sourceRows} />
             </CardContent>
           </Card>
         </Grid>
-        <Grid size={{ xs: 12, md: 6, lg: 3 }}>
+        <Grid size={{ xs: 12, md: 4 }}>
           <Card variant="outlined" sx={{ height: "100%" }}>
             <CardContent>
               <Typography variant="h6" mb={2}>
@@ -191,7 +221,7 @@ export default function CandidatesDashboardStats({ refreshSignal = 0 }: { refres
             </CardContent>
           </Card>
         </Grid>
-        <Grid size={{ xs: 12, md: 6, lg: 3 }}>
+        <Grid size={{ xs: 12, md: 4 }}>
           <Card variant="outlined" sx={{ height: "100%" }}>
             <CardContent>
               <Typography variant="h6" mb={2}>
@@ -201,7 +231,22 @@ export default function CandidatesDashboardStats({ refreshSignal = 0 }: { refres
             </CardContent>
           </Card>
         </Grid>
-        <Grid size={{ xs: 12, md: 6, lg: 3 }}>
+      </Grid>
+
+      <AllSkillsDialog open={allSkillsOpen} onClose={() => setAllSkillsOpen(false)} />
+
+      <Grid container spacing={3}>
+        <Grid size={{ xs: 12, md: 8.5 }}>
+          <Card variant="outlined" sx={{ height: "100%" }}>
+            <CardContent>
+              <Typography variant="h6" mb={1}>
+                Recent Candidates
+              </Typography>
+              <RecentCandidatesTable rows={stats.recent_candidates} />
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid size={{ xs: 12, md: 3.5 }}>
           <Card variant="outlined" sx={{ height: "100%" }}>
             <CardContent>
               <Typography variant="h6" mb={2}>
@@ -212,17 +257,6 @@ export default function CandidatesDashboardStats({ refreshSignal = 0 }: { refres
           </Card>
         </Grid>
       </Grid>
-
-      <AllSkillsDialog open={allSkillsOpen} onClose={() => setAllSkillsOpen(false)} />
-
-      <Card variant="outlined">
-        <CardContent>
-          <Typography variant="h6" mb={1}>
-            Recent Candidates
-          </Typography>
-          <RecentCandidatesTable rows={stats.recent_candidates} />
-        </CardContent>
-      </Card>
     </Box>
   );
 }

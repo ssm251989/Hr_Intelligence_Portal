@@ -1,18 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
+import { useEffect, useMemo, useState } from "react";
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
+import DownloadingOutlinedIcon from "@mui/icons-material/DownloadingOutlined";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import PersonAddAltOutlinedIcon from "@mui/icons-material/PersonAddAltOutlined";
 import SearchIcon from "@mui/icons-material/Search";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import Alert from "@mui/material/Alert";
-import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Checkbox from "@mui/material/Checkbox";
 import Chip from "@mui/material/Chip";
-import Dialog from "@mui/material/Dialog";
-import DialogActions from "@mui/material/DialogActions";
-import DialogContent from "@mui/material/DialogContent";
-import DialogTitle from "@mui/material/DialogTitle";
 import FormControl from "@mui/material/FormControl";
 import IconButton from "@mui/material/IconButton";
 import InputAdornment from "@mui/material/InputAdornment";
@@ -34,20 +31,36 @@ import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import { useNavigate } from "react-router-dom";
 
-import { applicationsApi, candidatesApi, extractErrorMessage, jobsApi } from "../api/client";
-import { isTerminalApplicationStatus, type CandidateApplicationRow, type CandidateRead, type JobRoleRead } from "../api/types";
+import { candidatesApi, extractErrorMessage, jobsApi } from "../api/client";
+import { isTerminalApplicationStatus, type CandidateApplicationRow, type JobRoleRead } from "../api/types";
+import CandidateActionsMenu from "../components/CandidateActionsMenu";
+import CandidateAvatar from "../components/CandidateAvatar";
 import CandidateFiltersPanel, { EMPTY_CANDIDATE_FILTERS, type CandidateFilters } from "../components/CandidateFiltersPanel";
-import SourceChip from "../components/SourceChip";
-import StatusChip from "../components/StatusChip";
+import EditCandidateContactDialog from "../components/EditCandidateContactDialog";
+import SourceIcon from "../components/SourceIcon";
+import UploadCandidateDialog from "../components/UploadCandidateDialog";
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
 import { downloadCsv } from "../utils/csv";
-import { initials } from "../utils/avatar";
-import { resumeHref } from "../utils/resume";
+import { downloadResume } from "../utils/resume";
 
 const ROWS_PER_PAGE_OPTIONS = [10, 20, 30, 40, 50];
 const DEFAULT_PAGE_SIZE = 10;
 const SEARCH_DEBOUNCE_MS = 300;
+
+// Distinct from the "Active"/"Inactive" reading everywhere else in the app (see
+// isTerminalApplicationStatus) -- on_hold is neither: it's a real, resumable pipeline
+// state that should read as visibly different from "still actively progressing," not get
+// silently folded into "Active" just because it isn't terminal.
+function ApplicationStatusChip({ status }: { status: string }) {
+  if (status === "on_hold") {
+    return <Chip label="On Hold" size="small" color="info" variant="outlined" />;
+  }
+  const active = !isTerminalApplicationStatus(status);
+  return <Chip label={active ? "Active" : "Inactive"} size="small" color={active ? "success" : "default"} variant="outlined" />;
+}
+
+const COLUMN_COUNT = 11;
 
 export default function CandidatesListPage() {
   const navigate = useNavigate();
@@ -58,27 +71,23 @@ export default function CandidatesListPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [downloadingResumeFor, setDownloadingResumeFor] = useState<string | null>(null);
 
   const [filters, setFilters] = useState<CandidateFilters>(EMPTY_CANDIDATE_FILTERS);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const anyFilterActive = Boolean(search) || Object.values(filters).some(Boolean);
 
   // Manual single-candidate upload + link-to-job -- the only existing real functionality
   // from the old flat Candidates page, kept as a secondary action since it's still the
   // only way to attach a resume that didn't come through a job's career portal listing or
   // a bulk CSV import (that path lives on its own page now -- see /candidates/import).
+  // Dialog itself is shared with the Candidates Dashboard's "Add Candidate" button.
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [uploadedCandidate, setUploadedCandidate] = useState<CandidateRead | null>(null);
-  const [linkJobId, setLinkJobId] = useState("");
-  const [linkExpectedSalary, setLinkExpectedSalary] = useState("");
-  const [linking, setLinking] = useState(false);
-  const [linkError, setLinkError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [editingCandidate, setEditingCandidate] = useState<CandidateApplicationRow | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     jobsApi.list().then(setJobs).catch(() => setJobs([]));
@@ -94,19 +103,25 @@ export default function CandidatesListPage() {
     setPage(1);
   }, [filters, search]);
 
+  const listParams = () => ({
+    search: search || undefined,
+    jobRoleId: filters.jobRoleId || undefined,
+    status: filters.status || undefined,
+    source: filters.source || undefined,
+    location: filters.location || undefined,
+    experienceMin: filters.experienceMin ? Number(filters.experienceMin) : undefined,
+    experienceMax: filters.experienceMax ? Number(filters.experienceMax) : undefined,
+    appliedAfter: filters.appliedAfter || undefined,
+    appliedBefore: filters.appliedBefore || undefined,
+    matchScoreMin: filters.matchScoreMin ? Number(filters.matchScoreMin) : undefined,
+    matchScoreMax: filters.matchScoreMax ? Number(filters.matchScoreMax) : undefined,
+  });
+
   const loadPage = () => {
     setLoading(true);
     setError(null);
     candidatesApi
-      .listApplications({
-        page,
-        pageSize,
-        search: search || undefined,
-        jobRoleId: filters.jobRoleId || undefined,
-        status: filters.status || undefined,
-        source: filters.source || undefined,
-        location: filters.location || undefined,
-      })
+      .listApplications({ page, pageSize, ...listParams() })
       .then((result) => {
         setRows(result.items);
         setTotal(result.total);
@@ -129,21 +144,20 @@ export default function CandidatesListPage() {
     setPage(1);
   };
 
+  // Selected rows export exactly themselves, ignoring every filter -- otherwise (nothing
+  // checked) export the full filtered result set. Either way this hits the dedicated
+  // unpaginated export endpoint, never the paginated list endpoint the table itself uses
+  // (that one caps page_size at 200 and was never meant for "give me everything").
   const handleExportCsv = async () => {
     try {
-      const result = await candidatesApi.listApplications({
-        page: 1,
-        pageSize: 1000,
-        search: search || undefined,
-        jobRoleId: filters.jobRoleId || undefined,
-        status: filters.status || undefined,
-        source: filters.source || undefined,
-        location: filters.location || undefined,
-      });
+      const result =
+        selectedIds.size > 0
+          ? await candidatesApi.exportApplications({ applicationIds: Array.from(selectedIds) })
+          : await candidatesApi.exportApplications(listParams());
       downloadCsv(
         "candidates.csv",
-        ["Candidate", "Email", "Job Applied", "Stage", "Source", "Applied On", "Experience (yrs)", "Match Score", "Location"],
-        result.items.map((row) => [
+        ["Candidate", "Email", "Job Applied", "Status", "Source", "Applied On", "Experience (yrs)", "Match Score", "Location"],
+        result.map((row) => [
           row.candidate_name,
           row.candidate_email,
           row.job_title,
@@ -160,61 +174,60 @@ export default function CandidatesListPage() {
     }
   };
 
+  const handleDownloadResume = async (row: CandidateApplicationRow) => {
+    setDownloadingResumeFor(row.application_id);
+    setError(null);
+    try {
+      await downloadResume(row.candidate_id, row.resume_path, row.candidate_name);
+    } catch (err) {
+      setError(extractErrorMessage(err, "Failed to download resume"));
+    } finally {
+      setDownloadingResumeFor(null);
+    }
+  };
+
   const jobById = useMemo(() => new Map(jobs.map((job) => [job.id, job])), [jobs]);
 
-  const openUploadDialog = () => {
-    setSelectedFile(null);
-    setUploadError(null);
-    setUploadedCandidate(null);
-    setLinkJobId("");
-    setLinkExpectedSalary("");
-    setLinkError(null);
-    setUploadDialogOpen(true);
+  const allOnPageSelected = rows.length > 0 && rows.every((row) => selectedIds.has(row.application_id));
+  const someOnPageSelected = rows.some((row) => selectedIds.has(row.application_id));
+
+  const toggleSelectAllOnPage = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allOnPageSelected) {
+        rows.forEach((row) => next.delete(row.application_id));
+      } else {
+        rows.forEach((row) => next.add(row.application_id));
+      }
+      return next;
+    });
   };
 
-  const handleUpload = async () => {
-    if (!selectedFile) {
-      setUploadError("Choose a resume file first");
-      return;
-    }
-    setUploadError(null);
-    setUploading(true);
-    try {
-      const created = await candidatesApi.upload(selectedFile);
-      setUploadedCandidate(created);
-    } catch (err) {
-      setUploadError(extractErrorMessage(err, "Failed to upload resume"));
-    } finally {
-      setUploading(false);
-    }
+  const toggleSelectOne = (applicationId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(applicationId)) {
+        next.delete(applicationId);
+      } else {
+        next.add(applicationId);
+      }
+      return next;
+    });
   };
 
-  const handleLink = async () => {
-    if (!uploadedCandidate) return;
-    if (!linkJobId) {
-      setLinkError("Select a job");
-      return;
-    }
-    setLinking(true);
-    setLinkError(null);
-    try {
-      await applicationsApi.create({
-        job_role_id: linkJobId,
-        candidate_id: uploadedCandidate.id,
-        expected_salary: linkExpectedSalary ? Number(linkExpectedSalary) : null,
-      });
-      setUploadDialogOpen(false);
-      loadPage();
-    } catch (err) {
-      setLinkError(extractErrorMessage(err, "Failed to link candidate to job"));
-    } finally {
-      setLinking(false);
-    }
+  const handleRowDeleted = (applicationId: string) => {
+    setSelectedIds((prev) => {
+      if (!prev.has(applicationId)) return prev;
+      const next = new Set(prev);
+      next.delete(applicationId);
+      return next;
+    });
+    loadPage();
   };
 
   return (
     <Box>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={3} flexWrap="wrap" gap={2}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2} flexWrap="wrap" gap={2}>
         <Box>
           <Typography variant="h4">Candidates List</Typography>
           <Typography variant="body2" color="text.secondary">
@@ -223,7 +236,7 @@ export default function CandidatesListPage() {
         </Box>
         <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
           {canWrite && (
-            <Button variant="outlined" startIcon={<PersonAddAltOutlinedIcon />} onClick={openUploadDialog}>
+            <Button variant="outlined" startIcon={<PersonAddAltOutlinedIcon />} onClick={() => setUploadDialogOpen(true)}>
               Upload Resume
             </Button>
           )}
@@ -235,12 +248,15 @@ export default function CandidatesListPage() {
             slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> } }}
             sx={{ minWidth: 220 }}
           />
-          <CandidateFiltersPanel jobs={jobs} filters={filters} onChange={setFilters} />
           <Button variant="outlined" startIcon={<DownloadOutlinedIcon />} onClick={handleExportCsv} disabled={total === 0}>
-            Export
+            {selectedIds.size > 0 ? `Export (${selectedIds.size} selected)` : "Export"}
           </Button>
         </Stack>
       </Stack>
+
+      <Box mb={3}>
+        <CandidateFiltersPanel jobs={jobs} filters={filters} onChange={setFilters} />
+      </Box>
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
@@ -253,12 +269,13 @@ export default function CandidatesListPage() {
           <Table size="small">
             <TableHead>
               <TableRow>
+                <TableCell padding="checkbox" />
                 <TableCell>Candidate</TableCell>
-                <TableCell>Job Applied</TableCell>
-                <TableCell>Stage</TableCell>
                 <TableCell>Source</TableCell>
+                <TableCell>Job Applied</TableCell>
                 <TableCell>Applied On</TableCell>
-                <TableCell>Experience</TableCell>
+                <TableCell>Exp</TableCell>
+                <TableCell>Location</TableCell>
                 <TableCell>Match Score</TableCell>
                 <TableCell>Resume</TableCell>
                 <TableCell>Status</TableCell>
@@ -268,7 +285,7 @@ export default function CandidatesListPage() {
             <TableBody>
               {Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 10 }).map((__, j) => (
+                  {Array.from({ length: COLUMN_COUNT }).map((__, j) => (
                     <TableCell key={j}>
                       <Skeleton variant="text" />
                     </TableCell>
@@ -280,7 +297,7 @@ export default function CandidatesListPage() {
         </TableContainer>
       ) : rows.length === 0 ? (
         <Typography color="text.secondary">
-          {total === 0 && !search && !filters.jobRoleId && !filters.status && !filters.source && !filters.location
+          {total === 0 && !anyFilterActive
             ? "No candidates yet. Import from a source or wait for career portal applications to come in."
             : "No candidates match the current filters."}
         </Typography>
@@ -290,12 +307,19 @@ export default function CandidatesListPage() {
             <Table size="small">
               <TableHead>
                 <TableRow>
+                  <TableCell padding="checkbox">
+                    <Checkbox
+                      indeterminate={someOnPageSelected && !allOnPageSelected}
+                      checked={allOnPageSelected}
+                      onChange={toggleSelectAllOnPage}
+                    />
+                  </TableCell>
                   <TableCell>Candidate</TableCell>
-                  <TableCell>Job Applied</TableCell>
-                  <TableCell>Stage</TableCell>
                   <TableCell>Source</TableCell>
+                  <TableCell>Job Applied</TableCell>
                   <TableCell>Applied On</TableCell>
-                  <TableCell>Experience</TableCell>
+                  <TableCell>Exp</TableCell>
+                  <TableCell>Location</TableCell>
                   <TableCell>Match Score</TableCell>
                   <TableCell>Resume</TableCell>
                   <TableCell>Status</TableCell>
@@ -303,66 +327,100 @@ export default function CandidatesListPage() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {rows.map((row) => {
-                  const href = resumeHref(row.candidate_id, row.resume_path);
-                  const active = !isTerminalApplicationStatus(row.status);
-                  return (
-                    <TableRow key={row.application_id} hover>
-                      <TableCell>
-                        <Stack direction="row" spacing={1.25} alignItems="center">
-                          <Avatar sx={{ width: 28, height: 28, fontSize: 12, bgcolor: "primary.main" }}>
-                            {initials(row.candidate_name || row.candidate_email || "?")}
-                          </Avatar>
-                          <Box>
-                            <Typography variant="body2" noWrap>
-                              {row.candidate_name || "Unnamed candidate"}
+                {rows.map((row) => (
+                  <TableRow key={row.application_id} hover selected={selectedIds.has(row.application_id)}>
+                    <TableCell padding="checkbox">
+                      <Checkbox
+                        checked={selectedIds.has(row.application_id)}
+                        onChange={() => toggleSelectOne(row.application_id)}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Stack direction="row" spacing={1.25} alignItems="center">
+                        <CandidateAvatar
+                          candidateId={row.candidate_id}
+                          photoPath={row.photo_path}
+                          name={row.candidate_name}
+                          email={row.candidate_email}
+                          sx={{ width: 28, height: 28, fontSize: 12 }}
+                        />
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography variant="body2" fontWeight={600} noWrap>
+                            {row.candidate_name || "Unnamed candidate"}
+                          </Typography>
+                          {row.candidate_email && (
+                            <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
+                              {row.candidate_email}
                             </Typography>
-                            {row.candidate_email && (
-                              <Typography variant="caption" color="text.secondary" noWrap>
-                                {row.candidate_email}
-                              </Typography>
-                            )}
-                          </Box>
-                        </Stack>
-                      </TableCell>
-                      <TableCell>{jobById.get(row.job_role_id)?.title ?? row.job_title}</TableCell>
-                      <TableCell>
-                        <StatusChip status={row.status} />
-                      </TableCell>
-                      <TableCell>
-                        <SourceChip source={row.source} />
-                      </TableCell>
-                      <TableCell>{new Date(row.applied_on).toLocaleDateString()}</TableCell>
-                      <TableCell>{row.experience_years != null ? `${row.experience_years}y` : "—"}</TableCell>
-                      <TableCell>{row.match_score != null ? `${Math.round(row.match_score)}%` : "—"}</TableCell>
-                      <TableCell>
-                        {href ? (
-                          <IconButton size="small" component="a" href={href} target="_blank" rel="noreferrer">
-                            <DescriptionOutlinedIcon fontSize="small" />
-                          </IconButton>
-                        ) : (
-                          "—"
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Chip label={active ? "Active" : "Inactive"} size="small" color={active ? "success" : "default"} variant="outlined" />
-                      </TableCell>
-                      <TableCell align="right">
+                          )}
+                        </Box>
+                      </Stack>
+                    </TableCell>
+                    <TableCell>
+                      <SourceIcon source={row.source} />
+                    </TableCell>
+                    <TableCell>{jobById.get(row.job_role_id)?.title ?? row.job_title}</TableCell>
+                    <TableCell>{new Date(row.applied_on).toLocaleDateString()}</TableCell>
+                    <TableCell>{row.experience_years != null ? `${row.experience_years}y` : "—"}</TableCell>
+                    <TableCell>{row.location || "—"}</TableCell>
+                    <TableCell>{row.match_score != null ? `${Math.round(row.match_score)}%` : "—"}</TableCell>
+                    <TableCell>
+                      {row.resume_path ? (
+                        <Tooltip title="Download resume">
+                          <span>
+                            <IconButton
+                              size="small"
+                              onClick={() => handleDownloadResume(row)}
+                              disabled={downloadingResumeFor === row.application_id}
+                            >
+                              {downloadingResumeFor === row.application_id ? (
+                                <DownloadingOutlinedIcon fontSize="small" />
+                              ) : (
+                                <DownloadOutlinedIcon fontSize="small" />
+                              )}
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                      ) : (
+                        "—"
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <ApplicationStatusChip status={row.status} />
+                    </TableCell>
+                    <TableCell align="right">
+                      <Stack direction="row" spacing={0.5} justifyContent="flex-end">
                         <Tooltip title="View">
                           <IconButton size="small" onClick={() => navigate(`/candidates/${row.application_id}`)}>
                             <VisibilityOutlinedIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
+                        {canWrite && (
+                          <Tooltip title="Edit contact info">
+                            <IconButton size="small" onClick={() => setEditingCandidate(row)}>
+                              <EditOutlinedIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                        {canWrite && (
+                          <CandidateActionsMenu
+                            row={row}
+                            onChanged={loadPage}
+                            onDeleted={handleRowDeleted}
+                            onError={setError}
+                          />
+                        )}
+                      </Stack>
+                    </TableCell>
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           </TableContainer>
 
           <Stack direction="row" justifyContent="space-between" alignItems="center" mt={2} flexWrap="wrap" gap={1}>
             <Typography variant="body2" color="text.secondary">
+              {selectedIds.size > 0 ? `${selectedIds.size} selected · ` : ""}
               Showing {pageStart} to {pageEnd} of {total} candidates
             </Typography>
             <Stack direction="row" spacing={2} alignItems="center">
@@ -387,61 +445,17 @@ export default function CandidatesListPage() {
         </>
       )}
 
-      <Dialog open={uploadDialogOpen} onClose={() => setUploadDialogOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle>{uploadedCandidate ? "Link to a Job" : "Upload Resume"}</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} mt={1}>
-            {!uploadedCandidate ? (
-              <>
-                {uploadError && <Alert severity="error">{uploadError}</Alert>}
-                <Stack direction="row" spacing={2} alignItems="center">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".pdf,.docx"
-                    onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
-                  />
-                </Stack>
-                <Typography variant="caption" color="text.secondary">
-                  PDF or DOCX only. Creates a candidate with source "Manual" -- link them to a job next.
-                </Typography>
-              </>
-            ) : (
-              <>
-                {linkError && <Alert severity="error">{linkError}</Alert>}
-                <Alert severity="success">Resume uploaded. Link this candidate to a job to add them to the pipeline.</Alert>
-                <TextField select label="Job" required value={linkJobId} onChange={(e) => setLinkJobId(e.target.value)} fullWidth>
-                  {jobs.length === 0 && <MenuItem disabled value="">No jobs available</MenuItem>}
-                  {jobs.map((job) => (
-                    <MenuItem key={job.id} value={job.id}>
-                      {job.title}
-                    </MenuItem>
-                  ))}
-                </TextField>
-                <TextField
-                  label="Expected salary (optional)"
-                  type="number"
-                  value={linkExpectedSalary}
-                  onChange={(e) => setLinkExpectedSalary(e.target.value)}
-                  fullWidth
-                />
-              </>
-            )}
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setUploadDialogOpen(false)}>{uploadedCandidate ? "Skip for now" : "Cancel"}</Button>
-          {!uploadedCandidate ? (
-            <Button variant="contained" onClick={handleUpload} disabled={uploading}>
-              {uploading ? "Uploading..." : "Upload"}
-            </Button>
-          ) : (
-            <Button variant="contained" onClick={handleLink} disabled={linking}>
-              {linking ? "Linking..." : "Link to Job"}
-            </Button>
-          )}
-        </DialogActions>
-      </Dialog>
+      <UploadCandidateDialog
+        open={uploadDialogOpen}
+        onClose={() => setUploadDialogOpen(false)}
+        onLinked={loadPage}
+      />
+      <EditCandidateContactDialog
+        candidateId={editingCandidate?.candidate_id ?? null}
+        open={Boolean(editingCandidate)}
+        onClose={() => setEditingCandidate(null)}
+        onSaved={loadPage}
+      />
     </Box>
   );
 }

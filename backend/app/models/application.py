@@ -9,6 +9,7 @@ APPLICATION_STATUSES = (
     "salary_ok", "salary_above_band", "salary_approved", "salary_rejected",
     "bgv_requested", "bgv_pending", "bgv_cleared", "bgv_rejected",
     "offer_sent", "onboarding_started", "onboarding_completed",
+    "on_hold",
 )
 
 # No further transition endpoint exists in the codebase for any of these -- confirmed by
@@ -39,6 +40,9 @@ class Application(Base):
     ranking_score = Column(Numeric)
     ranking_rationale = Column(Text)
     status = Column(Text, server_default=text("'received'"))
+    # Set only while status == 'on_hold' -- the status to restore on resume (see
+    # app/candidates/hold.py). Cleared back to null on resume; never meaningful otherwise.
+    previous_status = Column(Text)
     expected_salary = Column(Numeric)
     approved_salary = Column(Numeric)
     created_at = Column(DateTime(timezone=True), server_default=text("now()"))

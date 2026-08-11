@@ -129,20 +129,20 @@ export interface JobFieldSuggestionsResponse {
 // the real sourcing integrations can slot in later with no schema/type change -- nothing
 // writes them yet (see backend/app/models/candidate.py CANDIDATE_SOURCES).
 export const CANDIDATE_SOURCES = [
-  "career_portal", "manual", "csv_import",
+  "career_portal", "manual", "local_import",
   "linkedin", "naukri", "indeed", "monster", "shine",
 ] as const;
 export type CandidateSource = (typeof CANDIDATE_SOURCES)[number];
 
 // Sources with a real, working import path today -- everything else in
 // CANDIDATE_SOURCES renders as "Coming soon" in the Import wizard/dropdown.
-export const CONNECTED_CANDIDATE_SOURCES: CandidateSource[] = ["career_portal", "csv_import"];
+export const CONNECTED_CANDIDATE_SOURCES: CandidateSource[] = ["career_portal", "local_import"];
 
 export function candidateSourceLabel(source: string): string {
   const labels: Record<string, string> = {
     career_portal: "Career Portal",
     manual: "Manual",
-    csv_import: "CSV Import",
+    local_import: "Local Import",
     linkedin: "LinkedIn",
     naukri: "Naukri",
     indeed: "Indeed",
@@ -152,6 +152,11 @@ export function candidateSourceLabel(source: string): string {
   return labels[source] ?? source;
 }
 
+// Purely a fallback-avatar hint (see backend app/candidates/gender_inference.py) -- never
+// used for anything about the candidate besides which generic illustration to show when
+// there's no real extracted photo. null means "no confident guess", not "unspecified".
+export type InferredGender = "male" | "female" | null;
+
 export interface CandidateRead {
   id: UUID;
   full_name?: string | null;
@@ -159,9 +164,19 @@ export interface CandidateRead {
   phone?: string | null;
   location?: string | null;
   resume_path?: string | null;
+  photo_path?: string | null;
+  inferred_gender?: InferredGender;
   parsed_fields?: ParsedResumeFields | null;
   source: string;
   created_at: string;
+}
+
+// Basic contact info only -- name/email/phone. Everything else about a candidate (resume,
+// photo, parsed fields, source) comes from an upload/import/parse, not manual editing.
+export interface CandidateUpdate {
+  full_name?: string | null;
+  email?: string | null;
+  phone?: string | null;
 }
 
 // shape of app.ai_services.resume_parser.ResumeParserOutput, stored as candidates.parsed_fields
@@ -200,6 +215,7 @@ export const APPLICATION_STATUSES = [
   "salary_ok", "salary_above_band", "salary_approved", "salary_rejected",
   "bgv_requested", "bgv_pending", "bgv_cleared", "bgv_rejected",
   "offer_sent", "onboarding_started", "onboarding_completed",
+  "on_hold",
 ] as const;
 
 // backend/app/models/application.py TERMINAL_APPLICATION_STATUSES -- no further
@@ -229,6 +245,9 @@ export interface ApplicationRead {
   ranking_score?: number | null;
   ranking_rationale?: string | null;
   status: string;
+  // Only meaningful while status === "on_hold" -- the status to restore on resume. Null
+  // otherwise. See backend/app/candidates/hold.py.
+  previous_status?: string | null;
   expected_salary?: number | null;
   approved_salary?: number | null;
   created_at: string;
@@ -259,6 +278,8 @@ export interface CandidateApplicationRow {
   match_score?: number | null;
   experience_years?: number | null;
   resume_path?: string | null;
+  photo_path?: string | null;
+  inferred_gender?: InferredGender;
 }
 
 export interface CandidatesListPage {
@@ -285,8 +306,12 @@ export interface CandidatesDashboardStatsResponse {
   from_career_portal: number;
   manually_added: number;
   active_candidates: number;
+  avg_match_score: number | null;
   total_candidates_trend: StatTrend;
   new_this_month_trend: StatTrend;
+  from_career_portal_trend: StatTrend;
+  manually_added_trend: StatTrend;
+  avg_match_score_trend: StatTrend;
   by_source: LabeledCount[];
   top_skills: LabeledCount[];
   match_score_distribution: LabeledCount[];
@@ -334,18 +359,6 @@ export interface CandidateMessageRequest {
 export interface CandidateMessageResponse {
   sent: boolean;
   to: string;
-}
-
-export interface CsvImportRowError {
-  row: number;
-  reason: string;
-}
-
-export interface CsvImportSummary {
-  imported: number;
-  skipped: number;
-  errors: CsvImportRowError[];
-  imported_candidate_ids: UUID[];
 }
 
 // ---- interviews / scheduling ----

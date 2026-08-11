@@ -11,7 +11,7 @@ type SourceColor = "info" | "default" | "primary";
 const SOURCE_COLOR_MAP: Record<string, SourceColor> = {
   career_portal: "info",
   manual: "default",
-  csv_import: "primary",
+  local_import: "primary",
 };
 
 export default function SourceChip({ source, size = "small" }: { source: string; size?: ChipProps["size"] }) {

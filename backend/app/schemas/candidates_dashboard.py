@@ -40,6 +40,8 @@ class CandidateApplicationRow(BaseModel):
     match_score: Optional[float] = None
     experience_years: Optional[float] = None
     resume_path: Optional[str] = None
+    photo_path: Optional[str] = None
+    inferred_gender: Optional[str] = None
 
 
 class CandidatesDashboardStatsResponse(BaseModel):
@@ -48,8 +50,12 @@ class CandidatesDashboardStatsResponse(BaseModel):
     from_career_portal: int
     manually_added: int
     active_candidates: int
+    avg_match_score: Optional[float] = None
     total_candidates_trend: StatTrend
     new_this_month_trend: StatTrend
+    from_career_portal_trend: StatTrend
+    manually_added_trend: StatTrend
+    avg_match_score_trend: StatTrend
     by_source: list[LabeledCount]
     top_skills: list[LabeledCount]
     match_score_distribution: list[LabeledCount]
@@ -106,15 +112,3 @@ class CandidateMessageRequest(BaseModel):
 class CandidateMessageResponse(BaseModel):
     sent: bool
     to: str
-
-
-class CsvImportRowError(BaseModel):
-    row: int
-    reason: str
-
-
-class CsvImportSummary(BaseModel):
-    imported: int
-    skipped: int
-    errors: list[CsvImportRowError]
-    imported_candidate_ids: list[uuid.UUID]

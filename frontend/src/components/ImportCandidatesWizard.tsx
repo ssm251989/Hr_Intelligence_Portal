@@ -16,6 +16,8 @@ import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
 import Grid from "@mui/material/Grid";
+import LinearProgress from "@mui/material/LinearProgress";
+import MenuItem from "@mui/material/MenuItem";
 import Step from "@mui/material/Step";
 import StepLabel from "@mui/material/StepLabel";
 import Stepper from "@mui/material/Stepper";
@@ -25,23 +27,34 @@ import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
+import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
-import { candidatesApi, extractErrorMessage } from "../api/client";
-import { candidateSourceLabel, CONNECTED_CANDIDATE_SOURCES, type CandidateSource, type CsvImportSummary } from "../api/types";
+import { applicationsApi, candidatesApi, extractErrorMessage, jobsApi } from "../api/client";
+import { candidateSourceLabel, CONNECTED_CANDIDATE_SOURCES, type CandidateSource, type JobRoleRead } from "../api/types";
+import { CANDIDATE_SOURCE_COLOR, CANDIDATE_SOURCE_ICON } from "../utils/candidateSourceIcons";
 
 const STEPS = ["Select Source", "Configure", "Import & Review", "Complete"];
+const LOCAL_IMPORT_ACCEPT = ".pdf,.docx";
+
+interface LocalImportResult {
+  filename: string;
+  status: "success" | "error";
+  reason?: string;
+}
 
 // "manual" is the existing single-resume-upload flow elsewhere in the app, not a bulk
-// import source -- excluded here on purpose.
-const IMPORT_SOURCES: { value: CandidateSource; icon: typeof WorkOutlineIcon }[] = [
+// import source -- excluded here on purpose. Icon/color for the five named platforms come
+// from the shared candidateSourceIcons map (also used by the Data Sources panel), so the
+// two don't drift out of sync with each other again.
+const IMPORT_SOURCES: { value: CandidateSource; icon: typeof WorkOutlineIcon; color?: string }[] = [
   { value: "career_portal", icon: LanguageOutlinedIcon },
-  { value: "csv_import", icon: UploadFileOutlinedIcon },
-  { value: "linkedin", icon: WorkOutlineIcon },
-  { value: "naukri", icon: WorkOutlineIcon },
-  { value: "indeed", icon: WorkOutlineIcon },
-  { value: "monster", icon: WorkOutlineIcon },
-  { value: "shine", icon: WorkOutlineIcon },
+  { value: "local_import", icon: UploadFileOutlinedIcon },
+  { value: "linkedin", icon: CANDIDATE_SOURCE_ICON.linkedin ?? WorkOutlineIcon, color: CANDIDATE_SOURCE_COLOR.linkedin },
+  { value: "naukri", icon: CANDIDATE_SOURCE_ICON.naukri ?? WorkOutlineIcon, color: CANDIDATE_SOURCE_COLOR.naukri },
+  { value: "indeed", icon: CANDIDATE_SOURCE_ICON.indeed ?? WorkOutlineIcon, color: CANDIDATE_SOURCE_COLOR.indeed },
+  { value: "monster", icon: CANDIDATE_SOURCE_ICON.monster ?? WorkOutlineIcon, color: CANDIDATE_SOURCE_COLOR.monster },
+  { value: "shine", icon: CANDIDATE_SOURCE_ICON.shine ?? WorkOutlineIcon, color: CANDIDATE_SOURCE_COLOR.shine },
 ];
 
 function isConnected(source: CandidateSource): boolean {
@@ -58,9 +71,12 @@ interface Props {
 export default function ImportCandidatesWizard({ open, onClose, onImported, initialSource }: Props) {
   const [activeStep, setActiveStep] = useState(0);
   const [selectedSource, setSelectedSource] = useState<CandidateSource | "">("");
-  const [file, setFile] = useState<File | null>(null);
+  const [jobs, setJobs] = useState<JobRoleRead[]>([]);
+  const [linkJobId, setLinkJobId] = useState("");
+  const [localFiles, setLocalFiles] = useState<File[]>([]);
   const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState<CsvImportSummary | null>(null);
+  const [importTotal, setImportTotal] = useState(0);
+  const [importResults, setImportResults] = useState<LocalImportResult[]>([]);
   const [careerPortalCount, setCareerPortalCount] = useState<number | null>(null);
   const [stepError, setStepError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -69,10 +85,13 @@ export default function ImportCandidatesWizard({ open, onClose, onImported, init
     if (!open) return;
     setActiveStep(0);
     setSelectedSource(initialSource ?? "");
-    setFile(null);
-    setImportResult(null);
+    setLinkJobId("");
+    setLocalFiles([]);
+    setImportTotal(0);
+    setImportResults([]);
     setCareerPortalCount(null);
     setStepError(null);
+    jobsApi.list().then(setJobs).catch(() => setJobs([]));
   }, [open, initialSource]);
 
   useEffect(() => {
@@ -90,6 +109,58 @@ export default function ImportCandidatesWizard({ open, onClose, onImported, init
     onClose();
   };
 
+  // Loops over the exact same single-file upload+parse endpoints the "Upload Resume"
+  // dialog uses, one file at a time (not in parallel -- each parse call hits the AI
+  // service, and a real, honest progress readout needs each file to actually finish
+  // before the next one starts). A file that fails to upload (bad type, unreadable) is
+  // recorded as a failure with its reason; a file that uploads but fails to parse still
+  // counts as imported (the candidate record exists, just unparsed) -- same best-effort
+  // treatment the single-upload dialog already gives a parse failure.
+  //
+  // Every successfully-uploaded candidate is then linked to jobId as a real application
+  // (status='received', same as any other new application) -- the Candidates List shows
+  // one row per application, not per candidate, so a candidate created here without one
+  // would exist in the database but never appear anywhere reachable. If linking fails
+  // (the candidate row itself still exists), that's reported as this file's failure too --
+  // "success" here means the candidate is actually visible in the pipeline afterward, not
+  // just that a database row was created.
+  const runLocalImport = async (files: File[], jobId: string) => {
+    setImporting(true);
+    setImportTotal(files.length);
+    setImportResults([]);
+    for (const file of files) {
+      try {
+        const candidate = await candidatesApi.upload(file, "local_import");
+        try {
+          await candidatesApi.parseResume(candidate.id);
+        } catch {
+          // best-effort, same as the single-upload dialog
+        }
+        try {
+          await applicationsApi.create({ job_role_id: jobId, candidate_id: candidate.id });
+        } catch (err) {
+          setImportResults((prev) => [
+            ...prev,
+            {
+              filename: file.name,
+              status: "error",
+              reason: extractErrorMessage(err, "Uploaded, but could not be linked to the job"),
+            },
+          ]);
+          continue;
+        }
+        setImportResults((prev) => [...prev, { filename: file.name, status: "success" }]);
+      } catch (err) {
+        setImportResults((prev) => [
+          ...prev,
+          { filename: file.name, status: "error", reason: extractErrorMessage(err, "Failed to upload") },
+        ]);
+      }
+    }
+    setImporting(false);
+    onImported();
+  };
+
   const handleNext = async () => {
     setStepError(null);
     if (activeStep === 0) {
@@ -101,22 +172,17 @@ export default function ImportCandidatesWizard({ open, onClose, onImported, init
       return;
     }
     if (activeStep === 1) {
-      if (selectedSource === "csv_import") {
-        if (!file) {
-          setStepError("Choose a CSV file to import");
+      if (selectedSource === "local_import") {
+        if (!linkJobId) {
+          setStepError("Select a job to link these candidates to");
           return;
         }
-        setImporting(true);
-        try {
-          const result = await candidatesApi.importCsv(file);
-          setImportResult(result);
-          setActiveStep(2);
-          onImported();
-        } catch (err) {
-          setStepError(extractErrorMessage(err, "Failed to import CSV"));
-        } finally {
-          setImporting(false);
+        if (localFiles.length === 0) {
+          setStepError("Choose at least one resume file to import");
+          return;
         }
+        setActiveStep(2);
+        runLocalImport(localFiles, linkJobId);
         return;
       }
       setActiveStep(2);
@@ -132,17 +198,35 @@ export default function ImportCandidatesWizard({ open, onClose, onImported, init
 
   const renderSelectSource = () => (
     <Grid container spacing={2} mt={1}>
-      {IMPORT_SOURCES.map(({ value, icon: Icon }) => {
+      {IMPORT_SOURCES.map(({ value, icon: Icon, color }) => {
         const isSelected = selectedSource === value;
         const sourceConnected = isConnected(value);
         return (
           <Grid key={value} size={{ xs: 12, sm: 6, md: 4 }}>
-            <Card variant="outlined" sx={{ borderColor: isSelected ? "primary.main" : undefined, height: "100%" }}>
+            <Card
+              // Selected state matches the sidebar nav's own selected-item treatment
+              // (see layout/AppLayout.tsx activeSx): a colored border plus a background
+              // tint, not just a subtle color change -- constant 2px border width on
+              // every card (transparent when unselected) so selecting one never shifts
+              // the grid layout.
+              sx={{
+                border: "2px solid",
+                borderColor: isSelected ? "primary.main" : "divider",
+                bgcolor: isSelected ? "action.selected" : "transparent",
+                height: "100%",
+                transition: "border-color 120ms ease, background-color 120ms ease",
+              }}
+            >
               <CardActionArea onClick={() => setSelectedSource(value)} sx={{ height: "100%", p: 1 }}>
                 <CardContent>
-                  <Stack direction="row" spacing={1.5} alignItems="center" mb={1}>
-                    <Icon color={isSelected ? "primary" : "action"} />
-                    <Typography variant="subtitle1">{candidateSourceLabel(value)}</Typography>
+                  <Stack direction="row" spacing={1.5} alignItems="center" justifyContent="space-between" mb={1}>
+                    <Stack direction="row" spacing={1.5} alignItems="center">
+                      {/* A named platform keeps its own brand tint either way, rather than
+                          the icon switching to the selected-state theme color and losing it. */}
+                      {color ? <Icon sx={{ color }} /> : <Icon color={isSelected ? "primary" : "action"} />}
+                      <Typography variant="subtitle1">{candidateSourceLabel(value)}</Typography>
+                    </Stack>
+                    {isSelected && <CheckCircleOutlineIcon color="primary" fontSize="small" />}
                   </Stack>
                   <Chip
                     label={sourceConnected ? "Connected" : "Coming soon"}
@@ -185,26 +269,47 @@ export default function ImportCandidatesWizard({ open, onClose, onImported, init
         </Stack>
       );
     }
-    // csv_import
+    // local_import
     return (
       <Stack spacing={2} mt={2}>
         <Typography variant="body2" color="text.secondary">
-          Upload a CSV with columns for name, email, phone (optional), and a resume link (optional, must be an
-          http(s) URL -- a bare filename can't refer to anything on the server). Header names are matched
-          case-insensitively.
+          Select one or more resumes (PDF or DOCX) to import from your computer. Each file becomes its own candidate,
+          is automatically parsed for name, email, phone, skills, and photo -- the same pipeline the single-resume
+          "Upload Resume" button uses, just run for every file you pick -- and is linked to the job below as a new
+          application, so it shows up in the Candidates List afterward.
         </Typography>
+        <TextField select label="Job" required value={linkJobId} onChange={(e) => setLinkJobId(e.target.value)} fullWidth>
+          {jobs.length === 0 && <MenuItem disabled value="">No jobs available</MenuItem>}
+          {jobs.map((job) => (
+            <MenuItem key={job.id} value={job.id}>
+              {job.title}
+            </MenuItem>
+          ))}
+        </TextField>
         <Stack direction="row" spacing={2} alignItems="center">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          />
+          <Button variant="outlined" component="label" startIcon={<UploadFileOutlinedIcon />}>
+            Import from Local
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={LOCAL_IMPORT_ACCEPT}
+              multiple
+              hidden
+              onChange={(e) => setLocalFiles(Array.from(e.target.files ?? []))}
+            />
+          </Button>
         </Stack>
-        {file && (
-          <Typography variant="caption" color="text.secondary">
-            Selected: {file.name}
-          </Typography>
+        {localFiles.length > 0 && (
+          <Stack spacing={0.25}>
+            <Typography variant="caption" color="text.secondary">
+              {localFiles.length} file{localFiles.length === 1 ? "" : "s"} selected:
+            </Typography>
+            {localFiles.map((f, i) => (
+              <Typography key={`${f.name}-${i}`} variant="caption" color="text.secondary">
+                • {f.name}
+              </Typography>
+            ))}
+          </Stack>
         )}
       </Stack>
     );
@@ -220,31 +325,40 @@ export default function ImportCandidatesWizard({ open, onClose, onImported, init
         </Alert>
       );
     }
-    if (!importResult) {
-      return (
-        <Box mt={2}>
-          <CircularProgress size={20} />
-        </Box>
-      );
-    }
+    // local_import -- real, live progress (each file takes a few seconds to parse), not a
+    // simulated bar: importResults grows by one entry per file as runLocalImport's loop
+    // actually completes each upload+parse round trip.
+    const processed = importResults.length;
+    const successCount = importResults.filter((r) => r.status === "success").length;
+    const failed = importResults.filter((r) => r.status === "error");
     return (
       <Stack spacing={2} mt={2}>
-        <Alert severity={importResult.skipped === 0 ? "success" : "warning"}>
-          Imported {importResult.imported}, skipped {importResult.skipped}.
-        </Alert>
-        {importResult.errors.length > 0 && (
+        {importing ? (
+          <Stack spacing={1}>
+            <Typography variant="body2" color="text.secondary">
+              Processing {processed} of {importTotal}...
+            </Typography>
+            <LinearProgress variant="determinate" value={importTotal === 0 ? 0 : (processed / importTotal) * 100} />
+          </Stack>
+        ) : (
+          <Alert severity={failed.length === 0 ? "success" : "warning"}>
+            Imported {successCount} of {importTotal}
+            {failed.length > 0 ? `, ${failed.length} failed` : ""}.
+          </Alert>
+        )}
+        {failed.length > 0 && (
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>Row</TableCell>
+                <TableCell>File</TableCell>
                 <TableCell>Reason</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {importResult.errors.map((err) => (
-                <TableRow key={err.row}>
-                  <TableCell>{err.row}</TableCell>
-                  <TableCell>{err.reason}</TableCell>
+              {failed.map((result) => (
+                <TableRow key={result.filename}>
+                  <TableCell>{result.filename}</TableCell>
+                  <TableCell>{result.reason}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

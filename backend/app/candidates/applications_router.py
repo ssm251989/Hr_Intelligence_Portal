@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.audit.service import log_action
 from app.auth.dependencies import get_current_user, require_roles
+from app.candidates.hold import put_application_on_hold, resume_application_from_hold
 from app.candidates.pipeline_actions import compute_next_actions
 from app.core.crypto import decrypt
 from app.core.database import get_db
@@ -109,6 +110,54 @@ def get_candidate_application_detail(
             for other_app, title in other_rows
         ],
     )
+
+
+@router.post("/{application_id}/hold", response_model=ApplicationRead)
+def put_application_on_hold_endpoint(
+    application_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "hiring_manager", "admin")),
+):
+    """Any non-terminal status -> on_hold. Blocked from the five terminal statuses
+    (hr_rejected, interview_rejected, salary_rejected, bgv_rejected, onboarding_completed)
+    -- nothing further happens to those applications, so "pausing" one is meaningless."""
+    application = _get_application_or_404(db, application_id)
+    put_application_on_hold(db, application, current_user.email)
+    return application
+
+
+@router.post("/{application_id}/resume", response_model=ApplicationRead)
+def resume_application_from_hold_endpoint(
+    application_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "hiring_manager", "admin")),
+):
+    """on_hold -> whatever status it was paused from."""
+    application = _get_application_or_404(db, application_id)
+    resume_application_from_hold(db, application, current_user.email)
+    return application
+
+
+@router.delete("/{application_id}", status_code=204)
+def delete_application(
+    application_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "admin")),
+):
+    """Only allowed at status='received' -- nothing real (screening, interviews, salary,
+    BGV, an offer) has happened to the pipeline yet, so there's nothing downstream to
+    orphan. Same safety principle as app/jobs/router.py delete_job blocking any job that
+    has ever been published."""
+    application = _get_application_or_404(db, application_id)
+    if application.status != "received":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot delete an application with status '{application.status}'. "
+            "Only applications still at 'received' can be deleted.",
+        )
+    log_action(db, "application", application.id, "application_deleted", current_user.email, {"status": application.status})
+    db.delete(application)
+    db.commit()
 
 
 @router.post("/{application_id}/message", response_model=CandidateMessageResponse)

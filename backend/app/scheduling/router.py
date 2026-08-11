@@ -10,6 +10,7 @@ from app.ai_services.interview_question_generator import (
 )
 from app.audit.service import log_action
 from app.auth.dependencies import get_current_user, require_roles
+from app.candidates.hold import assert_application_not_on_hold
 from app.core.crypto import decrypt
 from app.core.database import get_db
 from app.integrations.google_calendar import GoogleCalendarError, create_calendar_event
@@ -94,6 +95,7 @@ def schedule_interview(
     current_user: User = Depends(require_roles("recruiter", "interviewer", "hiring_manager", "admin")),
 ):
     application = _get_application_or_404(db, application_id)
+    assert_application_not_on_hold(application)
     if application.status not in SCHEDULABLE_STATUSES:
         raise HTTPException(
             status_code=400,
@@ -167,12 +169,12 @@ def submit_interview_feedback(
     current_user: User = Depends(require_roles("recruiter", "interviewer", "hiring_manager", "admin")),
 ):
     interview = _get_interview_or_404(db, interview_id)
+    application = _get_application_or_404(db, interview.application_id)
+    assert_application_not_on_hold(application)
     updates = payload.model_dump(exclude_unset=True)
     decision = updates.pop("decision", None)
 
-    application = None
     if decision is not None:
-        application = _get_application_or_404(db, interview.application_id)
         if application.status != "interview_scheduled":
             raise HTTPException(
                 status_code=400,
@@ -207,6 +209,7 @@ def generate_questions(
     current_user: User = Depends(require_roles("recruiter", "interviewer", "hiring_manager", "admin")),
 ):
     application = _get_application_or_404(db, application_id)
+    assert_application_not_on_hold(application)
     job = db.get(JobRole, application.job_role_id)
     if not job or not job.jd_text:
         raise HTTPException(status_code=400, detail="Job description not yet generated")

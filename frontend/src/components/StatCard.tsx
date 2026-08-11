@@ -30,6 +30,11 @@ interface Props {
   // The one "headline" card (Total Jobs) gets a subtle gradient wash in its own accent
   // color -- everything else stays flat so the hero card actually reads as the hero.
   hero?: boolean;
+  // "default": icon beside a label/value/trend column, with a sparkline underneath --
+  // the Jobs dashboard's style. "compact": icon badge on its own row above a stacked
+  // label/value/trend, no sparkline -- denser, for rows of many equal-weight cards
+  // (Candidates dashboard) where a sparkline per card would take too much vertical space.
+  variant?: "default" | "compact";
 }
 
 type SparklineDatum = { month: string; value: number | null };
@@ -142,10 +147,15 @@ function TrendIndicator({
   trend,
   higherIsBetter = true,
   isApproximate,
+  dense = false,
 }: {
   trend: StatTrend;
   higherIsBetter?: boolean;
   isApproximate?: boolean;
+  // Single line ("↑ 4.2% vs July 2026") for the compact card layout, instead of the
+  // default two-line form (arrow+pct on its own line, "vs <month>" below it) used
+  // alongside the sparkline in the non-compact card.
+  dense?: boolean;
 }) {
   const { pct_change: pctChange, compare_month: compareMonth, compare_value: compareValue } = trend;
   const compareLabel = formatMonthKey(compareMonth);
@@ -179,13 +189,29 @@ function TrendIndicator({
   // equal -- see the displayPct == null branch above for "nothing to compare at all").
   // Still worth a neutral marker, not just bare "0%", so every card reads consistently.
   const ArrowIcon = direction === "down" ? ArrowDownwardIcon : direction === "up" ? ArrowUpwardIcon : TrendingFlatIcon;
+  const pctLabel = isZeroBaselineGrowth ? "+100%" : `${Math.abs(displayPct)}%`;
+
+  if (dense) {
+    return (
+      <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap">
+        <ArrowIcon sx={{ fontSize: 14, color: tone }} />
+        <Typography variant="caption" fontWeight="bold" sx={{ color: tone }}>
+          {pctLabel}
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          vs {compareLabel}
+        </Typography>
+        {isApproximate && <ApproximateBadge />}
+      </Stack>
+    );
+  }
 
   return (
     <Box>
       <Stack direction="row" spacing={0.5} alignItems="center">
         <ArrowIcon sx={{ fontSize: 14, color: tone }} />
         <Typography variant="caption" fontWeight="bold" sx={{ color: tone }}>
-          {isZeroBaselineGrowth ? "+100%" : `${Math.abs(displayPct)}%`}
+          {pctLabel}
         </Typography>
       </Stack>
       <Stack direction="row" spacing={0.4} alignItems="center">
@@ -198,7 +224,21 @@ function TrendIndicator({
   );
 }
 
-export function StatCardSkeleton() {
+export function StatCardSkeleton({ variant = "default" }: { variant?: "default" | "compact" }) {
+  if (variant === "compact") {
+    return (
+      <Card variant="outlined" sx={{ flex: "1 1 200px" }}>
+        <CardContent>
+          <Stack direction="row" spacing={1.25} alignItems="center">
+            <Skeleton variant="rounded" width={40} height={40} sx={{ borderRadius: "10px", flexShrink: 0 }} />
+            <Skeleton variant="text" width="60%" />
+          </Stack>
+          <Skeleton variant="text" width="45%" height={36} />
+          <Skeleton variant="text" width="50%" />
+        </CardContent>
+      </Card>
+    );
+  }
   return (
     <Card variant="outlined" sx={{ flex: "1 1 220px" }}>
       <CardContent>
@@ -225,8 +265,66 @@ export default function StatCard({
   higherIsBetter,
   formatSparklineValue,
   hero = false,
+  variant = "default",
 }: Props) {
   const badgeColor = color || "primary.main";
+
+  if (variant === "compact") {
+    return (
+      <Card
+        variant="outlined"
+        sx={(theme) => ({
+          height: "100%",
+          transition: "transform 220ms ease, box-shadow 220ms ease",
+          "&:hover": {
+            transform: "translateY(-3px)",
+            boxShadow: CARD_SHADOW_HOVER[theme.palette.mode === "dark" ? "dark" : "light"],
+          },
+        })}
+      >
+        <CardContent>
+          {/* No margin below this row, by design -- matches the Jobs dashboard's default
+              variant below (label Typography directly followed by the value Typography,
+              no mb/mt between them at all). Same underlying rule in both variants: nothing
+              explicit between the label and the number, just their own zero-margin
+              Typography default. */}
+          <Stack direction="row" spacing={1.25} alignItems="center">
+            {Icon && (
+              <Box
+                sx={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: "10px",
+                  bgcolor: color ? `${color}1A` : "action.selected",
+                  color: badgeColor,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <Icon fontSize="small" />
+              </Box>
+            )}
+            <Typography variant="body2" sx={{ fontWeight: 600, color: "text.primary" }}>
+              {label}
+            </Typography>
+          </Stack>
+          {/* Indented to align under the label text rather than the icon badge above it --
+              the icon is 40px wide plus the Stack's 1.25 (10px) gap to the label. */}
+          <Typography variant="h4" sx={{ lineHeight: 1.2, fontSize: "1.75rem", fontWeight: 700, pl: Icon ? "50px" : 0 }}>
+            {value}
+          </Typography>
+          {trend && (
+            <Box mt={0.375} pl={Icon ? "50px" : 0}>
+              <TrendIndicator trend={trend} higherIsBetter={higherIsBetter} isApproximate={trend.is_approximate} dense />
+            </Box>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card
       variant="outlined"

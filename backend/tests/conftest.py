@@ -19,6 +19,7 @@ TestingSessionLocal = sessionmaker(bind=engine)
 @pytest.fixture(autouse=True)
 def _isolate_uploads(tmp_path, monkeypatch):
     monkeypatch.setattr("app.candidates.storage.UPLOAD_DIR", tmp_path / "resumes")
+    monkeypatch.setattr("app.candidates.storage.PHOTO_UPLOAD_DIR", tmp_path / "candidate-photos")
 
 
 @pytest.fixture()

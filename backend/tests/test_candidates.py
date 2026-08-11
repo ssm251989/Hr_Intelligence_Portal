@@ -2,6 +2,7 @@ import io
 import uuid
 
 from docx import Document
+from PIL import Image
 
 from app.ai_services.resume_parser import ResumeParsingError
 from app.models.application import Application
@@ -37,6 +38,22 @@ def _make_application(db_session, job, candidate, status="received", **kwargs) -
 def _make_docx_bytes(text: str) -> bytes:
     document = Document()
     document.add_paragraph(text)
+    buffer = io.BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
+def _make_image_bytes(color=(200, 50, 50)) -> bytes:
+    image = Image.new("RGB", (4, 4), color=color)
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def _make_docx_bytes_with_photo(text: str, photo_bytes: bytes) -> bytes:
+    document = Document()
+    document.add_paragraph(text)
+    document.add_picture(io.BytesIO(photo_bytes))
     buffer = io.BytesIO()
     document.save(buffer)
     return buffer.getvalue()
@@ -120,6 +137,90 @@ def test_parse_resume_updates_parsed_fields(client, db_session, monkeypatch):
     assert audit_entry.details == fake_parsed
 
 
+# --- embedded candidate photo extraction (best-effort, part of parse-resume) ---
+
+
+def test_parse_resume_extracts_embedded_photo_from_docx(client, monkeypatch):
+    fake_parsed = {
+        "full_name": "Jane Doe",
+        "email": "jane@example.com",
+        "phone": None,
+        "total_experience_years": 4.5,
+        "skills": ["Python"],
+        "education": [],
+        "work_history": [],
+    }
+    monkeypatch.setattr("app.candidates.router.parse_resume", lambda raw_text: fake_parsed)
+
+    photo_bytes = _make_image_bytes()
+    resume_bytes = _make_docx_bytes_with_photo("Jane Doe\njane@example.com", photo_bytes)
+    upload_response = client.post(
+        "/candidates/upload",
+        files={"file": ("resume.docx", resume_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+    )
+    candidate_id = upload_response.json()["id"]
+
+    response = client.post(f"/candidates/{candidate_id}/parse-resume")
+
+    assert response.status_code == 200
+    assert response.json()["photo_path"]
+
+    photo_response = client.get(f"/candidates/{candidate_id}/photo")
+    assert photo_response.status_code == 200
+    assert photo_response.content == photo_bytes
+
+
+def test_parse_resume_without_embedded_photo_leaves_photo_path_null(client, monkeypatch):
+    monkeypatch.setattr("app.candidates.router.parse_resume", lambda raw_text: {"full_name": "Jane Doe"})
+
+    resume_bytes = _make_docx_bytes("Jane Doe\njane@example.com")
+    upload_response = client.post(
+        "/candidates/upload",
+        files={"file": ("resume.docx", resume_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+    )
+    candidate_id = upload_response.json()["id"]
+
+    response = client.post(f"/candidates/{candidate_id}/parse-resume")
+
+    assert response.status_code == 200
+    assert response.json()["photo_path"] is None
+    assert client.get(f"/candidates/{candidate_id}/photo").status_code == 404
+
+
+def test_parse_resume_photo_extraction_failure_does_not_break_parsing(client, monkeypatch):
+    # Photo extraction blowing up for any reason must never take the actual resume parse
+    # down with it -- the endpoint should still succeed with the real parsed fields, just
+    # without a photo.
+    fake_parsed = {"full_name": "Jane Doe", "email": "jane@example.com"}
+    monkeypatch.setattr("app.candidates.router.parse_resume", lambda raw_text: fake_parsed)
+    monkeypatch.setattr(
+        "app.candidates.router.extract_photo",
+        lambda file_bytes, filename: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+
+    resume_bytes = _make_docx_bytes("Jane Doe\njane@example.com")
+    upload_response = client.post(
+        "/candidates/upload",
+        files={"file": ("resume.docx", resume_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+    )
+    candidate_id = upload_response.json()["id"]
+
+    response = client.post(f"/candidates/{candidate_id}/parse-resume")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["parsed_fields"] == fake_parsed
+    assert body["photo_path"] is None
+
+
+def test_download_photo_not_found_returns_404(client, db_session):
+    candidate = _make_candidate(db_session, full_name="No Photo")
+
+    response = client.get(f"/candidates/{candidate.id}/photo")
+
+    assert response.status_code == 404
+
+
 def test_parse_resume_ai_failure_returns_502(client, monkeypatch):
     def fake_parse_resume(raw_text):
         raise ResumeParsingError("Failed to parse resume: AI service timed out")
@@ -173,6 +274,71 @@ def test_candidate_read_includes_location_defaulting_to_null(client, db_session)
     body = response.json()
     assert body["location"] is None
     assert body["source"] == "manual"
+
+
+# --- inferred_gender (fallback-avatar hint, computed from full_name on every read) ---
+
+
+def test_get_candidate_inferred_gender_for_confident_names(client, db_session):
+    male_candidate = _make_candidate(db_session, full_name="John Smith")
+    female_candidate = _make_candidate(db_session, full_name="Priya Sharma")
+
+    male_body = client.get(f"/candidates/{male_candidate.id}").json()
+    female_body = client.get(f"/candidates/{female_candidate.id}").json()
+
+    assert male_body["inferred_gender"] == "male"
+    assert female_body["inferred_gender"] == "female"
+
+
+def test_get_candidate_inferred_gender_null_for_unknown_name(client, db_session):
+    candidate = _make_candidate(db_session, full_name="Xyzabcqqq Nobody")
+
+    response = client.get(f"/candidates/{candidate.id}")
+
+    assert response.status_code == 200
+    assert response.json()["inferred_gender"] is None
+
+
+def test_get_candidate_inferred_gender_null_when_no_name_yet(client):
+    # Freshly uploaded, not yet parsed -- full_name is null, so there's nothing to infer
+    # from; must not error, just report null same as any other unset field.
+    resume_bytes = _make_docx_bytes("no name yet")
+    response = client.post(
+        "/candidates/upload",
+        files={"file": ("resume.docx", resume_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["inferred_gender"] is None
+
+
+def test_parse_resume_response_includes_inferred_gender(client, monkeypatch):
+    monkeypatch.setattr(
+        "app.candidates.router.parse_resume", lambda raw_text: {"full_name": "Priya Sharma", "email": "priya@example.com"}
+    )
+
+    resume_bytes = _make_docx_bytes("Priya Sharma")
+    upload_response = client.post(
+        "/candidates/upload",
+        files={"file": ("resume.docx", resume_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+    )
+    candidate_id = upload_response.json()["id"]
+
+    response = client.post(f"/candidates/{candidate_id}/parse-resume")
+
+    assert response.status_code == 200
+    assert response.json()["inferred_gender"] == "female"
+
+
+def test_list_candidate_applications_includes_inferred_gender(client, db_session):
+    job = _make_job(db_session, title="Inferred Gender Job")
+    candidate = _make_candidate(db_session, full_name="John Smith", email="john.gender@example.com")
+    _make_application(db_session, job, candidate)
+
+    response = client.get("/candidates/applications", params={"search": "john.gender@example.com", "page_size": 50})
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["inferred_gender"] == "male"
 
 
 # --- GET /candidates/applications (Candidates List page data source) ---
@@ -236,101 +402,212 @@ def test_list_candidate_applications_pagination(client, db_session):
     )
 
 
-# --- POST /candidates/import-csv ---
+# --- GET /candidates/applications/export -- unpaginated, for the List page's Export button ---
 
 
-def test_import_csv_creates_real_candidates(client):
-    csv_bytes = (
-        b"name,email,phone,resume\n"
-        b"Alice Import,alice.import@example.com,1234567890,https://example.com/alice.pdf\n"
-        b"Bob Import,bob.import@example.com,,\n"
+def test_list_candidate_applications_page_size_over_200_is_rejected(client, db_session):
+    # Confirms the paginated endpoint's cap is unchanged -- export must go through the
+    # dedicated endpoint below, not a raised page_size limit on this one.
+    job = _make_job(db_session, title="Cap Unchanged Job")
+    response = client.get("/candidates/applications", params={"job_role_id": str(job.id), "page_size": 1000})
+    assert response.status_code == 422
+
+
+def test_export_large_result_set_bypasses_the_200_page_size_cap(client, db_session):
+    # This is the actual bug report: exporting more than 200 matching rows used to 422
+    # because the List page's Export button called the paginated endpoint above with
+    # page_size=1000. The dedicated export endpoint has no page_size at all.
+    job = _make_job(db_session, title="Export Bulk Job")
+    candidates = [Candidate(full_name=f"Bulk Candidate {i}") for i in range(250)]
+    db_session.add_all(candidates)
+    db_session.commit()
+    applications = [Application(job_role_id=job.id, candidate_id=c.id, status="received") for c in candidates]
+    db_session.add_all(applications)
+    db_session.commit()
+
+    response = client.get("/candidates/applications/export", params={"job_role_id": str(job.id)})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 250
+
+
+def test_export_respects_filters_when_no_application_ids_given(client, db_session):
+    job = _make_job(db_session, title="Export Filter Job")
+    matching = _make_candidate(db_session, full_name="Matches Filter", source="career_portal")
+    non_matching = _make_candidate(db_session, full_name="Does Not Match", source="manual")
+    matching_app = _make_application(db_session, job, matching)
+    _make_application(db_session, job, non_matching)
+
+    response = client.get(
+        "/candidates/applications/export", params={"job_role_id": str(job.id), "source": "career_portal"}
     )
 
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["application_id"] == str(matching_app.id)
+
+
+def test_export_by_application_ids_ignores_filters_and_returns_only_those_rows(client, db_session):
+    # Row-selection export (checkboxes checked on the List page): application_ids must
+    # take priority over every other filter, not be ANDed with them -- a selected row
+    # should always export even if it no longer matches whatever filter happens to be
+    # active on the page.
+    job = _make_job(db_session, title="Selective Export Job")
+    selected_candidate = _make_candidate(db_session, full_name="Selected Cand")
+    other_candidate = _make_candidate(db_session, full_name="Unselected Cand")
+    selected_app = _make_application(db_session, job, selected_candidate, status="received")
+    _make_application(db_session, job, other_candidate, status="screened")
+
+    response = client.get(
+        "/candidates/applications/export",
+        params={"application_ids": [str(selected_app.id)], "status": "screened"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["application_id"] == str(selected_app.id)
+
+
+def test_export_by_application_ids_not_found_returns_empty_list(client):
+    response = client.get("/candidates/applications/export", params={"application_ids": [str(uuid.uuid4())]})
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+# --- GET /candidates/applications -- new range/date filters ---
+
+
+def test_list_candidate_applications_filters_by_experience_range(client, db_session):
+    job = _make_job(db_session, title="Experience Filter Job")
+    junior = _make_candidate(db_session, full_name="Junior Cand", parsed_fields={"total_experience_years": 1})
+    senior = _make_candidate(db_session, full_name="Senior Cand", parsed_fields={"total_experience_years": 8})
+    junior_app = _make_application(db_session, job, junior)
+    senior_app = _make_application(db_session, job, senior)
+
+    response = client.get(
+        "/candidates/applications",
+        params={"job_role_id": str(job.id), "experience_min": 5, "page_size": 50},
+    )
+
+    ids = {row["application_id"] for row in response.json()["items"]}
+    assert str(senior_app.id) in ids
+    assert str(junior_app.id) not in ids
+
+
+def test_list_candidate_applications_filters_by_match_score_range(client, db_session):
+    job = _make_job(db_session, title="Match Score Filter Job")
+    candidate = _make_candidate(db_session)
+    low = _make_application(db_session, job, candidate, status="screened", match_score=30)
+    high = _make_application(db_session, job, candidate, status="screened", match_score=90)
+
+    response = client.get(
+        "/candidates/applications",
+        params={"job_role_id": str(job.id), "match_score_min": 60, "match_score_max": 100, "page_size": 50},
+    )
+
+    ids = {row["application_id"] for row in response.json()["items"]}
+    assert str(high.id) in ids
+    assert str(low.id) not in ids
+
+
+def test_list_candidate_applications_filters_by_applied_date_range(client, db_session):
+    from datetime import datetime, timezone
+
+    job = _make_job(db_session, title="Applied Date Filter Job")
+    candidate = _make_candidate(db_session)
+    old_app = _make_application(db_session, job, candidate, created_at=datetime(2020, 1, 1, tzinfo=timezone.utc))
+    recent_app = _make_application(db_session, job, candidate, created_at=datetime(2026, 1, 1, tzinfo=timezone.utc))
+
+    response = client.get(
+        "/candidates/applications",
+        params={"job_role_id": str(job.id), "applied_after": "2025-01-01", "page_size": 50},
+    )
+
+    ids = {row["application_id"] for row in response.json()["items"]}
+    assert str(recent_app.id) in ids
+    assert str(old_app.id) not in ids
+
+
+# --- PATCH /candidates/{id} -- edit basic contact info ---
+
+
+def test_update_candidate_contact_info(client, db_session):
+    candidate = _make_candidate(db_session, full_name="Old Name", email="old@example.com", phone="000")
+
+    response = client.patch(
+        f"/candidates/{candidate.id}",
+        json={"full_name": "New Name", "email": "new@example.com", "phone": "111"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["full_name"] == "New Name"
+    assert body["email"] == "new@example.com"
+    assert body["phone"] == "111"
+
+
+def test_update_candidate_contact_info_partial_update(client, db_session):
+    candidate = _make_candidate(db_session, full_name="Keep Name", email="keep@example.com", phone="222")
+
+    response = client.patch(f"/candidates/{candidate.id}", json={"phone": "333"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["full_name"] == "Keep Name"
+    assert body["email"] == "keep@example.com"
+    assert body["phone"] == "333"
+
+
+def test_update_candidate_not_found(client):
+    response = client.patch(f"/candidates/{uuid.uuid4()}", json={"full_name": "Nobody"})
+    assert response.status_code == 404
+
+
+# --- POST /candidates/upload -- source override (Import from Local) ---
+#
+# The Import wizard's "Import from Local" step doesn't have its own bulk backend
+# endpoint -- it loops over this same single-file upload endpoint once per selected
+# file, exactly like the single-candidate "Upload Resume" flow, just tagged with a
+# different source so those candidates are distinguishable/filterable afterward (see
+# app/candidates/router.py upload_resume). That's what's tested here; the actual
+# multi-file looping/progress/partial-failure behavior lives in the frontend wizard
+# (see frontend/src/components/ImportCandidatesWizard.test.tsx).
+
+
+def test_upload_resume_with_local_import_source(client):
+    resume_bytes = _make_docx_bytes("Local Import Cand")
     response = client.post(
-        "/candidates/import-csv", files={"file": ("candidates.csv", csv_bytes, "text/csv")}
+        "/candidates/upload",
+        data={"source": "local_import"},
+        files={"file": ("resume.docx", resume_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
     )
 
     assert response.status_code == 201
-    body = response.json()
-    assert body["imported"] == 2
-    assert body["skipped"] == 0
-    assert len(body["imported_candidate_ids"]) == 2
-
-    alice = client.get(f"/candidates/{body['imported_candidate_ids'][0]}").json()
-    assert alice["source"] == "csv_import"
+    assert response.json()["source"] == "local_import"
 
 
-def test_import_csv_stores_http_resume_link_but_ignores_bare_filename(client):
-    csv_bytes = (
-        b"name,email,resume\n"
-        b"Has Link,haslink@example.com,https://example.com/resume.pdf\n"
-        b"No Link,nolink@example.com,resume.pdf\n"
-    )
-
-    response = client.post("/candidates/import-csv", files={"file": ("c.csv", csv_bytes, "text/csv")})
-    ids = response.json()["imported_candidate_ids"]
-
-    candidates = {c["email"]: c for c in [client.get(f"/candidates/{i}").json() for i in ids]}
-    assert candidates["haslink@example.com"]["resume_path"] == "https://example.com/resume.pdf"
-    assert candidates["nolink@example.com"]["resume_path"] is None
-
-
-def test_import_csv_skips_rows_missing_name_or_email(client):
-    csv_bytes = b"name,email\nOnly Name,\n,onlyemail@example.com\nComplete Row,complete@example.com\n"
-
-    response = client.post("/candidates/import-csv", files={"file": ("c.csv", csv_bytes, "text/csv")})
-
-    body = response.json()
-    assert body["imported"] == 1
-    assert body["skipped"] == 2
-    assert all("Missing required" in err["reason"] for err in body["errors"])
-
-
-def test_import_csv_skips_invalid_email(client):
-    csv_bytes = b"name,email\nBad Email,not-an-email\n"
-
-    response = client.post("/candidates/import-csv", files={"file": ("c.csv", csv_bytes, "text/csv")})
-
-    body = response.json()
-    assert body["imported"] == 0
-    assert body["skipped"] == 1
-    assert "Invalid email" in body["errors"][0]["reason"]
-
-
-def test_import_csv_skips_duplicate_email_within_file_and_against_existing(client, db_session):
-    _make_candidate(db_session, full_name="Existing", email="existing@example.com")
-
-    csv_bytes = (
-        b"name,email\n"
-        b"Dup One,dup@example.com\n"
-        b"Dup Two,dup@example.com\n"
-        b"Already Exists,existing@example.com\n"
-    )
-
-    response = client.post("/candidates/import-csv", files={"file": ("c.csv", csv_bytes, "text/csv")})
-
-    body = response.json()
-    assert body["imported"] == 1
-    assert body["skipped"] == 2
-    reasons = " ".join(err["reason"] for err in body["errors"])
-    assert "Duplicate email in this file" in reasons
-    assert "already exists" in reasons
-
-
-def test_import_csv_rejects_non_csv_file(client):
+def test_upload_resume_defaults_to_manual_source(client):
+    resume_bytes = _make_docx_bytes("Default Source Cand")
     response = client.post(
-        "/candidates/import-csv", files={"file": ("candidates.txt", b"name,email\nA,a@example.com\n", "text/plain")}
+        "/candidates/upload",
+        files={"file": ("resume.docx", resume_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
     )
+
+    assert response.status_code == 201
+    assert response.json()["source"] == "manual"
+
+
+def test_upload_resume_rejects_arbitrary_source(client):
+    # Only "manual"/"local_import" are legitimate for this endpoint -- accepting anything
+    # a caller sends (e.g. "career_portal") would let this endpoint spoof a source it
+    # doesn't actually represent.
+    resume_bytes = _make_docx_bytes("Spoofed Source Cand")
+    response = client.post(
+        "/candidates/upload",
+        data={"source": "career_portal"},
+        files={"file": ("resume.docx", resume_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+    )
+
     assert response.status_code == 400
-
-
-def test_import_csv_matches_header_aliases_case_insensitively(client):
-    csv_bytes = b"Full Name,Email Address,Mobile\nAlias Cand,alias@example.com,999\n"
-
-    response = client.post("/candidates/import-csv", files={"file": ("c.csv", csv_bytes, "text/csv")})
-
-    body = response.json()
-    assert body["imported"] == 1
-    candidate = client.get(f"/candidates/{body['imported_candidate_ids'][0]}").json()
-    assert candidate["full_name"] == "Alias Cand"
-    assert candidate["phone"] == "999"

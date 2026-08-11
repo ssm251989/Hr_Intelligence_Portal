@@ -23,6 +23,9 @@ class ApplicationRead(BaseModel):
     ranking_score: Optional[float] = None
     ranking_rationale: Optional[str] = None
     status: str
+    # Only meaningful while status == 'on_hold' (see app/candidates/hold.py) -- the status
+    # to restore on resume. Null otherwise.
+    previous_status: Optional[str] = None
     expected_salary: Optional[float] = None
     approved_salary: Optional[float] = None
     created_at: datetime
