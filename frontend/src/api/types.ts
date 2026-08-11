@@ -201,6 +201,7 @@ export interface ParsedResumeFields {
   skills: string[];
   education: EducationItem[];
   work_history: WorkHistoryItem[];
+  certificates: string[];
 }
 
 // ---- applications ----

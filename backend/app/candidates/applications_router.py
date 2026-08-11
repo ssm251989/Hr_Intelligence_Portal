@@ -25,6 +25,7 @@ from app.schemas.candidates_dashboard import (
     CandidateMessageResponse,
     OtherApplicationItem,
 )
+from app.screening.service import attempt_auto_screen
 
 router = APIRouter(prefix="/applications", tags=["applications"])
 
@@ -61,6 +62,13 @@ def create_application(
 
     log_action(db, "application", application.id, "application_created", "system", {"status": application.status})
     notify_job_owner_of_new_application(db, job, candidate)
+
+    # Automatic screening (Part A): covers manual-upload and local-import candidates,
+    # whose resume is typically already parsed by the time a job gets linked here (the
+    # career-portal path instead becomes screenable when parsing completes afterward --
+    # see candidates/router.py parse_and_apply_resume's own call to this same helper).
+    attempt_auto_screen(db, application)
+
     return application
 
 

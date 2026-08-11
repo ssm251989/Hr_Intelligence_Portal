@@ -25,6 +25,7 @@ from app.models.job_role import JobRole
 from app.models.user import User
 from app.schemas.candidate import CandidateRead, CandidateUpdate
 from app.schemas.candidates_dashboard import CandidateApplicationRow, CandidatesListPage
+from app.screening.service import attempt_auto_screen
 
 router = APIRouter(prefix="/candidates", tags=["candidates"])
 
@@ -95,6 +96,16 @@ def parse_and_apply_resume(db: Session, candidate: Candidate) -> dict:
 
     db.commit()
     db.refresh(candidate)
+
+    # Automatic screening (Part A): covers the career-portal path (application created
+    # before the resume is parsed in the background) and a manual re-parse of a candidate
+    # who already has a 'received' application -- both only become screenable once parsing
+    # completes, which just happened. The manual-upload/local-import path instead becomes
+    # screenable when a job gets linked afterward (see applications_router.py
+    # create_application's own call to this same best-effort helper).
+    for application in db.query(Application).filter(Application.candidate_id == candidate.id).all():
+        attempt_auto_screen(db, application)
+
     return result
 
 

@@ -37,6 +37,12 @@ class Application(Base):
     match_score = Column(Numeric)
     skill_match_pct = Column(Numeric)
     missing_skills = Column(JSONB)
+    # Equal-weighted average of skills/experience/location/certificates/match_score (see
+    # app/screening/service.py) -- the other four sub-scores are deliberately NOT their own
+    # columns here, only this final number is. The full breakdown lives in the audit_log
+    # entry logged alongside it (action="ai_screening_scored"), which is what the
+    # Candidates List's Remarks column reads from rather than a separately maintained field.
+    composite_score = Column(Numeric)
     ranking_score = Column(Numeric)
     ranking_rationale = Column(Text)
     status = Column(Text, server_default=text("'received'"))

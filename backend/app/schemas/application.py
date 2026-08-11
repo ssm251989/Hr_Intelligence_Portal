@@ -20,6 +20,7 @@ class ApplicationRead(BaseModel):
     match_score: Optional[float] = None
     skill_match_pct: Optional[float] = None
     missing_skills: Optional[list] = None
+    composite_score: Optional[float] = None
     ranking_score: Optional[float] = None
     ranking_rationale: Optional[str] = None
     status: str

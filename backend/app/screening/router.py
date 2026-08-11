@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.ai_services.candidate_ranker import CandidateRankingError, rank_candidate
-from app.ai_services.resume_matcher import ResumeMatchError, match_resume
+from app.ai_services.resume_matcher import ResumeMatchError
 from app.audit.service import log_action
 from app.auth.dependencies import require_roles
 from app.candidates.hold import assert_application_not_on_hold
@@ -15,6 +15,7 @@ from app.models.interview import Interview
 from app.models.job_role import JobRole
 from app.models.user import User
 from app.schemas.application import ApplicationRead
+from app.screening.service import run_screening
 
 router = APIRouter(prefix="/applications", tags=["screening"])
 
@@ -58,18 +59,9 @@ def screen_application(
         raise HTTPException(status_code=400, detail="Candidate resume not yet parsed")
 
     try:
-        result = match_resume(job.jd_text, candidate.parsed_fields)
+        return run_screening(db, application, job, candidate, current_user.email)
     except ResumeMatchError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-    log_action(db, "application", application.id, "ai_resume_matcher_scored", "system", result)
-    application.match_score = result["match_score"]
-    application.skill_match_pct = result["skill_match_pct"]
-    application.missing_skills = result["missing_skills"]
-    application.status = "screened"
-    db.commit()
-    db.refresh(application)
-    return application
 
 
 @router.post("/{application_id}/rank", response_model=ApplicationRead)

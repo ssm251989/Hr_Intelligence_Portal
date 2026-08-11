@@ -47,6 +47,7 @@ const PARSED_CANDIDATE: CandidateRead = {
     skills: [],
     education: [],
     work_history: [],
+    certificates: [],
   },
 };
 

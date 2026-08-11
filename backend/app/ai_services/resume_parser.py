@@ -10,7 +10,10 @@ MODEL = "claude-haiku-4-5"
 
 SYSTEM_PROMPT = (
     "You extract structured fields from a raw resume. If a field is not present "
-    "in the resume, use null. Do not fabricate values."
+    "in the resume, use null. Do not fabricate values. certificates is any named "
+    "professional certification, license, or credential the candidate holds (e.g. "
+    "'AWS Certified Solutions Architect', 'PMP', 'CPA') -- not degrees (those belong in "
+    "education) and not just skills or tools listed without an actual certification name."
 )
 
 _client: Anthropic | None = None
@@ -41,6 +44,7 @@ class ResumeParserOutput(BaseModel):
     skills: list[str] = []
     education: list[EducationItem] = []
     work_history: list[WorkHistoryItem] = []
+    certificates: list[str] = []
 
 
 def _get_client() -> Anthropic:

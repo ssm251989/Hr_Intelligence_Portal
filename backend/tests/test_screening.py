@@ -8,33 +8,40 @@ from app.models.candidate import Candidate
 from app.models.job_role import JobRole
 
 
-def _make_job(db_session, jd_text=None) -> JobRole:
-    job = JobRole(title="Backend Engineer", jd_text=jd_text)
+def _make_job(db_session, jd_text=None, **kwargs) -> JobRole:
+    job = JobRole(title="Backend Engineer", jd_text=jd_text, **kwargs)
     db_session.add(job)
     db_session.commit()
     db_session.refresh(job)
     return job
 
 
-def _make_candidate(db_session, parsed_fields=None) -> Candidate:
-    candidate = Candidate(full_name="Jane Doe", parsed_fields=parsed_fields)
+def _make_candidate(db_session, parsed_fields=None, **kwargs) -> Candidate:
+    candidate = Candidate(full_name="Jane Doe", parsed_fields=parsed_fields, **kwargs)
     db_session.add(candidate)
     db_session.commit()
     db_session.refresh(candidate)
     return candidate
 
 
-def _make_application(db_session, job, candidate, match_score=None) -> Application:
-    application = Application(job_role_id=job.id, candidate_id=candidate.id, match_score=match_score)
+def _make_application(db_session, job, candidate, match_score=None, **kwargs) -> Application:
+    application = Application(job_role_id=job.id, candidate_id=candidate.id, match_score=match_score, **kwargs)
     db_session.add(application)
     db_session.commit()
     db_session.refresh(application)
     return application
 
 
+# skill_match_pct=65, experience_score=70, location_score=100, certificates_score=100,
+# match_score=78 -> composite = (65+70+100+100+78)/5 = 82.6, comfortably above the default
+# dashboard_min_score=60 seeded by migration e1f3a7c9b2d4, so screening these fixtures
+# always auto-advances to 'screened' unless a test overrides a field to test otherwise.
 FAKE_MATCH_RESULT = {
     "match_score": 78,
     "skill_match_pct": 65,
+    "experience_score": 70,
+    "location_score": 100,
+    "certificates_score": 100,
     "missing_skills": ["Kubernetes"],
     "recommendation": "possible_fit",
 }
@@ -49,7 +56,12 @@ FAKE_RANKING_RESULT = {
 
 
 def test_screen_application_success(client, db_session, monkeypatch):
-    monkeypatch.setattr("app.screening.router.match_resume", lambda jd_text, parsed_fields: FAKE_MATCH_RESULT)
+    # The call now happens inside app.screening.service.run_screening, not the router
+    # directly -- see app/screening/service.py.
+    monkeypatch.setattr(
+        "app.screening.service.match_resume",
+        lambda jd_text, parsed_fields, candidate_location, job_location: FAKE_MATCH_RESULT,
+    )
 
     job = _make_job(db_session, jd_text="We need a backend engineer skilled in Python and FastAPI.")
     candidate = _make_candidate(db_session, parsed_fields={"skills": ["Python", "FastAPI"]})
@@ -62,15 +74,24 @@ def test_screen_application_success(client, db_session, monkeypatch):
     assert body["match_score"] == 78
     assert body["skill_match_pct"] == 65
     assert body["missing_skills"] == ["Kubernetes"]
+    assert body["composite_score"] == 82.6
     assert body["status"] == "screened"
 
     audit_entry = (
         db_session.query(AuditLog)
-        .filter(AuditLog.entity_id == application.id, AuditLog.action == "ai_resume_matcher_scored")
+        .filter(AuditLog.entity_id == application.id, AuditLog.action == "ai_screening_scored")
         .one_or_none()
     )
     assert audit_entry is not None
-    assert audit_entry.details == FAKE_MATCH_RESULT
+    assert audit_entry.details["skills_score"] == 65
+    assert audit_entry.details["experience_score"] == 70
+    assert audit_entry.details["location_score"] == 100
+    assert audit_entry.details["certificates_score"] == 100
+    assert audit_entry.details["resume_matcher_score"] == 78
+    assert audit_entry.details["composite_score"] == 82.6
+    assert audit_entry.details["advanced"] is True
+    assert audit_entry.details["previous_status"] == "received"
+    assert audit_entry.details["new_status"] == "screened"
 
 
 def test_screen_application_without_jd_returns_400(client, db_session):
@@ -94,10 +115,10 @@ def test_screen_application_without_parsed_resume_returns_400(client, db_session
 
 
 def test_screen_application_ai_failure_returns_502(client, db_session, monkeypatch):
-    def fake_match_resume(jd_text, parsed_fields):
+    def fake_match_resume(jd_text, parsed_fields, candidate_location, job_location):
         raise ResumeMatchError("Failed to match resume against job description: AI service timed out")
 
-    monkeypatch.setattr("app.screening.router.match_resume", fake_match_resume)
+    monkeypatch.setattr("app.screening.service.match_resume", fake_match_resume)
 
     job = _make_job(db_session, jd_text="We need a backend engineer skilled in Python and FastAPI.")
     candidate = _make_candidate(db_session, parsed_fields={"skills": ["Python", "FastAPI"]})
@@ -106,6 +127,21 @@ def test_screen_application_ai_failure_returns_502(client, db_session, monkeypat
     response = client.post(f"/applications/{application.id}/screen")
 
     assert response.status_code == 502
+
+    # Safeguard: an AI failure must never silently leave a guessed score behind -- the
+    # application stays completely untouched, still 'received'.
+    db_session.refresh(application)
+    assert application.status == "received"
+    assert application.composite_score is None
+    assert application.match_score is None
+
+    audit_entry = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.entity_id == application.id, AuditLog.action == "ai_screening_failed")
+        .one_or_none()
+    )
+    assert audit_entry is not None
+    assert "AI service timed out" in audit_entry.details["error"]
 
 
 def test_screen_application_not_found_returns_404(client):
