@@ -7,7 +7,7 @@ from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
-from app.candidates.router import SuitableJob, row_to_item
+from app.candidates.router import ScreeningAuditEntry, SuitableJob, _latest_screening_audit_id, row_to_item
 from app.core.database import get_db
 from app.jobs.service import close_job_if_deadline_passed
 from app.models.application import APPLICATION_STATUSES, Application
@@ -484,10 +484,14 @@ def get_candidates_dashboard_stats(
     data_sources = _candidate_data_sources(db)
 
     recent_rows = (
-        db.query(Application, Candidate, JobRole.title, SuitableJob.title)
+        db.query(
+            Application, Candidate, JobRole.title, SuitableJob.title,
+            ScreeningAuditEntry.action, ScreeningAuditEntry.details,
+        )
         .join(Candidate, Candidate.id == Application.candidate_id)
         .join(JobRole, JobRole.id == Application.job_role_id)
         .outerjoin(SuitableJob, SuitableJob.id == Candidate.suitable_job_id)
+        .outerjoin(ScreeningAuditEntry, ScreeningAuditEntry.id == _latest_screening_audit_id(db))
         .order_by(Application.created_at.desc())
         .limit(8)
         .all()
@@ -512,7 +516,8 @@ def get_candidates_dashboard_stats(
         ],
         data_sources=data_sources,
         recent_candidates=[
-            row_to_item(app, cand, title, suitable_title) for app, cand, title, suitable_title in recent_rows
+            row_to_item(app, cand, title, suitable_title, screening_action, screening_details)
+            for app, cand, title, suitable_title, screening_action, screening_details in recent_rows
         ],
     )
 

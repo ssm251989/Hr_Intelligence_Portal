@@ -281,6 +281,11 @@ export interface CandidateApplicationRow {
   resume_path?: string | null;
   photo_path?: string | null;
   inferred_gender?: InferredGender;
+  // A rendering of this application's own latest ai_screening_scored/ai_screening_failed
+  // audit_log entry (see backend app/screening/service.py describe_screening_audit_entry)
+  // -- never a separately maintained string. Null until the application has ever been
+  // screened.
+  remarks?: string | null;
 }
 
 export interface CandidatesListPage {

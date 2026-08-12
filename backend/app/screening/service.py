@@ -26,6 +26,38 @@ from app.models.screening_settings import ScreeningSettings
 
 FACTOR_COUNT = 5
 
+# The two actions run_screening ever logs (see run_screening below) -- the complete set of
+# audit_log rows the Candidates List's Remarks column (Part C) needs to look at. Any other
+# action on an application (shortlisting, salary, BGV, offers, ranking, ...) is out of
+# scope for Remarks, which is specifically "what did screening conclude about this
+# application," not a general activity feed.
+SCREENING_REMARKS_ACTIONS = ("ai_screening_scored", "ai_screening_failed")
+
+_RECOMMENDATION_LABELS = {
+    "strong_fit": "Strong fit",
+    "possible_fit": "Possible fit",
+    "weak_fit": "Weak fit",
+}
+
+
+def describe_screening_audit_entry(action: str, details: dict) -> str:
+    """Turns one ai_screening_scored/ai_screening_failed audit_log entry -- the exact
+    breakdown run_screening already writes below -- into the Candidates List's
+    human-readable Remarks text. Pure function, no AI/DB access: Remarks is only ever a
+    different rendering of that same audit trail, never a separately maintained string
+    that could drift out of sync with what screening actually concluded.
+    """
+    if action == "ai_screening_failed":
+        return f"AI screening failed: {details.get('error') or 'unknown error'}"
+
+    recommendation = _RECOMMENDATION_LABELS.get(details.get("recommendation"), "Screened")
+    composite = details.get("composite_score")
+    score_text = f" (score {round(composite)})" if composite is not None else ""
+    missing_skills = details.get("missing_skills") or []
+    if missing_skills:
+        return f"{recommendation}{score_text} -- missing {', '.join(missing_skills)}"
+    return f"{recommendation}{score_text}"
+
 
 def get_screening_settings(db: Session) -> ScreeningSettings:
     """The singleton settings row (id=1), seeded by migration e1f3a7c9b2d4. Defensively

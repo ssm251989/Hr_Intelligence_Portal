@@ -20,12 +20,13 @@ from app.candidates.resume_extraction import (
 from app.candidates.storage import resolve_photo_path, resolve_resume_path, save_photo_file, save_resume_file
 from app.core.database import get_db
 from app.models.application import Application
+from app.models.audit_log import AuditLog
 from app.models.candidate import Candidate
 from app.models.job_role import JobRole
 from app.models.user import User
 from app.schemas.candidate import CandidateRead, CandidateUpdate
 from app.schemas.candidates_dashboard import CandidateApplicationRow, CandidatesListPage
-from app.screening.service import attempt_auto_screen
+from app.screening.service import SCREENING_REMARKS_ACTIONS, attempt_auto_screen, describe_screening_audit_entry
 from app.screening.suitability import attempt_auto_suggest_suitable_job
 
 router = APIRouter(prefix="/candidates", tags=["candidates"])
@@ -41,6 +42,32 @@ UPLOAD_SOURCES = {"manual", "local_import"}
 # Aliased so a query can join job_roles twice -- once for the application's actual job
 # (JobRole), once for the candidate's suggested "Suitable For" job (SuitableJob).
 SuitableJob = aliased(JobRole)
+
+# Aliased so a query can join audit_log once for "whichever screening entry is latest for
+# this application" -- see _latest_screening_audit_id below.
+ScreeningAuditEntry = aliased(AuditLog)
+
+
+def _latest_screening_audit_id(db: Session):
+    """A correlated scalar subquery -- for each Application row in the outer query, the id
+    of its own most recent ai_screening_scored/ai_screening_failed audit_log entry (or NULL
+    if it's never been screened). Joining AuditLog on this id (see ScreeningAuditEntry
+    below) gets every row its Remarks text in one query, rather than one extra query per
+    row -- the export endpoint in particular can return every application system-wide in a
+    single call, so an N+1 lookup here would scale badly.
+    """
+    return (
+        db.query(AuditLog.id)
+        .filter(
+            AuditLog.entity_type == "application",
+            AuditLog.entity_id == Application.id,
+            AuditLog.action.in_(SCREENING_REMARKS_ACTIONS),
+        )
+        .order_by(AuditLog.created_at.desc())
+        .limit(1)
+        .correlate(Application)
+        .scalar_subquery()
+    )
 
 
 class NoResumeUploadedError(Exception):
@@ -162,6 +189,8 @@ def row_to_item(
     candidate: Candidate,
     job_title: str,
     suitable_job_title: Optional[str] = None,
+    screening_action: Optional[str] = None,
+    screening_details: Optional[dict] = None,
 ) -> CandidateApplicationRow:
     """Shared by GET /candidates/applications (Candidates List page) and the reports
     dashboard's recent_candidates (Recent Candidates table) -- previously duplicated as
@@ -170,13 +199,16 @@ def row_to_item(
     picked up photo_path/inferred_gender when those fields were added here. One function,
     imported by reports/router.py, so that can't happen again.
 
-    suitable_job_title is looked up by the caller's own query (a join on candidate.
-    suitable_job_id, aliased as SuitableJob below) rather than here, since this function
-    has no db session of its own -- see _filtered_candidate_applications_query and
+    suitable_job_title/screening_action/screening_details are looked up by the caller's own
+    query (joins on SuitableJob / ScreeningAuditEntry above) rather than here, since this
+    function has no db session of its own -- see _filtered_candidate_applications_query and
     reports/router.py's recent_rows query."""
     experience_years = None
     if candidate.parsed_fields:
         experience_years = candidate.parsed_fields.get("total_experience_years")
+    # Remarks (Part C): a rendering of the application's own latest screening audit_log
+    # entry, never a separately maintained string -- None until it's ever been screened.
+    remarks = describe_screening_audit_entry(screening_action, screening_details or {}) if screening_action else None
     return CandidateApplicationRow(
         application_id=application.id,
         candidate_id=candidate.id,
@@ -196,6 +228,7 @@ def row_to_item(
         suitable_job_id=candidate.suitable_job_id,
         suitable_job_title=suitable_job_title,
         suitable_job_score=float(candidate.suitable_job_score) if candidate.suitable_job_score is not None else None,
+        remarks=remarks,
     )
 
 
@@ -219,10 +252,14 @@ def _filtered_candidate_applications_query(
     export that "matches the current filters" except for one filter someone forgot to
     port over to a second copy of this logic)."""
     query = (
-        db.query(Application, Candidate, JobRole.title, SuitableJob.title)
+        db.query(
+            Application, Candidate, JobRole.title, SuitableJob.title,
+            ScreeningAuditEntry.action, ScreeningAuditEntry.details,
+        )
         .join(Candidate, Candidate.id == Application.candidate_id)
         .join(JobRole, JobRole.id == Application.job_role_id)
         .outerjoin(SuitableJob, SuitableJob.id == Candidate.suitable_job_id)
+        .outerjoin(ScreeningAuditEntry, ScreeningAuditEntry.id == _latest_screening_audit_id(db))
     )
     if job_role_id is not None:
         query = query.filter(Application.job_role_id == job_role_id)
@@ -307,8 +344,8 @@ def list_candidate_applications(
         .all()
     )
     items = [
-        row_to_item(application, candidate, title, suitable_title)
-        for application, candidate, title, suitable_title in rows
+        row_to_item(application, candidate, title, suitable_title, screening_action, screening_details)
+        for application, candidate, title, suitable_title, screening_action, screening_details in rows
     ]
     return CandidatesListPage(total=total, page=page, page_size=page_size, items=items)
 
@@ -340,10 +377,14 @@ def export_candidate_applications(
     contracts that don't belong on one query-param-tunable endpoint."""
     if application_ids:
         query = (
-            db.query(Application, Candidate, JobRole.title, SuitableJob.title)
+            db.query(
+                Application, Candidate, JobRole.title, SuitableJob.title,
+                ScreeningAuditEntry.action, ScreeningAuditEntry.details,
+            )
             .join(Candidate, Candidate.id == Application.candidate_id)
             .join(JobRole, JobRole.id == Application.job_role_id)
             .outerjoin(SuitableJob, SuitableJob.id == Candidate.suitable_job_id)
+            .outerjoin(ScreeningAuditEntry, ScreeningAuditEntry.id == _latest_screening_audit_id(db))
             .filter(Application.id.in_(application_ids))
         )
     else:
@@ -364,8 +405,8 @@ def export_candidate_applications(
 
     rows = query.order_by(Application.created_at.desc()).all()
     return [
-        row_to_item(application, candidate, title, suitable_title)
-        for application, candidate, title, suitable_title in rows
+        row_to_item(application, candidate, title, suitable_title, screening_action, screening_details)
+        for application, candidate, title, suitable_title, screening_action, screening_details in rows
     ]
 
 

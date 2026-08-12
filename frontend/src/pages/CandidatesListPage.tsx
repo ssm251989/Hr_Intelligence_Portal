@@ -60,7 +60,7 @@ function ApplicationStatusChip({ status }: { status: string }) {
   return <Chip label={active ? "Active" : "Inactive"} size="small" color={active ? "success" : "default"} variant="outlined" />;
 }
 
-const COLUMN_COUNT = 11;
+const COLUMN_COUNT = 12;
 
 export default function CandidatesListPage() {
   const navigate = useNavigate();
@@ -156,7 +156,7 @@ export default function CandidatesListPage() {
           : await candidatesApi.exportApplications(listParams());
       downloadCsv(
         "candidates.csv",
-        ["Candidate", "Email", "Job Applied", "Status", "Source", "Applied On", "Experience (yrs)", "Match Score", "Location"],
+        ["Candidate", "Email", "Job Applied", "Status", "Source", "Applied On", "Experience (yrs)", "Match Score", "Location", "Remarks"],
         result.map((row) => [
           row.candidate_name,
           row.candidate_email,
@@ -167,6 +167,7 @@ export default function CandidatesListPage() {
           row.experience_years,
           row.match_score,
           row.location,
+          row.remarks,
         ]),
       );
     } catch (err) {
@@ -279,6 +280,7 @@ export default function CandidatesListPage() {
                 <TableCell>Match Score</TableCell>
                 <TableCell>Resume</TableCell>
                 <TableCell>Status</TableCell>
+                <TableCell>Remarks</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -323,6 +325,7 @@ export default function CandidatesListPage() {
                   <TableCell>Match Score</TableCell>
                   <TableCell>Resume</TableCell>
                   <TableCell>Status</TableCell>
+                  <TableCell>Remarks</TableCell>
                   <TableCell align="right">Actions</TableCell>
                 </TableRow>
               </TableHead>
@@ -387,6 +390,17 @@ export default function CandidatesListPage() {
                     </TableCell>
                     <TableCell>
                       <ApplicationStatusChip status={row.status} />
+                    </TableCell>
+                    <TableCell sx={{ maxWidth: 220 }}>
+                      {row.remarks ? (
+                        <Tooltip title={row.remarks}>
+                          <Typography variant="body2" noWrap>
+                            {row.remarks}
+                          </Typography>
+                        </Tooltip>
+                      ) : (
+                        "—"
+                      )}
                     </TableCell>
                     <TableCell align="right">
                       <Stack direction="row" spacing={0.5} justifyContent="flex-end">

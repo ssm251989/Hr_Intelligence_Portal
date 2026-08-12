@@ -49,6 +49,11 @@ class CandidateApplicationRow(BaseModel):
     suitable_job_id: Optional[uuid.UUID] = None
     suitable_job_title: Optional[str] = None
     suitable_job_score: Optional[float] = None
+    # Remarks (Part C) -- a rendering of this application's own latest ai_screening_scored/
+    # ai_screening_failed audit_log entry (see app/screening/service.py
+    # describe_screening_audit_entry), never a separately maintained string. Null until the
+    # application has ever been screened.
+    remarks: Optional[str] = None
 
 
 class CandidatesDashboardStatsResponse(BaseModel):
