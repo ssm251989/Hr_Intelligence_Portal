@@ -42,6 +42,13 @@ class CandidateApplicationRow(BaseModel):
     resume_path: Optional[str] = None
     photo_path: Optional[str] = None
     inferred_gender: Optional[str] = None
+    # "Suitable For" suggestion (Part B) -- the best-fitting published job this candidate
+    # was automatically compared against, independent of the job_role_id/job_title above
+    # (their actual applied-for job). All three null until a resume parse has found at
+    # least one published job to compare against -- see app/screening/suitability.py.
+    suitable_job_id: Optional[uuid.UUID] = None
+    suitable_job_title: Optional[str] = None
+    suitable_job_score: Optional[float] = None
 
 
 class CandidatesDashboardStatsResponse(BaseModel):

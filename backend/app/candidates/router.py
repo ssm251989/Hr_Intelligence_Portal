@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import Float, cast, or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.ai_services.resume_parser import ResumeParsingError, parse_resume
 from app.audit.service import log_action
@@ -26,6 +26,7 @@ from app.models.user import User
 from app.schemas.candidate import CandidateRead, CandidateUpdate
 from app.schemas.candidates_dashboard import CandidateApplicationRow, CandidatesListPage
 from app.screening.service import attempt_auto_screen
+from app.screening.suitability import attempt_auto_suggest_suitable_job
 
 router = APIRouter(prefix="/candidates", tags=["candidates"])
 
@@ -36,6 +37,10 @@ ALLOWED_EXTENSIONS = {"pdf", "docx"}
 # just tagged with the source it actually came through. Nothing else may pass its own
 # source here (e.g. spoofing "career_portal").
 UPLOAD_SOURCES = {"manual", "local_import"}
+
+# Aliased so a query can join job_roles twice -- once for the application's actual job
+# (JobRole), once for the candidate's suggested "Suitable For" job (SuitableJob).
+SuitableJob = aliased(JobRole)
 
 
 class NoResumeUploadedError(Exception):
@@ -106,6 +111,11 @@ def parse_and_apply_resume(db: Session, candidate: Candidate) -> dict:
     for application in db.query(Application).filter(Application.candidate_id == candidate.id).all():
         attempt_auto_screen(db, application)
 
+    # Suitable-For suggestion (Part B): informational only -- picks the best-fitting
+    # published job for this candidate, entirely independent of (and without ever
+    # touching) whichever job(s) they actually applied for above.
+    attempt_auto_suggest_suitable_job(db, candidate)
+
     return result
 
 
@@ -147,13 +157,23 @@ def list_candidates(db: Session = Depends(get_db), current_user: User = Depends(
     return [_with_inferred_gender(c) for c in candidates]
 
 
-def row_to_item(application: Application, candidate: Candidate, job_title: str) -> CandidateApplicationRow:
+def row_to_item(
+    application: Application,
+    candidate: Candidate,
+    job_title: str,
+    suitable_job_title: Optional[str] = None,
+) -> CandidateApplicationRow:
     """Shared by GET /candidates/applications (Candidates List page) and the reports
     dashboard's recent_candidates (Recent Candidates table) -- previously duplicated as
     two independently-maintained copies (this one, and reports/router.py's
     _candidate_application_row), which is exactly how the dashboard's copy silently never
     picked up photo_path/inferred_gender when those fields were added here. One function,
-    imported by reports/router.py, so that can't happen again."""
+    imported by reports/router.py, so that can't happen again.
+
+    suitable_job_title is looked up by the caller's own query (a join on candidate.
+    suitable_job_id, aliased as SuitableJob below) rather than here, since this function
+    has no db session of its own -- see _filtered_candidate_applications_query and
+    reports/router.py's recent_rows query."""
     experience_years = None
     if candidate.parsed_fields:
         experience_years = candidate.parsed_fields.get("total_experience_years")
@@ -173,6 +193,9 @@ def row_to_item(application: Application, candidate: Candidate, job_title: str) 
         resume_path=candidate.resume_path,
         photo_path=candidate.photo_path,
         inferred_gender=infer_gender(candidate.full_name),
+        suitable_job_id=candidate.suitable_job_id,
+        suitable_job_title=suitable_job_title,
+        suitable_job_score=float(candidate.suitable_job_score) if candidate.suitable_job_score is not None else None,
     )
 
 
@@ -196,9 +219,10 @@ def _filtered_candidate_applications_query(
     export that "matches the current filters" except for one filter someone forgot to
     port over to a second copy of this logic)."""
     query = (
-        db.query(Application, Candidate, JobRole.title)
+        db.query(Application, Candidate, JobRole.title, SuitableJob.title)
         .join(Candidate, Candidate.id == Application.candidate_id)
         .join(JobRole, JobRole.id == Application.job_role_id)
+        .outerjoin(SuitableJob, SuitableJob.id == Candidate.suitable_job_id)
     )
     if job_role_id is not None:
         query = query.filter(Application.job_role_id == job_role_id)
@@ -282,7 +306,10 @@ def list_candidate_applications(
         .limit(page_size)
         .all()
     )
-    items = [row_to_item(application, candidate, title) for application, candidate, title in rows]
+    items = [
+        row_to_item(application, candidate, title, suitable_title)
+        for application, candidate, title, suitable_title in rows
+    ]
     return CandidatesListPage(total=total, page=page, page_size=page_size, items=items)
 
 
@@ -313,9 +340,10 @@ def export_candidate_applications(
     contracts that don't belong on one query-param-tunable endpoint."""
     if application_ids:
         query = (
-            db.query(Application, Candidate, JobRole.title)
+            db.query(Application, Candidate, JobRole.title, SuitableJob.title)
             .join(Candidate, Candidate.id == Application.candidate_id)
             .join(JobRole, JobRole.id == Application.job_role_id)
+            .outerjoin(SuitableJob, SuitableJob.id == Candidate.suitable_job_id)
             .filter(Application.id.in_(application_ids))
         )
     else:
@@ -335,7 +363,10 @@ def export_candidate_applications(
         )
 
     rows = query.order_by(Application.created_at.desc()).all()
-    return [row_to_item(application, candidate, title) for application, candidate, title in rows]
+    return [
+        row_to_item(application, candidate, title, suitable_title)
+        for application, candidate, title, suitable_title in rows
+    ]
 
 
 @router.get("/{candidate_id}", response_model=CandidateRead)

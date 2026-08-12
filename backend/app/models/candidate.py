@@ -1,4 +1,4 @@
-from sqlalchemy import CheckConstraint, Column, DateTime, String, Text, text
+from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Numeric, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from app.core.database import Base
@@ -33,4 +33,11 @@ class Candidate(Base):
     photo_path = Column(Text)
     parsed_fields = Column(JSONB)
     source = Column(String(50), nullable=False, server_default=text("'manual'"))
+    # "Suitable For" suggestion (Part B) -- the best-fitting *published* job this candidate
+    # was ever automatically compared against, independent of whichever job(s) they actually
+    # applied for. Purely informational: nothing here ever changes an Application's
+    # job_role_id. Both null until app/screening/suitability.py's automatic hook (right
+    # after a resume is parsed) finds at least one published job to compare against.
+    suitable_job_id = Column(UUID(as_uuid=True), ForeignKey("job_roles.id"), nullable=True)
+    suitable_job_score = Column(Numeric, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=text("now()"))

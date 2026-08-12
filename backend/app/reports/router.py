@@ -7,7 +7,7 @@ from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
-from app.candidates.router import row_to_item
+from app.candidates.router import SuitableJob, row_to_item
 from app.core.database import get_db
 from app.jobs.service import close_job_if_deadline_passed
 from app.models.application import APPLICATION_STATUSES, Application
@@ -484,9 +484,10 @@ def get_candidates_dashboard_stats(
     data_sources = _candidate_data_sources(db)
 
     recent_rows = (
-        db.query(Application, Candidate, JobRole.title)
+        db.query(Application, Candidate, JobRole.title, SuitableJob.title)
         .join(Candidate, Candidate.id == Application.candidate_id)
         .join(JobRole, JobRole.id == Application.job_role_id)
+        .outerjoin(SuitableJob, SuitableJob.id == Candidate.suitable_job_id)
         .order_by(Application.created_at.desc())
         .limit(8)
         .all()
@@ -510,7 +511,9 @@ def get_candidates_dashboard_stats(
             LabeledCount(label=bucket, count=count) for bucket, count in stats.match_score_distribution(db)
         ],
         data_sources=data_sources,
-        recent_candidates=[row_to_item(app, cand, title) for app, cand, title in recent_rows],
+        recent_candidates=[
+            row_to_item(app, cand, title, suitable_title) for app, cand, title, suitable_title in recent_rows
+        ],
     )
 
 
