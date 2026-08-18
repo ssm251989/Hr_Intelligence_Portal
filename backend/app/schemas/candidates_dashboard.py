@@ -37,7 +37,17 @@ class CandidateApplicationRow(BaseModel):
     source: str
     location: Optional[str] = None
     applied_on: datetime
+    # Two distinct scores, deliberately both exposed rather than one silently replacing the
+    # other: match_score is the original Resume Matcher score (app/ai_services/resume_matcher
+    # .match_resume's own match_score), while composite_score is Part A's equal-weighted
+    # composite across skills/experience/location/certificates/match_score -- the same number
+    # Remarks' "Strong fit (score X)" text quotes (see app/screening/service.py
+    # describe_screening_audit_entry). The Candidates List's "Screening Score" column shows
+    # composite_score (falling back to match_score for applications screened before Part A
+    # existed, which never got a composite_score); match_score is kept as a secondary detail
+    # so the two numbers are never presented as the same thing under one column.
     match_score: Optional[float] = None
+    composite_score: Optional[float] = None
     experience_years: Optional[float] = None
     resume_path: Optional[str] = None
     photo_path: Optional[str] = None

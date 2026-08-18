@@ -183,6 +183,54 @@ def test_remarks_appear_on_export_endpoint_too(client, db_session, monkeypatch):
     assert response.json()[0]["remarks"] == "Strong fit (score 80)"
 
 
+def test_missing_skills_remain_in_remarks_alongside_the_new_composite_score_field(client, db_session, monkeypatch):
+    # Regression test for the Match Score / Remarks score-mismatch fix: the List page's
+    # Screening Score column now shows composite_score (not the raw match_score), but that
+    # must not disturb Remarks' own missing-skills rendering, which is a completely separate
+    # code path (describe_screening_audit_entry). match_score and composite_score are
+    # asserted as genuinely distinct numbers here specifically so a future change that
+    # collapses them back into one field wouldn't hide a regression in either.
+    monkeypatch.setattr("app.screening.service.match_resume", lambda *a, **k: _fake_result(
+        match_score=70, skill_match_pct=100, experience_score=100, location_score=100, certificates_score=100,
+        missing_skills=["Kubernetes", "Terraform"], recommendation="strong_fit",
+    ))
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session, email=f"remarks-{uuid.uuid4().hex[:8]}@example.com")
+    application = _make_application(db_session, job, candidate)
+
+    screening_service.run_screening(db_session, application, job, candidate, "system")
+
+    response = client.get("/candidates/applications", params={"search": candidate.email, "page_size": 50})
+    row = response.json()["items"][0]
+
+    assert row["remarks"] == "Strong fit (score 94) -- missing Kubernetes, Terraform"
+    assert row["match_score"] == 70
+    assert row["composite_score"] == 94.0
+    assert row["match_score"] != row["composite_score"]
+
+
+def test_no_missing_skills_still_omits_the_suffix_alongside_the_new_composite_score_field(client, db_session, monkeypatch):
+    # The other half of the same regression test: a genuine 100%-skill-match candidate must
+    # still get no "-- missing ..." suffix, even though the row now also carries a distinct
+    # composite_score field.
+    monkeypatch.setattr("app.screening.service.match_resume", lambda *a, **k: _fake_result(
+        match_score=88, skill_match_pct=100, experience_score=90, location_score=90, certificates_score=90,
+        missing_skills=[], recommendation="strong_fit",
+    ))
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session, email=f"remarks-{uuid.uuid4().hex[:8]}@example.com")
+    application = _make_application(db_session, job, candidate)
+
+    screening_service.run_screening(db_session, application, job, candidate, "system")
+
+    response = client.get("/candidates/applications", params={"search": candidate.email, "page_size": 50})
+    row = response.json()["items"][0]
+
+    assert row["remarks"] == "Strong fit (score 92)"
+    assert "missing" not in row["remarks"]
+    assert row["composite_score"] == 91.6
+
+
 def test_remarks_appear_on_dashboard_recent_candidates(client, db_session, monkeypatch):
     monkeypatch.setattr("app.screening.service.match_resume", lambda *a, **k: _fake_result())
     job = _make_job(db_session)

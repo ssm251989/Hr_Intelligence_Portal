@@ -62,6 +62,28 @@ function ApplicationStatusChip({ status }: { status: string }) {
 
 const COLUMN_COUNT = 12;
 
+// The Screening Score column: prefers Part A's composite_score (the same number Remarks'
+// "Strong fit (score X)" text quotes -- see app/screening/service.py
+// describe_screening_audit_entry) so the two never show different numbers with no
+// explanation. Falls back to the original Resume Matcher match_score only for applications
+// screened before Part A existed (which never got a composite_score); the tooltip always
+// says which one is being shown so the two scores are never confused for each other.
+function screeningScoreDisplay(row: CandidateApplicationRow): { value: number | null; tooltip: string } {
+  if (row.composite_score != null) {
+    return {
+      value: row.composite_score,
+      tooltip:
+        row.match_score != null
+          ? `Composite screening score (skills, experience, location, certificates, resume match). Resume Match score: ${Math.round(row.match_score)}%`
+          : "Composite screening score (skills, experience, location, certificates, resume match)",
+    };
+  }
+  if (row.match_score != null) {
+    return { value: row.match_score, tooltip: "Resume Match score -- this application predates composite screening" };
+  }
+  return { value: null, tooltip: "" };
+}
+
 export default function CandidatesListPage() {
   const navigate = useNavigate();
   const { can } = useAuth();
@@ -156,7 +178,10 @@ export default function CandidatesListPage() {
           : await candidatesApi.exportApplications(listParams());
       downloadCsv(
         "candidates.csv",
-        ["Candidate", "Email", "Job Applied", "Status", "Source", "Applied On", "Experience (yrs)", "Match Score", "Location", "Remarks"],
+        [
+          "Candidate", "Email", "Job Applied", "Status", "Source", "Applied On", "Experience (yrs)",
+          "Screening Score", "Resume Match", "Location", "Remarks",
+        ],
         result.map((row) => [
           row.candidate_name,
           row.candidate_email,
@@ -165,6 +190,9 @@ export default function CandidatesListPage() {
           row.source,
           row.applied_on,
           row.experience_years,
+          // Same fallback as the on-screen column (see screeningScoreFor below): composite
+          // score when this application has one, else the pre-Part-A raw match score.
+          row.composite_score ?? row.match_score,
           row.match_score,
           row.location,
           row.remarks,
@@ -277,7 +305,7 @@ export default function CandidatesListPage() {
                 <TableCell>Applied On</TableCell>
                 <TableCell>Exp</TableCell>
                 <TableCell>Location</TableCell>
-                <TableCell>Match Score</TableCell>
+                <TableCell>Screening Score</TableCell>
                 <TableCell>Resume</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell>Remarks</TableCell>
@@ -322,7 +350,7 @@ export default function CandidatesListPage() {
                   <TableCell>Applied On</TableCell>
                   <TableCell>Exp</TableCell>
                   <TableCell>Location</TableCell>
-                  <TableCell>Match Score</TableCell>
+                  <TableCell>Screening Score</TableCell>
                   <TableCell>Resume</TableCell>
                   <TableCell>Status</TableCell>
                   <TableCell>Remarks</TableCell>
@@ -366,7 +394,17 @@ export default function CandidatesListPage() {
                     <TableCell>{new Date(row.applied_on).toLocaleDateString()}</TableCell>
                     <TableCell>{row.experience_years != null ? `${row.experience_years}y` : "—"}</TableCell>
                     <TableCell>{row.location || "—"}</TableCell>
-                    <TableCell>{row.match_score != null ? `${Math.round(row.match_score)}%` : "—"}</TableCell>
+                    <TableCell>
+                      {(() => {
+                        const { value, tooltip } = screeningScoreDisplay(row);
+                        if (value == null) return "—";
+                        return (
+                          <Tooltip title={tooltip}>
+                            <span>{Math.round(value)}%</span>
+                          </Tooltip>
+                        );
+                      })()}
+                    </TableCell>
                     <TableCell>
                       {row.resume_path ? (
                         <Tooltip title="Download resume">

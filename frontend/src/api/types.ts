@@ -276,7 +276,13 @@ export interface CandidateApplicationRow {
   source: string;
   location?: string | null;
   applied_on: string;
+  // The original Resume Matcher score (match_resume's own match_score). Distinct from
+  // composite_score below -- see that field's comment.
   match_score?: number | null;
+  // Part A's equal-weighted composite across skills/experience/location/certificates/
+  // match_score -- the same number Remarks' "Strong fit (score X)" text quotes. Null for
+  // applications screened before Part A existed (never got a composite_score).
+  composite_score?: number | null;
   experience_years?: number | null;
   resume_path?: string | null;
   photo_path?: string | null;
