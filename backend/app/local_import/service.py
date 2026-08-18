@@ -1,6 +1,6 @@
-"""Part G: hourly local-folder auto-import.
+"""Part G: local-folder auto-import, checked every 30 minutes.
 
-Scans backend/local_import_inbox/ for new resumes, parses them via one Anthropic Message
+Scans backend/ready_to_upload/ for new resumes, parses them via one Anthropic Message
 Batch (cost control -- N resumes become one batch submission instead of N separate calls,
 at the Batch API's usual pricing discount versus the same calls made synchronously), skips
 exact-match duplicates (name + experience + location), and for every genuinely new
@@ -35,17 +35,18 @@ from app.candidates.router import parse_and_apply_resume
 from app.candidates.storage import save_resume_file
 from app.core.config import settings
 from app.core.database import SessionLocal
-from app.local_import.storage import archive_file, list_inbox_files
+from app.local_import.storage import archive_file, list_ready_to_upload_files
 from app.models.candidate import Candidate
 from app.models.job_role import JobRole
 
 ACTOR = "local_import_scheduler"
 
 # Generous for what this feature is actually for -- a handful of resumes dropped in a
-# folder between hourly checks, not a bulk migration. If a batch genuinely hasn't finished
-# within this window, the run reports "still processing" and leaves every file untouched in
-# the inbox (nothing archived, no candidates created) for the next run to pick back up from
-# scratch -- safe to just re-submit wholesale rather than resuming a specific batch_id.
+# folder between the 30-minute checks, not a bulk migration. If a batch genuinely hasn't
+# finished within this window, the run reports "still processing" and leaves every file
+# untouched in ready_to_upload/ (nothing moved, no candidates created) for the next run to
+# pick back up from scratch -- safe to just re-submit wholesale rather than resuming a
+# specific batch_id.
 BATCH_POLL_INTERVAL_SECONDS = 5
 BATCH_POLL_TIMEOUT_SECONDS = 300
 
@@ -93,10 +94,11 @@ def find_duplicate_candidate(
 
 
 def run_local_import_scan(actor: str = ACTOR) -> dict:
-    """The hourly job's entry point -- also directly callable on demand (see
-    app/local_import/router.py's manual-trigger endpoint, used for real functional testing
-    without waiting for a real hourly tick). Opens its own DB session since it isn't running
-    inside a request -- no Depends(get_db) available from a scheduler thread."""
+    """The scheduled job's entry point (every 30 minutes -- see app/local_import/
+    scheduler.py) -- also directly callable on demand (see app/local_import/router.py's
+    manual-trigger endpoint, used for real functional testing without waiting for a real
+    scheduled tick). Opens its own DB session since it isn't running inside a request -- no
+    Depends(get_db) available from a scheduler thread."""
     db = SessionLocal()
     try:
         return _run_scan(db, actor)
@@ -121,7 +123,7 @@ def _run_scan(db: Session, actor: str) -> dict:
     run_id = uuid.uuid4()
     started_at = datetime.now(timezone.utc)
 
-    files = list_inbox_files()
+    files = list_ready_to_upload_files()
     log_action(db, "local_import_run", run_id, "local_import_run_started", actor, {"files_found": len(files)})
 
     if not files:
@@ -130,7 +132,7 @@ def _run_scan(db: Session, actor: str) -> dict:
         return summary
 
     # Text extraction (local, no AI cost) -- a file that can't even be read is archived
-    # immediately as failed; nothing a retry next hour would fix.
+    # immediately as failed; nothing a retry on the next check would fix.
     extracted: dict[str, str] = {}  # custom_id -> raw text
     file_by_custom_id: dict[str, Path] = {}
     failed = 0

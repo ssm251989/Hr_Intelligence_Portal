@@ -1,4 +1,4 @@
-"""Part G: the hourly scheduled trigger for run_local_import_scan.
+"""Part G: the every-30-minutes scheduled trigger for run_local_import_scan.
 
 APScheduler's BackgroundScheduler (thread-based) rather than AsyncIOScheduler -- everything
 this job touches (the SQLAlchemy session, the synchronous Anthropic client) is sync code, so
@@ -16,7 +16,7 @@ from app.local_import.service import run_local_import_scan
 
 logger = logging.getLogger(__name__)
 
-JOB_ID = "local_import_hourly_scan"
+JOB_ID = "local_import_scan"
 
 _scheduler: BackgroundScheduler | None = None
 
@@ -26,14 +26,14 @@ def _run_scheduled_scan() -> None:
         run_local_import_scan()
     except Exception:
         # A single bad run (e.g. a transient Anthropic outage) must never crash the
-        # scheduler thread or stop future hourly ticks from firing.
+        # scheduler thread or stop future scheduled ticks from firing.
         logger.exception("Local import scheduled scan failed")
 
 
 def start_scheduler() -> BackgroundScheduler:
     global _scheduler
     scheduler = BackgroundScheduler()
-    scheduler.add_job(_run_scheduled_scan, trigger=IntervalTrigger(hours=1), id=JOB_ID)
+    scheduler.add_job(_run_scheduled_scan, trigger=IntervalTrigger(minutes=30), id=JOB_ID)
     scheduler.start()
     _scheduler = scheduler
     return scheduler

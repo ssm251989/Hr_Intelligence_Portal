@@ -19,9 +19,9 @@ def _make_docx_bytes(text: str) -> bytes:
     return buffer.getvalue()
 
 
-def _drop_in_inbox(filename: str, text: str) -> None:
+def _drop_in_ready_to_upload(filename: str, text: str) -> None:
     local_import_storage.ensure_directories()
-    (local_import_storage.INBOX_DIR / filename).write_bytes(_make_docx_bytes(text))
+    (local_import_storage.READY_TO_UPLOAD_DIR / filename).write_bytes(_make_docx_bytes(text))
 
 
 def _unique_skill() -> str:
@@ -211,7 +211,7 @@ def test_find_duplicate_candidate_missing_signal_never_matches(db_session):
 # --- run_local_import_scan: integration, real filesystem + fake Anthropic client ---
 
 
-def test_scan_with_empty_inbox_reports_zero_and_logs(db_session):
+def test_scan_with_empty_ready_to_upload_reports_zero_and_logs(db_session):
     result = local_import_service._run_scan(db_session, "test-actor")
     assert result["files_found"] == 0
     assert result["imported"] == 0
@@ -237,7 +237,7 @@ def test_scan_creates_candidate_and_application_for_the_ai_suggested_job(db_sess
     monkeypatch.setattr("app.screening.service.match_resume", lambda *a, **k: _fake_match_result())
 
     resume_text = f"Resume for a candidate with skill {skill}."
-    _drop_in_inbox("candidate_a.docx", resume_text)
+    _drop_in_ready_to_upload("candidate_a.docx", resume_text)
     _install_fake_client(
         monkeypatch, {resume_text: _parsed(full_name="Local Import Candidate", experience=3.0, skills=[skill])}
     )
@@ -256,9 +256,9 @@ def test_scan_creates_candidate_and_application_for_the_ai_suggested_job(db_sess
     application = db_session.query(Application).filter(Application.candidate_id == candidate.id).one()
     assert application.job_role_id == job.id
 
-    # The file must be moved out of the inbox into the archive, tagged "imported".
-    assert not (local_import_storage.INBOX_DIR / "candidate_a.docx").exists()
-    archived = list(local_import_storage.ARCHIVE_DIR.glob("*_imported_candidate_a.docx"))
+    # The file must be moved out of ready_to_upload/ into already_uploaded/, tagged "imported".
+    assert not (local_import_storage.READY_TO_UPLOAD_DIR / "candidate_a.docx").exists()
+    archived = list(local_import_storage.ALREADY_UPLOADED_DIR.glob("*_imported_candidate_a.docx"))
     assert len(archived) == 1
 
     completed_entry = (
@@ -275,7 +275,7 @@ def test_scan_skips_creating_a_candidate_for_an_exact_duplicate(db_session, monk
         parsed_fields={"total_experience_years": 6.0},
     )
     resume_text = "Resume text for a duplicate."
-    _drop_in_inbox("dup.docx", resume_text)
+    _drop_in_ready_to_upload("dup.docx", resume_text)
     _install_fake_client(
         monkeypatch,
         {resume_text: _parsed(full_name="Existing Candidate", experience=6.0, location="Pune, India")},
@@ -288,8 +288,8 @@ def test_scan_skips_creating_a_candidate_for_an_exact_duplicate(db_session, monk
     assert result["imported"] == 0
     assert db_session.query(Candidate).count() == before_candidate_count
 
-    assert not (local_import_storage.INBOX_DIR / "dup.docx").exists()
-    archived = list(local_import_storage.ARCHIVE_DIR.glob("*_duplicate_dup.docx"))
+    assert not (local_import_storage.READY_TO_UPLOAD_DIR / "dup.docx").exists()
+    archived = list(local_import_storage.ALREADY_UPLOADED_DIR.glob("*_duplicate_dup.docx"))
     assert len(archived) == 1
 
     dup_entry = (
@@ -317,7 +317,7 @@ def test_scan_creates_candidate_with_no_application_when_no_suitable_job(db_sess
 
     skill = _unique_skill()
     resume_text = f"Resume mentioning nothing but {skill}, which no job asks for."
-    _drop_in_inbox("no_job.docx", resume_text)
+    _drop_in_ready_to_upload("no_job.docx", resume_text)
     _install_fake_client(
         monkeypatch, {resume_text: _parsed(full_name="Unmatched Candidate", experience=2.0, skills=[skill])}
     )
@@ -330,13 +330,13 @@ def test_scan_creates_candidate_with_no_application_when_no_suitable_job(db_sess
     assert candidate.suitable_job_id is None
     assert db_session.query(Application).filter(Application.candidate_id == candidate.id).count() == 0
 
-    archived = list(local_import_storage.ARCHIVE_DIR.glob("*_no-suitable-job_no_job.docx"))
+    archived = list(local_import_storage.ALREADY_UPLOADED_DIR.glob("*_no-suitable-job_no_job.docx"))
     assert len(archived) == 1
 
 
 def test_scan_archives_a_failed_batch_result_without_creating_a_candidate(db_session, monkeypatch):
     resume_text = "This resume will fail to parse."
-    _drop_in_inbox("broken.docx", resume_text)
+    _drop_in_ready_to_upload("broken.docx", resume_text)
     _install_fake_client(monkeypatch, {resume_text: "error"})
 
     before_candidate_count = db_session.query(Candidate).count()
@@ -345,13 +345,13 @@ def test_scan_archives_a_failed_batch_result_without_creating_a_candidate(db_ses
     assert result["failed"] == 1
     assert result["imported"] == 0
     assert db_session.query(Candidate).count() == before_candidate_count
-    assert not (local_import_storage.INBOX_DIR / "broken.docx").exists()
-    assert len(list(local_import_storage.ARCHIVE_DIR.glob("*_failed_broken.docx"))) == 1
+    assert not (local_import_storage.READY_TO_UPLOAD_DIR / "broken.docx").exists()
+    assert len(list(local_import_storage.ALREADY_UPLOADED_DIR.glob("*_failed_broken.docx"))) == 1
 
 
 def test_scan_archives_an_unsupported_file_type_without_ever_calling_the_ai(db_session, monkeypatch):
     local_import_storage.ensure_directories()
-    (local_import_storage.INBOX_DIR / "notes.txt").write_bytes(b"not a real resume file type")
+    (local_import_storage.READY_TO_UPLOAD_DIR / "notes.txt").write_bytes(b"not a real resume file type")
     fake_client = _install_fake_client(monkeypatch, {})
 
     result = local_import_service._run_scan(db_session, "test-actor")
@@ -360,7 +360,7 @@ def test_scan_archives_an_unsupported_file_type_without_ever_calling_the_ai(db_s
     # to process -- files_found only counts pdf/docx.
     assert result["files_found"] == 0
     assert fake_client.messages.batches.create_call_count == 0
-    assert (local_import_storage.INBOX_DIR / "notes.txt").exists()  # left alone, not a resume
+    assert (local_import_storage.READY_TO_UPLOAD_DIR / "notes.txt").exists()  # left alone, not a resume
 
 
 def test_scan_processes_multiple_files_in_one_batch_submission(db_session, monkeypatch):
@@ -376,8 +376,8 @@ def test_scan_processes_multiple_files_in_one_batch_submission(db_session, monke
 
     text_a = "First candidate resume text."
     text_b = "Second candidate resume text."
-    _drop_in_inbox("a.docx", text_a)
-    _drop_in_inbox("b.docx", text_b)
+    _drop_in_ready_to_upload("a.docx", text_a)
+    _drop_in_ready_to_upload("b.docx", text_b)
     fake_client = _install_fake_client(
         monkeypatch,
         {

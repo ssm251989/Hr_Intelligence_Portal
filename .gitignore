@@ -30,5 +30,5 @@ Thumbs.db
 uploads/
 
 # Part G: local-folder auto-import (backend/app/local_import/)
-local_import_inbox/
-local_import_archive/
+ready_to_upload/
+already_uploaded/
