@@ -103,6 +103,9 @@ export default function ScreeningListPage() {
     appliedBefore: filters.appliedBefore || undefined,
     matchScoreMin: filters.matchScoreMin ? Number(filters.matchScoreMin) : undefined,
     matchScoreMax: filters.matchScoreMax ? Number(filters.matchScoreMax) : undefined,
+    // This page's score range filter targets composite_score (the Screening Score column),
+    // not the raw Resume Match score the Candidates List's identical-looking filter uses.
+    scoreField: "composite_score" as const,
   });
 
   const loadPage = () => {
@@ -240,7 +243,7 @@ export default function ScreeningListPage() {
       </Stack>
 
       <Box mb={3}>
-        <CandidateFiltersPanel jobs={jobs} filters={filters} onChange={setFilters} />
+        <CandidateFiltersPanel jobs={jobs} filters={filters} onChange={setFilters} scoreLabel="Screening" />
       </Box>
 
       {error && (

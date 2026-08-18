@@ -512,6 +512,95 @@ def test_list_candidate_applications_filters_by_match_score_range(client, db_ses
     assert str(low.id) not in ids
 
 
+def test_list_candidate_applications_default_score_field_ignores_composite_score(client, db_session):
+    # The Candidates List's "Match Score" filter must keep targeting the raw Resume Matcher
+    # score when score_field is omitted -- unaffected by the Screening List's separate
+    # "Screening Score" filter (see the test below). Deliberately divergent scores: a low
+    # match_score with a high composite_score, and vice versa, so a test that accidentally
+    # filtered by the wrong column would show up as a wrong-app-included/excluded failure.
+    job = _make_job(db_session, title="Score Field Default Job")
+    candidate = _make_candidate(db_session)
+    high_match_low_composite = _make_application(
+        db_session, job, candidate, status="screened", match_score=90, composite_score=20
+    )
+    low_match_high_composite = _make_application(
+        db_session, job, candidate, status="screened", match_score=20, composite_score=90
+    )
+
+    response = client.get(
+        "/candidates/applications",
+        params={"job_role_id": str(job.id), "match_score_min": 60, "match_score_max": 100, "page_size": 50},
+    )
+
+    ids = {row["application_id"] for row in response.json()["items"]}
+    assert str(high_match_low_composite.id) in ids
+    assert str(low_match_high_composite.id) not in ids
+
+
+def test_list_candidate_applications_score_field_composite_score_filters_by_composite_not_match(client, db_session):
+    # The Screening List's "Screening Score" filter (score_field=composite_score) -- the
+    # exact inverse selection of the default test above, against the same two applications.
+    job = _make_job(db_session, title="Score Field Composite Job")
+    candidate = _make_candidate(db_session)
+    high_match_low_composite = _make_application(
+        db_session, job, candidate, status="screened", match_score=90, composite_score=20
+    )
+    low_match_high_composite = _make_application(
+        db_session, job, candidate, status="screened", match_score=20, composite_score=90
+    )
+
+    response = client.get(
+        "/candidates/applications",
+        params={
+            "job_role_id": str(job.id),
+            "match_score_min": 60,
+            "match_score_max": 100,
+            "score_field": "composite_score",
+            "page_size": 50,
+        },
+    )
+
+    ids = {row["application_id"] for row in response.json()["items"]}
+    assert str(low_match_high_composite.id) in ids
+    assert str(high_match_low_composite.id) not in ids
+
+
+def test_export_applications_score_field_composite_score_filters_by_composite_not_match(client, db_session):
+    # The export endpoint (Screening List's CSV export) must honor score_field exactly the
+    # same way the paginated list endpoint does -- one filter-building implementation
+    # shared by both (see _filtered_candidate_applications_query).
+    job = _make_job(db_session, title="Export Score Field Job")
+    candidate = _make_candidate(db_session)
+    high_match_low_composite = _make_application(
+        db_session, job, candidate, status="screened", match_score=90, composite_score=20
+    )
+    low_match_high_composite = _make_application(
+        db_session, job, candidate, status="screened", match_score=20, composite_score=90
+    )
+
+    response = client.get(
+        "/candidates/applications/export",
+        params={
+            "job_role_id": str(job.id),
+            "match_score_min": 60,
+            "match_score_max": 100,
+            "score_field": "composite_score",
+        },
+    )
+
+    ids = {row["application_id"] for row in response.json()}
+    assert str(low_match_high_composite.id) in ids
+    assert str(high_match_low_composite.id) not in ids
+
+
+def test_list_candidate_applications_score_field_rejects_invalid_value(client, db_session):
+    job = _make_job(db_session)
+    response = client.get(
+        "/candidates/applications", params={"job_role_id": str(job.id), "score_field": "ranking_score"}
+    )
+    assert response.status_code == 422
+
+
 def test_list_candidate_applications_filters_by_applied_date_range(client, db_session):
     from datetime import datetime, timezone
 

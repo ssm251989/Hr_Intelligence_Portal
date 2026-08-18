@@ -40,10 +40,18 @@ export default function CandidateFiltersPanel({
   jobs,
   filters,
   onChange,
+  // The score range filter's field, min/max values are always the same (see
+  // CandidateFilters.matchScoreMin/Max) -- only its *label* differs by page, since which
+  // column those values actually filter is a caller concern (see candidatesApi.
+  // listApplications/exportApplications's scoreField param and each page's own listParams).
+  // Defaults to "Match" (Candidates List's "Match % min/max"); the Screening List passes
+  // "Screening" for "Screening % min/max", matching its Screening Score column.
+  scoreLabel = "Match",
 }: {
   jobs: JobRoleRead[];
   filters: CandidateFilters;
   onChange: (filters: CandidateFilters) => void;
+  scoreLabel?: string;
 }) {
   const activeCount = Object.values(filters).filter(Boolean).length;
   const set = (key: keyof CandidateFilters, value: string) => onChange({ ...filters, [key]: value });
@@ -151,7 +159,7 @@ export default function CandidateFiltersPanel({
 
       <Stack direction="row" spacing={0.5} alignItems="center">
         <TextField
-          label="Match % min"
+          label={`${scoreLabel} % min`}
           type="number"
           size="small"
           value={filters.matchScoreMin}
@@ -160,7 +168,7 @@ export default function CandidateFiltersPanel({
           sx={{ width: 100 }}
         />
         <TextField
-          label="Match % max"
+          label={`${scoreLabel} % max`}
           type="number"
           size="small"
           value={filters.matchScoreMax}

@@ -241,6 +241,11 @@ export interface CandidateApplicationsListParams {
   appliedBefore?: string;
   matchScoreMin?: number;
   matchScoreMax?: number;
+  // Which column matchScoreMin/Max filter -- omit for the Candidates List's "Match Score"
+  // filter (raw Resume Matcher score, the backend default); "composite_score" for the
+  // Screening List's "Screening Score" filter, targeting the same column that page's
+  // primary score column shows (see utils/screeningScore.ts).
+  scoreField?: "match_score" | "composite_score";
 }
 
 // Same filters as the list above minus pagination -- the export endpoint is unpaginated
@@ -285,6 +290,7 @@ export const candidatesApi = {
     if (params.appliedBefore) query.set("applied_before", params.appliedBefore);
     if (params.matchScoreMin != null) query.set("match_score_min", String(params.matchScoreMin));
     if (params.matchScoreMax != null) query.set("match_score_max", String(params.matchScoreMax));
+    if (params.scoreField) query.set("score_field", params.scoreField);
     return get<CandidatesListPage>(`/candidates/applications?${query.toString()}`);
   },
   // Unpaginated -- returns every matching row (or exactly the given applicationIds) for
@@ -306,6 +312,7 @@ export const candidatesApi = {
     if (params.appliedBefore) query.set("applied_before", params.appliedBefore);
     if (params.matchScoreMin != null) query.set("match_score_min", String(params.matchScoreMin));
     if (params.matchScoreMax != null) query.set("match_score_max", String(params.matchScoreMax));
+    if (params.scoreField) query.set("score_field", params.scoreField);
     return get<CandidateApplicationRow[]>(`/candidates/applications/export?${query.toString()}`);
   },
   timeline: (candidateId: UUID) => get<CandidateTimelineResponse>(`/candidates/${candidateId}/timeline`),

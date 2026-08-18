@@ -1,6 +1,6 @@
 import uuid
 from datetime import date, datetime, time, timezone
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
@@ -249,11 +249,20 @@ def _filtered_candidate_applications_query(
     applied_before: Optional[date],
     match_score_min: Optional[float],
     match_score_max: Optional[float],
+    score_field: Literal["match_score", "composite_score"] = "match_score",
 ):
     """Shared by the paginated List page endpoint and the unpaginated export endpoint --
     one filter-building implementation so the two can never quietly drift apart (e.g. an
     export that "matches the current filters" except for one filter someone forgot to
-    port over to a second copy of this logic)."""
+    port over to a second copy of this logic).
+
+    Also shared by the Candidates List and Screening List pages, which reuse this same
+    endpoint with the same match_score_min/max values but a different score_field: the
+    Candidates List's "Match Score" filter always targets the raw Resume Matcher score
+    (score_field left at its default), while the Screening List's "Screening Score" filter
+    targets composite_score instead -- the same column that page's primary score column
+    actually shows (see frontend utils/screeningScore.ts). One filter UI, one pair of
+    min/max values, just aimed at whichever column that page's own score column is."""
     query = (
         db.query(
             Application, Candidate, JobRole.title, SuitableJob.title,
@@ -288,10 +297,11 @@ def _filtered_candidate_applications_query(
         query = query.filter(Application.created_at >= datetime.combine(applied_after, time.min, tzinfo=timezone.utc))
     if applied_before is not None:
         query = query.filter(Application.created_at <= datetime.combine(applied_before, time.max, tzinfo=timezone.utc))
+    score_column = Application.composite_score if score_field == "composite_score" else Application.match_score
     if match_score_min is not None:
-        query = query.filter(Application.match_score >= match_score_min)
+        query = query.filter(score_column >= match_score_min)
     if match_score_max is not None:
-        query = query.filter(Application.match_score <= match_score_max)
+        query = query.filter(score_column <= match_score_max)
     return query
 
 
@@ -315,12 +325,19 @@ def list_candidate_applications(
     applied_before: Optional[date] = Query(None, description="Applications created on/before this date"),
     match_score_min: Optional[float] = Query(None, ge=0, le=100),
     match_score_max: Optional[float] = Query(None, ge=0, le=100),
+    score_field: Literal["match_score", "composite_score"] = Query(
+        "match_score",
+        description="Which column match_score_min/max filter -- the raw Resume Matcher "
+        "score (Candidates List's 'Match Score' filter) or Part A's composite_score "
+        "(Screening List's 'Screening Score' filter).",
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """One row per (candidate, application) pairing -- the data source for the Candidates
-    List page. A candidate who applied to multiple jobs appears once per job, since Job
-    Applied/Stage/Match Score are all per-application concepts.
+    """One row per (candidate, application) pairing -- the data source for both the
+    Candidates List page and the Screening List page. A candidate who applied to multiple
+    jobs appears once per job, since Job Applied/Stage/Match Score are all per-application
+    concepts.
 
     page_size is capped at 200 -- this endpoint is for rendering one page of the table, not
     for bulk export (see GET /applications/export below, which is unpaginated on purpose)."""
@@ -337,6 +354,7 @@ def list_candidate_applications(
         applied_before=applied_before,
         match_score_min=match_score_min,
         match_score_max=match_score_max,
+        score_field=score_field,
     )
 
     total = query.count()
@@ -369,6 +387,7 @@ def export_candidate_applications(
     applied_before: Optional[date] = Query(None),
     match_score_min: Optional[float] = Query(None, ge=0, le=100),
     match_score_max: Optional[float] = Query(None, ge=0, le=100),
+    score_field: Literal["match_score", "composite_score"] = Query("match_score"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -404,6 +423,7 @@ def export_candidate_applications(
             applied_before=applied_before,
             match_score_min=match_score_min,
             match_score_max=match_score_max,
+            score_field=score_field,
         )
 
     rows = query.order_by(Application.created_at.desc()).all()
