@@ -705,3 +705,25 @@ export interface ScreeningDashboardStatsResponse {
   composite_score_distribution: LabeledCount[];
   top_missing_skills: LabeledCount[];
 }
+
+// ---- local-folder auto-import settings (Part G redesign) ----
+
+// Both null until a recruiter saves them via the Import wizard's Local Import configure
+// step -- the scheduled scan (every 30 minutes) has nothing to do until then.
+export interface LocalImportSettings {
+  ready_to_upload_root: string | null;
+  already_uploaded_root: string | null;
+  updated_at?: string | null;
+}
+
+export interface LocalImportSettingsUpdate {
+  ready_to_upload_root: string;
+  already_uploaded_root: string;
+}
+
+// LocalImportSettings plus the immediate job-folder sync's own summary, so the wizard can
+// show "N job folders created" right after saving without a second call.
+export interface LocalImportSettingsSaveResult extends LocalImportSettings {
+  jobs_considered: number;
+  folders_created: number;
+}

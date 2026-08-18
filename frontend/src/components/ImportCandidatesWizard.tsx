@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
+import FolderOutlinedIcon from "@mui/icons-material/FolderOutlined";
 import LanguageOutlinedIcon from "@mui/icons-material/LanguageOutlined";
 import UploadFileOutlinedIcon from "@mui/icons-material/UploadFileOutlined";
 import WorkOutlineIcon from "@mui/icons-material/WorkOutline";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
-import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import CardActionArea from "@mui/material/CardActionArea";
 import CardContent from "@mui/material/CardContent";
@@ -16,32 +16,20 @@ import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
 import Grid from "@mui/material/Grid";
-import LinearProgress from "@mui/material/LinearProgress";
-import MenuItem from "@mui/material/MenuItem";
 import Step from "@mui/material/Step";
 import StepLabel from "@mui/material/StepLabel";
 import Stepper from "@mui/material/Stepper";
 import Stack from "@mui/material/Stack";
-import Table from "@mui/material/Table";
-import TableBody from "@mui/material/TableBody";
-import TableCell from "@mui/material/TableCell";
-import TableHead from "@mui/material/TableHead";
-import TableRow from "@mui/material/TableRow";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import Button from "@mui/material/Button";
 
-import { applicationsApi, candidatesApi, extractErrorMessage, jobsApi } from "../api/client";
-import { candidateSourceLabel, CONNECTED_CANDIDATE_SOURCES, type CandidateSource, type JobRoleRead } from "../api/types";
+import { candidatesApi, extractErrorMessage, localImportApi } from "../api/client";
+import { candidateSourceLabel, CONNECTED_CANDIDATE_SOURCES, type CandidateSource } from "../api/types";
+import type { LocalImportSettingsSaveResult } from "../api/types";
 import { CANDIDATE_SOURCE_COLOR, CANDIDATE_SOURCE_ICON } from "../utils/candidateSourceIcons";
 
 const STEPS = ["Select Source", "Configure", "Import & Review", "Complete"];
-const LOCAL_IMPORT_ACCEPT = ".pdf,.docx";
-
-interface LocalImportResult {
-  filename: string;
-  status: "success" | "error";
-  reason?: string;
-}
 
 // "manual" is the existing single-resume-upload flow elsewhere in the app, not a bulk
 // import source -- excluded here on purpose. Icon/color for the five named platforms come
@@ -71,27 +59,28 @@ interface Props {
 export default function ImportCandidatesWizard({ open, onClose, onImported, initialSource }: Props) {
   const [activeStep, setActiveStep] = useState(0);
   const [selectedSource, setSelectedSource] = useState<CandidateSource | "">("");
-  const [jobs, setJobs] = useState<JobRoleRead[]>([]);
-  const [linkJobId, setLinkJobId] = useState("");
-  const [localFiles, setLocalFiles] = useState<File[]>([]);
-  const [importing, setImporting] = useState(false);
-  const [importTotal, setImportTotal] = useState(0);
-  const [importResults, setImportResults] = useState<LocalImportResult[]>([]);
   const [careerPortalCount, setCareerPortalCount] = useState<number | null>(null);
   const [stepError, setStepError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Local Import (Part G): a one-time server-side folder configuration, not a per-visit
+  // browser file upload -- resumes are dropped directly into the configured folders on the
+  // server and picked up by the every-30-minutes scheduled scan, never uploaded through
+  // this dialog. See app/local_import/service.py.
+  const [readyRoot, setReadyRoot] = useState("");
+  const [alreadyRoot, setAlreadyRoot] = useState("");
+  const [loadingLocalImportSettings, setLoadingLocalImportSettings] = useState(false);
+  const [savingLocalImportSettings, setSavingLocalImportSettings] = useState(false);
+  const [localImportSaveResult, setLocalImportSaveResult] = useState<LocalImportSettingsSaveResult | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setActiveStep(0);
     setSelectedSource(initialSource ?? "");
-    setLinkJobId("");
-    setLocalFiles([]);
-    setImportTotal(0);
-    setImportResults([]);
     setCareerPortalCount(null);
     setStepError(null);
-    jobsApi.list().then(setJobs).catch(() => setJobs([]));
+    setReadyRoot("");
+    setAlreadyRoot("");
+    setLocalImportSaveResult(null);
   }, [open, initialSource]);
 
   useEffect(() => {
@@ -103,62 +92,28 @@ export default function ImportCandidatesWizard({ open, onClose, onImported, init
     }
   }, [activeStep, selectedSource]);
 
+  // Prefills the two path fields with whatever's already configured, so re-opening this
+  // step to change one path doesn't require retyping the other.
+  useEffect(() => {
+    if (activeStep === 1 && selectedSource === "local_import") {
+      setLoadingLocalImportSettings(true);
+      localImportApi
+        .getSettings()
+        .then((settings) => {
+          setReadyRoot(settings.ready_to_upload_root ?? "");
+          setAlreadyRoot(settings.already_uploaded_root ?? "");
+        })
+        .catch(() => {
+          // Best-effort prefill -- an empty form is still usable if this fails.
+        })
+        .finally(() => setLoadingLocalImportSettings(false));
+    }
+  }, [activeStep, selectedSource]);
+
   const connected = selectedSource !== "" && isConnected(selectedSource);
 
   const handleClose = () => {
     onClose();
-  };
-
-  // Loops over the exact same single-file upload+parse endpoints the "Upload Resume"
-  // dialog uses, one file at a time (not in parallel -- each parse call hits the AI
-  // service, and a real, honest progress readout needs each file to actually finish
-  // before the next one starts). A file that fails to upload (bad type, unreadable) is
-  // recorded as a failure with its reason; a file that uploads but fails to parse still
-  // counts as imported (the candidate record exists, just unparsed) -- same best-effort
-  // treatment the single-upload dialog already gives a parse failure.
-  //
-  // Every successfully-uploaded candidate is then linked to jobId as a real application
-  // (status='received', same as any other new application) -- the Candidates List shows
-  // one row per application, not per candidate, so a candidate created here without one
-  // would exist in the database but never appear anywhere reachable. If linking fails
-  // (the candidate row itself still exists), that's reported as this file's failure too --
-  // "success" here means the candidate is actually visible in the pipeline afterward, not
-  // just that a database row was created.
-  const runLocalImport = async (files: File[], jobId: string) => {
-    setImporting(true);
-    setImportTotal(files.length);
-    setImportResults([]);
-    for (const file of files) {
-      try {
-        const candidate = await candidatesApi.upload(file, "local_import");
-        try {
-          await candidatesApi.parseResume(candidate.id);
-        } catch {
-          // best-effort, same as the single-upload dialog
-        }
-        try {
-          await applicationsApi.create({ job_role_id: jobId, candidate_id: candidate.id });
-        } catch (err) {
-          setImportResults((prev) => [
-            ...prev,
-            {
-              filename: file.name,
-              status: "error",
-              reason: extractErrorMessage(err, "Uploaded, but could not be linked to the job"),
-            },
-          ]);
-          continue;
-        }
-        setImportResults((prev) => [...prev, { filename: file.name, status: "success" }]);
-      } catch (err) {
-        setImportResults((prev) => [
-          ...prev,
-          { filename: file.name, status: "error", reason: extractErrorMessage(err, "Failed to upload") },
-        ]);
-      }
-    }
-    setImporting(false);
-    onImported();
   };
 
   const handleNext = async () => {
@@ -173,16 +128,23 @@ export default function ImportCandidatesWizard({ open, onClose, onImported, init
     }
     if (activeStep === 1) {
       if (selectedSource === "local_import") {
-        if (!linkJobId) {
-          setStepError("Select a job to link these candidates to");
+        if (!readyRoot.trim() || !alreadyRoot.trim()) {
+          setStepError("Both folder paths are required");
           return;
         }
-        if (localFiles.length === 0) {
-          setStepError("Choose at least one resume file to import");
-          return;
+        setSavingLocalImportSettings(true);
+        try {
+          const result = await localImportApi.updateSettings({
+            ready_to_upload_root: readyRoot.trim(),
+            already_uploaded_root: alreadyRoot.trim(),
+          });
+          setLocalImportSaveResult(result);
+          setActiveStep(2);
+        } catch (err) {
+          setStepError(extractErrorMessage(err, "Failed to save local-import folder settings"));
+        } finally {
+          setSavingLocalImportSettings(false);
         }
-        setActiveStep(2);
-        runLocalImport(localFiles, linkJobId);
         return;
       }
       setActiveStep(2);
@@ -269,47 +231,48 @@ export default function ImportCandidatesWizard({ open, onClose, onImported, init
         </Stack>
       );
     }
-    // local_import
+    // local_import -- one-time server folder configuration (Part G), not a browser file
+    // picker. A subfolder per job (matching its title) is created under both roots the
+    // moment this is saved, and again every 30 minutes for any newly published job.
     return (
       <Stack spacing={2} mt={2}>
         <Typography variant="body2" color="text.secondary">
-          Select one or more resumes (PDF or DOCX) to import from your computer. Each file becomes its own candidate,
-          is automatically parsed for name, email, phone, skills, and photo -- the same pipeline the single-resume
-          "Upload Resume" button uses, just run for every file you pick -- and is linked to the job below as a new
-          application, so it shows up in the Candidates List afterward.
+          Configure the two folders on the server that automatic local import scans. A subfolder named after each
+          published job is created under both -- drop a resume into the matching job's folder under "Ready to
+          Upload," and it's picked up, parsed, screened, and linked to that exact job automatically within 30
+          minutes. Processed files move into the same-named folder under "Already Uploaded."
         </Typography>
-        <TextField select label="Job" required value={linkJobId} onChange={(e) => setLinkJobId(e.target.value)} fullWidth>
-          {jobs.length === 0 && <MenuItem disabled value="">No jobs available</MenuItem>}
-          {jobs.map((job) => (
-            <MenuItem key={job.id} value={job.id}>
-              {job.title}
-            </MenuItem>
-          ))}
-        </TextField>
-        <Stack direction="row" spacing={2} alignItems="center">
-          <Button variant="outlined" component="label" startIcon={<UploadFileOutlinedIcon />}>
-            Import from Local
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept={LOCAL_IMPORT_ACCEPT}
-              multiple
-              hidden
-              onChange={(e) => setLocalFiles(Array.from(e.target.files ?? []))}
-            />
-          </Button>
-        </Stack>
-        {localFiles.length > 0 && (
-          <Stack spacing={0.25}>
-            <Typography variant="caption" color="text.secondary">
-              {localFiles.length} file{localFiles.length === 1 ? "" : "s"} selected:
+        {loadingLocalImportSettings ? (
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <CircularProgress size={16} />
+            <Typography variant="body2" color="text.secondary">
+              Loading current configuration...
             </Typography>
-            {localFiles.map((f, i) => (
-              <Typography key={`${f.name}-${i}`} variant="caption" color="text.secondary">
-                • {f.name}
-              </Typography>
-            ))}
           </Stack>
+        ) : (
+          <>
+            <TextField
+              label="Ready to Upload root path"
+              placeholder="e.g. /srv/hr-automation/ready-to-upload"
+              required
+              fullWidth
+              value={readyRoot}
+              onChange={(e) => setReadyRoot(e.target.value)}
+              slotProps={{ input: { startAdornment: <FolderOutlinedIcon fontSize="small" sx={{ mr: 1, color: "text.secondary" }} /> } }}
+            />
+            <TextField
+              label="Already Uploaded root path"
+              placeholder="e.g. /srv/hr-automation/already-uploaded"
+              required
+              fullWidth
+              value={alreadyRoot}
+              onChange={(e) => setAlreadyRoot(e.target.value)}
+              slotProps={{ input: { startAdornment: <FolderOutlinedIcon fontSize="small" sx={{ mr: 1, color: "text.secondary" }} /> } }}
+            />
+            <Typography variant="caption" color="text.secondary">
+              These are absolute paths on the server machine running this app, not your own computer.
+            </Typography>
+          </>
         )}
       </Stack>
     );
@@ -325,62 +288,63 @@ export default function ImportCandidatesWizard({ open, onClose, onImported, init
         </Alert>
       );
     }
-    // local_import -- real, live progress (each file takes a few seconds to parse), not a
-    // simulated bar: importResults grows by one entry per file as runLocalImport's loop
-    // actually completes each upload+parse round trip.
-    const processed = importResults.length;
-    const successCount = importResults.filter((r) => r.status === "success").length;
-    const failed = importResults.filter((r) => r.status === "error");
+    // local_import -- the save+sync already happened in handleNext; this just reports it.
     return (
       <Stack spacing={2} mt={2}>
-        {importing ? (
-          <Stack spacing={1}>
-            <Typography variant="body2" color="text.secondary">
-              Processing {processed} of {importTotal}...
-            </Typography>
-            <LinearProgress variant="determinate" value={importTotal === 0 ? 0 : (processed / importTotal) * 100} />
-          </Stack>
-        ) : (
-          <Alert severity={failed.length === 0 ? "success" : "warning"}>
-            Imported {successCount} of {importTotal}
-            {failed.length > 0 ? `, ${failed.length} failed` : ""}.
-          </Alert>
-        )}
-        {failed.length > 0 && (
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>File</TableCell>
-                <TableCell>Reason</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {failed.map((result) => (
-                <TableRow key={result.filename}>
-                  <TableCell>{result.filename}</TableCell>
-                  <TableCell>{result.reason}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
+        <Alert severity="success">Folder settings saved.</Alert>
+        <Stack spacing={0.5}>
+          <Typography variant="body2">
+            <strong>Ready to Upload:</strong> {localImportSaveResult?.ready_to_upload_root}
+          </Typography>
+          <Typography variant="body2">
+            <strong>Already Uploaded:</strong> {localImportSaveResult?.already_uploaded_root}
+          </Typography>
+        </Stack>
+        <Typography variant="body2" color="text.secondary">
+          {localImportSaveResult?.folders_created ?? 0} job folder
+          {(localImportSaveResult?.folders_created ?? 0) === 1 ? "" : "s"} created across both roots, for{" "}
+          {localImportSaveResult?.jobs_considered ?? 0} currently published/ready-for-publishing job
+          {(localImportSaveResult?.jobs_considered ?? 0) === 1 ? "" : "s"}. This also runs automatically at the start
+          of every scheduled scan, so a job published later gets its folders too.
+        </Typography>
       </Stack>
     );
   };
 
-  const renderComplete = () => (
-    <Stack spacing={2} mt={2} alignItems="center" textAlign="center" py={2}>
-      <CheckCircleOutlineIcon color="success" sx={{ fontSize: 48 }} />
-      <Typography variant="h6">
-        {connected ? "Import complete" : `${candidateSourceLabel(selectedSource)} isn't available yet`}
-      </Typography>
-      <Typography variant="body2" color="text.secondary">
-        {connected
-          ? "The Candidates List has been refreshed with the latest data."
-          : "Check back once this source is connected."}
-      </Typography>
-    </Stack>
-  );
+  const renderComplete = () => {
+    if (!connected) {
+      return (
+        <Stack spacing={2} mt={2} alignItems="center" textAlign="center" py={2}>
+          <CheckCircleOutlineIcon color="success" sx={{ fontSize: 48 }} />
+          <Typography variant="h6">{candidateSourceLabel(selectedSource)} isn't available yet</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Check back once this source is connected.
+          </Typography>
+        </Stack>
+      );
+    }
+    if (selectedSource === "local_import") {
+      return (
+        <Stack spacing={2} mt={2} alignItems="center" textAlign="center" py={2}>
+          <CheckCircleOutlineIcon color="success" sx={{ fontSize: 48 }} />
+          <Typography variant="h6">Local import configured</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Drop resumes into the matching job's folder under "Ready to Upload." They'll be picked up automatically
+            within 30 minutes -- no need to keep this dialog open.
+          </Typography>
+        </Stack>
+      );
+    }
+    return (
+      <Stack spacing={2} mt={2} alignItems="center" textAlign="center" py={2}>
+        <CheckCircleOutlineIcon color="success" sx={{ fontSize: 48 }} />
+        <Typography variant="h6">Import complete</Typography>
+        <Typography variant="body2" color="text.secondary">
+          The Candidates List has been refreshed with the latest data.
+        </Typography>
+      </Stack>
+    );
+  };
 
   const renderStep = () => {
     switch (activeStep) {
@@ -398,6 +362,13 @@ export default function ImportCandidatesWizard({ open, onClose, onImported, init
   };
 
   const isLastStep = activeStep === STEPS.length - 1;
+
+  const handleDone = () => {
+    if (selectedSource !== "local_import") {
+      onImported();
+    }
+    handleClose();
+  };
 
   return (
     <Dialog open={open} onClose={handleClose} fullWidth maxWidth="md">
@@ -421,17 +392,17 @@ export default function ImportCandidatesWizard({ open, onClose, onImported, init
       </DialogContent>
       <DialogActions>
         {isLastStep ? (
-          <Button variant="contained" onClick={handleClose}>
+          <Button variant="contained" onClick={handleDone}>
             Done
           </Button>
         ) : (
           <>
             <Button onClick={handleClose}>Cancel</Button>
-            <Button onClick={handleBack} disabled={activeStep === 0 || importing}>
+            <Button onClick={handleBack} disabled={activeStep === 0 || savingLocalImportSettings}>
               Back
             </Button>
-            <Button variant="contained" onClick={handleNext} disabled={importing}>
-              {importing ? "Importing..." : "Next"}
+            <Button variant="contained" onClick={handleNext} disabled={savingLocalImportSettings}>
+              {savingLocalImportSettings ? "Saving..." : "Next"}
             </Button>
           </>
         )}

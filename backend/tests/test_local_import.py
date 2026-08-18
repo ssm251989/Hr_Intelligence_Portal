@@ -1,14 +1,17 @@
 import io
 import uuid
+from datetime import date
 
+import pytest
 from docx import Document
 
+from app.local_import import job_folders
 from app.local_import import service as local_import_service
-from app.local_import import storage as local_import_storage
 from app.models.application import Application
 from app.models.audit_log import AuditLog
 from app.models.candidate import Candidate
 from app.models.job_role import JobRole
+from app.models.local_import_settings import LocalImportSettings
 
 
 def _make_docx_bytes(text: str) -> bytes:
@@ -19,30 +22,57 @@ def _make_docx_bytes(text: str) -> bytes:
     return buffer.getvalue()
 
 
-def _drop_in_ready_to_upload(filename: str, text: str) -> None:
-    local_import_storage.ensure_directories()
-    (local_import_storage.READY_TO_UPLOAD_DIR / filename).write_bytes(_make_docx_bytes(text))
+def _unique_title(prefix: str) -> str:
+    # Isolates this test's own job(s) from the shared dev DB's real jobs -- match_folder_to_
+    # job scans every job in the whole table, so a uuid-based title guarantees no accidental
+    # collision (see test_suitability_service.py's identical reasoning).
+    return f"{prefix} zzLocalImport{uuid.uuid4().hex[:10]}"
 
 
-def _unique_skill() -> str:
-    # Isolates this test's own published job from the shared dev DB's real published jobs
-    # (see test_suitability_service.py's identical comment) -- a uuid-based skill token can
-    # never accidentally win/lose the pre-filter ranking against unrelated real jobs.
-    return f"zzLocalImportTestSkill{uuid.uuid4().hex[:10]}"
+def _make_job(db_session, title=None, status="published", jd_text="Job description text.", **kwargs) -> JobRole:
+    job = JobRole(title=title or _unique_title("Job"), status=status, jd_text=jd_text, **kwargs)
+    db_session.add(job)
+    db_session.commit()
+    db_session.refresh(job)
+    return job
 
 
-def _fake_match_result(**overrides) -> dict:
-    result = {
-        "match_score": 80,
-        "skill_match_pct": 80,
-        "experience_score": 80,
-        "location_score": 80,
-        "certificates_score": 80,
-        "missing_skills": [],
-        "recommendation": "strong_fit",
+def _make_candidate(db_session, **kwargs) -> Candidate:
+    candidate = Candidate(full_name=kwargs.pop("full_name", "Jane Doe"), **kwargs)
+    db_session.add(candidate)
+    db_session.commit()
+    db_session.refresh(candidate)
+    return candidate
+
+
+@pytest.fixture()
+def configured_roots(db_session, tmp_path):
+    """Points local_import_settings' singleton row at a fresh tmp_path pair -- isolated the
+    same way every other DB row is in this suite (db_session's own rolled-back
+    transaction), so no autouse filesystem monkeypatch is needed."""
+    ready = tmp_path / "ready-to-upload"
+    already = tmp_path / "already-uploaded"
+    settings_row = db_session.get(LocalImportSettings, 1)
+    settings_row.ready_to_upload_root = str(ready)
+    settings_row.already_uploaded_root = str(already)
+    db_session.commit()
+    return ready, already
+
+
+def _parsed(full_name="Jane Doe", experience=5.0, location="Bangalore, India", **overrides) -> dict:
+    parsed = {
+        "full_name": full_name,
+        "email": "jane@example.com",
+        "phone": "1234567890",
+        "location": location,
+        "total_experience_years": experience,
+        "skills": [],
+        "education": [],
+        "work_history": [],
+        "certificates": [],
     }
-    result.update(overrides)
-    return result
+    parsed.update(overrides)
+    return parsed
 
 
 # --- Fake Anthropic client: real request/response shape, no network/AI call ---
@@ -124,31 +154,21 @@ def _install_fake_client(monkeypatch, text_to_output: dict) -> _FakeAnthropicCli
     return fake_client
 
 
-def _parsed(full_name="Jane Doe", experience=5.0, location="Bangalore, India", **overrides) -> dict:
-    parsed = {
-        "full_name": full_name,
-        "email": "jane@example.com",
-        "phone": "1234567890",
-        "location": location,
-        "total_experience_years": experience,
-        "skills": [],
-        "education": [],
-        "work_history": [],
-        "certificates": [],
-    }
-    parsed.update(overrides)
-    return parsed
+def _fail_suitability(monkeypatch):
+    # attempt_auto_suggest_suitable_job still runs as a side effect of parse_and_apply_
+    # resume (Part B is unaffected by this redesign) -- forcing every comparison to fail
+    # keeps these tests deterministic and free of real AI calls regardless of the shared
+    # dev DB's other real published jobs, without changing what's actually under test here
+    # (the folder-based job assignment, not Suitable-For).
+    from app.ai_services.resume_matcher import ResumeMatchError
+
+    def _always_fails(*args, **kwargs):
+        raise ResumeMatchError("no real AI call in this test")
+
+    monkeypatch.setattr("app.screening.suitability.match_resume", _always_fails)
 
 
-def _make_candidate(db_session, **kwargs) -> Candidate:
-    candidate = Candidate(full_name=kwargs.pop("full_name", "Jane Doe"), **kwargs)
-    db_session.add(candidate)
-    db_session.commit()
-    db_session.refresh(candidate)
-    return candidate
-
-
-# --- find_duplicate_candidate: pure DB query, no AI ---
+# --- find_duplicate_candidate: pure DB query, no AI (unchanged by this redesign) ---
 
 
 def test_find_duplicate_candidate_exact_match(db_session):
@@ -176,26 +196,7 @@ def test_find_duplicate_candidate_no_match_when_name_differs(db_session):
         db_session, full_name="Priya Sharma", location="Chennai, India",
         parsed_fields={"total_experience_years": 4.0},
     )
-    found = local_import_service.find_duplicate_candidate(db_session, "Priya Verma", 4.0, "Chennai, India")
-    assert found is None
-
-
-def test_find_duplicate_candidate_no_match_when_experience_differs(db_session):
-    _make_candidate(
-        db_session, full_name="Priya Sharma", location="Chennai, India",
-        parsed_fields={"total_experience_years": 4.0},
-    )
-    found = local_import_service.find_duplicate_candidate(db_session, "Priya Sharma", 7.0, "Chennai, India")
-    assert found is None
-
-
-def test_find_duplicate_candidate_no_match_when_location_differs(db_session):
-    _make_candidate(
-        db_session, full_name="Priya Sharma", location="Chennai, India",
-        parsed_fields={"total_experience_years": 4.0},
-    )
-    found = local_import_service.find_duplicate_candidate(db_session, "Priya Sharma", 4.0, "Mumbai, India")
-    assert found is None
+    assert local_import_service.find_duplicate_candidate(db_session, "Priya Verma", 4.0, "Chennai, India") is None
 
 
 def test_find_duplicate_candidate_missing_signal_never_matches(db_session):
@@ -203,18 +204,183 @@ def test_find_duplicate_candidate_missing_signal_never_matches(db_session):
         db_session, full_name="Priya Sharma", location=None,
         parsed_fields={"total_experience_years": 4.0},
     )
-    # A resume with no extractable location must never be treated as a duplicate of
-    # anyone, even a candidate whose own location also happens to be null.
     assert local_import_service.find_duplicate_candidate(db_session, "Priya Sharma", 4.0, None) is None
 
 
-# --- run_local_import_scan: integration, real filesystem + fake Anthropic client ---
+# --- sanitize_job_folder_name: pure function ---
 
 
-def test_scan_with_empty_ready_to_upload_reports_zero_and_logs(db_session):
+def test_sanitize_job_folder_name_replaces_invalid_characters():
+    assert job_folders.sanitize_job_folder_name('Sr. Dev: "Backend"/API') == "Sr. Dev_ _Backend__API"
+
+
+def test_sanitize_job_folder_name_collapses_whitespace():
+    assert job_folders.sanitize_job_folder_name("Backend   Engineer\t\tII") == "Backend Engineer II"
+
+
+def test_sanitize_job_folder_name_strips_trailing_dot_and_space():
+    assert job_folders.sanitize_job_folder_name("Backend Engineer . ") == "Backend Engineer"
+
+
+def test_sanitize_job_folder_name_never_returns_empty():
+    assert job_folders.sanitize_job_folder_name("...") == "untitled-job"
+
+
+# --- match_folder_to_job ---
+
+
+def test_match_folder_to_job_finds_the_right_job(db_session):
+    title = _unique_title("Match")
+    job = _make_job(db_session, title=title)
+    found = job_folders.match_folder_to_job(db_session, job_folders.sanitize_job_folder_name(title))
+    assert found is not None
+    assert found.id == job.id
+
+
+def test_match_folder_to_job_returns_none_when_no_job_matches(db_session):
+    assert job_folders.match_folder_to_job(db_session, f"NoSuchJob{uuid.uuid4().hex[:10]}") is None
+
+
+def test_match_folder_to_job_returns_none_when_ambiguous(db_session):
+    # Two distinct jobs whose titles sanitize to the exact same folder name -- must never
+    # guess which one a file in that folder is for.
+    shared = _unique_title("Ambiguous")
+    _make_job(db_session, title=f"{shared}.")  # trailing dot is stripped by sanitization
+    _make_job(db_session, title=shared)
+    folder_name = job_folders.sanitize_job_folder_name(shared)
+    assert job_folders.match_folder_to_job(db_session, folder_name) is None
+
+
+def test_match_folder_to_job_matches_jobs_regardless_of_status(db_session):
+    # A folder for a job that's since closed must still match -- only folder *creation* is
+    # gated to published/ready_for_publishing (see sync_job_folders tests below).
+    title = _unique_title("Closed")
+    job = _make_job(db_session, title=title, status="closed")
+    found = job_folders.match_folder_to_job(db_session, job_folders.sanitize_job_folder_name(title))
+    assert found is not None
+    assert found.id == job.id
+
+
+# --- sync_job_folders ---
+
+
+def test_sync_job_folders_creates_missing_subfolders_under_both_roots(db_session, tmp_path):
+    ready = tmp_path / "ready"
+    already = tmp_path / "already"
+    published_title = _unique_title("Published")
+    ready_title = _unique_title("ReadyForPublishing")
+    _make_job(db_session, title=published_title, status="published")
+    _make_job(db_session, title=ready_title, status="ready_for_publishing")
+
+    result = job_folders.sync_job_folders(db_session, ready, already)
+
+    assert result["jobs_considered"] >= 2
+    assert result["folders_created"] >= 4  # 2 jobs x 2 roots, at minimum
+    for root in (ready, already):
+        assert (root / job_folders.sanitize_job_folder_name(published_title)).is_dir()
+        assert (root / job_folders.sanitize_job_folder_name(ready_title)).is_dir()
+
+
+def test_sync_job_folders_skips_draft_and_closed_and_on_hold_jobs(db_session, tmp_path):
+    ready = tmp_path / "ready"
+    already = tmp_path / "already"
+    draft_title = _unique_title("Draft")
+    closed_title = _unique_title("Closed")
+    on_hold_title = _unique_title("OnHold")
+    _make_job(db_session, title=draft_title, status="draft")
+    _make_job(db_session, title=closed_title, status="closed")
+    _make_job(db_session, title=on_hold_title, status="on_hold")
+
+    job_folders.sync_job_folders(db_session, ready, already)
+
+    for title in (draft_title, closed_title, on_hold_title):
+        assert not (ready / job_folders.sanitize_job_folder_name(title)).exists()
+        assert not (already / job_folders.sanitize_job_folder_name(title)).exists()
+
+
+def test_sync_job_folders_never_deletes_an_existing_folder_for_a_now_inactive_job(db_session, tmp_path):
+    ready = tmp_path / "ready"
+    already = tmp_path / "already"
+    title = _unique_title("WasPublished")
+    job = _make_job(db_session, title=title, status="published")
+
+    job_folders.sync_job_folders(db_session, ready, already)
+    folder_name = job_folders.sanitize_job_folder_name(title)
+    assert (ready / folder_name).is_dir()
+
+    # A file a recruiter hasn't moved out yet -- must survive the job closing.
+    marker = ready / folder_name / "in_progress_resume.docx"
+    marker.write_bytes(b"placeholder")
+
+    job.status = "closed"
+    db_session.commit()
+
+    job_folders.sync_job_folders(db_session, ready, already)
+
+    assert (ready / folder_name).is_dir()
+    assert marker.exists()
+
+
+def test_sync_job_folders_creates_the_roots_even_with_zero_active_jobs(tmp_path, db_session):
+    ready = tmp_path / "ready-empty"
+    already = tmp_path / "already-empty"
+    job_folders.sync_job_folders(db_session, ready, already)
+    assert ready.is_dir()
+    assert already.is_dir()
+
+
+# --- move_to_already_uploaded: rename-with-date-on-move ---
+
+
+def test_move_to_already_uploaded_renames_with_date_and_same_named_subfolder(tmp_path):
+    from app.local_import.storage import move_to_already_uploaded
+
+    already_root = tmp_path / "already"
+    source = tmp_path / "resume.docx"
+    source.write_bytes(b"placeholder")
+
+    destination = move_to_already_uploaded(source, "Backend Engineer", already_root, date(2026, 8, 19))
+
+    assert not source.exists()
+    assert destination == already_root / "Backend Engineer" / "resume_2026-08-19.docx"
+    assert destination.exists()
+
+
+def test_move_to_already_uploaded_avoids_collision_across_different_dates(tmp_path):
+    from app.local_import.storage import move_to_already_uploaded
+
+    already_root = tmp_path / "already"
+    first = tmp_path / "resume.docx"
+    first.write_bytes(b"first")
+    move_to_already_uploaded(first, "Backend Engineer", already_root, date(2026, 8, 19))
+
+    second = tmp_path / "resume.docx"
+    second.write_bytes(b"second, a resubmission the next day")
+    destination = move_to_already_uploaded(second, "Backend Engineer", already_root, date(2026, 8, 20))
+
+    assert destination == already_root / "Backend Engineer" / "resume_2026-08-20.docx"
+    first_copy = already_root / "Backend Engineer" / "resume_2026-08-19.docx"
+    assert first_copy.exists()
+    assert first_copy.read_bytes() == b"first"
+    assert destination.read_bytes() == b"second, a resubmission the next day"
+
+
+# --- run_local_import_scan: not configured ---
+
+
+def test_scan_reports_not_configured_when_roots_are_unset(db_session):
+    # Explicitly unset -- this is a real, shared singleton row (real recruiters, or this
+    # test file's own other tests via the /local-import/settings endpoint, may have
+    # configured it for real outside this test's own transaction), so this test cannot
+    # assume it starts out null; it must make that state true itself.
+    settings_row = db_session.get(LocalImportSettings, 1)
+    settings_row.ready_to_upload_root = None
+    settings_row.already_uploaded_root = None
+    db_session.commit()
+
     result = local_import_service._run_scan(db_session, "test-actor")
-    assert result["files_found"] == 0
-    assert result["imported"] == 0
+    assert result["configured"] is False
+    assert result["totals"]["files_found"] == 0
 
     started = (
         db_session.query(AuditLog)
@@ -222,75 +388,166 @@ def test_scan_with_empty_ready_to_upload_reports_zero_and_logs(db_session):
         .order_by(AuditLog.created_at.desc())
         .first()
     )
-    assert started is not None
-    assert started.details["files_found"] == 0
+    assert started.details["configured"] is False
 
 
-def test_scan_creates_candidate_and_application_for_the_ai_suggested_job(db_session, monkeypatch):
-    skill = _unique_skill()
-    job = JobRole(title="Backend Engineer", status="published", jd_text="Needs the skill.", skills=[skill])
-    db_session.add(job)
-    db_session.commit()
-    db_session.refresh(job)
+# --- run_local_import_scan: folder-to-job matching + processing ---
 
-    monkeypatch.setattr("app.screening.suitability.match_resume", lambda *a, **k: _fake_match_result())
-    monkeypatch.setattr("app.screening.service.match_resume", lambda *a, **k: _fake_match_result())
 
-    resume_text = f"Resume for a candidate with skill {skill}."
-    _drop_in_ready_to_upload("candidate_a.docx", resume_text)
+def test_scan_matches_folder_to_job_and_creates_application_against_it_not_ai_guessed(
+    db_session, configured_roots, monkeypatch
+):
+    _fail_suitability(monkeypatch)
+    ready_root, already_root = configured_roots
+    title = _unique_title("Backend")
+    job = _make_job(db_session, title=title)
+    folder_name = job_folders.sanitize_job_folder_name(title)
+    (ready_root / folder_name).mkdir(parents=True)
+
+    resume_text = "Resume for a backend candidate."
+    (ready_root / folder_name / "candidate.docx").write_bytes(_make_docx_bytes(resume_text))
     _install_fake_client(
-        monkeypatch, {resume_text: _parsed(full_name="Local Import Candidate", experience=3.0, skills=[skill])}
+        monkeypatch, {resume_text: _parsed(full_name="Folder Match Candidate", experience=4.0, location="Pune, India")}
     )
 
     result = local_import_service._run_scan(db_session, "test-actor")
-    assert result["imported"] == 1
-    assert result["duplicates"] == 0
-    assert result["no_suitable_job"] == 0
-    assert result["failed"] == 0
 
-    candidate = db_session.query(Candidate).filter(Candidate.full_name == "Local Import Candidate").one()
-    assert candidate.source == "local_import"
-    assert candidate.location == "Bangalore, India"
-    assert candidate.suitable_job_id == job.id
+    assert result["totals"]["imported"] == 1
+    assert result["per_folder"][folder_name]["job_id"] == str(job.id)
+    assert result["per_folder"][folder_name]["imported"] == 1
 
+    candidate = db_session.query(Candidate).filter(Candidate.full_name == "Folder Match Candidate").one()
     application = db_session.query(Application).filter(Application.candidate_id == candidate.id).one()
+    # The applied-for job is the one the FOLDER matched -- never candidate.suitable_job_id
+    # (forced to stay null above by _fail_suitability), proving job assignment doesn't
+    # depend on the AI-guessed Suitable-For path at all anymore.
     assert application.job_role_id == job.id
+    assert candidate.suitable_job_id is None
 
-    # The file must be moved out of ready_to_upload/ into already_uploaded/, tagged "imported".
-    assert not (local_import_storage.READY_TO_UPLOAD_DIR / "candidate_a.docx").exists()
-    archived = list(local_import_storage.ALREADY_UPLOADED_DIR.glob("*_imported_candidate_a.docx"))
-    assert len(archived) == 1
+    assert not (ready_root / folder_name / "candidate.docx").exists()
+    moved = list((already_root / folder_name).glob("candidate_*.docx"))
+    assert len(moved) == 1
 
-    completed_entry = (
+
+def test_scan_skips_and_logs_a_folder_with_no_matching_job_leaving_the_file_in_place(
+    db_session, configured_roots, monkeypatch
+):
+    ready_root, already_root = configured_roots
+    stray_folder = ready_root / "Some Renamed Or Typo Job"
+    stray_folder.mkdir(parents=True)
+    (stray_folder / "orphan.docx").write_bytes(_make_docx_bytes("An orphaned resume."))
+    fake_client = _install_fake_client(monkeypatch, {})
+
+    result = local_import_service._run_scan(db_session, "test-actor")
+
+    assert result["totals"]["skipped_no_matching_job"] == 1
+    assert result["unmatched_folders"]["Some Renamed Or Typo Job"]["files_skipped"] == 1
+    # Never even reaches the AI -- a folder with no matching job is resolved locally, before
+    # any batch submission.
+    assert fake_client.messages.batches.create_call_count == 0
+
+    # Left in place for manual attention -- never moved, never deleted. sync_job_folders
+    # still creates subfolders under already_root for every OTHER real active job in the
+    # shared dev DB (unrelated to this test), so only this specific stray folder name is
+    # asserted absent there, not the whole root.
+    assert (stray_folder / "orphan.docx").exists()
+    assert not (already_root / "Some Renamed Or Typo Job").exists()
+
+    skipped_entry = (
         db_session.query(AuditLog)
-        .filter(AuditLog.entity_type == "candidate", AuditLog.entity_id == candidate.id, AuditLog.action == "local_import_completed")
-        .one()
+        .filter(AuditLog.entity_type == "local_import_run", AuditLog.action == "local_import_skipped_no_matching_job")
+        .order_by(AuditLog.created_at.desc())
+        .first()
     )
-    assert completed_entry.details["application_id"] == str(application.id)
+    assert skipped_entry.details["filename"] == "orphan.docx"
+    assert skipped_entry.details["folder"] == "Some Renamed Or Typo Job"
 
 
-def test_scan_skips_creating_a_candidate_for_an_exact_duplicate(db_session, monkeypatch):
-    existing = _make_candidate(
-        db_session, full_name="Existing Candidate", location="Pune, India",
-        parsed_fields={"total_experience_years": 6.0},
-    )
-    resume_text = "Resume text for a duplicate."
-    _drop_in_ready_to_upload("dup.docx", resume_text)
+def test_scan_handles_multiple_job_folders_with_per_folder_breakdown(db_session, configured_roots, monkeypatch):
+    _fail_suitability(monkeypatch)
+    ready_root, already_root = configured_roots
+
+    title_a = _unique_title("JobA")
+    title_b = _unique_title("JobB")
+    job_a = _make_job(db_session, title=title_a)
+    job_b = _make_job(db_session, title=title_b)
+    folder_a = job_folders.sanitize_job_folder_name(title_a)
+    folder_b = job_folders.sanitize_job_folder_name(title_b)
+    (ready_root / folder_a).mkdir(parents=True)
+    (ready_root / folder_b).mkdir(parents=True)
+
+    text_a = "Resume for job A's candidate."
+    text_b = "Resume for job B's candidate."
+    (ready_root / folder_a / "a.docx").write_bytes(_make_docx_bytes(text_a))
+    (ready_root / folder_b / "b.docx").write_bytes(_make_docx_bytes(text_b))
     _install_fake_client(
         monkeypatch,
-        {resume_text: _parsed(full_name="Existing Candidate", experience=6.0, location="Pune, India")},
+        {
+            text_a: _parsed(full_name="Candidate A", experience=1.0, location="Delhi, India"),
+            text_b: _parsed(full_name="Candidate B", experience=2.0, location="Mumbai, India"),
+        },
+    )
+
+    result = local_import_service._run_scan(db_session, "test-actor")
+
+    assert result["totals"]["imported"] == 2
+    assert result["per_folder"][folder_a]["job_id"] == str(job_a.id)
+    assert result["per_folder"][folder_a]["imported"] == 1
+    assert result["per_folder"][folder_b]["job_id"] == str(job_b.id)
+    assert result["per_folder"][folder_b]["imported"] == 1
+
+    app_a = (
+        db_session.query(Application)
+        .join(Candidate, Candidate.id == Application.candidate_id)
+        .filter(Candidate.full_name == "Candidate A")
+        .one()
+    )
+    app_b = (
+        db_session.query(Application)
+        .join(Candidate, Candidate.id == Application.candidate_id)
+        .filter(Candidate.full_name == "Candidate B")
+        .one()
+    )
+    assert app_a.job_role_id == job_a.id
+    assert app_b.job_role_id == job_b.id
+
+
+# --- duplicate detection still works in the new folder-based flow ---
+
+
+def test_scan_skips_creating_a_candidate_for_an_exact_duplicate_in_the_matched_folder(
+    db_session, configured_roots, monkeypatch
+):
+    ready_root, already_root = configured_roots
+    title = _unique_title("DupJob")
+    job = _make_job(db_session, title=title)
+    folder_name = job_folders.sanitize_job_folder_name(title)
+    (ready_root / folder_name).mkdir(parents=True)
+
+    existing = _make_candidate(
+        db_session, full_name="Existing Candidate", location="Chennai, India",
+        parsed_fields={"total_experience_years": 6.0},
+    )
+
+    resume_text = "Resume text for a duplicate."
+    (ready_root / folder_name / "dup.docx").write_bytes(_make_docx_bytes(resume_text))
+    _install_fake_client(
+        monkeypatch,
+        {resume_text: _parsed(full_name="Existing Candidate", experience=6.0, location="Chennai, India")},
     )
 
     before_candidate_count = db_session.query(Candidate).count()
     result = local_import_service._run_scan(db_session, "test-actor")
 
-    assert result["duplicates"] == 1
-    assert result["imported"] == 0
+    assert result["totals"]["duplicates"] == 1
+    assert result["totals"]["imported"] == 0
+    assert result["per_folder"][folder_name]["job_id"] == str(job.id)
     assert db_session.query(Candidate).count() == before_candidate_count
 
-    assert not (local_import_storage.READY_TO_UPLOAD_DIR / "dup.docx").exists()
-    archived = list(local_import_storage.ALREADY_UPLOADED_DIR.glob("*_duplicate_dup.docx"))
-    assert len(archived) == 1
+    # A decided outcome (duplicate) still moves out of ready-to-upload, same as "imported".
+    assert not (ready_root / folder_name / "dup.docx").exists()
+    moved = list((already_root / folder_name).glob("dup_*.docx"))
+    assert len(moved) == 1
 
     dup_entry = (
         db_session.query(AuditLog)
@@ -298,121 +555,90 @@ def test_scan_skips_creating_a_candidate_for_an_exact_duplicate(db_session, monk
         .order_by(AuditLog.created_at.desc())
         .first()
     )
-    assert dup_entry is not None
     assert dup_entry.details["matched_candidate_id"] == str(existing.id)
+    assert dup_entry.details["folder"] == folder_name
 
 
-def test_scan_creates_candidate_with_no_application_when_no_suitable_job(db_session, monkeypatch):
-    # The shared dev DB always has SOME real published job with jd_text (see
-    # test_suitability_service.py's own comments on this), so pre_filter_published_jobs is
-    # never truly empty here -- what actually needs forcing is every one of those
-    # comparisons failing, so attempt_auto_suggest_suitable_job's own "best_job stays None"
-    # path is what's under test, not an empty pre-filter.
-    from app.ai_services.resume_matcher import ResumeMatchError
+def test_scan_leaves_a_genuine_parse_failure_in_place(db_session, configured_roots, monkeypatch):
+    ready_root, already_root = configured_roots
+    title = _unique_title("FailJob")
+    _make_job(db_session, title=title)
+    folder_name = job_folders.sanitize_job_folder_name(title)
+    (ready_root / folder_name).mkdir(parents=True)
 
-    def _always_fails(*args, **kwargs):
-        raise ResumeMatchError("no real AI call in this test")
-
-    monkeypatch.setattr("app.screening.suitability.match_resume", _always_fails)
-
-    skill = _unique_skill()
-    resume_text = f"Resume mentioning nothing but {skill}, which no job asks for."
-    _drop_in_ready_to_upload("no_job.docx", resume_text)
-    _install_fake_client(
-        monkeypatch, {resume_text: _parsed(full_name="Unmatched Candidate", experience=2.0, skills=[skill])}
-    )
-
-    result = local_import_service._run_scan(db_session, "test-actor")
-    assert result["no_suitable_job"] == 1
-    assert result["imported"] == 0
-
-    candidate = db_session.query(Candidate).filter(Candidate.full_name == "Unmatched Candidate").one()
-    assert candidate.suitable_job_id is None
-    assert db_session.query(Application).filter(Application.candidate_id == candidate.id).count() == 0
-
-    archived = list(local_import_storage.ALREADY_UPLOADED_DIR.glob("*_no-suitable-job_no_job.docx"))
-    assert len(archived) == 1
-
-
-def test_scan_archives_a_failed_batch_result_without_creating_a_candidate(db_session, monkeypatch):
     resume_text = "This resume will fail to parse."
-    _drop_in_ready_to_upload("broken.docx", resume_text)
+    (ready_root / folder_name / "broken.docx").write_bytes(_make_docx_bytes(resume_text))
     _install_fake_client(monkeypatch, {resume_text: "error"})
 
     before_candidate_count = db_session.query(Candidate).count()
     result = local_import_service._run_scan(db_session, "test-actor")
 
-    assert result["failed"] == 1
-    assert result["imported"] == 0
+    assert result["totals"]["failed"] == 1
     assert db_session.query(Candidate).count() == before_candidate_count
-    assert not (local_import_storage.READY_TO_UPLOAD_DIR / "broken.docx").exists()
-    assert len(list(local_import_storage.ALREADY_UPLOADED_DIR.glob("*_failed_broken.docx"))) == 1
+    assert (ready_root / folder_name / "broken.docx").exists()  # left in place, not moved
 
 
-def test_scan_archives_an_unsupported_file_type_without_ever_calling_the_ai(db_session, monkeypatch):
-    local_import_storage.ensure_directories()
-    (local_import_storage.READY_TO_UPLOAD_DIR / "notes.txt").write_bytes(b"not a real resume file type")
-    fake_client = _install_fake_client(monkeypatch, {})
-
-    result = local_import_service._run_scan(db_session, "test-actor")
-
-    # notes.txt isn't in ALLOWED_EXTENSIONS at all, so it's never even picked up as a file
-    # to process -- files_found only counts pdf/docx.
-    assert result["files_found"] == 0
-    assert fake_client.messages.batches.create_call_count == 0
-    assert (local_import_storage.READY_TO_UPLOAD_DIR / "notes.txt").exists()  # left alone, not a resume
-
-
-def test_scan_processes_multiple_files_in_one_batch_submission(db_session, monkeypatch):
-    from app.ai_services.resume_matcher import ResumeMatchError
-
-    def _always_fails(*args, **kwargs):
-        raise ResumeMatchError("no real AI call in this test")
-
-    # Forces both candidates to "no suitable job" deterministically (see the previous
-    # test's comment) -- this test's actual point is the single shared batch submission,
-    # not suitability matching itself.
-    monkeypatch.setattr("app.screening.suitability.match_resume", _always_fails)
-
-    text_a = "First candidate resume text."
-    text_b = "Second candidate resume text."
-    _drop_in_ready_to_upload("a.docx", text_a)
-    _drop_in_ready_to_upload("b.docx", text_b)
-    fake_client = _install_fake_client(
-        monkeypatch,
-        {
-            text_a: _parsed(full_name="Candidate A", experience=1.0, location="Delhi, India"),
-            text_b: _parsed(full_name="Candidate B", experience=2.0, location="Delhi, India"),
-        },
-    )
-
-    result = local_import_service._run_scan(db_session, "test-actor")
-
-    assert result["files_found"] == 2
-    assert result["no_suitable_job"] == 2  # no published job set up in this test
-    assert fake_client.messages.batches.create_call_count == 1  # ONE batch, not two calls
-    assert len(fake_client.messages.batches.last_requests) == 2
-
-
-def test_run_local_import_scan_opens_and_closes_its_own_db_session(monkeypatch):
+def test_run_local_import_scan_opens_and_closes_its_own_db_session():
     # The public entry point (used by both the scheduler and the manual-trigger endpoint)
-    # must work with no request/session available at all -- unlike _run_scan's tests above,
-    # this doesn't receive a db_session fixture.
+    # must work with no request/session available at all.
     result = local_import_service.run_local_import_scan(actor="test-actor")
-    assert "files_found" in result
-
-
-# --- POST /local-import/run-now ---
+    assert "configured" in result
 
 
 def test_run_now_endpoint_triggers_a_real_scan_and_returns_its_summary(client):
     response = client.post("/local-import/run-now")
     assert response.status_code == 200
-    body = response.json()
-    assert "files_found" in body
-    assert "run_id" in body
+    assert "configured" in response.json()
 
 
 def test_run_now_endpoint_requires_auth(anonymous_client):
     response = anonymous_client.post("/local-import/run-now")
+    assert response.status_code == 401
+
+
+# --- GET/PUT /local-import/settings ---
+
+
+def test_get_settings_returns_unconfigured_state_by_default(client, db_session):
+    settings_row = db_session.get(LocalImportSettings, 1)
+    settings_row.ready_to_upload_root = None
+    settings_row.already_uploaded_root = None
+    db_session.commit()
+
+    response = client.get("/local-import/settings")
+    assert response.status_code == 200
+    assert response.json()["ready_to_upload_root"] is None
+    assert response.json()["already_uploaded_root"] is None
+
+
+def test_put_settings_saves_paths_and_syncs_job_folders_immediately(client, db_session, tmp_path):
+    ready = tmp_path / "ready-via-api"
+    already = tmp_path / "already-via-api"
+    title = _unique_title("ApiSync")
+    _make_job(db_session, title=title, status="published")
+
+    response = client.put(
+        "/local-import/settings",
+        json={"ready_to_upload_root": str(ready), "already_uploaded_root": str(already)},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ready_to_upload_root"] == str(ready)
+    assert body["already_uploaded_root"] == str(already)
+    assert body["jobs_considered"] >= 1
+    assert body["folders_created"] >= 2
+
+    assert (ready / job_folders.sanitize_job_folder_name(title)).is_dir()
+    assert (already / job_folders.sanitize_job_folder_name(title)).is_dir()
+
+
+def test_put_settings_rejects_blank_path(client):
+    response = client.put(
+        "/local-import/settings", json={"ready_to_upload_root": "   ", "already_uploaded_root": "/tmp/x"}
+    )
+    assert response.status_code == 422
+
+
+def test_get_settings_requires_auth(anonymous_client):
+    response = anonymous_client.get("/local-import/settings")
     assert response.status_code == 401

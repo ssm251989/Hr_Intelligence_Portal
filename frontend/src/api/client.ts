@@ -30,6 +30,9 @@ import type {
   JobSummaryResponse,
   LabeledCount,
   LinkedInAuthUrl,
+  LocalImportSettings,
+  LocalImportSettingsSaveResult,
+  LocalImportSettingsUpdate,
   NextAction,
   OfferGenerateRequest,
   OfferRead,
@@ -342,6 +345,16 @@ export const screeningApi = {
   getSettings: () => get<ScreeningSettings>("/screening/settings"),
   updateSettings: (payload: ScreeningSettingsUpdate) => put<ScreeningSettings>("/screening/settings", payload),
   reEvaluateAll: () => post<ReEvaluateAllResult>("/screening/re-evaluate-all"),
+};
+
+// ---- local-folder auto-import (Part G) ----
+
+export const localImportApi = {
+  getSettings: () => get<LocalImportSettings>("/local-import/settings"),
+  // Saving immediately syncs job folders under both roots -- see backend
+  // app/local_import/router.py update_settings.
+  updateSettings: (payload: LocalImportSettingsUpdate) =>
+    put<LocalImportSettingsSaveResult>("/local-import/settings", payload),
 };
 
 // ---- shortlisting ----
