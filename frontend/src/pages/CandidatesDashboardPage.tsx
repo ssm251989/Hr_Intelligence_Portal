@@ -8,6 +8,7 @@ import Typography from "@mui/material/Typography";
 import { Link as RouterLink } from "react-router-dom";
 
 import CandidatesDashboardStats from "../components/CandidatesDashboardStats";
+import LastImportRunCard from "../components/LastImportRunCard";
 import ScreeningThresholdPanel from "../components/ScreeningThresholdPanel";
 import UploadCandidateDialog from "../components/UploadCandidateDialog";
 import { useAuth } from "../auth/AuthContext";
@@ -43,6 +44,8 @@ export default function CandidatesDashboardPage() {
       </Stack>
 
       <ScreeningThresholdPanel />
+
+      <LastImportRunCard />
 
       <CandidatesDashboardStats refreshSignal={refreshSignal} />
 
