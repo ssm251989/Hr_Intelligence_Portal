@@ -84,6 +84,85 @@ def test_describe_failed_entry_missing_error_key_still_produces_text():
     assert screening_service.describe_screening_audit_entry("ai_screening_failed", {}) == "AI screening failed: unknown error"
 
 
+# --- describe_interview_readiness (Part F): pure function, no AI/DB access ---
+
+
+def test_describe_interview_readiness_ready():
+    details = {"composite_score": 84.0, "interview_ready": True}
+    assert screening_service.describe_interview_readiness("ai_screening_scored", details) == "Interview ready (score 84)"
+
+
+def test_describe_interview_readiness_below_threshold():
+    details = {"composite_score": 52.0, "interview_ready": False}
+    text = screening_service.describe_interview_readiness("ai_screening_scored", details)
+    assert text == "Below interview threshold (score 52)"
+
+
+def test_describe_interview_readiness_missing_key_predates_part_f():
+    # A historical audit_log entry from before Part F existed -- interview_ready was never
+    # evaluated for it, which must read as a plain "Screened," not a false "Below threshold."
+    details = {"composite_score": 70.0, "recommendation": "possible_fit"}
+    assert screening_service.describe_interview_readiness("ai_screening_scored", details) == "Screened (score 70)"
+
+
+def test_describe_interview_readiness_missing_composite_score_omits_score_suffix():
+    details = {"interview_ready": True}
+    assert screening_service.describe_interview_readiness("ai_screening_scored", details) == "Interview ready"
+
+
+def test_describe_interview_readiness_failed_entry_includes_the_error():
+    details = {"error": "boom"}
+    assert screening_service.describe_interview_readiness("ai_screening_failed", details) == "AI screening failed: boom"
+
+
+# --- integration: Interview Readiness Remarks on the real List/export APIs (Part F) ---
+
+
+def test_interview_remarks_derived_from_the_real_audit_log_entry(client, db_session, monkeypatch):
+    monkeypatch.setattr("app.screening.service.match_resume", lambda *a, **k: _fake_result())
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session, email=f"remarks-{uuid.uuid4().hex[:8]}@example.com")
+    application = _make_application(db_session, job, candidate)
+
+    screening_service.run_screening(db_session, application, job, candidate, "system")
+
+    audit_entry = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.entity_id == application.id, AuditLog.action == "ai_screening_scored")
+        .one()
+    )
+    expected = screening_service.describe_interview_readiness(audit_entry.action, audit_entry.details)
+    assert "interview_ready" in audit_entry.details  # Part F's own field, alongside "advanced"
+
+    response = client.get("/candidates/applications", params={"search": candidate.email, "page_size": 50})
+    row = response.json()["items"][0]
+    assert row["interview_remarks"] == expected
+    # remarks (Part C) and interview_remarks (Part F) are two different renderings of the
+    # SAME entry -- distinct text, not a duplicate of each other.
+    assert row["remarks"] != row["interview_remarks"]
+
+
+def test_interview_remarks_appear_on_export_endpoint_too(client, db_session, monkeypatch):
+    monkeypatch.setattr("app.screening.service.match_resume", lambda *a, **k: _fake_result())
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session, email=f"remarks-{uuid.uuid4().hex[:8]}@example.com")
+    application = _make_application(db_session, job, candidate)
+    screening_service.run_screening(db_session, application, job, candidate, "system")
+
+    response = client.get("/candidates/applications/export", params={"application_ids": [str(application.id)]})
+    assert response.status_code == 200
+    assert response.json()[0]["interview_remarks"] is not None
+
+
+def test_unscreened_application_has_null_interview_remarks(client, db_session):
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session, email=f"remarks-{uuid.uuid4().hex[:8]}@example.com")
+    _make_application(db_session, job, candidate)
+
+    response = client.get("/candidates/applications", params={"search": candidate.email, "page_size": 50})
+    assert response.json()["items"][0]["interview_remarks"] is None
+
+
 # --- integration: Remarks on the real List/export/dashboard APIs, derived from real audit_log rows ---
 
 

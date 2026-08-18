@@ -72,6 +72,12 @@ class CandidateApplicationRow(BaseModel):
     # describe_screening_audit_entry), never a separately maintained string. Null until the
     # application has ever been screened.
     remarks: Optional[str] = None
+    # Interview Readiness Remarks (Part F) -- a DIFFERENT rendering of that exact same
+    # audit_log entry (see app/screening/service.py describe_interview_readiness), driven by
+    # the separate interview_min_score threshold rather than dashboard_min_score. Shown as
+    # the Screening List's own "Remarks" column; the Candidates List keeps showing `remarks`
+    # above, unaffected. Null until the application has ever been screened.
+    interview_remarks: Optional[str] = None
 
 
 class CandidatesDashboardStatsResponse(BaseModel):

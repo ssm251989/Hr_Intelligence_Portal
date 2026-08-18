@@ -93,6 +93,100 @@ def test_get_settings_requires_auth(anonymous_client):
     assert response.status_code == 401
 
 
+# --- Part F: the separate interview_min/max_score pair, partial-update semantics ---
+
+
+def test_get_settings_includes_the_interview_threshold_pair(client):
+    response = client.get("/screening/settings")
+    assert response.status_code == 200
+    body = response.json()
+    assert 0 <= body["interview_min_score"] <= 100
+    assert 0 <= body["interview_max_score"] <= 100
+    assert body["interview_min_score"] <= body["interview_max_score"]
+
+
+def test_put_settings_interview_pair_only_leaves_dashboard_pair_untouched(client):
+    # Establish a known dashboard pair first, then update ONLY the interview pair --
+    # dashboard_min/max_score must come back completely unchanged.
+    client.put("/screening/settings", json={"dashboard_min_score": 55, "dashboard_max_score": 95})
+
+    response = client.put("/screening/settings", json={"interview_min_score": 80, "interview_max_score": 97})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["interview_min_score"] == 80
+    assert body["interview_max_score"] == 97
+    assert body["dashboard_min_score"] == 55
+    assert body["dashboard_max_score"] == 95
+
+
+def test_put_settings_dashboard_pair_only_leaves_interview_pair_untouched(client):
+    # The inverse: establish a known interview pair, then update ONLY the dashboard pair.
+    client.put("/screening/settings", json={"interview_min_score": 82, "interview_max_score": 99})
+
+    response = client.put("/screening/settings", json={"dashboard_min_score": 40, "dashboard_max_score": 85})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["dashboard_min_score"] == 40
+    assert body["dashboard_max_score"] == 85
+    assert body["interview_min_score"] == 82
+    assert body["interview_max_score"] == 99
+
+
+def test_put_settings_rejects_interview_min_above_max(client):
+    response = client.put("/screening/settings", json={"interview_min_score": 90, "interview_max_score": 45})
+    assert response.status_code == 422
+
+
+def test_put_settings_rejects_interview_min_without_max(client):
+    response = client.put("/screening/settings", json={"interview_min_score": 80})
+    assert response.status_code == 422
+
+
+def test_put_settings_rejects_empty_payload(client):
+    response = client.put("/screening/settings", json={})
+    assert response.status_code == 422
+
+
+# --- Functional: changing the INTERVIEW threshold changes Interview Readiness Remarks for a NEW upload ---
+
+
+def test_changing_interview_threshold_changes_interview_remarks_for_a_new_upload(client, db_session, monkeypatch):
+    # Fixed AI result: composite exactly 70.0, same trick as the dashboard-threshold test
+    # above -- but this time it's the SEPARATE interview_min_score pair being exercised, and
+    # the dashboard pair is pinned so both applications land in the same 'screened' status
+    # regardless (isolating this test to interview_remarks, not a dashboard-threshold effect).
+    monkeypatch.setattr("app.screening.service.match_resume", lambda *a, **k: dict(FAKE_MATCH_RESULT_70))
+    client.put("/screening/settings", json={"dashboard_min_score": 0, "dashboard_max_score": 100})
+
+    job = _make_job(db_session)
+
+    client.put("/screening/settings", json={"interview_min_score": 80, "interview_max_score": 100})
+    candidate_a = _make_candidate(db_session, parsed_fields={"skills": ["Python"]})
+    application_a = _make_application(db_session, job, candidate_a)
+    screening_service.attempt_auto_screen(db_session, application_a)
+
+    row_a = next(
+        i for i in client.get(
+            "/candidates/applications", params={"job_role_id": str(job.id), "page_size": 50}
+        ).json()["items"]
+        if i["application_id"] == str(application_a.id)
+    )
+    assert row_a["interview_remarks"] == "Below interview threshold (score 70)"  # 70 < 80
+
+    client.put("/screening/settings", json={"interview_min_score": 50, "interview_max_score": 100})
+    candidate_b = _make_candidate(db_session, parsed_fields={"skills": ["Python"]})
+    application_b = _make_application(db_session, job, candidate_b)
+    screening_service.attempt_auto_screen(db_session, application_b)
+
+    row_b = next(
+        i for i in client.get(
+            "/candidates/applications", params={"job_role_id": str(job.id), "page_size": 50}
+        ).json()["items"]
+        if i["application_id"] == str(application_b.id)
+    )
+    assert row_b["interview_remarks"] == "Interview ready (score 70)"  # 70 >= 50
+
+
 # --- Functional: changing the threshold changes auto-advance for a NEW upload ---
 
 

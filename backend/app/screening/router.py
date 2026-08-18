@@ -138,10 +138,19 @@ def update_settings(
     """Saving here takes effect immediately for every screening call from this point
     forward -- new uploads (attempt_auto_screen), the manual Screen button, and Re-evaluate
     All all read this same singleton row fresh each time (get_screening_settings), never a
-    value cached at some earlier point."""
+    value cached at some earlier point.
+
+    Partial update: only the pair(s) actually present in payload are written (see
+    ScreeningSettingsUpdate's validator) -- the Candidates Dashboard's threshold form sends
+    only dashboard_min/max_score, the Screening Dashboard's sends only interview_min/
+    max_score, and neither ever overwrites the other's pair."""
     settings_row: ScreeningSettings = get_screening_settings(db)
-    settings_row.dashboard_min_score = payload.dashboard_min_score
-    settings_row.dashboard_max_score = payload.dashboard_max_score
+    if payload.dashboard_min_score is not None:
+        settings_row.dashboard_min_score = payload.dashboard_min_score
+        settings_row.dashboard_max_score = payload.dashboard_max_score
+    if payload.interview_min_score is not None:
+        settings_row.interview_min_score = payload.interview_min_score
+        settings_row.interview_max_score = payload.interview_max_score
     db.commit()
     db.refresh(settings_row)
     return settings_row

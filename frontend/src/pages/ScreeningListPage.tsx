@@ -41,7 +41,7 @@ import { screeningScoreDisplay } from "../utils/screeningScore";
 const ROWS_PER_PAGE_OPTIONS = [10, 20, 30, 40, 50];
 const DEFAULT_PAGE_SIZE = 10;
 const SEARCH_DEBOUNCE_MS = 300;
-const COLUMN_COUNT = 12;
+const COLUMN_COUNT = 11;
 
 // Same "Active"/"Inactive"/"On Hold" reading as the Candidates List -- one status chip
 // language across every table in the app, not a per-page variant.
@@ -157,7 +157,7 @@ export default function ScreeningListPage() {
           row.composite_score ?? row.match_score,
           row.match_score,
           row.ranking_score,
-          row.remarks,
+          row.interview_remarks,
         ]),
       );
     } catch (err) {
@@ -366,10 +366,10 @@ export default function ScreeningListPage() {
                       <ApplicationStatusChip status={row.status} />
                     </TableCell>
                     <TableCell sx={{ maxWidth: 220 }}>
-                      {row.remarks ? (
-                        <Tooltip title={row.remarks}>
+                      {row.interview_remarks ? (
+                        <Tooltip title={row.interview_remarks}>
                           <Typography variant="body2" noWrap>
-                            {row.remarks}
+                            {row.interview_remarks}
                           </Typography>
                         </Tooltip>
                       ) : (

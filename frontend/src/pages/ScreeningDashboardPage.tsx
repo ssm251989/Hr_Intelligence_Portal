@@ -2,12 +2,14 @@ import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
+import InterviewReadinessThresholdPanel from "../components/InterviewReadinessThresholdPanel";
 import ScreeningDashboardStats from "../components/ScreeningDashboardStats";
 
-// The auto-advance threshold + Re-evaluate All action (Part D) lives on the Candidates
-// Dashboard, not here -- deliberately not duplicated onto this page too. This dashboard is
-// Part E's read-only overview of what screening has already concluded across every
-// application; the screen/rank action buttons live on the Screening List page instead.
+// Part D's dashboard_min/max_score threshold + Re-evaluate All action lives on the
+// Candidates Dashboard, not here -- deliberately not duplicated onto this page. Part F's
+// own, separate interview_min/max_score threshold DOES live here (InterviewReadinessThreshold
+// Panel below), since the docstring on app/models/screening_settings.py frames it as "the
+// Screening module's own" threshold, as opposed to Part D's Candidates-Dashboard-owned one.
 export default function ScreeningDashboardPage() {
   return (
     <Box>
@@ -19,6 +21,8 @@ export default function ScreeningDashboardPage() {
           </Typography>
         </Box>
       </Stack>
+
+      <InterviewReadinessThresholdPanel />
 
       <ScreeningDashboardStats />
     </Box>

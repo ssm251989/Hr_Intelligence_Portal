@@ -59,13 +59,44 @@ def describe_screening_audit_entry(action: str, details: dict) -> str:
     return f"{recommendation}{score_text}"
 
 
+def describe_interview_readiness(action: str, details: dict) -> str:
+    """Part F: the Screening List's Remarks column -- a different rendering of the exact
+    same ai_screening_scored/ai_screening_failed audit_log entry describe_screening_audit_
+    entry above renders for the Candidates List, but describing something different:
+    whether the score cleared the *separate*, Screening-owned interview_min_score threshold
+    (see app/models/screening_settings.py), not the Candidates Dashboard's own threshold.
+
+    Purely descriptive -- interview_ready is a computed indicator recorded on the audit_log
+    entry at scoring time (see run_screening below), never a status change. Whether an
+    application actually reaches interview_scheduled stays a fully human-driven decision
+    (shortlisting + scheduling), same as every other transition past 'screened'.
+    """
+    if action == "ai_screening_failed":
+        return f"AI screening failed: {details.get('error') or 'unknown error'}"
+
+    composite = details.get("composite_score")
+    score_text = f" (score {round(composite)})" if composite is not None else ""
+    interview_ready = details.get("interview_ready")
+    # None (key absent) means this entry predates Part F -- interview-readiness was never
+    # evaluated for it, which reads as a plain "Screened," not a false "Below threshold."
+    if interview_ready is None:
+        return f"Screened{score_text}"
+    if interview_ready:
+        return f"Interview ready{score_text}"
+    return f"Below interview threshold{score_text}"
+
+
 def get_screening_settings(db: Session) -> ScreeningSettings:
-    """The singleton settings row (id=1), seeded by migration e1f3a7c9b2d4. Defensively
-    creates it if somehow missing (e.g. a test DB that ran migrations before this table
-    existed) rather than crashing screening outright."""
+    """The singleton settings row (id=1), seeded by migration e1f3a7c9b2d4 (dashboard
+    threshold) and b3f8e6a2d5c9 (interview threshold). Defensively creates it if somehow
+    missing (e.g. a test DB that ran migrations before this table existed) rather than
+    crashing screening outright."""
     settings_row = db.get(ScreeningSettings, 1)
     if settings_row is None:
-        settings_row = ScreeningSettings(id=1, dashboard_min_score=60, dashboard_max_score=100)
+        settings_row = ScreeningSettings(
+            id=1, dashboard_min_score=60, dashboard_max_score=100,
+            interview_min_score=75, interview_max_score=100,
+        )
         db.add(settings_row)
         db.commit()
         db.refresh(settings_row)
@@ -113,6 +144,13 @@ def run_screening(db: Session, application: Application, job: JobRole, candidate
     [min, max] -- there is no separate high-priority outcome, so only the minimum actually
     gates the decision.
 
+    Also evaluates the same composite score against the separate, Part F interview
+    threshold (interview_min_score) and records the result as interview_ready -- purely
+    informational (see describe_interview_readiness), never a second status change. Both
+    thresholds are read from the *current* settings row and stamped onto this one audit
+    entry, so a historical Remarks reading reflects whatever thresholds were in effect when
+    this particular screening call actually ran, not whatever they've since been changed to.
+
     Raises ResumeMatchError on AI failure, after logging a failure audit entry -- the
     application is left completely untouched (no status change, no composite_score) so it
     stays in a safe, still-'received' state for a human or a later retry to pick up.
@@ -137,6 +175,10 @@ def run_screening(db: Session, application: Application, job: JobRole, candidate
     advance = score >= min_score
     new_status = "screened" if advance else previous_status
 
+    interview_min_score = float(thresholds.interview_min_score)
+    interview_max_score = float(thresholds.interview_max_score)
+    interview_ready = score >= interview_min_score
+
     log_action(
         db,
         "application",
@@ -157,6 +199,9 @@ def run_screening(db: Session, application: Application, job: JobRole, candidate
             "previous_status": previous_status,
             "new_status": new_status,
             "advanced": advance,
+            "interview_threshold_min": interview_min_score,
+            "interview_threshold_max": interview_max_score,
+            "interview_ready": interview_ready,
         },
     )
 

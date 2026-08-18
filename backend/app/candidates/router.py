@@ -26,7 +26,12 @@ from app.models.job_role import JobRole
 from app.models.user import User
 from app.schemas.candidate import CandidateRead, CandidateUpdate
 from app.schemas.candidates_dashboard import CandidateApplicationRow, CandidatesListPage
-from app.screening.service import SCREENING_REMARKS_ACTIONS, attempt_auto_screen, describe_screening_audit_entry
+from app.screening.service import (
+    SCREENING_REMARKS_ACTIONS,
+    attempt_auto_screen,
+    describe_interview_readiness,
+    describe_screening_audit_entry,
+)
 from app.screening.suitability import attempt_auto_suggest_suitable_job
 
 router = APIRouter(prefix="/candidates", tags=["candidates"])
@@ -206,9 +211,14 @@ def row_to_item(
     experience_years = None
     if candidate.parsed_fields:
         experience_years = candidate.parsed_fields.get("total_experience_years")
-    # Remarks (Part C): a rendering of the application's own latest screening audit_log
-    # entry, never a separately maintained string -- None until it's ever been screened.
+    # Remarks (Part C) and Interview Readiness Remarks (Part F): two different renderings
+    # of that SAME latest screening audit_log entry -- never separately maintained strings,
+    # and never a second query/join (screening_action/screening_details already is "whichever
+    # entry is latest," looked up once by the caller).
     remarks = describe_screening_audit_entry(screening_action, screening_details or {}) if screening_action else None
+    interview_remarks = (
+        describe_interview_readiness(screening_action, screening_details or {}) if screening_action else None
+    )
     return CandidateApplicationRow(
         application_id=application.id,
         candidate_id=candidate.id,
@@ -232,6 +242,7 @@ def row_to_item(
         suitable_job_title=suitable_job_title,
         suitable_job_score=float(candidate.suitable_job_score) if candidate.suitable_job_score is not None else None,
         remarks=remarks,
+        interview_remarks=interview_remarks,
     )
 
 

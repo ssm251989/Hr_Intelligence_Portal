@@ -298,6 +298,11 @@ export interface CandidateApplicationRow {
   // -- never a separately maintained string. Null until the application has ever been
   // screened.
   remarks?: string | null;
+  // Part F: a DIFFERENT rendering of that exact same audit_log entry (see backend
+  // app/screening/service.py describe_interview_readiness), driven by the separate
+  // interview_min_score threshold rather than dashboard_min_score. The Screening List's own
+  // "Remarks" column; Candidates List keeps showing `remarks` above, unaffected.
+  interview_remarks?: string | null;
 }
 
 export interface CandidatesListPage {
@@ -644,17 +649,29 @@ export interface PublicApplicationSubmitResponse {
   status: string;
 }
 
-// ---- screening settings (Part D) ----
+// ---- screening settings (Part D dashboard threshold + Part F interview threshold) ----
 
 export interface ScreeningSettings {
   dashboard_min_score: number;
   dashboard_max_score: number;
+  // Part F: the Screening Dashboard's own, independent threshold -- whether a screened
+  // application is flagged "Interview ready" in the Screening List's Remarks column.
+  // Never shared with dashboard_min/max_score above.
+  interview_min_score: number;
+  interview_max_score: number;
   updated_at?: string | null;
 }
 
+// Partial update: send ONE pair (dashboard_min/max_score OR interview_min/max_score), never
+// both at once -- each pair is saved by its own panel (Candidates Dashboard vs Screening
+// Dashboard) and the backend leaves whichever pair you omit completely untouched. A pair
+// sent partially (only min, or only max) is rejected -- see backend
+// app/schemas/screening.py ScreeningSettingsUpdate.
 export interface ScreeningSettingsUpdate {
-  dashboard_min_score: number;
-  dashboard_max_score: number;
+  dashboard_min_score?: number;
+  dashboard_max_score?: number;
+  interview_min_score?: number;
+  interview_max_score?: number;
 }
 
 // Summary counts for one Re-evaluate All run -- see app/screening/service.py
