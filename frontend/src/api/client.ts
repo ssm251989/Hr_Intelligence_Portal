@@ -42,6 +42,7 @@ import type {
   RecentActivityResponse,
   SalaryApprovalRequest,
   SalaryStatusResponse,
+  ScreeningDashboardStatsResponse,
   ScreeningSettings,
   ScreeningSettingsUpdate,
   ShortlistDecisionRequest,
@@ -430,6 +431,10 @@ export const reportsApi = {
   // Omit `limit` for every distinct skill -- backs "View all skills".
   candidatesTopSkills: (limit?: number) =>
     get<LabeledCount[]>(`/reports/candidates-top-skills${limit ? `?limit=${limit}` : ""}`),
+  screeningDashboardStats: (compareMonth?: string) =>
+    get<ScreeningDashboardStatsResponse>(
+      `/reports/screening-dashboard-stats${compareMonth ? `?compare_month=${compareMonth}` : ""}`
+    ),
 };
 
 // ---- public careers portal (no auth) ----

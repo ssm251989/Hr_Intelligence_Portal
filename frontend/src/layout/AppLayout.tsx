@@ -81,7 +81,15 @@ const MODULES: ModuleLink[] = [
       { label: "Import from Source", path: "/candidates/import" },
     ],
   },
-  { label: "Screening", path: "/screening", icon: FactCheckOutlinedIcon },
+  {
+    label: "Screening",
+    path: "/screening",
+    icon: FactCheckOutlinedIcon,
+    children: [
+      { label: "Dashboard", path: "/screening/dashboard" },
+      { label: "Screening List", path: "/screening/list" },
+    ],
+  },
   { label: "Shortlisting", path: "/shortlisting", icon: PlaylistAddCheckOutlinedIcon },
   { label: "Interviews", path: "/interviews", icon: EventOutlinedIcon },
   { label: "Salary", path: "/salary", icon: PaidOutlinedIcon },

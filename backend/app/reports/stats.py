@@ -300,6 +300,21 @@ def top_skills(db: Session, limit: Optional[int] = 10) -> list[tuple[str, int]]:
     return counter.most_common(limit)
 
 
+def top_missing_skills(db: Session, limit: Optional[int] = 10) -> list[tuple[str, int]]:
+    """top_skills' Screening Dashboard counterpart -- frequency of each skill across every
+    application's missing_skills (Part A), i.e. what gaps come up most often between what
+    candidates actually have and what jobs ask for. A candidate's own skills (top_skills)
+    and a job's unmet requirements (this) are different questions, so this is deliberately
+    its own query rather than a filtered view of the same data."""
+    counter: Counter = Counter()
+    rows = db.query(Application.missing_skills).filter(Application.missing_skills.isnot(None)).all()
+    for (missing_skills,) in rows:
+        for skill in missing_skills or []:
+            if skill:
+                counter[skill] += 1
+    return counter.most_common(limit)
+
+
 MATCH_SCORE_BUCKETS = ("90-100", "70-89", "50-69", "30-49", "0-29")
 
 
@@ -315,14 +330,28 @@ def _match_score_bucket(score: float) -> str:
     return "0-29"
 
 
+def _bucket_scores(scores: list[float]) -> list[tuple[str, int]]:
+    counter: Counter = Counter()
+    for score in scores:
+        counter[_match_score_bucket(float(score))] += 1
+    return [(bucket, counter.get(bucket, 0)) for bucket in MATCH_SCORE_BUCKETS]
+
+
 def match_score_distribution(db: Session) -> list[tuple[str, int]]:
     """Buckets every application's real match_score -- all 5 buckets always appear, even
     at 0, so the chart's axis never reflows as data comes in."""
-    counter: Counter = Counter()
-    scores = db.query(Application.match_score).filter(Application.match_score.isnot(None)).all()
-    for (score,) in scores:
-        counter[_match_score_bucket(float(score))] += 1
-    return [(bucket, counter.get(bucket, 0)) for bucket in MATCH_SCORE_BUCKETS]
+    scores = [score for (score,) in db.query(Application.match_score).filter(Application.match_score.isnot(None)).all()]
+    return _bucket_scores(scores)
+
+
+def composite_score_distribution(db: Session) -> list[tuple[str, int]]:
+    """Same bucketing as match_score_distribution, but over Part A's composite_score -- the
+    Screening Dashboard's counterpart chart (composite is the score Screening decisions are
+    actually made against, not the raw Resume Matcher score)."""
+    scores = [
+        score for (score,) in db.query(Application.composite_score).filter(Application.composite_score.isnot(None)).all()
+    ]
+    return _bucket_scores(scores)
 
 
 def avg_match_score_as_of(db: Session, cutoff: datetime) -> Optional[float]:
@@ -336,5 +365,54 @@ def avg_match_score_as_of(db: Session, cutoff: datetime) -> Optional[float]:
         .scalar()
     )
     return round(float(avg), 1) if avg is not None else None
+
+
+def avg_composite_score_as_of(db: Session, cutoff: datetime) -> Optional[float]:
+    """avg_match_score_as_of's Screening Dashboard counterpart, over composite_score."""
+    avg = (
+        db.query(func.avg(Application.composite_score))
+        .filter(Application.composite_score.isnot(None), Application.created_at < cutoff)
+        .scalar()
+    )
+    return round(float(avg), 1) if avg is not None else None
+
+
+def awaiting_screening_count(db: Session) -> int:
+    """Applications still sitting at 'received' -- Screening's own live backlog depth, not
+    a monthly count, so (unlike the metrics above) this has no month-over-month trend: an
+    application's status isn't tracked historically, so there's no way to know what the
+    backlog size actually was at a past month-end."""
+    return db.query(func.count(Application.id)).filter(Application.status == "received").scalar() or 0
+
+
+def awaiting_ranking_count(db: Session) -> int:
+    """Applications that have been screened but never ranked -- 'screened' status with no
+    ranking_score yet. Same live-backlog caveat as awaiting_screening_count above."""
+    return (
+        db.query(func.count(Application.id))
+        .filter(Application.status == "screened", Application.ranking_score.is_(None))
+        .scalar()
+        or 0
+    )
+
+
+def screening_audit_count_in_window(
+    db: Session, action: str, start: datetime, end: datetime, *, advanced: Optional[bool] = None
+) -> int:
+    """Count of application-scoped audit_log rows of the given screening `action`
+    (ai_screening_scored / ai_screening_failed) within [start, end) -- the Screening
+    Dashboard's "Auto-Advanced This Month" / "Failed This Month" cards. `advanced`, when
+    given, additionally filters ai_screening_scored's own details.advanced flag (whether
+    that particular screening call actually cleared the threshold), since a scored entry
+    and an *advancing* scored entry are different things worth counting separately."""
+    query = db.query(func.count(AuditLog.id)).filter(
+        AuditLog.entity_type == "application",
+        AuditLog.action == action,
+        AuditLog.created_at >= start,
+        AuditLog.created_at < end,
+    )
+    if advanced is not None:
+        query = query.filter(AuditLog.details["advanced"].astext == ("true" if advanced else "false"))
+    return query.scalar() or 0
 
 

@@ -36,6 +36,7 @@ from app.schemas.reports import (
     StatusCount,
     TopJobItem,
 )
+from app.schemas.screening import ScreeningDashboardStatsResponse
 
 router = APIRouter(tags=["reports"])
 
@@ -518,6 +519,110 @@ def get_candidates_dashboard_stats(
         recent_candidates=[
             row_to_item(app, cand, title, suitable_title, screening_action, screening_details)
             for app, cand, title, suitable_title, screening_action, screening_details in recent_rows
+        ],
+    )
+
+
+_RECOMMENDATION_BUCKETS = ("strong_fit", "possible_fit", "weak_fit")
+_RECOMMENDATION_DISPLAY = {"strong_fit": "Strong fit", "possible_fit": "Possible fit", "weak_fit": "Weak fit"}
+
+
+def _recommendation_breakdown(db: Session) -> list[LabeledCount]:
+    """Every application's LATEST screening entry (same "latest per application" join the
+    Candidates List's Remarks column uses -- see _latest_screening_audit_id), bucketed by
+    its recommendation. Only counts applications whose latest entry is an actual
+    ai_screening_scored result (an inner join naturally excludes anyone never screened, or
+    whose latest attempt failed) -- all 3 buckets always appear, even at 0."""
+    recommendation_col = ScreeningAuditEntry.details["recommendation"].astext
+    rows = (
+        db.query(recommendation_col, func.count(Application.id))
+        .select_from(Application)
+        .join(ScreeningAuditEntry, ScreeningAuditEntry.id == _latest_screening_audit_id(db))
+        .filter(ScreeningAuditEntry.action == "ai_screening_scored")
+        .group_by(recommendation_col)
+        .all()
+    )
+    counts = dict(rows)
+    return [
+        LabeledCount(label=_RECOMMENDATION_DISPLAY[key], count=counts.get(key, 0))
+        for key in _RECOMMENDATION_BUCKETS
+    ]
+
+
+@router.get("/reports/screening-dashboard-stats", response_model=ScreeningDashboardStatsResponse)
+def get_screening_dashboard_stats(
+    compare_month: Optional[str] = Query(
+        None,
+        description="YYYY-MM month to compare the current values against. Must be one "
+        "of the past 12 completed months; defaults to last month.",
+    ),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    now = datetime.now(timezone.utc)
+    try:
+        compare_month_start = stats.parse_compare_month(compare_month, now)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    compare_month_end = stats.shift_months(compare_month_start, 1)
+
+    month_starts = stats.last_12_month_starts(now)
+    month_ends = [stats.shift_months(month_start, 1) for month_start in month_starts]
+    current_month_start, current_month_end = month_starts[-1], month_ends[-1]
+
+    awaiting_screening = stats.awaiting_screening_count(db)
+    awaiting_ranking = stats.awaiting_ranking_count(db)
+
+    auto_advanced_this_month = stats.screening_audit_count_in_window(
+        db, "ai_screening_scored", current_month_start, current_month_end, advanced=True
+    )
+    auto_advanced_series = [
+        stats.screening_audit_count_in_window(db, "ai_screening_scored", start, end, advanced=True)
+        for start, end in zip(month_starts, month_ends)
+    ]
+    compare_auto_advanced = stats.screening_audit_count_in_window(
+        db, "ai_screening_scored", compare_month_start, compare_month_end, advanced=True
+    )
+    auto_advanced_this_month_trend = stats.build_trend(
+        month_starts, auto_advanced_series, compare_month_start, compare_auto_advanced, auto_advanced_this_month
+    )
+
+    failed_this_month = stats.screening_audit_count_in_window(
+        db, "ai_screening_failed", current_month_start, current_month_end
+    )
+    failed_series = [
+        stats.screening_audit_count_in_window(db, "ai_screening_failed", start, end)
+        for start, end in zip(month_starts, month_ends)
+    ]
+    compare_failed = stats.screening_audit_count_in_window(
+        db, "ai_screening_failed", compare_month_start, compare_month_end
+    )
+    failed_this_month_trend = stats.build_trend(
+        month_starts, failed_series, compare_month_start, compare_failed, failed_this_month
+    )
+
+    avg_composite_score_series = [stats.avg_composite_score_as_of(db, end) for end in month_ends]
+    avg_composite_score = avg_composite_score_series[-1]
+    compare_avg_composite_score = stats.avg_composite_score_as_of(db, compare_month_end)
+    avg_composite_score_trend = stats.build_trend(
+        month_starts, avg_composite_score_series, compare_month_start, compare_avg_composite_score, avg_composite_score
+    )
+
+    return ScreeningDashboardStatsResponse(
+        awaiting_screening=awaiting_screening,
+        awaiting_ranking=awaiting_ranking,
+        auto_advanced_this_month=auto_advanced_this_month,
+        failed_this_month=failed_this_month,
+        avg_composite_score=avg_composite_score,
+        auto_advanced_this_month_trend=auto_advanced_this_month_trend,
+        failed_this_month_trend=failed_this_month_trend,
+        avg_composite_score_trend=avg_composite_score_trend,
+        recommendation_breakdown=_recommendation_breakdown(db),
+        composite_score_distribution=[
+            LabeledCount(label=bucket, count=count) for bucket, count in stats.composite_score_distribution(db)
+        ],
+        top_missing_skills=[
+            LabeledCount(label=skill, count=count) for skill, count in stats.top_missing_skills(db, limit=5)
         ],
     )
 

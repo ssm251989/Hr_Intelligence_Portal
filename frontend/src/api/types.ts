@@ -283,6 +283,12 @@ export interface CandidateApplicationRow {
   // match_score -- the same number Remarks' "Strong fit (score X)" text quotes. Null for
   // applications screened before Part A existed (never got a composite_score).
   composite_score?: number | null;
+  // One of the five composite_score inputs, surfaced on its own -- the single factor
+  // Remarks' "-- missing X, Y" text is directly about. Used by the Screening List (Part E).
+  skill_match_pct?: number | null;
+  // The separate, later "Rank" step's own score (app/screening/router.py rank_application)
+  // -- null until an application has been ranked, independent of whether it's been screened.
+  ranking_score?: number | null;
   experience_years?: number | null;
   resume_path?: string | null;
   photo_path?: string | null;
@@ -661,4 +667,24 @@ export interface ReEvaluateAllResult {
   advanced_to_screened: number;
   not_ready: number;
   failed: number;
+}
+
+// ---- screening dashboard (Part E) ----
+
+// awaiting_screening/awaiting_ranking are live backlog depths, not monthly counts -- no
+// trend, since an application's status isn't tracked historically (see backend
+// app/reports/stats.py awaiting_screening_count). Everything else follows the same
+// monthly-trend shape as the Candidates/Jobs dashboards.
+export interface ScreeningDashboardStatsResponse {
+  awaiting_screening: number;
+  awaiting_ranking: number;
+  auto_advanced_this_month: number;
+  failed_this_month: number;
+  avg_composite_score: number | null;
+  auto_advanced_this_month_trend: StatTrend;
+  failed_this_month_trend: StatTrend;
+  avg_composite_score_trend: StatTrend;
+  recommendation_breakdown: LabeledCount[];
+  composite_score_distribution: LabeledCount[];
+  top_missing_skills: LabeledCount[];
 }

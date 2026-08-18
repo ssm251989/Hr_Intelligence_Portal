@@ -48,6 +48,14 @@ class CandidateApplicationRow(BaseModel):
     # so the two numbers are never presented as the same thing under one column.
     match_score: Optional[float] = None
     composite_score: Optional[float] = None
+    # skill_match_pct is one of the five composite_score inputs, surfaced on its own since
+    # it's the single factor Remarks' "-- missing X, Y" text is directly about. ranking_score
+    # is a later, separate step (the "Rank" action, app/screening/router.py rank_application)
+    # -- null until an application has been ranked, independent of whether it's been screened.
+    # Both needed by the Screening List page (Part E), which is where screen/rank decisions
+    # actually get made.
+    skill_match_pct: Optional[float] = None
+    ranking_score: Optional[float] = None
     experience_years: Optional[float] = None
     resume_path: Optional[str] = None
     photo_path: Optional[str] = None

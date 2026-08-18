@@ -222,6 +222,8 @@ def row_to_item(
         applied_on=application.created_at,
         match_score=float(application.match_score) if application.match_score is not None else None,
         composite_score=float(application.composite_score) if application.composite_score is not None else None,
+        skill_match_pct=float(application.skill_match_pct) if application.skill_match_pct is not None else None,
+        ranking_score=float(application.ranking_score) if application.ranking_score is not None else None,
         experience_years=float(experience_years) if experience_years is not None else None,
         resume_path=candidate.resume_path,
         photo_path=candidate.photo_path,

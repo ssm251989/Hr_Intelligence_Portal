@@ -23,7 +23,8 @@ import OverviewPage from "./pages/OverviewPage";
 import RegisterPage from "./pages/RegisterPage";
 import ReportsPage from "./pages/ReportsPage";
 import SalaryPage from "./pages/SalaryPage";
-import ScreeningPage from "./pages/ScreeningPage";
+import ScreeningDashboardPage from "./pages/ScreeningDashboardPage";
+import ScreeningListPage from "./pages/ScreeningListPage";
 import SettingsPage from "./pages/SettingsPage";
 import ShortlistingPage from "./pages/ShortlistingPage";
 
@@ -56,7 +57,9 @@ export default function App() {
                 <Route path="/candidates/list" element={<CandidatesListPage />} />
                 <Route path="/candidates/import" element={<CandidatesImportPage />} />
                 <Route path="/candidates/:applicationId" element={<CandidateDetailPage />} />
-                <Route path="/screening" element={<ScreeningPage />} />
+                <Route path="/screening" element={<Navigate to="/screening/dashboard" replace />} />
+                <Route path="/screening/dashboard" element={<ScreeningDashboardPage />} />
+                <Route path="/screening/list" element={<ScreeningListPage />} />
                 <Route path="/shortlisting" element={<ShortlistingPage />} />
                 <Route path="/interviews" element={<InterviewsPage />} />
                 <Route path="/salary" element={<SalaryPage />} />

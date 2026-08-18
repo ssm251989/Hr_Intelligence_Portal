@@ -43,6 +43,7 @@ import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
 import { downloadCsv } from "../utils/csv";
 import { downloadResume } from "../utils/resume";
+import { screeningScoreDisplay } from "../utils/screeningScore";
 
 const ROWS_PER_PAGE_OPTIONS = [10, 20, 30, 40, 50];
 const DEFAULT_PAGE_SIZE = 10;
@@ -61,28 +62,6 @@ function ApplicationStatusChip({ status }: { status: string }) {
 }
 
 const COLUMN_COUNT = 12;
-
-// The Screening Score column: prefers Part A's composite_score (the same number Remarks'
-// "Strong fit (score X)" text quotes -- see app/screening/service.py
-// describe_screening_audit_entry) so the two never show different numbers with no
-// explanation. Falls back to the original Resume Matcher match_score only for applications
-// screened before Part A existed (which never got a composite_score); the tooltip always
-// says which one is being shown so the two scores are never confused for each other.
-function screeningScoreDisplay(row: CandidateApplicationRow): { value: number | null; tooltip: string } {
-  if (row.composite_score != null) {
-    return {
-      value: row.composite_score,
-      tooltip:
-        row.match_score != null
-          ? `Composite screening score (skills, experience, location, certificates, resume match). Resume Match score: ${Math.round(row.match_score)}%`
-          : "Composite screening score (skills, experience, location, certificates, resume match)",
-    };
-  }
-  if (row.match_score != null) {
-    return { value: row.match_score, tooltip: "Resume Match score -- this application predates composite screening" };
-  }
-  return { value: null, tooltip: "" };
-}
 
 export default function CandidatesListPage() {
   const navigate = useNavigate();
