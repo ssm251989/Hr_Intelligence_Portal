@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -7,6 +9,8 @@ from app.candidates.applications_router import router as applications_router
 from app.candidates.router import router as candidates_router
 from app.integrations.router import router as integrations_router
 from app.jobs.router import router as jobs_router
+from app.local_import.router import router as local_import_router
+from app.local_import.scheduler import start_scheduler, stop_scheduler
 from app.offers.router import router as offers_router
 from app.public.router import router as public_router
 from app.reports.router import router as reports_router
@@ -17,7 +21,20 @@ from app.screening.router import settings_router as screening_settings_router
 from app.shortlisting.router import router as shortlisting_router
 from app.users.router import router as users_router
 
-app = FastAPI(title="HR Automation")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Part G: the hourly local-import scan (app/local_import/scheduler.py) -- this app's
+    # first background job, so this is also its first-ever lifespan hook. Single dev
+    # process only: running multiple uvicorn workers would start one scheduler per worker,
+    # all racing on the same inbox -- fine for this app's actual deployment, not something
+    # this handles for a future multi-worker setup.
+    start_scheduler()
+    yield
+    stop_scheduler()
+
+
+app = FastAPI(title="HR Automation", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -41,6 +58,7 @@ app.include_router(reports_router)
 app.include_router(integrations_router)
 app.include_router(users_router)
 app.include_router(public_router)
+app.include_router(local_import_router)
 
 
 @app.get("/health")

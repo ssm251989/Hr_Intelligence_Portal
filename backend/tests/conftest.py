@@ -20,6 +20,10 @@ TestingSessionLocal = sessionmaker(bind=engine)
 def _isolate_uploads(tmp_path, monkeypatch):
     monkeypatch.setattr("app.candidates.storage.UPLOAD_DIR", tmp_path / "resumes")
     monkeypatch.setattr("app.candidates.storage.PHOTO_UPLOAD_DIR", tmp_path / "candidate-photos")
+    # Part G -- no automated test may ever read/write the real backend/local_import_inbox
+    # or local_import_archive directories.
+    monkeypatch.setattr("app.local_import.storage.INBOX_DIR", tmp_path / "local-import-inbox")
+    monkeypatch.setattr("app.local_import.storage.ARCHIVE_DIR", tmp_path / "local-import-archive")
 
 
 @pytest.fixture()

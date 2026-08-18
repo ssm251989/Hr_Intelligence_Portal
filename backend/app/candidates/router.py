@@ -99,10 +99,15 @@ def _with_inferred_gender(candidate: Candidate) -> Candidate:
     return candidate
 
 
-def parse_and_apply_resume(db: Session, candidate: Candidate) -> dict:
+def parse_and_apply_resume(
+    db: Session, candidate: Candidate, precomputed_result: Optional[dict] = None, actor: str = "system"
+) -> dict:
     """Extract text from a candidate's uploaded resume, AI-parse it, and apply the
-    result onto the candidate record. Shared by the authenticated parse-resume endpoint
-    and the public careers portal's background parsing after a direct application.
+    result onto the candidate record. Shared by the authenticated parse-resume endpoint,
+    the public careers portal's background parsing after a direct application, and Part G's
+    local-import scan (which passes precomputed_result -- its own resumes are already parsed
+    via a Batch API call before this runs, so there's nothing left to extract/parse here,
+    only the apply-to-candidate/screen/suggest steps below, identical either way).
     """
     if not candidate.resume_path:
         raise NoResumeUploadedError("No resume uploaded for this candidate")
@@ -111,14 +116,18 @@ def parse_and_apply_resume(db: Session, candidate: Candidate) -> dict:
     if not file_path.exists():
         raise ResumeFileMissingError("Resume file missing on disk")
 
-    raw_text = extract_text(file_path.read_bytes(), file_path.name)
-    result = parse_resume(raw_text)
+    if precomputed_result is not None:
+        result = precomputed_result
+    else:
+        raw_text = extract_text(file_path.read_bytes(), file_path.name)
+        result = parse_resume(raw_text)
 
-    log_action(db, "candidate", candidate.id, "ai_resume_parser_scored", "system", result)
+    log_action(db, "candidate", candidate.id, "ai_resume_parser_scored", actor, result)
     candidate.parsed_fields = result
     candidate.full_name = result.get("full_name") or candidate.full_name
     candidate.email = result.get("email") or candidate.email
     candidate.phone = result.get("phone") or candidate.phone
+    candidate.location = result.get("location") or candidate.location
 
     # Best-effort candidate photo -- never allowed to fail or block the parse above it. No
     # embedded image found (or any error extracting/saving one) just leaves photo_path as
@@ -137,16 +146,18 @@ def parse_and_apply_resume(db: Session, candidate: Candidate) -> dict:
     # Automatic screening (Part A): covers the career-portal path (application created
     # before the resume is parsed in the background) and a manual re-parse of a candidate
     # who already has a 'received' application -- both only become screenable once parsing
-    # completes, which just happened. The manual-upload/local-import path instead becomes
-    # screenable when a job gets linked afterward (see applications_router.py
-    # create_application's own call to this same best-effort helper).
+    # completes, which just happened. The manual-upload path instead becomes screenable when
+    # a job gets linked afterward (see applications_router.py create_application's own call
+    # to this same best-effort helper); Part G's local-import creates that same link itself,
+    # right after this function returns (see app/local_import/service.py).
     for application in db.query(Application).filter(Application.candidate_id == candidate.id).all():
-        attempt_auto_screen(db, application)
+        attempt_auto_screen(db, application, actor)
 
     # Suitable-For suggestion (Part B): informational only -- picks the best-fitting
     # published job for this candidate, entirely independent of (and without ever
-    # touching) whichever job(s) they actually applied for above.
-    attempt_auto_suggest_suitable_job(db, candidate)
+    # touching) whichever job(s) they actually applied for above. Part G reads
+    # candidate.suitable_job_id straight back off `candidate` after this call returns.
+    attempt_auto_suggest_suitable_job(db, candidate, actor)
 
     return result
 

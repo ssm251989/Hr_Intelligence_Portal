@@ -37,6 +37,36 @@ def _get_application_or_404(db: Session, application_id: uuid.UUID) -> Applicati
     return application
 
 
+def create_application_record(
+    db: Session, job: JobRole, candidate: Candidate, expected_salary: Optional[float] = None, actor: str = "system"
+) -> Application:
+    """The real "link a candidate to a job" logic -- shared by the authenticated POST
+    /applications endpoint below and Part G's local-import scan (which auto-links each
+    imported candidate to their own AI-suggested "Suitable For" job, see
+    app/local_import/service.py, rather than a recruiter picking one manually here).
+    """
+    application = Application(
+        job_role_id=job.id,
+        candidate_id=candidate.id,
+        expected_salary=expected_salary,
+        status="received",
+    )
+    db.add(application)
+    db.commit()
+    db.refresh(application)
+
+    log_action(db, "application", application.id, "application_created", actor, {"status": application.status})
+    notify_job_owner_of_new_application(db, job, candidate)
+
+    # Automatic screening (Part A): covers manual-upload and local-import candidates,
+    # whose resume is typically already parsed by the time a job gets linked here (the
+    # career-portal path instead becomes screenable when parsing completes afterward --
+    # see candidates/router.py parse_and_apply_resume's own call to this same helper).
+    attempt_auto_screen(db, application, actor)
+
+    return application
+
+
 @router.post("", response_model=ApplicationRead, status_code=201)
 def create_application(
     payload: ApplicationCreate,
@@ -50,26 +80,7 @@ def create_application(
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
-    application = Application(
-        job_role_id=payload.job_role_id,
-        candidate_id=payload.candidate_id,
-        expected_salary=payload.expected_salary,
-        status="received",
-    )
-    db.add(application)
-    db.commit()
-    db.refresh(application)
-
-    log_action(db, "application", application.id, "application_created", "system", {"status": application.status})
-    notify_job_owner_of_new_application(db, job, candidate)
-
-    # Automatic screening (Part A): covers manual-upload and local-import candidates,
-    # whose resume is typically already parsed by the time a job gets linked here (the
-    # career-portal path instead becomes screenable when parsing completes afterward --
-    # see candidates/router.py parse_and_apply_resume's own call to this same helper).
-    attempt_auto_screen(db, application)
-
-    return application
+    return create_application_record(db, job, candidate, expected_salary=payload.expected_salary)
 
 
 @router.get("", response_model=list[ApplicationRead])
