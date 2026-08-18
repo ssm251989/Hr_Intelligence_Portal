@@ -13,6 +13,7 @@ from app.reports.router import router as reports_router
 from app.salary.router import router as salary_router
 from app.scheduling.router import router as scheduling_router
 from app.screening.router import router as screening_router
+from app.screening.router import settings_router as screening_settings_router
 from app.shortlisting.router import router as shortlisting_router
 from app.users.router import router as users_router
 
@@ -30,6 +31,7 @@ app.include_router(jobs_router)
 app.include_router(candidates_router)
 app.include_router(applications_router)
 app.include_router(screening_router)
+app.include_router(screening_settings_router)
 app.include_router(shortlisting_router)
 app.include_router(scheduling_router)
 app.include_router(salary_router)

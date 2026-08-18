@@ -90,8 +90,19 @@ def composite_score(result: dict) -> float:
 def is_eligible_for_screening(application: Application) -> bool:
     """Automatic screening (unlike the manual button) must never touch an application
     that's already moved past the point screening matters -- only a fresh, untouched
-    'received' application is eligible. Re-evaluation (Part D) uses this same check."""
+    'received' application is eligible."""
     return application.status == "received"
+
+
+def is_eligible_for_reevaluation(application: Application) -> bool:
+    """Re-evaluate All (Part D) is deliberately broader than is_eligible_for_screening
+    above: it must also revisit already-'screened' applications (so a raised/lowered
+    threshold retroactively applies to them, not just to new uploads), but must never touch
+    an application whose status reflects a human decision already made (hr_selected
+    onward) -- that's the whole point of "never overwrite a human decision." 'on_hold' is
+    excluded too: it's a deliberately paused state (see app/candidates/hold.py), not
+    something a bulk background action should silently resolve out from under it."""
+    return application.status in ("received", "screened")
 
 
 def run_screening(db: Session, application: Application, job: JobRole, candidate: Candidate, actor: str) -> Application:
@@ -176,3 +187,48 @@ def attempt_auto_screen(db: Session, application: Application, actor: str = "sys
         return run_screening(db, application, job, candidate, actor)
     except ResumeMatchError:
         return None
+
+
+def re_evaluate_all(db: Session, actor: str) -> dict:
+    """Re-evaluate All (Part D) -- re-runs run_screening against the *current*
+    screening_settings thresholds for every application still in screening's own
+    territory (see is_eligible_for_reevaluation), so a just-changed min/max threshold
+    applies retroactively to existing candidates, not only to new uploads. Every other
+    application (already past a human decision, or on_hold) is left completely untouched.
+
+    Loads the whole applications table -- an admin-triggered bulk action, not a hot path,
+    and this app's applications table is small enough that pagination would be pure
+    overhead. One row at a time so a single AI failure or not-yet-parsed candidate can't
+    stop the rest of the batch from being re-evaluated.
+    """
+    all_applications = db.query(Application).all()
+    considered = [a for a in all_applications if is_eligible_for_reevaluation(a)]
+
+    updated = 0
+    advanced = 0
+    not_ready = 0
+    failed = 0
+    for application in considered:
+        job = db.get(JobRole, application.job_role_id)
+        candidate = db.get(Candidate, application.candidate_id)
+        if not job or not job.jd_text or not candidate or not candidate.parsed_fields:
+            not_ready += 1
+            continue
+        previous_status = application.status
+        try:
+            run_screening(db, application, job, candidate, actor)
+        except ResumeMatchError:
+            failed += 1
+            continue
+        updated += 1
+        if application.status != previous_status:
+            advanced += 1
+
+    return {
+        "considered": len(considered),
+        "skipped_already_decided": len(all_applications) - len(considered),
+        "updated": updated,
+        "advanced_to_screened": advanced,
+        "not_ready": not_ready,
+        "failed": failed,
+    }

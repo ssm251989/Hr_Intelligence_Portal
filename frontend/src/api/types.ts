@@ -637,3 +637,28 @@ export interface PublicApplicationSubmitResponse {
   application_id: UUID;
   status: string;
 }
+
+// ---- screening settings (Part D) ----
+
+export interface ScreeningSettings {
+  dashboard_min_score: number;
+  dashboard_max_score: number;
+  updated_at?: string | null;
+}
+
+export interface ScreeningSettingsUpdate {
+  dashboard_min_score: number;
+  dashboard_max_score: number;
+}
+
+// Summary counts for one Re-evaluate All run -- see app/screening/service.py
+// re_evaluate_all. skipped_already_decided is applications whose status is past
+// received/screened (a human decision already made) or on_hold -- never touched.
+export interface ReEvaluateAllResult {
+  considered: number;
+  skipped_already_decided: number;
+  updated: number;
+  advanced_to_screened: number;
+  not_ready: number;
+  failed: number;
+}

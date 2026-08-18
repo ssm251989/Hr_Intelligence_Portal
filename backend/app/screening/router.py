@@ -13,11 +13,18 @@ from app.models.application import Application
 from app.models.candidate import Candidate
 from app.models.interview import Interview
 from app.models.job_role import JobRole
+from app.models.screening_settings import ScreeningSettings
 from app.models.user import User
 from app.schemas.application import ApplicationRead
-from app.screening.service import run_screening
+from app.schemas.screening import ReEvaluateAllResult, ScreeningSettingsRead, ScreeningSettingsUpdate
+from app.screening.service import get_screening_settings, re_evaluate_all, run_screening
 
 router = APIRouter(prefix="/applications", tags=["screening"])
+
+# Separate from `router` above (which is entirely "/applications/{id}/..." single-application
+# actions) -- settings and the bulk Re-evaluate All action aren't about one application, so
+# they get their own prefix rather than an odd-looking /applications/screening-settings.
+settings_router = APIRouter(prefix="/screening", tags=["screening"])
 
 
 def _get_application_or_404(db: Session, application_id: uuid.UUID) -> Application:
@@ -115,3 +122,34 @@ def rank_application(
     db.commit()
     db.refresh(application)
     return application
+
+
+@settings_router.get("/settings", response_model=ScreeningSettingsRead)
+def get_settings(db: Session = Depends(get_db), current_user: User = Depends(require_roles("recruiter", "hiring_manager", "admin"))):
+    return get_screening_settings(db)
+
+
+@settings_router.put("/settings", response_model=ScreeningSettingsRead)
+def update_settings(
+    payload: ScreeningSettingsUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "hiring_manager", "admin")),
+):
+    """Saving here takes effect immediately for every screening call from this point
+    forward -- new uploads (attempt_auto_screen), the manual Screen button, and Re-evaluate
+    All all read this same singleton row fresh each time (get_screening_settings), never a
+    value cached at some earlier point."""
+    settings_row: ScreeningSettings = get_screening_settings(db)
+    settings_row.dashboard_min_score = payload.dashboard_min_score
+    settings_row.dashboard_max_score = payload.dashboard_max_score
+    db.commit()
+    db.refresh(settings_row)
+    return settings_row
+
+
+@settings_router.post("/re-evaluate-all", response_model=ReEvaluateAllResult)
+def re_evaluate_all_applications(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "hiring_manager", "admin")),
+):
+    return re_evaluate_all(db, current_user.email)

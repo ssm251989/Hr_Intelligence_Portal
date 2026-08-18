@@ -38,9 +38,12 @@ import type {
   PublicApplicationSubmitResponse,
   PublicJobRead,
   PublishPlatformsRequest,
+  ReEvaluateAllResult,
   RecentActivityResponse,
   SalaryApprovalRequest,
   SalaryStatusResponse,
+  ScreeningSettings,
+  ScreeningSettingsUpdate,
   ShortlistDecisionRequest,
   TokenResponse,
   UserLogin,
@@ -143,6 +146,8 @@ const post = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: "POST", body: body !== undefined ? JSON.stringify(body) : undefined });
 const patch = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: "PATCH", body: body !== undefined ? JSON.stringify(body) : undefined });
+const put = <T>(path: string, body?: unknown) =>
+  request<T>(path, { method: "PUT", body: body !== undefined ? JSON.stringify(body) : undefined });
 const del = <T>(path: string) => request<T>(path, { method: "DELETE" });
 const postForm = <T>(path: string, form: FormData) => request<T>(path, { method: "POST", body: form });
 
@@ -325,6 +330,10 @@ export const applicationsApi = {
 export const screeningApi = {
   screen: (applicationId: UUID) => post<ApplicationRead>(`/applications/${applicationId}/screen`),
   rank: (applicationId: UUID) => post<ApplicationRead>(`/applications/${applicationId}/rank`),
+  // Part D: the Candidates Dashboard's configurable auto-advance-to-'screened' threshold.
+  getSettings: () => get<ScreeningSettings>("/screening/settings"),
+  updateSettings: (payload: ScreeningSettingsUpdate) => put<ScreeningSettings>("/screening/settings", payload),
+  reEvaluateAll: () => post<ReEvaluateAllResult>("/screening/re-evaluate-all"),
 };
 
 // ---- shortlisting ----
