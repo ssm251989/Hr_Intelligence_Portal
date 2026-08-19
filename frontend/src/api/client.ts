@@ -50,6 +50,9 @@ import type {
   ScreeningSettingsUpdate,
   ShortlistBulkDecisionRequest,
   ShortlistBulkDecisionResult,
+  InterviewSchedulingSettings,
+  InterviewSchedulingSettingsSaveResult,
+  InterviewSchedulingSettingsUpdate,
   ShortlistDecisionRequest,
   ShortlistFeedbackSuggestionResponse,
   ShortlistingDashboardStatsResponse,
@@ -361,6 +364,16 @@ export const localImportApi = {
   // app/local_import/router.py update_settings.
   updateSettings: (payload: LocalImportSettingsUpdate) =>
     put<LocalImportSettingsSaveResult>("/local-import/settings", payload),
+};
+
+// ---- interview scheduling automation (foundation stage -- no WhatsApp yet) ----
+
+export const interviewSchedulingApi = {
+  getSettings: () => get<InterviewSchedulingSettings>("/interview-scheduling/settings"),
+  // Saving immediately ensures the tracker workbook exists with the expected sheets/
+  // columns -- see backend app/interview_scheduling/router.py update_settings.
+  updateSettings: (payload: InterviewSchedulingSettingsUpdate) =>
+    put<InterviewSchedulingSettingsSaveResult>("/interview-scheduling/settings", payload),
 };
 
 // ---- shortlisting (redesign) ----

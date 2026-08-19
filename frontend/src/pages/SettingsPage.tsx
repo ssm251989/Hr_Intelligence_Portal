@@ -11,6 +11,7 @@ import Typography from "@mui/material/Typography";
 
 import { extractErrorMessage, integrationsApi } from "../api/client";
 import type { IntegrationStatus } from "../api/types";
+import InterviewTrackerSettingsCard from "../components/InterviewTrackerSettingsCard";
 
 function IntegrationCard({
   title,
@@ -137,6 +138,7 @@ export default function SettingsPage() {
           fetchStatus={integrationsApi.linkedinStatus}
           connect={integrationsApi.connectLinkedin}
         />
+        <InterviewTrackerSettingsCard />
       </Stack>
     </Box>
   );

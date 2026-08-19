@@ -8,6 +8,7 @@ from app.bgv.router import router as bgv_router
 from app.candidates.applications_router import router as applications_router
 from app.candidates.router import router as candidates_router
 from app.integrations.router import router as integrations_router
+from app.interview_scheduling.router import router as interview_scheduling_router
 from app.jobs.router import router as jobs_router
 from app.local_import.router import router as local_import_router
 from app.local_import.scheduler import start_scheduler, stop_scheduler
@@ -60,6 +61,7 @@ app.include_router(integrations_router)
 app.include_router(users_router)
 app.include_router(public_router)
 app.include_router(local_import_router)
+app.include_router(interview_scheduling_router)
 
 
 @app.get("/health")

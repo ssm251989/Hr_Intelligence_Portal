@@ -138,3 +138,34 @@ def create_calendar_event(
         raise GoogleCalendarError(f"Failed to create calendar event: {exc}") from exc
 
     return {"event_id": event.get("id"), "html_link": event.get("htmlLink")}
+
+
+def check_calendar_availability(refresh_token: str, start: datetime, end: datetime) -> bool:
+    """True if the interviewer's own primary calendar has no events overlapping [start,
+    end), False if it does. Uses the freeBusy API rather than listing events -- it answers
+    exactly this yes/no question without the caller needing to interpret event details it
+    has no business reading (e.g. Interview Scheduling automation checking availability
+    for someone else's calendar, see app/interview_scheduling/service.py).
+    """
+    credentials = Credentials(
+        token=None,
+        refresh_token=refresh_token,
+        token_uri=TOKEN_URI,
+        client_id=settings.GOOGLE_CLIENT_ID,
+        client_secret=settings.GOOGLE_CLIENT_SECRET,
+        scopes=SCOPES,
+    )
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=timezone.utc)
+
+    body = {"timeMin": start.isoformat(), "timeMax": end.isoformat(), "items": [{"id": "primary"}]}
+    try:
+        service = build("calendar", "v3", credentials=credentials)
+        result = service.freebusy().query(body=body).execute()
+    except Exception as exc:
+        raise GoogleCalendarError(f"Failed to check calendar availability: {exc}") from exc
+
+    busy_periods = result.get("calendars", {}).get("primary", {}).get("busy", [])
+    return len(busy_periods) == 0

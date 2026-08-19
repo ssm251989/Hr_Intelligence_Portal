@@ -780,6 +780,29 @@ export interface ShortlistBulkDecisionResult {
   skipped: ShortlistBulkDecisionSkipped[];
 }
 
+// ---- interview scheduling automation (foundation stage -- no WhatsApp yet) ----
+
+export interface InterviewSchedulingSettings {
+  tracker_path: string | null;
+  updated_at?: string | null;
+}
+
+export interface InterviewSchedulingSettingsUpdate {
+  tracker_path: string;
+}
+
+// What ensure_tracker_file actually did to the workbook at this path -- created fresh, or
+// an existing file left untouched/patched with whatever sheets/columns it was missing.
+export interface TrackerValidationResult {
+  created: boolean;
+  sheets_added: string[];
+  columns_added: Record<string, string[]>;
+}
+
+export interface InterviewSchedulingSettingsSaveResult extends InterviewSchedulingSettings {
+  validation: TrackerValidationResult;
+}
+
 // ---- local-folder auto-import settings (Part G redesign) ----
 
 // Both paths are null until a recruiter saves them via the Import wizard's Local Import
