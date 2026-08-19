@@ -48,7 +48,13 @@ import type {
   ScreeningDashboardStatsResponse,
   ScreeningSettings,
   ScreeningSettingsUpdate,
+  ShortlistBulkDecisionRequest,
+  ShortlistBulkDecisionResult,
   ShortlistDecisionRequest,
+  ShortlistFeedbackSuggestionResponse,
+  ShortlistingDashboardStatsResponse,
+  ShortlistStatus,
+  ShortlistStatusUpdateRequest,
   TokenResponse,
   UserLogin,
   UserRead,
@@ -357,12 +363,81 @@ export const localImportApi = {
     put<LocalImportSettingsSaveResult>("/local-import/settings", payload),
 };
 
-// ---- shortlisting ----
+// ---- shortlisting (redesign) ----
+
+// Same filter shape as CandidateApplicationsListParams, minus `status` (replaced by
+// `shortlistStatus`, one of the 4 named shortlist states -- see api/types.ts
+// ShortlistStatus) since this list is always scoped to the shortlisting stage itself, never
+// the raw underlying Application.status.
+export interface ShortlistingListParams {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  jobRoleId?: UUID;
+  shortlistStatus?: ShortlistStatus;
+  source?: string;
+  location?: string;
+  experienceMin?: number;
+  experienceMax?: number;
+  appliedAfter?: string;
+  appliedBefore?: string;
+  matchScoreMin?: number;
+  matchScoreMax?: number;
+}
+
+export type ShortlistingExportParams = Omit<ShortlistingListParams, "page" | "pageSize"> & {
+  applicationIds?: UUID[];
+};
+
+function _shortlistingQuery(params: ShortlistingListParams): URLSearchParams {
+  const query = new URLSearchParams();
+  if (params.search) query.set("search", params.search);
+  if (params.jobRoleId) query.set("job_role_id", params.jobRoleId);
+  if (params.shortlistStatus) query.set("shortlist_status", params.shortlistStatus);
+  if (params.source) query.set("source", params.source);
+  if (params.location) query.set("location", params.location);
+  if (params.experienceMin != null) query.set("experience_min", String(params.experienceMin));
+  if (params.experienceMax != null) query.set("experience_max", String(params.experienceMax));
+  if (params.appliedAfter) query.set("applied_after", params.appliedAfter);
+  if (params.appliedBefore) query.set("applied_before", params.appliedBefore);
+  if (params.matchScoreMin != null) query.set("match_score_min", String(params.matchScoreMin));
+  if (params.matchScoreMax != null) query.set("match_score_max", String(params.matchScoreMax));
+  return query;
+}
 
 export const shortlistingApi = {
+  // The pre-redesign single-job queue/decision endpoints -- still used by the Candidate
+  // Detail page's "Move Stage" quick actions (see backend app/candidates/pipeline_actions.py),
+  // untouched by this redesign.
   list: (jobId: UUID) => get<ApplicationRead[]>(`/jobs/${jobId}/shortlist`),
   decide: (applicationId: UUID, payload: ShortlistDecisionRequest) =>
     post<ApplicationRead>(`/applications/${applicationId}/shortlist-decision`, payload),
+  // One row per (candidate, application) pairing, scoped to the shortlisting stage -- the
+  // Shortlisting List page's data source (see backend app/shortlisting/router.py list_shortlisting).
+  listShortlisting: (params: ShortlistingListParams = {}) => {
+    const query = _shortlistingQuery(params);
+    query.set("page", String(params.page ?? 1));
+    query.set("page_size", String(params.pageSize ?? 10));
+    return get<CandidatesListPage>(`/shortlisting/list?${query.toString()}`);
+  },
+  exportShortlisting: (params: ShortlistingExportParams = {}) => {
+    const query = new URLSearchParams();
+    if (params.applicationIds && params.applicationIds.length > 0) {
+      params.applicationIds.forEach((id) => query.append("application_ids", id));
+      return get<CandidateApplicationRow[]>(`/shortlisting/export?${query.toString()}`);
+    }
+    return get<CandidateApplicationRow[]>(`/shortlisting/export?${_shortlistingQuery(params).toString()}`);
+  },
+  updateStatus: (applicationId: UUID, payload: ShortlistStatusUpdateRequest) =>
+    post<ApplicationRead>(`/applications/${applicationId}/shortlist-status`, payload),
+  suggestFeedback: (applicationId: UUID) =>
+    post<ShortlistFeedbackSuggestionResponse>(`/applications/${applicationId}/shortlist-feedback-suggestion`),
+  // Bulk select-and-decide: still a fully human-triggered decision for every application
+  // (the recruiter selected each one and confirmed the batch in a dialog listing them by
+  // name) -- same per-application transition validation as updateStatus, just applied to
+  // many applications in one call. See backend app/shortlisting/router.py bulk_shortlist_decision.
+  bulkDecision: (payload: ShortlistBulkDecisionRequest) =>
+    post<ShortlistBulkDecisionResult>("/shortlisting/bulk-decision", payload),
 };
 
 // ---- scheduling / interviews ----
@@ -454,6 +529,10 @@ export const reportsApi = {
   screeningDashboardStats: (compareMonth?: string) =>
     get<ScreeningDashboardStatsResponse>(
       `/reports/screening-dashboard-stats${compareMonth ? `?compare_month=${compareMonth}` : ""}`
+    ),
+  shortlistingDashboardStats: (compareMonth?: string) =>
+    get<ShortlistingDashboardStatsResponse>(
+      `/reports/shortlisting-dashboard-stats${compareMonth ? `?compare_month=${compareMonth}` : ""}`
     ),
 };
 

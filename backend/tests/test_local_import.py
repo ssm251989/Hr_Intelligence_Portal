@@ -6,6 +6,7 @@ import pytest
 from docx import Document
 
 from app.local_import import job_folders
+from app.local_import import scheduler as local_import_scheduler
 from app.local_import import service as local_import_service
 from app.models.application import Application
 from app.models.audit_log import AuditLog
@@ -619,12 +620,17 @@ def test_put_settings_saves_paths_and_syncs_job_folders_immediately(client, db_s
 
     response = client.put(
         "/local-import/settings",
-        json={"ready_to_upload_root": str(ready), "already_uploaded_root": str(already)},
+        json={
+            "ready_to_upload_root": str(ready),
+            "already_uploaded_root": str(already),
+            "scan_interval_minutes": 30,
+        },
     )
     assert response.status_code == 200
     body = response.json()
     assert body["ready_to_upload_root"] == str(ready)
     assert body["already_uploaded_root"] == str(already)
+    assert body["scan_interval_minutes"] == 30
     assert body["jobs_considered"] >= 1
     assert body["folders_created"] >= 2
 
@@ -634,7 +640,8 @@ def test_put_settings_saves_paths_and_syncs_job_folders_immediately(client, db_s
 
 def test_put_settings_rejects_blank_path(client):
     response = client.put(
-        "/local-import/settings", json={"ready_to_upload_root": "   ", "already_uploaded_root": "/tmp/x"}
+        "/local-import/settings",
+        json={"ready_to_upload_root": "   ", "already_uploaded_root": "/tmp/x", "scan_interval_minutes": 30},
     )
     assert response.status_code == 422
 
@@ -642,3 +649,71 @@ def test_put_settings_rejects_blank_path(client):
 def test_get_settings_requires_auth(anonymous_client):
     response = anonymous_client.get("/local-import/settings")
     assert response.status_code == 401
+
+
+# --- scan_interval_minutes: configurable scheduler interval ---
+
+
+def test_get_settings_defaults_scan_interval_to_thirty_minutes(client, db_session):
+    settings_row = db_session.get(LocalImportSettings, 1)
+    settings_row.scan_interval_minutes = 30
+    db_session.commit()
+
+    response = client.get("/local-import/settings")
+    assert response.status_code == 200
+    assert response.json()["scan_interval_minutes"] == 30
+
+
+@pytest.mark.parametrize("bad_interval", [4, 1441, 0, -5])
+def test_put_settings_rejects_scan_interval_outside_bounds(client, bad_interval):
+    response = client.put(
+        "/local-import/settings",
+        json={
+            "ready_to_upload_root": "/tmp/ready-bounds",
+            "already_uploaded_root": "/tmp/already-bounds",
+            "scan_interval_minutes": bad_interval,
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_put_settings_saves_scan_interval_and_returns_it(client, tmp_path):
+    response = client.put(
+        "/local-import/settings",
+        json={
+            "ready_to_upload_root": str(tmp_path / "ready"),
+            "already_uploaded_root": str(tmp_path / "already"),
+            "scan_interval_minutes": 45,
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["scan_interval_minutes"] == 45
+
+
+def test_put_settings_reschedules_the_live_scheduler_without_a_restart(client, tmp_path):
+    # `client`'s TestClient runs this app's real lifespan (see app/main.py), so a real
+    # BackgroundScheduler is already running with whatever interval was configured when it
+    # started -- proving the save takes effect on THAT running instance, not merely on the
+    # next process start, is the whole point of this test.
+    job_before = local_import_scheduler._scheduler.get_job(local_import_scheduler.JOB_ID)
+    assert job_before is not None
+
+    response = client.put(
+        "/local-import/settings",
+        json={
+            "ready_to_upload_root": str(tmp_path / "ready"),
+            "already_uploaded_root": str(tmp_path / "already"),
+            "scan_interval_minutes": 45,
+        },
+    )
+    assert response.status_code == 200
+
+    job_after = local_import_scheduler._scheduler.get_job(local_import_scheduler.JOB_ID)
+    assert job_after.trigger.interval.total_seconds() == 45 * 60
+
+
+def test_reschedule_scan_interval_is_a_noop_with_no_running_scheduler():
+    # Called outside the app's lifespan (e.g. directly, as here) -- must never raise just
+    # because this process hasn't started its own scheduler.
+    assert local_import_scheduler._scheduler is None
+    local_import_scheduler.reschedule_scan_interval(45)  # no exception

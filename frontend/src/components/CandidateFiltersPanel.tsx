@@ -5,7 +5,7 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 
 import { APPLICATION_STATUSES, CANDIDATE_SOURCES, candidateSourceLabel, type JobRoleRead } from "../api/types";
-import { statusLabel } from "./StatusChip";
+import { statusLabel as applicationStatusLabel } from "./StatusChip";
 
 export interface CandidateFilters {
   jobRoleId: string;
@@ -47,11 +47,19 @@ export default function CandidateFiltersPanel({
   // Defaults to "Match" (Candidates List's "Match % min/max"); the Screening List passes
   // "Screening" for "Screening % min/max", matching its Screening Score column.
   scoreLabel = "Match",
+  // Overrides the Status dropdown's label + option set -- used by the Shortlisting List to
+  // show its own 4 named states ("Shortlist Status": Under Review/Shortlisted/On Hold/Not
+  // Shortlisted) via `filters.status` instead of the full raw APPLICATION_STATUSES list.
+  // Every other caller leaves this unset and gets the original "Status" dropdown.
+  statusLabel = "Status",
+  statusOptions,
 }: {
   jobs: JobRoleRead[];
   filters: CandidateFilters;
   onChange: (filters: CandidateFilters) => void;
   scoreLabel?: string;
+  statusLabel?: string;
+  statusOptions?: { value: string; label: string }[];
 }) {
   const activeCount = Object.values(filters).filter(Boolean).length;
   const set = (key: keyof CandidateFilters, value: string) => onChange({ ...filters, [key]: value });
@@ -76,18 +84,20 @@ export default function CandidateFiltersPanel({
 
       <TextField
         select
-        label="Status"
+        label={statusLabel}
         size="small"
         value={filters.status}
         onChange={(e) => set("status", e.target.value)}
         sx={{ minWidth: 150 }}
       >
         <MenuItem value="">All statuses</MenuItem>
-        {APPLICATION_STATUSES.map((status) => (
-          <MenuItem key={status} value={status}>
-            {statusLabel(status)}
-          </MenuItem>
-        ))}
+        {(statusOptions ?? APPLICATION_STATUSES.map((status) => ({ value: status, label: applicationStatusLabel(status) }))).map(
+          (option) => (
+            <MenuItem key={option.value} value={option.value}>
+              {option.label}
+            </MenuItem>
+          ),
+        )}
       </TextField>
 
       <TextField

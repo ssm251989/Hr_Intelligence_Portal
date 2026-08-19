@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
@@ -37,6 +37,7 @@ from app.schemas.reports import (
     TopJobItem,
 )
 from app.schemas.screening import ScreeningDashboardStatsResponse
+from app.schemas.shortlisting import ShortlistFunnelStage, ShortlistingDashboardStatsResponse
 
 router = APIRouter(tags=["reports"])
 
@@ -675,3 +676,195 @@ def get_candidate_timeline(
 
     events = db.query(AuditLog).filter(or_(*conditions)).order_by(AuditLog.created_at.asc()).all()
     return CandidateTimelineResponse(candidate_id=candidate_id, events=events)
+
+
+# Every status downstream of a shortlisting decision -- used only to detect "did this
+# application progress past hr_selected," never to imply shortlisting caused it.
+_DOWNSTREAM_OF_SHORTLIST = (
+    "interview_scheduled", "interview_selected", "interview_rejected",
+    "salary_ok", "salary_above_band", "salary_approved", "salary_rejected",
+    "bgv_requested", "bgv_pending", "bgv_cleared", "bgv_rejected",
+    "offer_sent", "onboarding_started", "onboarding_completed",
+)
+
+
+def _shortlisting_insights(db: Session, month_start: datetime, month_end: datetime) -> list[str]:
+    """Every sentence here traces to one real, literal SQL aggregate computed at request
+    time -- never AI-generated or hand-authored copy. An insight is only ever included when
+    its underlying query actually has data to report (no placeholder "N/A" sentences)."""
+    insights: list[str] = []
+
+    # 1. Per-job: of that job's currently-Shortlisted (hr_selected) candidates, what % scored
+    # above 85 on the real composite score -- the job with the highest such percentage.
+    high_score_rows = (
+        db.query(
+            JobRole.title,
+            func.count(Application.id),
+            func.sum(case((Application.composite_score > 85, 1), else_=0)),
+        )
+        .join(Application, Application.job_role_id == JobRole.id)
+        .filter(Application.status == "hr_selected", Application.composite_score.isnot(None))
+        .group_by(JobRole.title)
+        .all()
+    )
+    best_pct, best_job = 0, None
+    for title, total, above_85 in high_score_rows:
+        if total > 0:
+            pct = round(int(above_85) / total * 100)
+            if pct > best_pct:
+                best_pct, best_job = pct, title
+    if best_job:
+        insights.append(f"{best_pct}% of shortlisted candidates for {best_job} scored above 85.")
+
+    # 2. Per-job shortlist-to-interview conversion, among applications created this month --
+    # the job with the highest share of its hr_selected-or-later applicants that actually
+    # progressed to interview_scheduled or beyond.
+    conversion_rows = (
+        db.query(JobRole.title, Application.status, func.count(Application.id))
+        .join(Application, Application.job_role_id == JobRole.id)
+        .filter(
+            Application.status.in_(("hr_selected",) + _DOWNSTREAM_OF_SHORTLIST),
+            Application.created_at >= month_start,
+            Application.created_at < month_end,
+        )
+        .group_by(JobRole.title, Application.status)
+        .all()
+    )
+    totals_by_job: dict[str, int] = {}
+    interviewed_by_job: dict[str, int] = {}
+    for title, status, count in conversion_rows:
+        totals_by_job[title] = totals_by_job.get(title, 0) + count
+        if status in _DOWNSTREAM_OF_SHORTLIST:
+            interviewed_by_job[title] = interviewed_by_job.get(title, 0) + count
+    best_conv_pct, best_conv_job = 0, None
+    for title, total in totals_by_job.items():
+        pct = round(interviewed_by_job.get(title, 0) / total * 100)
+        if pct > best_conv_pct:
+            best_conv_pct, best_conv_job = pct, title
+    if best_conv_job:
+        insights.append(f"{best_conv_job} has the highest shortlist-to-interview conversion this month ({best_conv_pct}%).")
+
+    # 3. Most common Not Shortlisted reason this month, from real evaluator-recorded reasons
+    # (Update Shortlist Status's Reason dropdown -- see app/shortlisting/service.py).
+    reason_col = AuditLog.details["reason"].astext
+    reason_rows = (
+        db.query(reason_col, func.count(AuditLog.id))
+        .filter(
+            AuditLog.entity_type == "application",
+            AuditLog.action == "shortlist_status_updated",
+            AuditLog.details["new_application_status"].astext == "hr_rejected",
+            AuditLog.created_at >= month_start,
+            AuditLog.created_at < month_end,
+            reason_col.isnot(None),
+        )
+        .group_by(reason_col)
+        .order_by(func.count(AuditLog.id).desc())
+        .all()
+    )
+    if reason_rows:
+        top_reason, top_reason_count = reason_rows[0]
+        plural = "s" if top_reason_count != 1 else ""
+        insights.append(f'Most common Not Shortlisted reason this month: "{top_reason}" ({top_reason_count} candidate{plural}).')
+
+    return insights
+
+
+@router.get("/reports/shortlisting-dashboard-stats", response_model=ShortlistingDashboardStatsResponse)
+def get_shortlisting_dashboard_stats(
+    compare_month: Optional[str] = Query(
+        None,
+        description="YYYY-MM month to compare the current values against. Must be one "
+        "of the past 12 completed months; defaults to last month.",
+    ),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    now = datetime.now(timezone.utc)
+    try:
+        compare_month_start = stats.parse_compare_month(compare_month, now)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    compare_month_end = stats.shift_months(compare_month_start, 1)
+
+    month_starts = stats.last_12_month_starts(now)
+    month_ends = [stats.shift_months(month_start, 1) for month_start in month_starts]
+    current_month_start, current_month_end = month_starts[-1], month_ends[-1]
+
+    total_in_shortlisting = stats.awaiting_shortlist_decision_count(db)
+
+    new_this_month = stats.shortlisting_new_in_scope_count_in_window(db, current_month_start, current_month_end)
+    new_this_month_series = [
+        stats.shortlisting_new_in_scope_count_in_window(db, s, e) for s, e in zip(month_starts, month_ends)
+    ]
+    compare_new_this_month = stats.shortlisting_new_in_scope_count_in_window(db, compare_month_start, compare_month_end)
+    new_this_month_trend = stats.build_trend(
+        month_starts, new_this_month_series, compare_month_start, compare_new_this_month, new_this_month
+    )
+
+    moved_from_screening_this_month = stats.screening_audit_count_in_window(
+        db, "ai_screening_scored", current_month_start, current_month_end, advanced=True
+    )
+    moved_series = [
+        stats.screening_audit_count_in_window(db, "ai_screening_scored", s, e, advanced=True)
+        for s, e in zip(month_starts, month_ends)
+    ]
+    compare_moved = stats.screening_audit_count_in_window(
+        db, "ai_screening_scored", compare_month_start, compare_month_end, advanced=True
+    )
+    moved_from_screening_this_month_trend = stats.build_trend(
+        month_starts, moved_series, compare_month_start, compare_moved, moved_from_screening_this_month
+    )
+
+    shortlisted_this_month = stats.shortlisted_decision_count_in_window(db, current_month_start, current_month_end)
+    shortlisted_series = [
+        stats.shortlisted_decision_count_in_window(db, s, e) for s, e in zip(month_starts, month_ends)
+    ]
+    compare_shortlisted = stats.shortlisted_decision_count_in_window(db, compare_month_start, compare_month_end)
+    shortlisted_this_month_trend = stats.build_trend(
+        month_starts, shortlisted_series, compare_month_start, compare_shortlisted, shortlisted_this_month
+    )
+
+    avg_composite_series = [stats.avg_composite_score_of_status_as_of(db, "hr_selected", end) for end in month_ends]
+    avg_composite_score_shortlisted = avg_composite_series[-1]
+    compare_avg_composite = stats.avg_composite_score_of_status_as_of(db, "hr_selected", compare_month_end)
+    avg_composite_score_shortlisted_trend = stats.build_trend(
+        month_starts, avg_composite_series, compare_month_start, compare_avg_composite, avg_composite_score_shortlisted
+    )
+
+    funnel = [ShortlistFunnelStage(label=label, count=count) for label, count in stats.shortlisting_funnel_counts(db)]
+
+    recent_rows = (
+        db.query(
+            Application, Candidate, JobRole.title, SuitableJob.title,
+            ScreeningAuditEntry.action, ScreeningAuditEntry.details,
+        )
+        .join(Candidate, Candidate.id == Application.candidate_id)
+        .join(JobRole, JobRole.id == Application.job_role_id)
+        .outerjoin(SuitableJob, SuitableJob.id == Candidate.suitable_job_id)
+        .outerjoin(ScreeningAuditEntry, ScreeningAuditEntry.id == _latest_screening_audit_id(db))
+        .filter(Application.status == "hr_selected")
+        .order_by(Application.updated_at.desc())
+        .limit(8)
+        .all()
+    )
+
+    return ShortlistingDashboardStatsResponse(
+        total_in_shortlisting=total_in_shortlisting,
+        new_this_month=new_this_month,
+        moved_from_screening_this_month=moved_from_screening_this_month,
+        shortlisted_this_month=shortlisted_this_month,
+        avg_composite_score_shortlisted=avg_composite_score_shortlisted,
+        new_this_month_trend=new_this_month_trend,
+        moved_from_screening_this_month_trend=moved_from_screening_this_month_trend,
+        shortlisted_this_month_trend=shortlisted_this_month_trend,
+        avg_composite_score_shortlisted_trend=avg_composite_score_shortlisted_trend,
+        funnel=funnel,
+        composite_score_distribution=[
+            LabeledCount(label=bucket, count=count) for bucket, count in stats.composite_score_distribution(db)
+        ],
+        insights=_shortlisting_insights(db, current_month_start, current_month_end),
+        recent_shortlisted=[
+            row_to_item(app, cand, title, suitable_title, screening_action, screening_details)
+            for app, cand, title, suitable_title, screening_action, screening_details in recent_rows
+        ],
+    )

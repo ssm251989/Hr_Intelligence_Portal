@@ -90,7 +90,15 @@ const MODULES: ModuleLink[] = [
       { label: "Screening List", path: "/screening/list" },
     ],
   },
-  { label: "Shortlisting", path: "/shortlisting", icon: PlaylistAddCheckOutlinedIcon },
+  {
+    label: "Shortlisting",
+    path: "/shortlisting",
+    icon: PlaylistAddCheckOutlinedIcon,
+    children: [
+      { label: "Dashboard", path: "/shortlisting/dashboard" },
+      { label: "Shortlisting List", path: "/shortlisting/list" },
+    ],
+  },
   { label: "Interviews", path: "/interviews", icon: EventOutlinedIcon },
   { label: "Salary", path: "/salary", icon: PaidOutlinedIcon },
   { label: "BGV", path: "/bgv", icon: VerifiedUserOutlinedIcon },

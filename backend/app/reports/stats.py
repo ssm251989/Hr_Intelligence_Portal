@@ -9,7 +9,7 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Sequence
 
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.models.application import TERMINAL_APPLICATION_STATUSES, Application
@@ -17,6 +17,7 @@ from app.models.audit_log import AuditLog
 from app.models.candidate import CANDIDATE_SOURCES, Candidate
 from app.models.job_role import JobRole
 from app.schemas.reports import MonthlyPoint, StatTrend
+from app.shortlisting.service import shortlisting_hold_condition, shortlisting_scope_condition
 
 # This app is India-only (see frontend istLocalInputToUtcIso) -- every "current month" /
 # "last month" boundary below is anchored to IST's calendar, not UTC's. Naively using
@@ -414,5 +415,89 @@ def screening_audit_count_in_window(
     if advanced is not None:
         query = query.filter(AuditLog.details["advanced"].astext == ("true" if advanced else "false"))
     return query.scalar() or 0
+
+
+def awaiting_shortlist_decision_count(db: Session) -> int:
+    """Applications sitting at 'screened' -- the Shortlisting Dashboard's own live backlog
+    depth (its Under Review bucket). Same live-snapshot caveat as awaiting_screening_count/
+    awaiting_ranking_count above: no historical trend, since an application's status isn't
+    tracked over time."""
+    return db.query(func.count(Application.id)).filter(Application.status == "screened").scalar() or 0
+
+
+def shortlisting_new_in_scope_count_in_window(db: Session, start: datetime, end: datetime) -> int:
+    """New applications (by created_at) that fall within the shortlisting stage's own scope
+    (see app.shortlisting.service.shortlisting_scope_condition) within [start, end) --
+    Shortlisting Dashboard's "New This Month," distinct from "Moved from Screening This
+    Month" (which counts a *transition event* in the window, not an application's original
+    creation date)."""
+    return (
+        db.query(func.count(Application.id))
+        .filter(shortlisting_scope_condition(), Application.created_at >= start, Application.created_at < end)
+        .scalar()
+        or 0
+    )
+
+
+def shortlisted_decision_count_in_window(db: Session, start: datetime, end: datetime) -> int:
+    """Applications that became 'hr_selected' within [start, end), counting either real path
+    that can produce that transition: the legacy quick-decision endpoint (hr_shortlisting_
+    decision, decision='select') and the new Update Shortlist Status action (shortlist_
+    status_updated, new_application_status='hr_selected'). Two action names because both
+    endpoints remain live (see app/shortlisting/router.py) -- this is the one place their
+    counts are combined into a single real total rather than only reflecting whichever path
+    happened to be used."""
+    return (
+        db.query(func.count(AuditLog.id))
+        .filter(
+            AuditLog.entity_type == "application",
+            AuditLog.created_at >= start,
+            AuditLog.created_at < end,
+            or_(
+                and_(AuditLog.action == "hr_shortlisting_decision", AuditLog.details["decision"].astext == "select"),
+                and_(
+                    AuditLog.action == "shortlist_status_updated",
+                    AuditLog.details["new_application_status"].astext == "hr_selected",
+                ),
+            ),
+        )
+        .scalar()
+        or 0
+    )
+
+
+def avg_composite_score_of_status_as_of(db: Session, status: str, cutoff: datetime) -> Optional[float]:
+    """avg_composite_score_as_of's status-scoped counterpart -- e.g. the average composite
+    score among applications currently at 'hr_selected' (Shortlisted), as of a given
+    month-end. Same "current status, applied retroactively" approximation as published_
+    snapshot_as_of: status isn't versioned, so this can't tell what an application's status
+    genuinely was at that past cutoff, only whether it was created by then and is at this
+    status now."""
+    avg = (
+        db.query(func.avg(Application.composite_score))
+        .filter(Application.status == status, Application.composite_score.isnot(None), Application.created_at < cutoff)
+        .scalar()
+    )
+    return round(float(avg), 1) if avg is not None else None
+
+
+def shortlisting_funnel_counts(db: Session) -> list[tuple[str, int]]:
+    """Real, current counts at each named stage of the Shortlisting Dashboard's funnel.
+    "From Screening" is every application screening has ever produced a composite_score
+    for (i.e. ever screened) -- deliberately larger than the sum of the other four buckets,
+    since some of those applications have since moved further downstream (interview,
+    salary, BGV, offer) past this stage entirely, same as any real pipeline funnel."""
+    from_screening = db.query(func.count(Application.id)).filter(Application.composite_score.isnot(None)).scalar() or 0
+    under_review = db.query(func.count(Application.id)).filter(Application.status == "screened").scalar() or 0
+    shortlisted = db.query(func.count(Application.id)).filter(Application.status == "hr_selected").scalar() or 0
+    on_hold = db.query(func.count(Application.id)).filter(shortlisting_hold_condition()).scalar() or 0
+    rejected = db.query(func.count(Application.id)).filter(Application.status == "hr_rejected").scalar() or 0
+    return [
+        ("From Screening", from_screening),
+        ("Under Review", under_review),
+        ("Shortlisted", shortlisted),
+        ("On Hold", on_hold),
+        ("Rejected", rejected),
+    ]
 
 

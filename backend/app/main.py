@@ -24,8 +24,9 @@ from app.users.router import router as users_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Part G: the every-30-minutes local-import scan (app/local_import/scheduler.py) --
-    # this app's first background job, so this is also its first-ever lifespan hook. Single
+    # Part G: the scheduled local-import scan, interval configurable via local_import_
+    # settings.scan_interval_minutes (app/local_import/scheduler.py) -- this app's first
+    # background job, so this is also its first-ever lifespan hook. Single
     # dev process only: running multiple uvicorn workers would start one scheduler per
     # worker, all racing on the same ready_to_upload/ folder -- fine for this app's actual
     # deployment, not something this handles for a future multi-worker setup.

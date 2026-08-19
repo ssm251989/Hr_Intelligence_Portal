@@ -706,19 +706,96 @@ export interface ScreeningDashboardStatsResponse {
   top_missing_skills: LabeledCount[];
 }
 
+// ---- shortlisting (redesign) ----
+
+// The 4 shortlisting-stage states -- each maps directly onto a real Application.status
+// (backend app/shortlisting/service.py), never a separate status column of its own.
+// under_review=screened, shortlisted=hr_selected, on_hold=on_hold (paused from screened
+// specifically), not_shortlisted=hr_rejected.
+export const SHORTLIST_STATUSES = ["under_review", "shortlisted", "on_hold", "not_shortlisted"] as const;
+export type ShortlistStatus = (typeof SHORTLIST_STATUSES)[number];
+
+export const SHORTLIST_STATUS_LABELS: Record<ShortlistStatus, string> = {
+  under_review: "Under Review",
+  shortlisted: "Shortlisted",
+  on_hold: "On Hold",
+  not_shortlisted: "Not Shortlisted",
+};
+
+export function shortlistStatusOf(applicationStatus: string): ShortlistStatus | null {
+  if (applicationStatus === "screened") return "under_review";
+  if (applicationStatus === "hr_selected") return "shortlisted";
+  if (applicationStatus === "hr_rejected") return "not_shortlisted";
+  if (applicationStatus === "on_hold") return "on_hold";
+  return null;
+}
+
+export interface ShortlistFunnelStage {
+  label: string;
+  count: number;
+}
+
+export interface ShortlistingDashboardStatsResponse {
+  total_in_shortlisting: number;
+  new_this_month: number;
+  moved_from_screening_this_month: number;
+  shortlisted_this_month: number;
+  avg_composite_score_shortlisted: number | null;
+  new_this_month_trend: StatTrend;
+  moved_from_screening_this_month_trend: StatTrend;
+  shortlisted_this_month_trend: StatTrend;
+  avg_composite_score_shortlisted_trend: StatTrend;
+  funnel: ShortlistFunnelStage[];
+  composite_score_distribution: LabeledCount[];
+  insights: string[];
+  recent_shortlisted: CandidateApplicationRow[];
+}
+
+export interface ShortlistStatusUpdateRequest {
+  target_status: ShortlistStatus;
+  reason?: string | null;
+  feedback?: string | null;
+}
+
+export interface ShortlistFeedbackSuggestionResponse {
+  suggested_feedback: string;
+}
+
+// The bulk counterpart to ShortlistStatusUpdateRequest -- deliberately restricted to the
+// two terminal decisions (the List page's "Shortlist Selected"/"Reject Selected" buttons).
+export interface ShortlistBulkDecisionRequest {
+  application_ids: UUID[];
+  target_status: Extract<ShortlistStatus, "shortlisted" | "not_shortlisted">;
+  reason?: string | null;
+  feedback?: string | null;
+}
+
+export interface ShortlistBulkDecisionSkipped {
+  application_id: UUID;
+  reason: string;
+}
+
+export interface ShortlistBulkDecisionResult {
+  succeeded: UUID[];
+  skipped: ShortlistBulkDecisionSkipped[];
+}
+
 // ---- local-folder auto-import settings (Part G redesign) ----
 
-// Both null until a recruiter saves them via the Import wizard's Local Import configure
-// step -- the scheduled scan (every 30 minutes) has nothing to do until then.
+// Both paths are null until a recruiter saves them via the Import wizard's Local Import
+// configure step -- the scheduled scan has nothing to do until then. scan_interval_minutes
+// always has a value (defaults to 30) and is configurable on that same step.
 export interface LocalImportSettings {
   ready_to_upload_root: string | null;
   already_uploaded_root: string | null;
+  scan_interval_minutes: number;
   updated_at?: string | null;
 }
 
 export interface LocalImportSettingsUpdate {
   ready_to_upload_root: string;
   already_uploaded_root: string;
+  scan_interval_minutes: number;
 }
 
 // LocalImportSettings plus the immediate job-folder sync's own summary, so the wizard can

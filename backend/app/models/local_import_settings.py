@@ -20,4 +20,9 @@ class LocalImportSettings(Base):
     id = Column(Integer, primary_key=True)
     ready_to_upload_root = Column(Text, nullable=True)
     already_uploaded_root = Column(Text, nullable=True)
+    # How often the scheduled scan runs (app/local_import/scheduler.py). Unlike the two
+    # paths above, this always has a value -- defaults to 30 (the original hardcoded
+    # interval) so existing installs keep their current behavior after this column's
+    # migration backfills it.
+    scan_interval_minutes = Column(Integer, nullable=False, server_default=text("30"))
     updated_at = Column(DateTime(timezone=True), server_default=text("now()"))

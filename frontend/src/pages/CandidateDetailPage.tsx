@@ -28,13 +28,25 @@ import Typography from "@mui/material/Typography";
 import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 
 import { applicationsApi, candidatesApi, extractErrorMessage, integrationsApi } from "../api/client";
-import type { AuditLogRead, CandidateApplicationDetail } from "../api/types";
+import { SHORTLIST_STATUS_LABELS, shortlistStatusOf, type AuditLogRead, type CandidateApplicationDetail } from "../api/types";
 import CandidateAvatar from "../components/CandidateAvatar";
+import ShortlistStatusPanel from "../components/ShortlistStatusPanel";
 import SourceChip from "../components/SourceChip";
 import StatusChip from "../components/StatusChip";
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
 import { downloadResume } from "../utils/resume";
+
+// Actions that belong to the Shortlisting Timeline -- the same audit-log-based rendering
+// idiom as the Activity tab (see TabPanel active={tab === 4} below), just filtered to the
+// subset of actions that are actually about a shortlisting decision.
+const SHORTLISTING_TIMELINE_ACTIONS = new Set([
+  "application_put_on_hold",
+  "application_resumed_from_hold",
+  "shortlist_status_updated",
+  "hr_shortlisting_decision",
+  "ai_shortlist_feedback_suggested",
+]);
 
 function TabPanel({ active, children }: { active: boolean; children: ReactNode }) {
   if (!active) return null;
@@ -109,7 +121,7 @@ export default function CandidateDetailPage() {
   }, []);
 
   useEffect(() => {
-    if (tab !== 4 || !detail) return; // Activity tab
+    if ((tab !== 4 && tab !== 5) || !detail) return; // Activity tab or Shortlisting tab -- both read this same audit trail
     setTimelineError(null);
     candidatesApi
       .timeline(detail.candidate.id)
@@ -289,6 +301,7 @@ export default function CandidateDetailPage() {
           <Tab label="Experience" />
           <Tab label="Education" />
           <Tab label="Activity" />
+          <Tab label="Shortlisting" />
         </Tabs>
         <CardContent>
           <TabPanel active={tab === 0}>
@@ -442,6 +455,150 @@ export default function CandidateDetailPage() {
                 ))}
               </Stack>
             )}
+          </TabPanel>
+
+          <TabPanel active={tab === 5}>
+            {(() => {
+              const applicationEvents = (timeline ?? []).filter((event) => event.entity_id === application.id);
+              const latestScreeningEntry = applicationEvents.filter((event) => event.action === "ai_screening_scored").at(-1);
+              const screeningDetails = (latestScreeningEntry?.details ?? {}) as Record<string, number | undefined>;
+              const missingSkills = application.missing_skills ?? [];
+              const matchedSkills = (parsed?.skills ?? []).filter((skill: string) => !missingSkills.includes(skill));
+              const latestShortlistUpdate = applicationEvents
+                .filter((event) => event.action === "shortlist_status_updated")
+                .at(-1);
+              const shortlistDetails = (latestShortlistUpdate?.details ?? {}) as {
+                feedback?: string | null;
+                reason?: string | null;
+              };
+              const shortlistTimeline = applicationEvents.filter((event) => SHORTLISTING_TIMELINE_ACTIONS.has(event.action ?? ""));
+              const currentShortlistStatus = shortlistStatusOf(application.status);
+
+              return (
+                <Grid container spacing={3}>
+                  <Grid size={{ xs: 12, md: 5 }}>
+                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                      Match Score Breakdown
+                    </Typography>
+                    <Stack spacing={1} mb={3}>
+                      {[
+                        { label: "Skills", value: screeningDetails.skills_score },
+                        { label: "Experience", value: screeningDetails.experience_score },
+                        { label: "Qualification", value: screeningDetails.certificates_score },
+                        { label: "Overall Potential", value: screeningDetails.composite_score ?? application.composite_score },
+                      ].map((row) => (
+                        <Stack key={row.label} direction="row" justifyContent="space-between">
+                          <Typography variant="body2" color="text.secondary">
+                            {row.label}
+                          </Typography>
+                          <Typography variant="body2" fontWeight={600}>
+                            {row.value != null ? `${Math.round(row.value)}%` : "—"}
+                          </Typography>
+                        </Stack>
+                      ))}
+                    </Stack>
+
+                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                      Top Matched Skills
+                    </Typography>
+                    {matchedSkills.length > 0 ? (
+                      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap mb={3}>
+                        {matchedSkills.map((skill: string) => (
+                          <Chip key={skill} label={skill} size="small" color="success" variant="outlined" />
+                        ))}
+                      </Stack>
+                    ) : (
+                      <Typography variant="body2" color="text.secondary" mb={3}>
+                        No matched skills recorded.
+                      </Typography>
+                    )}
+
+                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                      Shortlist Summary
+                    </Typography>
+                    <Typography variant="body2" sx={{ mb: 3 }}>
+                      {candidate.full_name || "This candidate"} scored{" "}
+                      {application.composite_score != null ? `${Math.round(application.composite_score)}%` : "an unscored"} overall
+                      for {job_title}
+                      {missingSkills.length > 0 ? `, missing ${missingSkills.join(", ")}` : ""}.
+                      {currentShortlistStatus
+                        ? ` Currently ${SHORTLIST_STATUS_LABELS[currentShortlistStatus]}.`
+                        : " Not currently in the shortlisting stage."}
+                    </Typography>
+
+                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                      Evaluator's Notes
+                    </Typography>
+                    {shortlistDetails.feedback || shortlistDetails.reason ? (
+                      <Box sx={{ mb: 1 }}>
+                        {shortlistDetails.reason && (
+                          <Chip label={shortlistDetails.reason} size="small" sx={{ mb: 1 }} />
+                        )}
+                        {shortlistDetails.feedback && (
+                          <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+                            {shortlistDetails.feedback}
+                          </Typography>
+                        )}
+                        {latestShortlistUpdate && (
+                          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+                            {latestShortlistUpdate.actor} · {new Date(latestShortlistUpdate.created_at).toLocaleString()}
+                          </Typography>
+                        )}
+                      </Box>
+                    ) : (
+                      <Typography variant="body2" color="text.secondary">
+                        No evaluator notes yet.
+                      </Typography>
+                    )}
+                  </Grid>
+
+                  <Grid size={{ xs: 12, md: 7 }}>
+                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                      Update Shortlist Status
+                    </Typography>
+                    <Box sx={{ mb: 3 }}>
+                      {canWrite ? (
+                        <ShortlistStatusPanel
+                          applicationId={application.id}
+                          candidateName={candidate.full_name}
+                          currentApplicationStatus={application.status}
+                          onSaved={load}
+                        />
+                      ) : (
+                        <Alert severity="info">You don't have permission to update the shortlist status.</Alert>
+                      )}
+                    </Box>
+
+                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                      Shortlisting Timeline
+                    </Typography>
+                    {timelineError ? (
+                      <Alert severity="error">{timelineError}</Alert>
+                    ) : timeline == null ? (
+                      <CircularProgress size={20} />
+                    ) : shortlistTimeline.length === 0 ? (
+                      <Typography color="text.secondary" variant="body2">
+                        No shortlisting activity recorded yet.
+                      </Typography>
+                    ) : (
+                      <Stack spacing={1.5} divider={<Divider />}>
+                        {shortlistTimeline.map((event) => (
+                          <Box key={event.id}>
+                            <Typography variant="body2">
+                              {humanizeAction(event.action)}
+                              {event.actor && event.actor !== "system" ? ` — ${event.actor}` : ""}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {timeAgo(event.created_at)} · {new Date(event.created_at).toLocaleString()}
+                            </Typography>
+                          </Box>
+                        ))}
+                      </Stack>
+                    )}
+                  </Grid>
+                </Grid>
+              );
+            })()}
           </TabPanel>
         </CardContent>
       </Card>

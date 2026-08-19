@@ -64,10 +64,11 @@ export default function ImportCandidatesWizard({ open, onClose, onImported, init
 
   // Local Import (Part G): a one-time server-side folder configuration, not a per-visit
   // browser file upload -- resumes are dropped directly into the configured folders on the
-  // server and picked up by the every-30-minutes scheduled scan, never uploaded through
-  // this dialog. See app/local_import/service.py.
+  // server and picked up by the scheduled scan (interval configurable below, default 30
+  // minutes), never uploaded through this dialog. See app/local_import/service.py.
   const [readyRoot, setReadyRoot] = useState("");
   const [alreadyRoot, setAlreadyRoot] = useState("");
+  const [scanIntervalMinutes, setScanIntervalMinutes] = useState("30");
   const [loadingLocalImportSettings, setLoadingLocalImportSettings] = useState(false);
   const [savingLocalImportSettings, setSavingLocalImportSettings] = useState(false);
   const [localImportSaveResult, setLocalImportSaveResult] = useState<LocalImportSettingsSaveResult | null>(null);
@@ -80,6 +81,7 @@ export default function ImportCandidatesWizard({ open, onClose, onImported, init
     setStepError(null);
     setReadyRoot("");
     setAlreadyRoot("");
+    setScanIntervalMinutes("30");
     setLocalImportSaveResult(null);
   }, [open, initialSource]);
 
@@ -102,6 +104,7 @@ export default function ImportCandidatesWizard({ open, onClose, onImported, init
         .then((settings) => {
           setReadyRoot(settings.ready_to_upload_root ?? "");
           setAlreadyRoot(settings.already_uploaded_root ?? "");
+          setScanIntervalMinutes(String(settings.scan_interval_minutes ?? 30));
         })
         .catch(() => {
           // Best-effort prefill -- an empty form is still usable if this fails.
@@ -132,11 +135,17 @@ export default function ImportCandidatesWizard({ open, onClose, onImported, init
           setStepError("Both folder paths are required");
           return;
         }
+        const interval = Number(scanIntervalMinutes);
+        if (!Number.isFinite(interval) || interval < 5 || interval > 1440) {
+          setStepError("Scan interval must be between 5 and 1440 minutes");
+          return;
+        }
         setSavingLocalImportSettings(true);
         try {
           const result = await localImportApi.updateSettings({
             ready_to_upload_root: readyRoot.trim(),
             already_uploaded_root: alreadyRoot.trim(),
+            scan_interval_minutes: interval,
           });
           setLocalImportSaveResult(result);
           setActiveStep(2);
@@ -237,10 +246,10 @@ export default function ImportCandidatesWizard({ open, onClose, onImported, init
     return (
       <Stack spacing={2} mt={2}>
         <Typography variant="body2" color="text.secondary">
-          Configure the two folders on the server that automatic local import scans. A subfolder named after each
-          published job is created under both -- drop a resume into the matching job's folder under "Ready to
-          Upload," and it's picked up, parsed, screened, and linked to that exact job automatically within 30
-          minutes. Processed files move into the same-named folder under "Already Uploaded."
+          Configure the two folders on the server that automatic local import scans, and how often it scans them. A
+          subfolder named after each published job is created under both -- drop a resume into the matching job's
+          folder under "Ready to Upload," and it's picked up, parsed, screened, and linked to that exact job
+          automatically on the next scan. Processed files move into the same-named folder under "Already Uploaded."
         </Typography>
         {loadingLocalImportSettings ? (
           <Stack direction="row" alignItems="center" spacing={1}>
@@ -268,6 +277,16 @@ export default function ImportCandidatesWizard({ open, onClose, onImported, init
               value={alreadyRoot}
               onChange={(e) => setAlreadyRoot(e.target.value)}
               slotProps={{ input: { startAdornment: <FolderOutlinedIcon fontSize="small" sx={{ mr: 1, color: "text.secondary" }} /> } }}
+            />
+            <TextField
+              label="Scan interval (minutes)"
+              type="number"
+              required
+              fullWidth
+              value={scanIntervalMinutes}
+              onChange={(e) => setScanIntervalMinutes(e.target.value)}
+              slotProps={{ htmlInput: { min: 5, max: 1440 } }}
+              helperText="How often the server checks these folders for new resumes. Between 5 and 1440 minutes (24 hours)."
             />
             <Typography variant="caption" color="text.secondary">
               These are absolute paths on the server machine running this app, not your own computer.
@@ -298,6 +317,9 @@ export default function ImportCandidatesWizard({ open, onClose, onImported, init
           </Typography>
           <Typography variant="body2">
             <strong>Already Uploaded:</strong> {localImportSaveResult?.already_uploaded_root}
+          </Typography>
+          <Typography variant="body2">
+            <strong>Scan interval:</strong> every {localImportSaveResult?.scan_interval_minutes} minutes
           </Typography>
         </Stack>
         <Typography variant="body2" color="text.secondary">
@@ -330,7 +352,7 @@ export default function ImportCandidatesWizard({ open, onClose, onImported, init
           <Typography variant="h6">Local import configured</Typography>
           <Typography variant="body2" color="text.secondary">
             Drop resumes into the matching job's folder under "Ready to Upload." They'll be picked up automatically
-            within 30 minutes -- no need to keep this dialog open.
+            within {localImportSaveResult?.scan_interval_minutes ?? 30} minutes -- no need to keep this dialog open.
           </Typography>
         </Stack>
       );

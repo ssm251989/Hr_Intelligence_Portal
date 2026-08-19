@@ -26,7 +26,8 @@ import SalaryPage from "./pages/SalaryPage";
 import ScreeningDashboardPage from "./pages/ScreeningDashboardPage";
 import ScreeningListPage from "./pages/ScreeningListPage";
 import SettingsPage from "./pages/SettingsPage";
-import ShortlistingPage from "./pages/ShortlistingPage";
+import ShortlistingDashboardPage from "./pages/ShortlistingDashboardPage";
+import ShortlistingListPage from "./pages/ShortlistingListPage";
 
 export default function App() {
   return (
@@ -60,7 +61,9 @@ export default function App() {
                 <Route path="/screening" element={<Navigate to="/screening/dashboard" replace />} />
                 <Route path="/screening/dashboard" element={<ScreeningDashboardPage />} />
                 <Route path="/screening/list" element={<ScreeningListPage />} />
-                <Route path="/shortlisting" element={<ShortlistingPage />} />
+                <Route path="/shortlisting" element={<Navigate to="/shortlisting/dashboard" replace />} />
+                <Route path="/shortlisting/dashboard" element={<ShortlistingDashboardPage />} />
+                <Route path="/shortlisting/list" element={<ShortlistingListPage />} />
                 <Route path="/interviews" element={<InterviewsPage />} />
                 <Route path="/salary" element={<SalaryPage />} />
                 <Route path="/bgv" element={<BgvPage />} />

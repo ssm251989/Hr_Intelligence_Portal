@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
+import MoreVertIcon from "@mui/icons-material/MoreVert";
 import SearchIcon from "@mui/icons-material/Search";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import Alert from "@mui/material/Alert";
@@ -11,6 +12,7 @@ import FormControl from "@mui/material/FormControl";
 import IconButton from "@mui/material/IconButton";
 import InputAdornment from "@mui/material/InputAdornment";
 import InputLabel from "@mui/material/InputLabel";
+import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 import Pagination from "@mui/material/Pagination";
 import Paper from "@mui/material/Paper";
@@ -51,6 +53,70 @@ function ApplicationStatusChip({ status }: { status: string }) {
   }
   const active = !isTerminalApplicationStatus(status);
   return <Chip label={active ? "Active" : "Inactive"} size="small" color={active ? "success" : "default"} variant="outlined" />;
+}
+
+// Same kebab-menu pattern as the Candidates List's CandidateActionsMenu / JobsPage's
+// JobActionsMenu -- one 3-dot Actions column instead of a row of named buttons.
+function ScreeningActionsMenu({
+  row,
+  canDecide,
+  actionId,
+  onView,
+  onScreen,
+  onRank,
+}: {
+  row: CandidateApplicationRow;
+  canDecide: boolean;
+  actionId: string | null;
+  onView: (applicationId: string) => void;
+  onScreen: (applicationId: string) => void;
+  onRank: (applicationId: string) => void;
+}) {
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+  const pending = actionId === row.application_id;
+  const canScreen = canDecide && row.status === "received";
+  const canRank = canDecide && row.match_score != null;
+
+  return (
+    <>
+      <IconButton size="small" onClick={(e) => setAnchorEl(e.currentTarget)} disabled={pending}>
+        <MoreVertIcon fontSize="small" />
+      </IconButton>
+      <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={() => setAnchorEl(null)}>
+        <MenuItem
+          onClick={() => {
+            setAnchorEl(null);
+            onView(row.application_id);
+          }}
+        >
+          <VisibilityOutlinedIcon fontSize="small" sx={{ mr: 1 }} />
+          View
+        </MenuItem>
+        {canScreen && (
+          <MenuItem
+            onClick={() => {
+              setAnchorEl(null);
+              onScreen(row.application_id);
+            }}
+            disabled={pending}
+          >
+            {pending ? "Screening..." : "Screen"}
+          </MenuItem>
+        )}
+        {canRank && (
+          <MenuItem
+            onClick={() => {
+              setAnchorEl(null);
+              onRank(row.application_id);
+            }}
+            disabled={pending}
+          >
+            {pending ? "Ranking..." : row.ranking_score != null ? "Re-rank" : "Rank"}
+          </MenuItem>
+        )}
+      </Menu>
+    </>
+  );
 }
 
 // Part E: the Screening module's own filterable, paginated table -- same architecture as
@@ -377,37 +443,14 @@ export default function ScreeningListPage() {
                       )}
                     </TableCell>
                     <TableCell align="right">
-                      <Stack direction="row" spacing={0.5} justifyContent="flex-end" alignItems="center">
-                        <Tooltip title="View">
-                          <IconButton size="small" onClick={() => navigate(`/candidates/${row.application_id}`)}>
-                            <VisibilityOutlinedIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                        {canDecide && row.status === "received" && (
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            onClick={() => handleScreen(row.application_id)}
-                            disabled={actionId === row.application_id}
-                          >
-                            {actionId === row.application_id ? "Screening..." : "Screen"}
-                          </Button>
-                        )}
-                        {canDecide && row.match_score != null && (
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            onClick={() => handleRank(row.application_id)}
-                            disabled={actionId === row.application_id}
-                          >
-                            {actionId === row.application_id
-                              ? "Ranking..."
-                              : row.ranking_score != null
-                                ? "Re-rank"
-                                : "Rank"}
-                          </Button>
-                        )}
-                      </Stack>
+                      <ScreeningActionsMenu
+                        row={row}
+                        canDecide={canDecide}
+                        actionId={actionId}
+                        onView={(applicationId) => navigate(`/candidates/${applicationId}`)}
+                        onScreen={handleScreen}
+                        onRank={handleRank}
+                      />
                     </TableCell>
                   </TableRow>
                 ))}

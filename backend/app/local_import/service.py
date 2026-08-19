@@ -1,4 +1,5 @@
-"""Part G (redesign): local-folder auto-import, checked every 30 minutes.
+"""Part G (redesign): local-folder auto-import, checked on a configurable interval
+(local_import_settings.scan_interval_minutes, default 30 -- see app/local_import/scheduler.py).
 
 Scans one subfolder per job under the configured ready-to-upload root (see
 app/local_import/storage.py get_configured_roots), matches each subfolder back to the real
@@ -51,7 +52,7 @@ from app.models.job_role import JobRole
 ACTOR = "local_import_scheduler"
 
 # Generous for what this feature is actually for -- a handful of resumes dropped in a
-# folder between the 30-minute checks, not a bulk migration. If a batch genuinely hasn't
+# folder between scheduled checks, not a bulk migration. If a batch genuinely hasn't
 # finished within this window, the run reports "still processing" and leaves every matched
 # file untouched (nothing moved, no candidates created) for the next run to pick back up
 # from scratch -- safe to just re-submit wholesale rather than resuming a specific batch_id.
