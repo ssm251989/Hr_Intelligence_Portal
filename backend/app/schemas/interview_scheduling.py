@@ -33,3 +33,12 @@ class TrackerValidationResult(BaseModel):
 
 class InterviewSchedulingSettingsSaveResult(InterviewSchedulingSettingsRead):
     validation: TrackerValidationResult
+
+
+class ProposeInterviewSlotsResponse(BaseModel):
+    """Result of emailing a candidate their interview slot options (Part 3) -- how many of
+    the (up to 3) candidate-facing slots actually found a free interviewer and were offered,
+    and when their confirmation links expire."""
+
+    slots_offered: int
+    expires_at: Optional[datetime] = None

@@ -366,7 +366,9 @@ export const localImportApi = {
     put<LocalImportSettingsSaveResult>("/local-import/settings", payload),
 };
 
-// ---- interview scheduling automation (foundation stage -- no WhatsApp yet) ----
+// ---- interview scheduling automation (Part 3: email + secure-link confirmation --
+// replaces the earlier WhatsApp/Twilio plan entirely, which was dropped before any of it
+// was built) ----
 
 export const interviewSchedulingApi = {
   getSettings: () => get<InterviewSchedulingSettings>("/interview-scheduling/settings"),

@@ -1,9 +1,13 @@
-"""Interview Scheduling automation, foundation stage -- selects an available interviewer
-for a candidate's preferred time slot from the Excel tracker's Interviewer Pool, checking
-each candidate interviewer's REAL Google Calendar in turn until one is found free (or every
-eligible interviewer is exhausted). Never sends anything and never creates a real calendar
-event -- both are Stage 2, once real Twilio (WhatsApp) credentials exist for the
-confirmation flow this selection feeds into.
+"""Interview Scheduling automation -- selects an available interviewer for a candidate's
+preferred time slot from the Excel tracker's Interviewer Pool, checking each candidate
+interviewer's REAL Google Calendar in turn until one is found free (or every eligible
+interviewer is exhausted). This module itself never sends anything and never creates a real
+calendar event -- it only picks a candidate interviewer for one slot; sending the candidate
+a confirmation link and creating the real event once they confirm is Part 3's job (see
+app/interview_scheduling/confirmation.py). Part 3 emails the candidate directly with a
+secure single-use link per proposed slot -- an earlier plan to confirm over WhatsApp/Twilio
+was dropped before any of that was built, in favor of email, which this app already had a
+real integration for (see app/integrations/gmail.py).
 
 "Busy" and "unknown availability" are treated identically for retry purposes (both mean
 "try someone else"), but are logged and reported distinctly: a genuine calendar conflict is
@@ -95,7 +99,10 @@ def select_interviewer(
                 "Candidate Preferred Time": preferred_time.isoformat(), "Status": "No Interviewer Available",
             },
         )
-        return {"run_id": str(run_id), "assigned_interviewer": None, "attempts": [], "reason": NO_POOL_CONFIGURED}
+        return {
+            "run_id": str(run_id), "assigned_interviewer": None, "assigned_interviewer_user_id": None,
+            "attempts": [], "reason": NO_POOL_CONFIGURED,
+        }
 
     order = list(eligible)
     random.shuffle(order)
@@ -147,7 +154,17 @@ def select_interviewer(
                 "Status": "Interviewer Selected -- Awaiting Confirmation",
             },
         )
-        return {"run_id": str(run_id), "assigned_interviewer": name, "attempts": attempts, "reason": None}
+        return {
+            "run_id": str(run_id),
+            "assigned_interviewer": name,
+            # Resolved once here rather than making Part 3 re-run the same name->User lookup
+            # (see _find_interviewer_user) a second time against a possibly-changed User
+            # table -- the id that actually did the availability check is what a
+            # confirmation later creates the calendar event for.
+            "assigned_interviewer_user_id": str(user.id),
+            "attempts": attempts,
+            "reason": None,
+        }
 
     # Every eligible interviewer was tried and none was pickable -- reported clearly, never
     # guessed at or silently left unresolved.
@@ -165,4 +182,7 @@ def select_interviewer(
             "Candidate Preferred Time": preferred_time.isoformat(), "Status": "No Interviewer Available",
         },
     )
-    return {"run_id": str(run_id), "assigned_interviewer": None, "attempts": attempts, "reason": ALL_UNAVAILABLE}
+    return {
+        "run_id": str(run_id), "assigned_interviewer": None, "assigned_interviewer_user_id": None,
+        "attempts": attempts, "reason": ALL_UNAVAILABLE,
+    }

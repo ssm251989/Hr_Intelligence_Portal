@@ -1,14 +1,18 @@
-"""Interview Scheduling automation's Excel tracker (foundation stage) -- a workbook the
-recruiter owns and can open/edit directly, with two sheets:
+"""Interview Scheduling automation's Excel tracker -- a workbook the recruiter owns and can
+open/edit directly, with two sheets:
 
   "Interviewer Pool": Job Title | Eligible Interviewers (comma-separated names)
   "Interview Log": Candidate | Job Title | Assigned Interviewer | Candidate Preferred Time |
                    Interviewer Confirmed | Candidate Confirmed | Final Scheduled Time | Status
 
-"Interviewer Confirmed"/"Candidate Confirmed"/"Final Scheduled Time" are written by this
-stage's caller as blank -- they're Stage 2's concern (the WhatsApp confirmation flow), once
-real Twilio credentials are available. This stage only ever selects a candidate interviewer
-and records that selection; it never creates a real calendar event or sends anything.
+Each row starts out written by service.py's select_interviewer with "Interviewer
+Confirmed"/"Candidate Confirmed"/"Final Scheduled Time" blank and Status "Interviewer
+Selected -- Awaiting Confirmation" -- that's as far as the foundation stage goes. Part 3
+(app/interview_scheduling/confirmation.py) fills those three columns in and finalizes
+Status once the candidate actually confirms a slot via their emailed link, using
+update_interview_log_row below. An earlier plan to do that confirmation over WhatsApp/
+Twilio was dropped before any of it was built, in favor of email + a secure single-use link,
+which this app already had a real Gmail integration for.
 """
 
 from pathlib import Path
@@ -143,3 +147,49 @@ def append_interview_log_row(path: Path, values: dict[str, Optional[str]]) -> No
         header = list(INTERVIEW_LOG_COLUMNS)
     sheet.append([values.get(column, "") or "" for column in header])
     workbook.save(path)
+
+
+def update_interview_log_row(
+    path: Path, *, candidate: str, job_title: str, preferred_time: str, updates: dict[str, str]
+) -> bool:
+    """Finds the Interview Log row a prior append_interview_log_row call wrote for this
+    exact (Candidate, Job Title, Candidate Preferred Time) -- there's no row id to key off
+    of, but those three together are what a proposed slot is uniquely identified by -- and
+    applies `updates` to just that row's named columns, in place. If more than one row
+    somehow matches, the last one (most recently appended) wins. Never appends a new row and
+    never touches any other row or column.
+
+    Returns False as a deliberate no-op, never an exception, if no matching row is found
+    (e.g. the tracker file was replaced after the row was originally logged) or the expected
+    columns aren't present -- a stale/missing tracker row shouldn't block whatever real
+    action (e.g. a candidate's interview confirmation) triggered this update.
+    """
+    workbook = load_workbook(path)
+    if INTERVIEW_LOG_SHEET not in workbook.sheetnames:
+        return False
+    sheet = workbook[INTERVIEW_LOG_SHEET]
+    header_row = next(sheet.iter_rows(min_row=1, max_row=1), ())
+    header = [cell.value for cell in header_row if cell.value is not None]
+    if not header:
+        return False
+    col_index = {name: i for i, name in enumerate(header)}
+    match_columns = {"Candidate": candidate, "Job Title": job_title, "Candidate Preferred Time": preferred_time}
+    if any(col not in col_index for col in match_columns):
+        return False
+
+    target_row = None
+    for row in sheet.iter_rows(min_row=2):
+        if all(
+            len(row) > col_index[col] and str(row[col_index[col]].value or "") == expected
+            for col, expected in match_columns.items()
+        ):
+            target_row = row  # keep scanning -- last match wins if duplicates somehow exist
+
+    if target_row is None:
+        return False
+
+    for column_name, value in updates.items():
+        if column_name in col_index:
+            target_row[col_index[column_name]].value = value
+    workbook.save(path)
+    return True

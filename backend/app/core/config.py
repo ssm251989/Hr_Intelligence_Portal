@@ -30,6 +30,11 @@ class Settings:
     # Used to build the job link included in the LinkedIn hiring-announcement post
     # (backend has no other way to know the frontend's origin).
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
+    # Used to build the interview confirmation link emailed to candidates (Part 3) -- that
+    # link is served directly by this backend (GET /interview-confirm/{token}, a self-
+    # contained HTML page), not by the frontend SPA, so it needs the backend's own origin
+    # rather than FRONTEND_URL.
+    APP_BASE_URL: str = os.getenv("APP_BASE_URL", "http://localhost:8000")
 
 
 settings = Settings()
