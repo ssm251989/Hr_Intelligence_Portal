@@ -34,6 +34,7 @@ class InterviewRead(BaseModel):
     overall_rating: Optional[int] = None
     comments: Optional[str] = None
     decision: Optional[str] = None
+    scheduling_method: str
     created_at: datetime
 
 

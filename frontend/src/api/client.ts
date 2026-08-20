@@ -21,6 +21,8 @@ import type {
   InterviewFeedbackUpdate,
   InterviewQuestionsResponse,
   InterviewRead,
+  InterviewsDashboardStatsResponse,
+  InterviewsListPage,
   JobFieldSuggestionsResponse,
   JobRoleCreate,
   JobRoleRead,
@@ -457,6 +459,17 @@ export const shortlistingApi = {
 
 // ---- scheduling / interviews ----
 
+export interface InterviewsListParams {
+  page?: number;
+  pageSize?: number;
+  jobRoleId?: UUID;
+  interviewerId?: UUID;
+  status?: "upcoming" | "awaiting_feedback" | "selected" | "rejected";
+  schedulingMethod?: "manual" | "auto";
+  scheduledAfter?: string;
+  scheduledBefore?: string;
+}
+
 export const schedulingApi = {
   schedule: (applicationId: UUID, payload: InterviewCreate) =>
     post<InterviewRead>(`/applications/${applicationId}/interviews`, payload),
@@ -466,6 +479,19 @@ export const schedulingApi = {
     patch<InterviewRead>(`/interviews/${interviewId}/feedback`, payload),
   generateQuestions: (applicationId: UUID) =>
     post<InterviewQuestionsResponse>(`/applications/${applicationId}/interview-questions`),
+  // One row per interview, across every job -- the Interview List page's data source.
+  listAll: (params: InterviewsListParams = {}) => {
+    const query = new URLSearchParams();
+    query.set("page", String(params.page ?? 1));
+    query.set("page_size", String(params.pageSize ?? 10));
+    if (params.jobRoleId) query.set("job_role_id", params.jobRoleId);
+    if (params.interviewerId) query.set("interviewer_id", params.interviewerId);
+    if (params.status) query.set("status", params.status);
+    if (params.schedulingMethod) query.set("scheduling_method", params.schedulingMethod);
+    if (params.scheduledAfter) query.set("scheduled_after", params.scheduledAfter);
+    if (params.scheduledBefore) query.set("scheduled_before", params.scheduledBefore);
+    return get<InterviewsListPage>(`/interviews?${query.toString()}`);
+  },
 };
 
 // ---- salary ----
@@ -548,6 +574,10 @@ export const reportsApi = {
   shortlistingDashboardStats: (compareMonth?: string) =>
     get<ShortlistingDashboardStatsResponse>(
       `/reports/shortlisting-dashboard-stats${compareMonth ? `?compare_month=${compareMonth}` : ""}`
+    ),
+  interviewsDashboardStats: (compareMonth?: string) =>
+    get<InterviewsDashboardStatsResponse>(
+      `/reports/interviews-dashboard-stats${compareMonth ? `?compare_month=${compareMonth}` : ""}`
     ),
 };
 

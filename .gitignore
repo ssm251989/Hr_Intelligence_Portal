@@ -34,3 +34,11 @@ uploads/
 # settings table), not fixed app-created folder names, so there's no longer a specific
 # path to list here. If you point local import at a path inside this repo for local dev,
 # gitignore that path yourself.
+
+# This repo's own local dev setup points local-import and the Interview Scheduling
+# tracker at Sample/ -- ignore the resulting runtime byproducts (moved resumes, the live
+# tracker workbook and its Excel lock file), never the sample fixtures themselves.
+Sample/Ready-to-upload/
+Sample/Already-uploaded/
+Sample/Interview_Tracker/
+~$*.xlsx

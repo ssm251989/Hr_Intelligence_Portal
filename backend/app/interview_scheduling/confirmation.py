@@ -38,11 +38,13 @@ from app.integrations.google_calendar import (
     DEFAULT_INTERVIEW_DURATION_MINUTES,
     GoogleCalendarError,
     create_calendar_event,
+    format_ist_datetime,
 )
 from app.interview_scheduling.service import select_interviewer
-from app.interview_scheduling.tracker import update_interview_log_row
+from app.interview_scheduling.tracker import sync_interviewer_pool_job_titles, update_interview_log_row
 from app.models.application import Application
 from app.models.candidate import Candidate
+from app.models.interview import Interview
 from app.models.interview_confirmation_token import InterviewConfirmationToken
 from app.models.job_role import JobRole
 from app.models.user import User
@@ -94,23 +96,9 @@ def default_proposed_slot_times(now: Optional[datetime] = None) -> list[datetime
     ]
 
 
-def _utc_isoformat(dt: datetime) -> str:
-    """The tracker's "Candidate Preferred Time" column is always written from a UTC-aware
-    datetime's .isoformat() (see propose_interview_slots -> select_interviewer), giving a
-    "+00:00"-suffixed string. A token fetched back from the database days later can carry a
-    tzinfo that represents the identical instant but formats its offset differently (e.g. if
-    the DB session's timezone isn't UTC) -- explicitly normalizing to UTC before formatting
-    here is what keeps update_interview_log_row's string match actually matching."""
-    return dt.astimezone(timezone.utc).isoformat()
-
-
-def _format_ist(dt: datetime) -> str:
-    return dt.astimezone(APP_TIMEZONE).strftime("%A, %d %B %Y, %I:%M %p IST")
-
-
 def _build_proposal_email_body(candidate_name: str, job_title: str, offered: list[dict]) -> str:
     options = "\n\n".join(
-        f"Option {i}: {_format_ist(slot['slot_time'])}\nConfirm this slot: {slot['url']}"
+        f"Option {i}: {format_ist_datetime(slot['slot_time'])}\nConfirm this slot: {slot['url']}"
         for i, slot in enumerate(offered, start=1)
     )
     return (
@@ -146,6 +134,13 @@ def propose_interview_slots(
         raise ValueError("Candidate has no email on file")
 
     now = now or datetime.now(timezone.utc)
+
+    # Interview Scheduling has no scheduler of its own to run sync_interviewer_pool_job_
+    # titles on a tick (unlike Part G's local-folder import) -- this is the one recurring
+    # moment the Interviewer Pool sheet actually gets read (select_interviewer below), so
+    # syncing right here guarantees it's never stale when it matters, same as the settings-
+    # save action (see app/interview_scheduling/router.py update_settings).
+    sync_interviewer_pool_job_titles(db, Path(tracker_path))
 
     # A fresh proposal supersedes any still-live one, so a recruiter re-running this can't
     # leave two conflicting sets of links both confirmable at once.
@@ -320,14 +315,36 @@ def confirm_token(db: Session, token: str) -> ConfirmationOutcome:
         other.invalidated_at = now
 
     calendar_event = _create_confirmed_calendar_event(db, application, token_row)
+
+    # The manual scheduling flow (app/scheduling/router.py schedule_interview) always
+    # creates an Interview row; this flow -- the only other path that can schedule one --
+    # must too, or the Interview List/Dashboard (which reads exclusively off the
+    # `interviews` table) would silently never see any auto-scheduled interview at all.
+    interview = Interview(
+        application_id=application.id,
+        interviewer_id=token_row.interviewer_user_id,
+        scheduled_at=token_row.slot_time,
+        calendar_event_id=calendar_event["event_id"] if calendar_event else None,
+        calendar_link=calendar_event["html_link"] if calendar_event else None,
+        scheduling_method="auto",
+    )
+    db.add(interview)
     db.commit()
+    db.refresh(interview)
 
     log_action(
         db, "application", application.id, "interview_confirmed_by_candidate", "candidate",
         {
             "previous_status": previous_status, "interviewer_name": token_row.interviewer_name,
             "scheduled_at": token_row.slot_time.isoformat(), "calendar_event_created": calendar_event is not None,
-            "other_slots_invalidated": len(other_tokens),
+            "other_slots_invalidated": len(other_tokens), "interview_id": str(interview.id),
+        },
+    )
+    log_action(
+        db, "interview", interview.id, "interview_scheduled", "candidate",
+        {
+            "application_id": str(application.id), "scheduled_at": token_row.slot_time.isoformat(),
+            "scheduling_method": "auto", "interviewer_name": token_row.interviewer_name,
         },
     )
 
@@ -337,11 +354,11 @@ def confirm_token(db: Session, token: str) -> ConfirmationOutcome:
                 Path(token_row.tracker_path),
                 candidate=token_row.candidate_name or "",
                 job_title=token_row.job_title or "",
-                preferred_time=_utc_isoformat(token_row.slot_time),
+                preferred_time=format_ist_datetime(token_row.slot_time),
                 updates={
                     "Interviewer Confirmed": "Yes",
                     "Candidate Confirmed": "Yes",
-                    "Final Scheduled Time": _utc_isoformat(token_row.slot_time),
+                    "Final Scheduled Time": format_ist_datetime(token_row.slot_time),
                     "Status": "Confirmed",
                 },
             )
@@ -356,7 +373,7 @@ def confirm_token(db: Session, token: str) -> ConfirmationOutcome:
                     Path(other.tracker_path or token_row.tracker_path),
                     candidate=other.candidate_name or "",
                     job_title=other.job_title or "",
-                    preferred_time=_utc_isoformat(other.slot_time),
+                    preferred_time=format_ist_datetime(other.slot_time),
                     updates={"Status": "Slot Not Selected by Candidate"},
                 )
             except OSError:

@@ -435,7 +435,58 @@ export interface InterviewRead {
   overall_rating?: number | null;
   comments?: string | null;
   decision?: string | null;
+  scheduling_method: SchedulingMethod;
   created_at: string;
+}
+
+// "manual" = the recruiter-driven Schedule Interview flow (POST /applications/{id}/
+// interviews); "auto" = Part 3's candidate email + secure-link confirmation flow.
+export type SchedulingMethod = "manual" | "auto";
+
+export const SCHEDULING_METHOD_LABELS: Record<SchedulingMethod, string> = {
+  manual: "Manually-Scheduled",
+  auto: "Auto-Scheduled",
+};
+
+// Selected/Rejected are permanent once a decision is recorded; before that, an interview
+// is Upcoming (still in the future) or Awaiting Feedback (occurred, no decision yet).
+export type InterviewStatus = "upcoming" | "awaiting_feedback" | "selected" | "rejected";
+
+export const INTERVIEW_STATUSES: InterviewStatus[] = ["upcoming", "awaiting_feedback", "selected", "rejected"];
+
+export const INTERVIEW_STATUS_LABELS: Record<InterviewStatus, string> = {
+  upcoming: "Upcoming",
+  awaiting_feedback: "Awaiting Feedback",
+  selected: "Selected",
+  rejected: "Rejected",
+};
+
+// One interview, joined with its candidate/job/interviewer names -- shared by the
+// Interview List page and the Interview Dashboard's Recent Interviews table.
+export interface InterviewListRow {
+  interview_id: UUID;
+  application_id: UUID;
+  candidate_id: UUID;
+  candidate_name?: string | null;
+  candidate_email?: string | null;
+  job_role_id: UUID;
+  job_title: string;
+  interviewer_id?: UUID | null;
+  interviewer_name?: string | null;
+  scheduled_at?: string | null;
+  scheduling_method: SchedulingMethod;
+  status: InterviewStatus;
+  decision?: string | null;
+  meeting_link?: string | null;
+  calendar_link?: string | null;
+  created_at: string;
+}
+
+export interface InterviewsListPage {
+  total: number;
+  page: number;
+  page_size: number;
+  items: InterviewListRow[];
 }
 
 export interface InterviewQuestionsResponse {
@@ -780,6 +831,24 @@ export interface ShortlistBulkDecisionResult {
   skipped: ShortlistBulkDecisionSkipped[];
 }
 
+// ---- interviews dashboard (redesign) ----
+
+export interface InterviewsDashboardStatsResponse {
+  total_interviews_scheduled_this_month: number;
+  upcoming: number;
+  completed: number;
+  selected: number;
+  rejected: number;
+  total_interviews_scheduled_this_month_trend: StatTrend;
+  completed_trend: StatTrend;
+  selected_trend: StatTrend;
+  rejected_trend: StatTrend;
+  outcome_breakdown: LabeledCount[];
+  interviewer_workload: LabeledCount[];
+  scheduling_method_breakdown: LabeledCount[];
+  recent_interviews: InterviewListRow[];
+}
+
 // ---- interview scheduling automation (Part 3: email + secure-link confirmation --
 // replaces the earlier WhatsApp/Twilio plan entirely, which was dropped before any of it
 // was built) ----
@@ -803,6 +872,8 @@ export interface TrackerValidationResult {
 
 export interface InterviewSchedulingSettingsSaveResult extends InterviewSchedulingSettings {
   validation: TrackerValidationResult;
+  interviewer_pool_jobs_considered: number;
+  interviewer_pool_rows_added: number;
 }
 
 // ---- local-folder auto-import settings (Part G redesign) ----

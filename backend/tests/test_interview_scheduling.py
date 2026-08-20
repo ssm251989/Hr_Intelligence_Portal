@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from openpyxl import Workbook, load_workbook
 
 from app.core.crypto import encrypt
-from app.integrations.google_calendar import GoogleCalendarError
+from app.integrations.google_calendar import GoogleCalendarError, format_ist_datetime
 from app.interview_scheduling import service as interview_scheduling_service
 from app.interview_scheduling.tracker import (
     INTERVIEW_LOG_COLUMNS,
@@ -15,14 +15,24 @@ from app.interview_scheduling.tracker import (
     ensure_tracker_file,
     eligible_interviewers_for_job,
     read_interviewer_pool,
+    sync_interviewer_pool_job_titles,
 )
 from app.models.interview_scheduling_settings import InterviewSchedulingSettings
+from app.models.job_role import JobRole
 from app.models.user import User
 from app.models.user_integration import UserIntegration
 
 
 def _unique_job_title(prefix: str) -> str:
     return f"{prefix} zzInterviewSched{uuid.uuid4().hex[:10]}"
+
+
+def _make_job(db_session, title=None, status="published", **kwargs) -> JobRole:
+    job = JobRole(title=title or _unique_job_title("Job"), status=status, **kwargs)
+    db_session.add(job)
+    db_session.commit()
+    db_session.refresh(job)
+    return job
 
 
 def _make_user(db_session, name, role="interviewer", **kwargs) -> User:
@@ -362,6 +372,174 @@ def test_select_interviewer_reports_when_no_pool_configured_for_job(db_session, 
     assert result["attempts"] == []
 
 
+# --- select_interviewer: date-based "Candidate Preferred Time", not a weekday name, in
+# every branch (picked, no pool configured, all unavailable) ---
+
+
+def test_select_interviewer_writes_date_based_preferred_time_when_picked(db_session, tmp_path, monkeypatch):
+    path = tmp_path / "tracker.xlsx"
+    ensure_tracker_file(path)
+    job_title = _unique_job_title("DateFormatPicked")
+    workbook = load_workbook(path)
+    workbook[INTERVIEWER_POOL_SHEET].append([job_title, "Solo Interviewer"])
+    workbook.save(path)
+
+    user = _make_user(db_session, "Solo Interviewer")
+    _connect_google(db_session, user)
+    monkeypatch.setattr(interview_scheduling_service, "check_calendar_availability", lambda *a, **k: True)
+    preferred_time = datetime(2026, 8, 26, 10, 0, tzinfo=timezone.utc)
+
+    interview_scheduling_service.select_interviewer(
+        db_session, str(path), candidate_name="Jane Doe", job_title=job_title, preferred_time=preferred_time,
+    )
+
+    log_rows = list(load_workbook(path)[INTERVIEW_LOG_SHEET].iter_rows(min_row=2, values_only=True))
+    assert log_rows[-1][3] == format_ist_datetime(preferred_time)
+    for weekday in ("Monday", "Mon,", "Wednesday"):
+        assert weekday not in log_rows[-1][3]
+
+
+def test_select_interviewer_writes_date_based_preferred_time_when_no_pool_configured(db_session, tmp_path):
+    path = tmp_path / "tracker.xlsx"
+    ensure_tracker_file(path)
+    job_title = _unique_job_title("DateFormatNoPool")
+    preferred_time = datetime(2026, 8, 27, 9, 0, tzinfo=timezone.utc)
+
+    interview_scheduling_service.select_interviewer(
+        db_session, str(path), candidate_name="Jane Doe", job_title=job_title, preferred_time=preferred_time,
+    )
+
+    log_rows = list(load_workbook(path)[INTERVIEW_LOG_SHEET].iter_rows(min_row=2, values_only=True))
+    assert log_rows[-1][3] == format_ist_datetime(preferred_time)
+
+
+def test_select_interviewer_writes_date_based_preferred_time_when_all_busy(db_session, tmp_path, monkeypatch):
+    path = tmp_path / "tracker.xlsx"
+    ensure_tracker_file(path)
+    job_title = _unique_job_title("DateFormatAllBusy")
+    workbook = load_workbook(path)
+    workbook[INTERVIEWER_POOL_SHEET].append([job_title, "Person A"])
+    workbook.save(path)
+
+    user = _make_user(db_session, "Person A")
+    _connect_google(db_session, user)
+    monkeypatch.setattr(interview_scheduling_service, "check_calendar_availability", lambda *a, **k: False)
+    preferred_time = datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc)
+
+    interview_scheduling_service.select_interviewer(
+        db_session, str(path), candidate_name="Nobody Free", job_title=job_title, preferred_time=preferred_time,
+    )
+
+    log_rows = list(load_workbook(path)[INTERVIEW_LOG_SHEET].iter_rows(min_row=2, values_only=True))
+    assert log_rows[-1][3] == format_ist_datetime(preferred_time)
+    assert log_rows[-1][3] == "28 Aug 2026, 05:30 PM IST"
+
+
+# --- sync_interviewer_pool_job_titles ---
+
+
+def test_sync_interviewer_pool_job_titles_adds_missing_rows_for_active_jobs(db_session, tmp_path):
+    path = tmp_path / "tracker.xlsx"
+    ensure_tracker_file(path)
+    published_title = _unique_job_title("Published")
+    ready_title = _unique_job_title("ReadyForPublishing")
+    _make_job(db_session, title=published_title, status="published")
+    _make_job(db_session, title=ready_title, status="ready_for_publishing")
+
+    result = sync_interviewer_pool_job_titles(db_session, path)
+
+    assert result["jobs_considered"] >= 2
+    assert result["rows_added"] >= 2
+    pool = read_interviewer_pool(path)
+    assert pool[published_title] == []
+    assert pool[ready_title] == []
+
+
+def test_sync_interviewer_pool_job_titles_skips_draft_closed_and_on_hold_jobs(db_session, tmp_path):
+    path = tmp_path / "tracker.xlsx"
+    ensure_tracker_file(path)
+    draft_title = _unique_job_title("Draft")
+    closed_title = _unique_job_title("Closed")
+    on_hold_title = _unique_job_title("OnHold")
+    _make_job(db_session, title=draft_title, status="draft")
+    _make_job(db_session, title=closed_title, status="closed")
+    _make_job(db_session, title=on_hold_title, status="on_hold")
+
+    sync_interviewer_pool_job_titles(db_session, path)
+
+    pool = read_interviewer_pool(path)
+    for title in (draft_title, closed_title, on_hold_title):
+        assert title not in pool
+
+
+def test_sync_interviewer_pool_job_titles_never_overwrites_existing_interviewer_list(db_session, tmp_path):
+    path = tmp_path / "tracker.xlsx"
+    ensure_tracker_file(path)
+    title = _unique_job_title("AlreadyConfigured")
+    _make_job(db_session, title=title, status="published")
+    workbook = load_workbook(path)
+    workbook[INTERVIEWER_POOL_SHEET].append([title, "Asha Rao, Vikram Singh"])
+    workbook.save(path)
+
+    sync_interviewer_pool_job_titles(db_session, path)
+
+    pool = read_interviewer_pool(path)
+    assert pool[title] == ["Asha Rao", "Vikram Singh"]
+    rows = list(load_workbook(path)[INTERVIEWER_POOL_SHEET].iter_rows(min_row=2, values_only=True))
+    assert len([r for r in rows if r[0] == title]) == 1  # no duplicate row added
+
+
+def test_sync_interviewer_pool_job_titles_is_case_and_whitespace_insensitive(db_session, tmp_path):
+    path = tmp_path / "tracker.xlsx"
+    ensure_tracker_file(path)
+    title = _unique_job_title("CaseInsensitive")
+    _make_job(db_session, title=title, status="published")
+    workbook = load_workbook(path)
+    workbook[INTERVIEWER_POOL_SHEET].append([f"  {title.upper()}  ", "Someone"])
+    workbook.save(path)
+
+    sync_interviewer_pool_job_titles(db_session, path)
+
+    rows = list(load_workbook(path)[INTERVIEWER_POOL_SHEET].iter_rows(min_row=2, values_only=True))
+    assert len([r for r in rows if str(r[0]).strip().lower() == title.lower()]) == 1  # no duplicate row added
+
+
+def test_sync_interviewer_pool_job_titles_never_deletes_row_for_a_now_closed_job(db_session, tmp_path):
+    path = tmp_path / "tracker.xlsx"
+    ensure_tracker_file(path)
+    title = _unique_job_title("WasPublished")
+    job = _make_job(db_session, title=title, status="published")
+
+    sync_interviewer_pool_job_titles(db_session, path)
+    assert title in read_interviewer_pool(path)
+
+    # A recruiter fills in a real interviewer for this row before the job closes.
+    workbook = load_workbook(path)
+    for row in workbook[INTERVIEWER_POOL_SHEET].iter_rows(min_row=2):
+        if row[0].value == title:
+            row[1].value = "Configured Interviewer"
+    workbook.save(path)
+
+    job.status = "closed"
+    db_session.commit()
+
+    sync_interviewer_pool_job_titles(db_session, path)
+
+    pool = read_interviewer_pool(path)
+    assert pool[title] == ["Configured Interviewer"]  # row and its data both survive
+
+
+def test_sync_interviewer_pool_job_titles_creates_the_tracker_file_even_with_no_new_titles(tmp_path, db_session):
+    # Mirrors app/local_import/job_folders.py's own
+    # test_sync_job_folders_creates_the_roots_even_with_zero_active_jobs: the shared dev DB
+    # this suite runs against always has some real published/ready_for_publishing jobs, so
+    # this only asserts the function is safe to call and still creates the tracker file --
+    # the "no active jobs at all" case isn't reachable against that shared DB.
+    path = tmp_path / "tracker.xlsx"
+    sync_interviewer_pool_job_titles(db_session, path)
+    assert path.exists()
+
+
 # --- GET/PUT /interview-scheduling/settings ---
 
 
@@ -399,14 +577,32 @@ def test_put_interview_scheduling_settings_never_overwrites_existing_tracker(cli
     assert response.status_code == 200
     assert response.json()["validation"]["created"] is False
 
+    # The Interviewer Pool sync (see sync_interviewer_pool_job_titles) may add rows for
+    # whatever published/ready_for_publishing jobs the shared dev DB happens to have, but
+    # must never touch this pre-existing row's own interviewer list.
     reloaded = load_workbook(path)
     rows = list(reloaded[INTERVIEWER_POOL_SHEET].iter_rows(min_row=2, values_only=True))
-    assert rows == [("Existing Role", "Existing Person")]
+    assert ("Existing Role", "Existing Person") in rows
+    assert len([r for r in rows if r[0] == "Existing Role"]) == 1
 
 
 def test_put_interview_scheduling_settings_rejects_blank_path(client):
     response = client.put("/interview-scheduling/settings", json={"tracker_path": "   "})
     assert response.status_code == 422
+
+
+def test_put_interview_scheduling_settings_syncs_interviewer_pool_for_published_jobs(client, db_session, tmp_path):
+    path = tmp_path / "new-tracker.xlsx"
+    title = _make_job(db_session, status="published").title
+
+    response = client.put("/interview-scheduling/settings", json={"tracker_path": str(path)})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["interviewer_pool_rows_added"] >= 1
+    assert body["interviewer_pool_jobs_considered"] >= 1
+    pool = read_interviewer_pool(path)
+    assert pool[title] == []
 
 
 def test_interview_scheduling_settings_requires_auth(anonymous_client):

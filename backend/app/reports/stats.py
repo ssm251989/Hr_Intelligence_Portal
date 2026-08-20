@@ -9,13 +9,15 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Sequence
 
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 
 from app.models.application import TERMINAL_APPLICATION_STATUSES, Application
 from app.models.audit_log import AuditLog
 from app.models.candidate import CANDIDATE_SOURCES, Candidate
+from app.models.interview import Interview
 from app.models.job_role import JobRole
+from app.models.user import User
 from app.schemas.reports import MonthlyPoint, StatTrend
 from app.shortlisting.service import shortlisting_hold_condition, shortlisting_scope_condition
 
@@ -479,6 +481,101 @@ def avg_composite_score_of_status_as_of(db: Session, status: str, cutoff: dateti
         .scalar()
     )
     return round(float(avg), 1) if avg is not None else None
+
+
+def interview_status_case(now: datetime):
+    """Selected/Rejected are permanent once a decision is recorded; before that, an
+    interview is Upcoming (still in the future) or Awaiting Feedback (occurred, no
+    decision recorded yet). Shared between the Interview List's status filter and the
+    Interview List/Dashboard row builder (see app/scheduling/router.py
+    interview_row_to_item) so "status" can never be computed two different ways."""
+    return case(
+        (Interview.decision == "selected", "selected"),
+        (Interview.decision == "rejected", "rejected"),
+        (Interview.scheduled_at.isnot(None) & (Interview.scheduled_at > now), "upcoming"),
+        else_="awaiting_feedback",
+    )
+
+
+def upcoming_interviews_count(db: Session, now: datetime) -> int:
+    """Interviews with no decision yet whose scheduled time hasn't happened -- the
+    Interview Dashboard's own live backlog depth. Same no-trend caveat as
+    awaiting_screening_count/awaiting_ranking_count/awaiting_shortlist_decision_count:
+    there's no historical record of what was "upcoming" as of a past month-end."""
+    return (
+        db.query(func.count(Interview.id))
+        .filter(Interview.decision.is_(None), Interview.scheduled_at.isnot(None), Interview.scheduled_at > now)
+        .scalar()
+        or 0
+    )
+
+
+def completed_interviews_count_as_of(db: Session, cutoff: datetime) -> int:
+    """Interviews with any decision recorded, among interview rows created before `cutoff`
+    -- the Interview Dashboard's "Completed" card. Approximate for past months, same as
+    published_snapshot_as_of: an interview's decision isn't versioned, so this is *current*
+    decision state bucketed by creation date, not a real historical snapshot."""
+    return (
+        db.query(func.count(Interview.id))
+        .filter(Interview.decision.isnot(None), Interview.created_at < cutoff)
+        .scalar()
+        or 0
+    )
+
+
+def interview_decision_count_as_of(db: Session, decision: str, cutoff: datetime) -> int:
+    """completed_interviews_count_as_of's per-decision counterpart -- Selected/Rejected
+    outcome counts, each with the same approximate-trend caveat."""
+    return (
+        db.query(func.count(Interview.id))
+        .filter(Interview.decision == decision, Interview.created_at < cutoff)
+        .scalar()
+        or 0
+    )
+
+
+def interview_outcome_breakdown(db: Session) -> list[tuple[str, int]]:
+    """Every interview, all-time, bucketed into Selected/Rejected/Pending decision -- all 3
+    buckets always appear, even at 0, same convention as composite_score_distribution."""
+    selected = db.query(func.count(Interview.id)).filter(Interview.decision == "selected").scalar() or 0
+    rejected = db.query(func.count(Interview.id)).filter(Interview.decision == "rejected").scalar() or 0
+    pending = db.query(func.count(Interview.id)).filter(Interview.decision.is_(None)).scalar() or 0
+    return [("Selected", selected), ("Rejected", rejected), ("Pending decision", pending)]
+
+
+def interviewer_workload(db: Session, limit: Optional[int] = 10) -> list[tuple[str, int]]:
+    """Count of interviews per interviewer, sorted descending -- an interviewer with no
+    User account left (shouldn't happen, but interviewer_id is a nullable FK) never
+    silently vanishes: every interview always counts somewhere, including an "Unassigned"
+    bucket for interviewer_id IS NULL."""
+    rows = (
+        db.query(User.id, User.full_name, User.email, func.count(Interview.id))
+        .join(Interview, Interview.interviewer_id == User.id)
+        .group_by(User.id, User.full_name, User.email)
+        .all()
+    )
+    counts = [(full_name or email, count) for _user_id, full_name, email, count in rows]
+    unassigned = db.query(func.count(Interview.id)).filter(Interview.interviewer_id.is_(None)).scalar() or 0
+    if unassigned:
+        counts.append(("Unassigned", unassigned))
+    counts.sort(key=lambda row: row[1], reverse=True)
+    return counts[:limit] if limit else counts
+
+
+INTERVIEW_SCHEDULING_METHODS = ("manual", "auto")
+INTERVIEW_SCHEDULING_METHOD_LABELS = {"manual": "Manually-Scheduled", "auto": "Auto-Scheduled"}
+
+
+def scheduling_method_breakdown(db: Session) -> list[tuple[str, int]]:
+    """Auto (Part 3's candidate email + secure-link flow) vs. Manual (the original
+    recruiter-driven flow) -- both buckets always appear, even at 0."""
+    counts = dict(
+        db.query(Interview.scheduling_method, func.count(Interview.id)).group_by(Interview.scheduling_method).all()
+    )
+    return [
+        (INTERVIEW_SCHEDULING_METHOD_LABELS[method], counts.get(method, 0))
+        for method in INTERVIEW_SCHEDULING_METHODS
+    ]
 
 
 def shortlisting_funnel_counts(db: Session) -> list[tuple[str, int]]:

@@ -29,6 +29,20 @@ _CODE_VERIFIER_CHARS = string.ascii_letters + string.digits + "-._~"
 APP_TIMEZONE = ZoneInfo("Asia/Kolkata")
 
 
+def format_ist_datetime(dt: datetime) -> str:
+    """The one slot-time format used everywhere a candidate or recruiter reads one: the
+    proposal email's slot links, the confirmation page, and the tracker's Interview Log
+    "Candidate Preferred Time"/"Final Scheduled Time" columns (see
+    app/interview_scheduling/confirmation.py and service.py). Previously each of those
+    three places formatted independently (and the tracker columns used a bare UTC ISO
+    string), which is how "26 Aug 2026" and a weekday-only rendering could drift out of
+    sync -- one shared function, always normalizing through IST via .astimezone regardless
+    of the input's own tzinfo, so a date is never displayed (or matched against, in
+    update_interview_log_row) without its actual date.
+    """
+    return dt.astimezone(APP_TIMEZONE).strftime("%d %b %Y, %I:%M %p IST")
+
+
 class GoogleCalendarError(Exception):
     """Raised when talking to Google's OAuth or Calendar APIs fails."""
 

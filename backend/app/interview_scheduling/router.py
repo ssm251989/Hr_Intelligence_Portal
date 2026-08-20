@@ -12,7 +12,7 @@ from app.core.database import get_db
 from app.integrations.gmail import GmailError
 from app.interview_scheduling.confirmation import propose_interview_slots
 from app.interview_scheduling.storage import get_interview_scheduling_settings
-from app.interview_scheduling.tracker import ensure_tracker_file
+from app.interview_scheduling.tracker import ensure_tracker_file, sync_interviewer_pool_job_titles
 from app.models.application import Application
 from app.models.candidate import Candidate
 from app.models.job_role import JobRole
@@ -46,18 +46,28 @@ def update_settings(
     """Saved via the Settings page's Interview Scheduling section. Immediately ensures the
     tracker workbook exists with the expected sheets/columns (see app/interview_scheduling/
     tracker.py ensure_tracker_file) -- creating it fresh if the path is new, or validating/
-    patching an existing file without touching any data already in it."""
+    patching an existing file without touching any data already in it. Also immediately
+    syncs the Interviewer Pool sheet's Job Title column (see tracker.py
+    sync_interviewer_pool_job_titles) against every currently published/
+    ready_for_publishing job, same "sync right away, not just on the next natural
+    touchpoint" reasoning as app/local_import/router.py's update_settings -- this feature
+    has no scheduler of its own to piggyback on, so the same sync also runs every time
+    propose_interview_slots is called (see app/interview_scheduling/confirmation.py), the
+    one recurring moment the sheet is actually read from."""
     settings_row = get_interview_scheduling_settings(db)
     settings_row.tracker_path = payload.tracker_path
     db.commit()
     db.refresh(settings_row)
 
     validation = ensure_tracker_file(Path(payload.tracker_path))
+    pool_sync = sync_interviewer_pool_job_titles(db, Path(payload.tracker_path))
 
     return InterviewSchedulingSettingsSaveResult(
         tracker_path=settings_row.tracker_path,
         updated_at=settings_row.updated_at,
         validation=TrackerValidationResult(**validation),
+        interviewer_pool_jobs_considered=pool_sync["jobs_considered"],
+        interviewer_pool_rows_added=pool_sync["rows_added"],
     )
 
 

@@ -18,10 +18,12 @@ from app.models.interview import Interview
 from app.models.job_role import JOB_ROLE_STATUSES, JobRole
 from app.models.user import User
 from app.reports import stats
+from app.scheduling.router import filtered_interviews_query, interview_row_to_item
 from app.schemas.candidates_dashboard import (
     CandidateDataSourceStatus,
     CandidatesDashboardStatsResponse,
 )
+from app.schemas.interviews_dashboard import InterviewsDashboardStatsResponse
 from app.schemas.reports import (
     ApplicationTimelineResponse,
     AuditLogPage,
@@ -866,5 +868,98 @@ def get_shortlisting_dashboard_stats(
         recent_shortlisted=[
             row_to_item(app, cand, title, suitable_title, screening_action, screening_details)
             for app, cand, title, suitable_title, screening_action, screening_details in recent_rows
+        ],
+    )
+
+
+@router.get("/reports/interviews-dashboard-stats", response_model=InterviewsDashboardStatsResponse)
+def get_interviews_dashboard_stats(
+    compare_month: Optional[str] = Query(
+        None,
+        description="YYYY-MM month to compare the current values against. Must be one "
+        "of the past 12 completed months; defaults to last month.",
+    ),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    now = datetime.now(timezone.utc)
+    try:
+        compare_month_start = stats.parse_compare_month(compare_month, now)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    compare_month_end = stats.shift_months(compare_month_start, 1)
+
+    month_starts = stats.last_12_month_starts(now)
+    month_ends = [stats.shift_months(month_start, 1) for month_start in month_starts]
+    current_month_start, current_month_end = month_starts[-1], month_ends[-1]
+
+    total_this_month = stats.count_created_in_window(db, Interview, current_month_start, current_month_end)
+    total_series = [
+        stats.count_created_in_window(db, Interview, start, end) for start, end in zip(month_starts, month_ends)
+    ]
+    compare_total = stats.count_created_in_window(db, Interview, compare_month_start, compare_month_end)
+    total_this_month_trend = stats.build_trend(
+        month_starts, total_series, compare_month_start, compare_total, total_this_month
+    )
+
+    upcoming = stats.upcoming_interviews_count(db, now)
+
+    completed = stats.completed_interviews_count_as_of(db, current_month_end)
+    completed_series = [stats.completed_interviews_count_as_of(db, end) for end in month_ends]
+    compare_completed = stats.completed_interviews_count_as_of(db, compare_month_end)
+    completed_trend = stats.build_trend(
+        month_starts, completed_series, compare_month_start, compare_completed, completed, is_approximate=True
+    )
+
+    selected = stats.interview_decision_count_as_of(db, "selected", current_month_end)
+    selected_series = [stats.interview_decision_count_as_of(db, "selected", end) for end in month_ends]
+    compare_selected = stats.interview_decision_count_as_of(db, "selected", compare_month_end)
+    selected_trend = stats.build_trend(
+        month_starts, selected_series, compare_month_start, compare_selected, selected, is_approximate=True
+    )
+
+    rejected = stats.interview_decision_count_as_of(db, "rejected", current_month_end)
+    rejected_series = [stats.interview_decision_count_as_of(db, "rejected", end) for end in month_ends]
+    compare_rejected = stats.interview_decision_count_as_of(db, "rejected", compare_month_end)
+    rejected_trend = stats.build_trend(
+        month_starts, rejected_series, compare_month_start, compare_rejected, rejected, is_approximate=True
+    )
+
+    recent_rows = (
+        filtered_interviews_query(
+            db,
+            job_role_id=None,
+            interviewer_id=None,
+            status=None,
+            scheduling_method=None,
+            scheduled_after=None,
+            scheduled_before=None,
+            now=now,
+        )
+        .order_by(Interview.created_at.desc())
+        .limit(8)
+        .all()
+    )
+
+    return InterviewsDashboardStatsResponse(
+        total_interviews_scheduled_this_month=total_this_month,
+        upcoming=upcoming,
+        completed=completed,
+        selected=selected,
+        rejected=rejected,
+        total_interviews_scheduled_this_month_trend=total_this_month_trend,
+        completed_trend=completed_trend,
+        selected_trend=selected_trend,
+        rejected_trend=rejected_trend,
+        outcome_breakdown=[LabeledCount(label=label, count=count) for label, count in stats.interview_outcome_breakdown(db)],
+        interviewer_workload=[
+            LabeledCount(label=label, count=count) for label, count in stats.interviewer_workload(db, limit=10)
+        ],
+        scheduling_method_breakdown=[
+            LabeledCount(label=label, count=count) for label, count in stats.scheduling_method_breakdown(db)
+        ],
+        recent_interviews=[
+            interview_row_to_item(interview, application, candidate, job_title, interviewer, computed_status)
+            for interview, application, candidate, job_title, interviewer, computed_status in recent_rows
         ],
     )

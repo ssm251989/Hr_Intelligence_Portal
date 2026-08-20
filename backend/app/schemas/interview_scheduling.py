@@ -33,6 +33,11 @@ class TrackerValidationResult(BaseModel):
 
 class InterviewSchedulingSettingsSaveResult(InterviewSchedulingSettingsRead):
     validation: TrackerValidationResult
+    # sync_interviewer_pool_job_titles' own summary -- shown alongside the tracker
+    # validation so the Settings page can report both in one save, same pattern as
+    # LocalImportSettingsSaveResult's jobs_considered/folders_created.
+    interviewer_pool_jobs_considered: int
+    interviewer_pool_rows_added: int
 
 
 class ProposeInterviewSlotsResponse(BaseModel):

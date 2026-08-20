@@ -99,7 +99,15 @@ const MODULES: ModuleLink[] = [
       { label: "Shortlisting List", path: "/shortlisting/list" },
     ],
   },
-  { label: "Interviews", path: "/interviews", icon: EventOutlinedIcon },
+  {
+    label: "Interviews",
+    path: "/interviews",
+    icon: EventOutlinedIcon,
+    children: [
+      { label: "Dashboard", path: "/interviews/dashboard" },
+      { label: "Interview List", path: "/interviews/list" },
+    ],
+  },
   { label: "Salary", path: "/salary", icon: PaidOutlinedIcon },
   { label: "BGV", path: "/bgv", icon: VerifiedUserOutlinedIcon },
   { label: "Offers", path: "/offers", icon: DescriptionOutlinedIcon },

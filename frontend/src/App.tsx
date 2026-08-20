@@ -15,7 +15,8 @@ import CandidateDetailPage from "./pages/CandidateDetailPage";
 import CandidatesDashboardPage from "./pages/CandidatesDashboardPage";
 import CandidatesImportPage from "./pages/CandidatesImportPage";
 import CandidatesListPage from "./pages/CandidatesListPage";
-import InterviewsPage from "./pages/InterviewsPage";
+import InterviewListPage from "./pages/InterviewListPage";
+import InterviewsDashboardPage from "./pages/InterviewsDashboardPage";
 import JobsPage from "./pages/JobsPage";
 import LoginPage from "./pages/LoginPage";
 import OffersPage from "./pages/OffersPage";
@@ -64,7 +65,9 @@ export default function App() {
                 <Route path="/shortlisting" element={<Navigate to="/shortlisting/dashboard" replace />} />
                 <Route path="/shortlisting/dashboard" element={<ShortlistingDashboardPage />} />
                 <Route path="/shortlisting/list" element={<ShortlistingListPage />} />
-                <Route path="/interviews" element={<InterviewsPage />} />
+                <Route path="/interviews" element={<Navigate to="/interviews/dashboard" replace />} />
+                <Route path="/interviews/dashboard" element={<InterviewsDashboardPage />} />
+                <Route path="/interviews/list" element={<InterviewListPage />} />
                 <Route path="/salary" element={<SalaryPage />} />
                 <Route path="/bgv" element={<BgvPage />} />
                 <Route path="/offers" element={<OffersPage />} />

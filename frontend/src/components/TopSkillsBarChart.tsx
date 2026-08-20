@@ -7,11 +7,20 @@ import type { LabeledCount } from "../api/types";
 // Same hand-rolled proportional-bar idiom as TopPerformingJobs.tsx -- this app has no
 // existing recharts <BarChart> usage, and a ranked list with a bar per row reads the same
 // either way while staying consistent with the rest of the dashboard's chart language.
-export default function TopSkillsBarChart({ rows }: { rows: LabeledCount[] }) {
+// Also reused (beyond its original Top Missing Skills use) for the Interview Dashboard's
+// Interviewer Workload panel -- emptyMessage lets each caller word its own "no data yet"
+// state rather than every reuse showing skill-specific copy.
+export default function TopSkillsBarChart({
+  rows,
+  emptyMessage = "No parsed skills yet.",
+}: {
+  rows: LabeledCount[];
+  emptyMessage?: string;
+}) {
   if (rows.length === 0) {
     return (
       <Typography color="text.secondary" variant="body2">
-        No parsed skills yet.
+        {emptyMessage}
       </Typography>
     );
   }

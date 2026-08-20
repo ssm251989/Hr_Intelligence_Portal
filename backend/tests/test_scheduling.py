@@ -87,6 +87,7 @@ def test_schedule_interview_success(client, db_session):
     body = response.json()
     assert body["application_id"] == str(application.id)
     assert body["meeting_link"] == "https://meet.example.com/abc"
+    assert body["scheduling_method"] == "manual"
 
     db_session.refresh(application)
     assert application.status == "interview_scheduled"
@@ -400,6 +401,196 @@ def test_schedule_interview_with_corrupted_google_token_falls_back_to_manual_lin
         .one_or_none()
     )
     assert audit_entry is not None
+
+
+# --- GET /interviews (Interview List page) ---
+
+
+def _unique_job_title(prefix: str) -> str:
+    return f"{prefix} zzInterviewsList{uuid.uuid4().hex[:10]}"
+
+
+def test_list_all_interviews_filters_by_job(client, db_session):
+    job_a = JobRole(title=_unique_job_title("JobA"))
+    job_b = JobRole(title=_unique_job_title("JobB"))
+    db_session.add_all([job_a, job_b])
+    db_session.commit()
+    db_session.refresh(job_a)
+    db_session.refresh(job_b)
+
+    candidate = _make_candidate(db_session)
+    app_a = _make_application(db_session, job_a, candidate, status="interview_scheduled")
+    app_b = _make_application(db_session, job_b, candidate, status="interview_scheduled")
+    interview_a = _make_interview(db_session, app_a)
+    _make_interview(db_session, app_b)
+
+    response = client.get("/interviews", params={"job_role_id": str(job_a.id)})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert body["items"][0]["interview_id"] == str(interview_a.id)
+    assert body["items"][0]["job_role_id"] == str(job_a.id)
+
+
+def test_list_all_interviews_filters_by_interviewer(client, db_session):
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    interviewer_a = _make_interviewer(db_session)
+    interviewer_b = User(email=f"{uuid.uuid4().hex[:10]}@example.com", hashed_password="x", role="interviewer")
+    db_session.add(interviewer_b)
+    db_session.commit()
+    db_session.refresh(interviewer_b)
+
+    app1 = _make_application(db_session, job, candidate, status="interview_scheduled")
+    app2 = _make_application(db_session, job, candidate, status="interview_scheduled")
+    interview_a = Interview(application_id=app1.id, interviewer_id=interviewer_a.id, scheduled_at=datetime.now(timezone.utc))
+    interview_b = Interview(application_id=app2.id, interviewer_id=interviewer_b.id, scheduled_at=datetime.now(timezone.utc))
+    db_session.add_all([interview_a, interview_b])
+    db_session.commit()
+
+    response = client.get("/interviews", params={"interviewer_id": str(interviewer_a.id)})
+
+    assert response.status_code == 200
+    body = response.json()
+    ids = {item["interview_id"] for item in body["items"]}
+    assert str(interview_a.id) in ids
+    assert str(interview_b.id) not in ids
+
+
+def test_list_all_interviews_filters_by_status(client, db_session):
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+
+    upcoming_app = _make_application(db_session, job, candidate, status="interview_scheduled")
+    upcoming = _make_interview(
+        db_session, upcoming_app, scheduled_at=datetime.now(timezone.utc) + timedelta(days=3)
+    )
+
+    awaiting_app = _make_application(db_session, job, candidate, status="interview_scheduled")
+    awaiting = _make_interview(
+        db_session, awaiting_app, scheduled_at=datetime.now(timezone.utc) - timedelta(days=1)
+    )
+
+    selected_app = _make_application(db_session, job, candidate, status="interview_selected")
+    selected_interview = _make_interview(db_session, selected_app, scheduled_at=datetime.now(timezone.utc) - timedelta(days=2))
+    selected_interview.decision = "selected"
+    db_session.commit()
+
+    rejected_app = _make_application(db_session, job, candidate, status="interview_rejected")
+    rejected_interview = _make_interview(db_session, rejected_app, scheduled_at=datetime.now(timezone.utc) - timedelta(days=2))
+    rejected_interview.decision = "rejected"
+    db_session.commit()
+
+    def ids_for(status):
+        response = client.get("/interviews", params={"status": status, "page_size": 200})
+        assert response.status_code == 200
+        return {item["interview_id"] for item in response.json()["items"]}
+
+    assert str(upcoming.id) in ids_for("upcoming")
+    assert str(awaiting.id) not in ids_for("upcoming")
+
+    assert str(awaiting.id) in ids_for("awaiting_feedback")
+    assert str(upcoming.id) not in ids_for("awaiting_feedback")
+
+    assert str(selected_interview.id) in ids_for("selected")
+    assert str(rejected_interview.id) in ids_for("rejected")
+    assert str(selected_interview.id) not in ids_for("rejected")
+
+
+def test_list_all_interviews_filters_by_scheduling_method(client, db_session, tmp_path, monkeypatch):
+    """The auto-vs-manual distinction: a manually-scheduled interview (POST
+    /applications/{id}/interviews) must appear under scheduling_method=manual, and an
+    auto-confirmed one (app/interview_scheduling/confirmation.py confirm_token) under
+    scheduling_method=auto -- never mixed up or missing from either filter."""
+    from openpyxl import load_workbook
+
+    from app.interview_scheduling import confirmation as interview_confirmation
+    from app.interview_scheduling import service as interview_scheduling_service
+    from app.interview_scheduling.tracker import INTERVIEWER_POOL_SHEET, ensure_tracker_file
+
+    # Manual interview.
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    manual_app = _make_application(db_session, job, candidate, status="hr_selected")
+    manual_response = client.post(
+        f"/applications/{manual_app.id}/interviews",
+        json={"scheduled_at": (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()},
+    )
+    assert manual_response.status_code == 201
+    manual_interview_id = manual_response.json()["id"]
+
+    # Auto-confirmed interview.
+    auto_job_title = _unique_job_title("AutoConfirm")
+    tracker_path = tmp_path / "tracker.xlsx"
+    ensure_tracker_file(tracker_path)
+    workbook = load_workbook(tracker_path)
+    workbook[INTERVIEWER_POOL_SHEET].append([auto_job_title, "Auto Interviewer"])
+    workbook.save(tracker_path)
+
+    auto_job = JobRole(title=auto_job_title, status="published")
+    db_session.add(auto_job)
+    db_session.commit()
+    db_session.refresh(auto_job)
+    auto_candidate = _make_candidate(db_session)
+    auto_candidate.email = f"{uuid.uuid4().hex[:8]}@example.com"
+    db_session.commit()
+    auto_app = _make_application(db_session, auto_job, auto_candidate, status="hr_selected")
+    auto_interviewer = User(
+        email=f"{uuid.uuid4().hex[:10]}@example.com", hashed_password="x",
+        full_name="Auto Interviewer", role="interviewer",
+    )
+    db_session.add(auto_interviewer)
+    db_session.commit()
+    db_session.refresh(auto_interviewer)
+    db_session.add(UserIntegration(user_id=auto_interviewer.id, provider="google", refresh_token=encrypt("tok")))
+    db_session.commit()
+
+    monkeypatch.setattr(interview_scheduling_service, "check_calendar_availability", lambda *a, **k: True)
+    monkeypatch.setattr(interview_confirmation, "send_email", lambda *a, **k: "msg-id")
+    monkeypatch.setattr(interview_confirmation, "create_calendar_event", lambda *a, **k: None)
+
+    result = interview_confirmation.propose_interview_slots(
+        db_session, auto_app, tracker_path=str(tracker_path), candidate=auto_candidate, job=auto_job,
+        sender_refresh_token="sender-token", actor="recruiter@example.com",
+    )
+    assert result["slots_offered"] >= 1
+    outcome = interview_confirmation.confirm_token(db_session, result["tokens"][0]["token"])
+    assert outcome.status == "confirmed"
+    auto_interview = db_session.query(Interview).filter(Interview.application_id == auto_app.id).one()
+
+    manual_ids = {
+        item["interview_id"]
+        for item in client.get("/interviews", params={"scheduling_method": "manual", "page_size": 200}).json()["items"]
+    }
+    auto_ids = {
+        item["interview_id"]
+        for item in client.get("/interviews", params={"scheduling_method": "auto", "page_size": 200}).json()["items"]
+    }
+
+    assert manual_interview_id in manual_ids
+    assert str(auto_interview.id) not in manual_ids
+    assert str(auto_interview.id) in auto_ids
+    assert manual_interview_id not in auto_ids
+
+
+def test_list_all_interviews_pagination(client, db_session):
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application(db_session, job, candidate, status="interview_scheduled")
+    for _ in range(3):
+        _make_interview(db_session, application)
+
+    response = client.get("/interviews", params={"job_role_id": str(job.id), "page": 1, "page_size": 2})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 3
+    assert len(body["items"]) == 2
+
+
+def test_list_all_interviews_requires_auth(anonymous_client):
+    response = anonymous_client.get("/interviews")
+    assert response.status_code == 401
 
 
 def test_schedule_interview_calendar_failure_falls_back_to_manual_link(client, db_session, monkeypatch):

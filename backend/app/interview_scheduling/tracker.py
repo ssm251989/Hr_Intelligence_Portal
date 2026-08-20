@@ -19,6 +19,10 @@ from pathlib import Path
 from typing import Optional
 
 from openpyxl import Workbook, load_workbook
+from sqlalchemy.orm import Session
+
+from app.local_import.job_folders import FOLDER_SYNC_STATUSES
+from app.models.job_role import JobRole
 
 INTERVIEWER_POOL_SHEET = "Interviewer Pool"
 INTERVIEWER_POOL_COLUMNS = ["Job Title", "Eligible Interviewers"]
@@ -131,6 +135,43 @@ def eligible_interviewers_for_job(path: Path, job_title: str) -> list[str]:
         if title.lower() == target:
             return names
     return []
+
+
+def sync_interviewer_pool_job_titles(db: Session, path: Path) -> dict:
+    """Adds one Interviewer Pool row -- Job Title filled in, "Eligible Interviewers" left
+    blank -- for every currently published/ready_for_publishing job whose title isn't
+    already in the sheet (case/whitespace-insensitive match, same as
+    eligible_interviewers_for_job). Same sync principle as app/local_import/job_folders.py's
+    sync_job_folders, reusing its FOLDER_SYNC_STATUSES: never overwrites an existing row's
+    "Eligible Interviewers" list, and never removes a row for a job that later moves out of
+    that status set (e.g. closes) -- that row may already hold a recruiter's real interviewer
+    list, or a job that later closes may still have an interview in flight, so it's left for
+    manual cleanup rather than silently disappearing.
+    """
+    ensure_tracker_file(path)
+    existing_titles = {title.strip().lower() for title in read_interviewer_pool(path)}
+    jobs = db.query(JobRole).filter(JobRole.status.in_(FOLDER_SYNC_STATUSES)).all()
+
+    titles_to_add: list[str] = []
+    seen: set[str] = set()
+    for job in jobs:
+        key = job.title.strip().lower()
+        if key in existing_titles or key in seen:
+            continue
+        seen.add(key)
+        titles_to_add.append(job.title)
+
+    if not titles_to_add:
+        return {"jobs_considered": len(jobs), "rows_added": 0}
+
+    workbook = load_workbook(path)
+    sheet = workbook[INTERVIEWER_POOL_SHEET]
+    header_row = next(sheet.iter_rows(min_row=1, max_row=1), ())
+    header = [cell.value for cell in header_row if cell.value is not None]
+    for title in titles_to_add:
+        sheet.append([title if col == "Job Title" else "" for col in header])
+    workbook.save(path)
+    return {"jobs_considered": len(jobs), "rows_added": len(titles_to_add)}
 
 
 def append_interview_log_row(path: Path, values: dict[str, Optional[str]]) -> None:

@@ -85,7 +85,12 @@ export default function InterviewTrackerSettingsCard() {
               </>
             ) : (
               "Existing tracker already has everything expected -- nothing changed."
-            )}
+            )}{" "}
+            {saveResult.interviewer_pool_rows_added} Interviewer Pool row
+            {saveResult.interviewer_pool_rows_added === 1 ? "" : "s"} added for currently published/ready-for-
+            publishing jobs (of {saveResult.interviewer_pool_jobs_considered} considered) -- this also runs
+            automatically whenever interview slots are proposed for a candidate, so a job published later still
+            gets a row.
           </Alert>
         )}
 

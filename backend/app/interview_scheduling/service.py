@@ -31,6 +31,7 @@ from app.integrations.google_calendar import (
     DEFAULT_INTERVIEW_DURATION_MINUTES,
     GoogleCalendarError,
     check_calendar_availability,
+    format_ist_datetime,
 )
 from app.interview_scheduling.tracker import append_interview_log_row, eligible_interviewers_for_job
 from app.models.user import User
@@ -96,7 +97,7 @@ def select_interviewer(
             Path(tracker_path),
             {
                 "Candidate": candidate_name, "Job Title": job_title,
-                "Candidate Preferred Time": preferred_time.isoformat(), "Status": "No Interviewer Available",
+                "Candidate Preferred Time": format_ist_datetime(preferred_time), "Status": "No Interviewer Available",
             },
         )
         return {
@@ -150,7 +151,7 @@ def select_interviewer(
             Path(tracker_path),
             {
                 "Candidate": candidate_name, "Job Title": job_title, "Assigned Interviewer": name,
-                "Candidate Preferred Time": preferred_time.isoformat(),
+                "Candidate Preferred Time": format_ist_datetime(preferred_time),
                 "Status": "Interviewer Selected -- Awaiting Confirmation",
             },
         )
@@ -179,7 +180,7 @@ def select_interviewer(
         Path(tracker_path),
         {
             "Candidate": candidate_name, "Job Title": job_title,
-            "Candidate Preferred Time": preferred_time.isoformat(), "Status": "No Interviewer Available",
+            "Candidate Preferred Time": format_ist_datetime(preferred_time), "Status": "No Interviewer Available",
         },
     )
     return {

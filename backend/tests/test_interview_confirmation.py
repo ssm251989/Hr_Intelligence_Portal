@@ -4,11 +4,18 @@ from datetime import datetime, timedelta, timezone
 from openpyxl import load_workbook
 
 from app.core.crypto import encrypt
+from app.integrations.google_calendar import format_ist_datetime
 from app.interview_scheduling import confirmation as interview_confirmation
 from app.interview_scheduling import service as interview_scheduling_service
-from app.interview_scheduling.tracker import INTERVIEW_LOG_SHEET, INTERVIEWER_POOL_SHEET, ensure_tracker_file
+from app.interview_scheduling.tracker import (
+    INTERVIEW_LOG_SHEET,
+    INTERVIEWER_POOL_SHEET,
+    ensure_tracker_file,
+    read_interviewer_pool,
+)
 from app.models.application import Application
 from app.models.candidate import Candidate
+from app.models.interview import Interview
 from app.models.interview_confirmation_token import InterviewConfirmationToken
 from app.models.interview_scheduling_settings import InterviewSchedulingSettings
 from app.models.job_role import JobRole
@@ -245,13 +252,38 @@ def test_confirm_token_success_advances_application_and_creates_event(db_session
     status_col = header.index("Status")
     confirmed_time_col = header.index("Final Scheduled Time")
     preferred_time_col = header.index("Candidate Preferred Time")
-    matching = [r for r in rows if r[preferred_time_col] == chosen["slot_time"].isoformat()]
+    expected_time = format_ist_datetime(chosen["slot_time"])
+    matching = [r for r in rows if r[preferred_time_col] == expected_time]
     assert len(matching) == 1
     assert matching[0][status_col] == "Confirmed"
-    assert matching[0][confirmed_time_col] == chosen["slot_time"].isoformat()
+    assert matching[0][confirmed_time_col] == expected_time
 
     not_selected = [r for r in rows if r[status_col] == "Slot Not Selected by Candidate"]
     assert len(not_selected) == 2
+
+
+def test_confirm_token_creates_interview_row_tagged_auto(db_session, tmp_path, monkeypatch):
+    """The Interview List/Dashboard reads exclusively off the `interviews` table -- this
+    flow (the only scheduling path besides the manual one) must create a real row there,
+    tagged scheduling_method="auto", or an auto-confirmed interview would never appear."""
+    application, candidate, interviewer, tracker_path, result = _propose(db_session, tmp_path, monkeypatch)
+    chosen = result["tokens"][0]
+    monkeypatch.setattr(
+        interview_confirmation,
+        "create_calendar_event",
+        lambda *a, **k: {"event_id": "evt456", "html_link": "https://calendar.google.com/evt456"},
+    )
+
+    outcome = interview_confirmation.confirm_token(db_session, chosen["token"])
+    assert outcome.status == "confirmed"
+
+    interview = db_session.query(Interview).filter(Interview.application_id == application.id).one()
+    assert interview.scheduling_method == "auto"
+    assert interview.interviewer_id == interviewer.id
+    assert interview.scheduled_at == chosen["slot_time"]
+    assert interview.calendar_event_id == "evt456"
+    assert interview.calendar_link == "https://calendar.google.com/evt456"
+    assert interview.decision is None
 
 
 def test_confirm_token_unknown_token_is_honest_not_an_error(db_session):
@@ -329,6 +361,107 @@ def test_confirm_token_missing_calendar_connection_still_confirms(db_session, tm
     assert outcome.calendar_link is None
     db_session.refresh(application)
     assert application.status == "interview_scheduled"
+
+
+# --- date-based slot formatting: email body, confirmation page, tracker columns ---
+
+_WEEKDAY_NAMES = (
+    "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+    "Mon,", "Tue,", "Wed,", "Thu,", "Fri,", "Sat,", "Sun,",
+)
+
+
+def test_propose_interview_slots_email_uses_date_based_format_not_weekday(db_session, tmp_path, monkeypatch):
+    job_title = _unique_job_title("EmailDateFormat")
+    tracker_path = _setup_pool(tmp_path, job_title, "Solo Interviewer")
+    job = _make_job(db_session, job_title)
+    candidate = _make_candidate(db_session)
+    application = _make_application(db_session, job, candidate)
+    interviewer = _make_interviewer(db_session, "Solo Interviewer")
+    _connect_google(db_session, interviewer)
+
+    monkeypatch.setattr(interview_scheduling_service, "check_calendar_availability", lambda *a, **k: True)
+    sent = {}
+    monkeypatch.setattr(
+        interview_confirmation, "send_email",
+        lambda refresh_token, *, to, subject, body: sent.update(body=body),
+    )
+
+    result = interview_confirmation.propose_interview_slots(
+        db_session, application, tracker_path=str(tracker_path), candidate=candidate, job=job,
+        sender_refresh_token="sender-token", actor="recruiter@example.com",
+    )
+
+    for slot in result["tokens"]:
+        assert format_ist_datetime(slot["slot_time"]) in sent["body"]
+    for weekday in _WEEKDAY_NAMES:
+        assert weekday not in sent["body"]
+
+
+def test_confirm_token_page_uses_date_based_format_not_weekday(db_session, tmp_path, monkeypatch):
+    from app.interview_scheduling.confirm_router import render_confirmation_page
+
+    application, candidate, interviewer, tracker_path, result = _propose(db_session, tmp_path, monkeypatch)
+    chosen = result["tokens"][0]
+    monkeypatch.setattr(interview_confirmation, "create_calendar_event", lambda *a, **k: None)
+
+    outcome = interview_confirmation.confirm_token(db_session, chosen["token"])
+    page = render_confirmation_page(outcome)
+
+    assert format_ist_datetime(chosen["slot_time"]) in page
+    for weekday in _WEEKDAY_NAMES:
+        assert weekday not in page
+
+
+def test_confirm_token_tracker_columns_use_date_based_format_not_weekday(db_session, tmp_path, monkeypatch):
+    application, candidate, interviewer, tracker_path, result = _propose(db_session, tmp_path, monkeypatch)
+    chosen = result["tokens"][0]
+    monkeypatch.setattr(interview_confirmation, "create_calendar_event", lambda *a, **k: None)
+
+    interview_confirmation.confirm_token(db_session, chosen["token"])
+
+    workbook = load_workbook(tracker_path)
+    rows = list(workbook[INTERVIEW_LOG_SHEET].iter_rows(min_row=2, values_only=True))
+    header = [c.value for c in next(workbook[INTERVIEW_LOG_SHEET].iter_rows(min_row=1, max_row=1))]
+    preferred_time_col = header.index("Candidate Preferred Time")
+    confirmed_time_col = header.index("Final Scheduled Time")
+
+    for row in rows:
+        for value in (row[preferred_time_col], row[confirmed_time_col]):
+            if value:
+                for weekday in _WEEKDAY_NAMES:
+                    assert weekday not in value
+
+
+# --- propose_interview_slots syncs the Interviewer Pool sheet (see
+# app/interview_scheduling/tracker.py sync_interviewer_pool_job_titles) ---
+
+
+def test_propose_interview_slots_syncs_interviewer_pool_for_other_published_jobs(db_session, tmp_path, monkeypatch):
+    """propose_interview_slots is the one recurring moment the Interviewer Pool sheet is
+    actually read (see app/interview_scheduling/router.py's explanation of why this feature
+    has no scheduler of its own) -- it must sync in the pool sheet's missing rows for every
+    published/ready_for_publishing job, not just the one being proposed for."""
+    job_title = _unique_job_title("SyncTrigger")
+    tracker_path = _setup_pool(tmp_path, job_title, "Solo Interviewer")
+    job = _make_job(db_session, job_title)
+    candidate = _make_candidate(db_session)
+    application = _make_application(db_session, job, candidate)
+    interviewer = _make_interviewer(db_session, "Solo Interviewer")
+    _connect_google(db_session, interviewer)
+    other_job = _make_job(db_session, _unique_job_title("OtherPublishedJob"))
+
+    monkeypatch.setattr(interview_scheduling_service, "check_calendar_availability", lambda *a, **k: True)
+    monkeypatch.setattr(interview_confirmation, "send_email", lambda *a, **k: "msg-id")
+
+    interview_confirmation.propose_interview_slots(
+        db_session, application, tracker_path=str(tracker_path), candidate=candidate, job=job,
+        sender_refresh_token="sender-token", actor="recruiter@example.com",
+    )
+
+    pool = read_interviewer_pool(tracker_path)
+    assert pool[other_job.title] == []  # added by the sync, left blank for a human to fill in
+    assert pool[job_title] == ["Solo Interviewer"]  # this job's own pre-existing row untouched
 
 
 # --- HTTP layer ---
