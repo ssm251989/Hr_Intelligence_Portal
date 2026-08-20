@@ -27,8 +27,12 @@ def _make_job(db_session, title="Public QA Engineer", status="published", **kwar
         status=status,
         department=kwargs.get("department", "Engineering"),
         location=kwargs.get("location", "Remote"),
-        experience_level=kwargs.get("experience_level", "Mid"),
-        skills=kwargs.get("skills", ["Python", "Testing"]),
+        experience_min_years=kwargs.get("experience_min_years", 3),
+        experience_max_years=kwargs.get("experience_max_years", 6),
+        technical_skills_must_have=kwargs.get("technical_skills_must_have", ["Python", "Testing"]),
+        technical_skills_good_to_have=kwargs.get("technical_skills_good_to_have"),
+        soft_skills_must_have=kwargs.get("soft_skills_must_have"),
+        soft_skills_good_to_have=kwargs.get("soft_skills_good_to_have"),
         jd_text=kwargs.get("jd_text", "We are hiring a QA engineer..."),
         salary_band_min=kwargs.get("salary_band_min", 900000),
         salary_band_max=kwargs.get("salary_band_max", 1400000),
@@ -70,7 +74,11 @@ def test_list_public_jobs_excludes_internal_fields(anonymous_client, db_session)
     response = anonymous_client.get("/public/jobs")
 
     body = response.json()[0]
-    assert set(body.keys()) == {"id", "title", "department", "location", "experience_level", "skills", "jd_text"}
+    assert set(body.keys()) == {
+        "id", "title", "department", "location", "experience_min_years", "experience_max_years",
+        "technical_skills_must_have", "technical_skills_good_to_have",
+        "soft_skills_must_have", "soft_skills_good_to_have", "jd_text",
+    }
     assert "salary_band_min" not in body
     assert "salary_band_max" not in body
     assert "created_by" not in body

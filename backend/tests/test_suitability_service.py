@@ -22,7 +22,14 @@ def _unique_skill() -> str:
 
 
 def _make_job(db_session, skills=None, status="published", jd_text="Job description text.", **kwargs) -> JobRole:
-    job = JobRole(title=kwargs.pop("title", "Backend Engineer"), skills=skills, status=status, jd_text=jd_text, **kwargs)
+    # `skills` (this helper's own param, kept for the many existing call sites below) maps
+    # onto technical_skills_must_have -- the closest single-category analog to the old flat
+    # "skills" column for a test fixture that doesn't care about the technical/soft or
+    # must-have/good-to-have split.
+    job = JobRole(
+        title=kwargs.pop("title", "Backend Engineer"), technical_skills_must_have=skills,
+        status=status, jd_text=jd_text, **kwargs,
+    )
     db_session.add(job)
     db_session.commit()
     db_session.refresh(job)
@@ -38,38 +45,20 @@ def _make_candidate(db_session, parsed_fields=None, **kwargs) -> Candidate:
 
 
 def _fake_result(**overrides) -> dict:
+    # No "experience_score"/"skill_match_pct"/"missing_skills" keys -- match_resume no
+    # longer produces any of these; suitability.py computes them itself (see
+    # compute_experience_score/compute_skills_score) and overwrites these keys, and these
+    # jobs/candidates carry no experience_min_years/max_years/total_experience_years
+    # unless a test deliberately configures them, which compute_experience_score treats
+    # as "no requirement configured" -> a fixed 100.
     result = {
         "match_score": 80,
-        "skill_match_pct": 80,
-        "experience_score": 80,
         "location_score": 80,
         "certificates_score": 80,
-        "missing_skills": [],
         "recommendation": "strong_fit",
     }
     result.update(overrides)
     return result
-
-
-# --- _keyword_overlap_score: pure function, no AI/DB access ---
-
-
-def test_keyword_overlap_score_is_fraction_of_job_skills_covered():
-    # Candidate covers 2 of the job's 4 required skills -> 0.5, regardless of any extra
-    # candidate skills the job doesn't ask for.
-    score = suitability._keyword_overlap_score(
-        ["Python", "SQL", "Docker"], ["Python", "SQL", "Kubernetes", "AWS"]
-    )
-    assert score == 0.5
-
-
-def test_keyword_overlap_score_is_case_insensitive():
-    score = suitability._keyword_overlap_score(["python"], ["PYTHON", "Go"])
-    assert score == 0.5
-
-
-def test_keyword_overlap_score_zero_when_job_has_no_skills_listed():
-    assert suitability._keyword_overlap_score(["Python"], []) == 0.0
 
 
 # --- pre_filter_published_jobs: cheap local ranking, never calls the AI ---
@@ -104,6 +93,30 @@ def test_pre_filter_published_jobs_ranks_by_skill_overlap_descending(db_session)
     result_ids = [job.id for job in suitability.pre_filter_published_jobs(db_session, candidate, top_n=100000)]
 
     assert result_ids.index(full_overlap.id) < result_ids.index(partial_overlap.id) < result_ids.index(no_overlap.id)
+
+
+def test_pre_filter_published_jobs_weighs_must_have_technical_above_good_to_have(db_session):
+    # Same candidate skill, same single matched skill on each job -- the only difference
+    # is which category it's filed under. A must-have technical match (weight 50) must
+    # outrank an identical good-to-have technical match (weight 20) when both jobs also
+    # carry an equally-sized *unmatched* skill in the other category, isolating the
+    # weighting itself from raw coverage-fraction differences.
+    skill = _unique_skill()
+    candidate = _make_candidate(db_session, parsed_fields={"skills": [skill]})
+    must_have_job = JobRole(
+        title="Must Have Match", status="published", jd_text="JD",
+        technical_skills_must_have=[skill], technical_skills_good_to_have=["unrelated-skill"],
+    )
+    good_to_have_job = JobRole(
+        title="Good To Have Match", status="published", jd_text="JD",
+        technical_skills_must_have=["unrelated-skill"], technical_skills_good_to_have=[skill],
+    )
+    db_session.add_all([must_have_job, good_to_have_job])
+    db_session.commit()
+
+    result_ids = [job.id for job in suitability.pre_filter_published_jobs(db_session, candidate, top_n=100000)]
+
+    assert result_ids.index(must_have_job.id) < result_ids.index(good_to_have_job.id)
 
 
 def test_pre_filter_published_jobs_caps_at_top_n_even_with_many_published_jobs(db_session):
@@ -175,8 +188,8 @@ def test_attempt_auto_suggest_picks_highest_scoring_job_among_considered(db_sess
 
     def fake_match_resume(jd_text, *args, **kwargs):
         if jd_text == strong_jd:
-            return _fake_result(match_score=95, skill_match_pct=95, experience_score=95, location_score=95, certificates_score=95)
-        return _fake_result(match_score=20, skill_match_pct=20, experience_score=20, location_score=20, certificates_score=20)
+            return _fake_result(match_score=95, location_score=95, certificates_score=95)
+        return _fake_result(match_score=20, location_score=20, certificates_score=20)
 
     monkeypatch.setattr(suitability, "match_resume", fake_match_resume)
     candidate = _make_candidate(db_session, parsed_fields={"skills": [skill]})
@@ -185,7 +198,10 @@ def test_attempt_auto_suggest_picks_highest_scoring_job_among_considered(db_sess
 
     assert outcome is not None
     assert outcome.suitable_job_id == strong_job.id
-    assert float(outcome.suitable_job_score) == 95.0
+    # Candidate's skill fully covers each job's technical_skills_must_have=[skill] ->
+    # skill_match_pct 100 for both. (95 * 3 AI-scored factors + 100_experience +
+    # 100_skills) / 5 = 97.
+    assert float(outcome.suitable_job_score) == 97.0
     assert weak_job.id != outcome.suitable_job_id
 
 
@@ -328,7 +344,9 @@ def test_candidates_list_and_dashboard_expose_suitable_job_fields(client, db_ses
     row = list_response.json()["items"][0]
     assert row["suitable_job_id"] == str(job.id)
     assert row["suitable_job_title"] == "Suggested Job"
-    assert row["suitable_job_score"] == 80.0
+    # Candidate's skill fully covers the job's technical_skills_must_have -> skill_match_pct
+    # 100. (80 * 3 AI-scored factors + 100_experience + 100_skills) / 5 = 88.
+    assert row["suitable_job_score"] == 88.0
     # Never the applied-for job's id/title -- that stays job_role_id/job_title above.
     assert row["job_role_id"] == str(other_job.id)
 

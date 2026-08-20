@@ -108,8 +108,12 @@ CREATE TABLE job_roles (
     title VARCHAR(255) NOT NULL,
     department VARCHAR(255),
     location VARCHAR(255),
-    experience_level VARCHAR(100),
-    skills JSONB,                      -- structured skill list
+    experience_min_years NUMERIC,
+    experience_max_years NUMERIC,      -- null "max" means "X+ years" (open-ended)
+    technical_skills_must_have JSONB,
+    technical_skills_good_to_have JSONB,
+    soft_skills_must_have JSONB,
+    soft_skills_good_to_have JSONB,     -- 4 categorized skill lists, replacing one flat "skills" list
     salary_band_min NUMERIC,
     salary_band_max NUMERIC,
     hiring_manager_id UUID REFERENCES users(id),
@@ -228,16 +232,22 @@ produce a complete, professional job description. Respond only with valid JSON:
 No text outside the JSON.
 
 User: Role inputs:
-{title}, {department}, {location}, {experience_level}, {skills}, {salary_band}
+{title}, {department}, {location}, {experience_min_years}-{experience_max_years} years,
+{technical_skills_must_have}, {technical_skills_good_to_have}, {soft_skills_must_have},
+{soft_skills_good_to_have}, {salary_band}
 ```
 
 ### Example: Resume Matcher (Claude Haiku, post embedding pre-filter)
 
+experience_score and skill_match_pct/missing_skills are computed deterministically (see
+app/screening/service.py) from the job's real experience_min_years/experience_max_years
+and 4 categorized skill lists rather than asked of the model -- the AI call below only
+covers match_score/location_score/certificates_score/recommendation.
+
 ```
 System: You compare a candidate resume against a job description. Respond only
 with valid JSON:
-{"match_score": 0-100, "skill_match_pct": 0-100,
- "missing_skills": [string], "recommendation": "strong_fit"|"possible_fit"|"weak_fit"}
+{"match_score": 0-100, "recommendation": "strong_fit"|"possible_fit"|"weak_fit"}
 Base this strictly on evidence in the resume text. Do not infer skills not stated or clearly implied.
 
 User: JD: {jd_text}

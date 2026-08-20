@@ -2,15 +2,40 @@ import uuid
 from datetime import date, datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+
+SKILL_CATEGORY_FIELDS = (
+    "technical_skills_must_have", "technical_skills_good_to_have",
+    "soft_skills_must_have", "soft_skills_good_to_have",
+)
+
+
+def _find_skill_in_multiple_categories(model) -> Optional[str]:
+    """A skill (case/whitespace-insensitive) that appears in more than one of the 4
+    categories on the same job -- e.g. listed as both a must-have and a good-to-have --
+    is a contradiction the categorization exists specifically to avoid, so it's rejected
+    rather than silently letting one category win. Returns the first such skill's
+    original-cased text, or None if every skill appears in at most one category."""
+    seen: dict[str, str] = {}
+    for field_name in SKILL_CATEGORY_FIELDS:
+        for skill in getattr(model, field_name, None) or []:
+            key = skill.strip().lower()
+            if key in seen and seen[key] != field_name:
+                return skill
+            seen[key] = field_name
+    return None
 
 
 class JobRoleBase(BaseModel):
     title: str
     department: Optional[str] = None
     location: Optional[str] = None
-    experience_level: Optional[str] = None
-    skills: Optional[list[str]] = None
+    experience_min_years: Optional[float] = None
+    experience_max_years: Optional[float] = None
+    technical_skills_must_have: Optional[list[str]] = None
+    technical_skills_good_to_have: Optional[list[str]] = None
+    soft_skills_must_have: Optional[list[str]] = None
+    soft_skills_good_to_have: Optional[list[str]] = None
     salary_band_min: Optional[float] = None
     salary_band_max: Optional[float] = None
     positions_count: int = 1
@@ -19,6 +44,30 @@ class JobRoleBase(BaseModel):
     # No application-level enum validation, same as `status` -- the DB CheckConstraint
     # (JOB_TYPES in app/models/job_role.py) is the one source of truth.
     job_type: str = "Full-time"
+
+    @field_validator("experience_min_years", "experience_max_years")
+    @classmethod
+    def _not_negative(cls, value: Optional[float]) -> Optional[float]:
+        if value is not None and value < 0:
+            raise ValueError("Experience years must be 0 or greater")
+        return value
+
+    @model_validator(mode="after")
+    def _max_not_below_min(self) -> "JobRoleBase":
+        if (
+            self.experience_min_years is not None
+            and self.experience_max_years is not None
+            and self.experience_max_years < self.experience_min_years
+        ):
+            raise ValueError("Max experience must be greater than or equal to min experience")
+        return self
+
+    @model_validator(mode="after")
+    def _no_skill_in_multiple_categories(self) -> "JobRoleBase":
+        duplicate = _find_skill_in_multiple_categories(self)
+        if duplicate is not None:
+            raise ValueError(f"'{duplicate}' cannot be in more than one skill category")
+        return self
 
 
 class JobRoleCreate(JobRoleBase):
@@ -30,8 +79,12 @@ class JobRoleUpdate(BaseModel):
     title: Optional[str] = None
     department: Optional[str] = None
     location: Optional[str] = None
-    experience_level: Optional[str] = None
-    skills: Optional[list[str]] = None
+    experience_min_years: Optional[float] = None
+    experience_max_years: Optional[float] = None
+    technical_skills_must_have: Optional[list[str]] = None
+    technical_skills_good_to_have: Optional[list[str]] = None
+    soft_skills_must_have: Optional[list[str]] = None
+    soft_skills_good_to_have: Optional[list[str]] = None
     salary_band_min: Optional[float] = None
     salary_band_max: Optional[float] = None
     positions_count: Optional[int] = None
@@ -42,6 +95,30 @@ class JobRoleUpdate(BaseModel):
     additional_notes: Optional[str] = None
     posting_url_naukri: Optional[str] = None
     posting_url_linkedin: Optional[str] = None
+
+    @field_validator("experience_min_years", "experience_max_years")
+    @classmethod
+    def _not_negative(cls, value: Optional[float]) -> Optional[float]:
+        if value is not None and value < 0:
+            raise ValueError("Experience years must be 0 or greater")
+        return value
+
+    @model_validator(mode="after")
+    def _max_not_below_min(self) -> "JobRoleUpdate":
+        if (
+            self.experience_min_years is not None
+            and self.experience_max_years is not None
+            and self.experience_max_years < self.experience_min_years
+        ):
+            raise ValueError("Max experience must be greater than or equal to min experience")
+        return self
+
+    @model_validator(mode="after")
+    def _no_skill_in_multiple_categories(self) -> "JobRoleUpdate":
+        duplicate = _find_skill_in_multiple_categories(self)
+        if duplicate is not None:
+            raise ValueError(f"'{duplicate}' cannot be in more than one skill category")
+        return self
 
 
 class JobRoleRead(JobRoleBase):

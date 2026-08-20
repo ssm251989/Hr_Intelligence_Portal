@@ -95,7 +95,8 @@ def test_generate_job_description_passes_full_role_inputs(client, db_session, mo
     # Requirements/salary/benefits/additional-notes are collected in earlier wizard steps
     # now (see CreateJobWizard's reordered STEPS) specifically so they're available by
     # the time JD generation runs -- this proves the router actually forwards all of it,
-    # not just title/department/location/experience_level as before that reorder.
+    # not just title/department/location/experience_min_years/experience_max_years as
+    # before that reorder.
     captured = {}
 
     def fake_generate_jd(inputs):
@@ -117,8 +118,12 @@ def test_generate_job_description_passes_full_role_inputs(client, db_session, mo
         db_session,
         department="Engineering",
         location="Hyderabad",
-        experience_level="Senior",
-        skills=["Python", "FastAPI"],
+        experience_min_years=5,
+        experience_max_years=8,
+        technical_skills_must_have=["Python"],
+        technical_skills_good_to_have=["FastAPI"],
+        soft_skills_must_have=["Communication"],
+        soft_skills_good_to_have=["Teamwork"],
         salary_band_min=1500000,
         salary_band_max=2200000,
         benefits="Health insurance, WFH stipend",
@@ -128,7 +133,12 @@ def test_generate_job_description_passes_full_role_inputs(client, db_session, mo
     response = client.post(f"/jobs/{job.id}/generate-jd")
 
     assert response.status_code == 200
-    assert captured["skills"] == ["Python", "FastAPI"]
+    assert captured["experience_min_years"] == 5
+    assert captured["experience_max_years"] == 8
+    assert captured["technical_skills_must_have"] == ["Python"]
+    assert captured["technical_skills_good_to_have"] == ["FastAPI"]
+    assert captured["soft_skills_must_have"] == ["Communication"]
+    assert captured["soft_skills_good_to_have"] == ["Teamwork"]
     assert captured["salary_band_min"] == 1500000
     assert captured["salary_band_max"] == 2200000
     assert captured["benefits"] == "Health insurance, WFH stipend"
@@ -545,9 +555,17 @@ def test_publish_not_found(client):
 def test_field_suggestions_returns_distinct_deduped_sorted_values(client, db_session):
     before = client.get("/jobs/field-suggestions").json()
 
-    _make_job(db_session, department="Engineering", location="Chennai", skills=["Python", "SQL"])
-    _make_job(db_session, department="Engineering", location="Remote", skills=["Python", "AWS"])
-    _make_job(db_session, department=None, location=None, skills=None)
+    # Skills spread across categories and jobs -- proves the suggestions endpoint
+    # aggregates across all 4 categorized skill columns, not just one.
+    _make_job(
+        db_session, department="Engineering", location="Chennai",
+        technical_skills_must_have=["Python"], technical_skills_good_to_have=["SQL"],
+    )
+    _make_job(
+        db_session, department="Engineering", location="Remote",
+        soft_skills_must_have=["AWS"],
+    )
+    _make_job(db_session, department=None, location=None)
 
     after = client.get("/jobs/field-suggestions").json()
 
@@ -802,6 +820,136 @@ def test_existing_row_backfilled_to_full_time_job_type(db_session):
     db_session.refresh(job)
 
     assert job.job_type == "Full-time"
+
+
+# --- experience_min_years/experience_max_years validation ---------------------------
+
+
+def test_create_job_with_valid_experience_range(client):
+    response = client.post(
+        "/jobs", json={"title": "Ranged Role", "experience_min_years": 3, "experience_max_years": 5}
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["experience_min_years"] == 3
+    assert body["experience_max_years"] == 5
+
+
+def test_create_job_with_open_ended_experience_min_only(client):
+    # max left blank -- "5+ years."
+    response = client.post("/jobs", json={"title": "Open Ended Role", "experience_min_years": 5})
+    assert response.status_code == 201
+    body = response.json()
+    assert body["experience_min_years"] == 5
+    assert body["experience_max_years"] is None
+
+
+def test_create_job_rejects_negative_experience_min(client):
+    response = client.post("/jobs", json={"title": "Bad Role", "experience_min_years": -1})
+    assert response.status_code == 422
+
+
+def test_create_job_rejects_negative_experience_max(client):
+    response = client.post("/jobs", json={"title": "Bad Role", "experience_max_years": -1})
+    assert response.status_code == 422
+
+
+def test_create_job_rejects_max_below_min(client):
+    response = client.post(
+        "/jobs", json={"title": "Bad Range Role", "experience_min_years": 5, "experience_max_years": 3}
+    )
+    assert response.status_code == 422
+
+
+def test_create_job_allows_max_equal_to_min(client):
+    response = client.post(
+        "/jobs", json={"title": "Exact Role", "experience_min_years": 4, "experience_max_years": 4}
+    )
+    assert response.status_code == 201
+
+
+def test_update_job_rejects_max_below_min(client, db_session):
+    job = _make_job(db_session, experience_min_years=3, experience_max_years=6)
+    response = client.patch(
+        f"/jobs/{job.id}", json={"experience_min_years": 5, "experience_max_years": 2}
+    )
+    assert response.status_code == 422
+
+
+def test_update_job_with_valid_experience_range(client, db_session):
+    job = _make_job(db_session)
+    response = client.patch(
+        f"/jobs/{job.id}", json={"experience_min_years": 2, "experience_max_years": 4}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["experience_min_years"] == 2
+    assert body["experience_max_years"] == 4
+
+
+# --- 4 categorized skill lists: validation ---------------------------------------
+
+
+def test_create_job_with_all_4_skill_categories(client):
+    response = client.post(
+        "/jobs",
+        json={
+            "title": "Categorized Skills Role",
+            "technical_skills_must_have": ["Python"],
+            "technical_skills_good_to_have": ["Kubernetes"],
+            "soft_skills_must_have": ["Communication"],
+            "soft_skills_good_to_have": ["Empathy"],
+        },
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["technical_skills_must_have"] == ["Python"]
+    assert body["technical_skills_good_to_have"] == ["Kubernetes"]
+    assert body["soft_skills_must_have"] == ["Communication"]
+    assert body["soft_skills_good_to_have"] == ["Empathy"]
+
+
+def test_create_job_rejects_a_skill_in_two_categories(client):
+    response = client.post(
+        "/jobs",
+        json={
+            "title": "Conflicting Skills Role",
+            "technical_skills_must_have": ["Python"],
+            "technical_skills_good_to_have": ["Python"],
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_create_job_rejects_a_skill_in_two_categories_case_and_whitespace_insensitively(client):
+    response = client.post(
+        "/jobs",
+        json={
+            "title": "Conflicting Skills Role",
+            "technical_skills_must_have": ["Python"],
+            "soft_skills_good_to_have": ["  PYTHON  "],
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_create_job_allows_the_same_skill_repeated_within_one_category(client):
+    # A duplicate within the SAME category is not a contradiction (just redundant) --
+    # only a skill split across two different categories is rejected.
+    response = client.post(
+        "/jobs",
+        json={"title": "Redundant Skill Role", "technical_skills_must_have": ["Python", "Python"]},
+    )
+    assert response.status_code == 201
+
+
+def test_update_job_rejects_a_skill_in_two_categories(client, db_session):
+    job = _make_job(db_session)
+    response = client.patch(
+        f"/jobs/{job.id}",
+        json={"technical_skills_must_have": ["Python"], "technical_skills_good_to_have": ["Python"]},
+    )
+    assert response.status_code == 422
 
 
 # --- per-job table stats: application_count / applications_pct_change / avg_time_to_hire_days

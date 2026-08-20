@@ -16,7 +16,14 @@ SYSTEM_PROMPT = (
     "additional notes are given, fold them into an 'additional_notes_section' "
     "so the information is not lost. Never invent a salary band, benefits, or "
     "notes that were not provided in the input -- leave the corresponding "
-    "output field null instead of fabricating one."
+    "output field null instead of fabricating one.\n\n"
+    "The role's skills are given as 4 separate categories -- technical/soft, each "
+    "must-have/good-to-have. 'required_skills' must be built from the must-have "
+    "technical and must-have soft skills given (soft skills phrased as skills, e.g. "
+    "'Clear written communication', not restated as personality traits); "
+    "'nice_to_have' must be built the same way from the good-to-have technical and "
+    "good-to-have soft skills. Never move a skill from one bucket to the other, and "
+    "never invent a skill that wasn't given in either bucket."
 )
 
 _client: Anthropic | None = None
@@ -44,14 +51,32 @@ def _get_client() -> Anthropic:
     return _client
 
 
+def _format_experience_range(min_years, max_years) -> str:
+    """Renders the job's numeric experience_min_years/experience_max_years for the JD
+    prompt -- same "X-Y years"/"X+ years" convention used everywhere else this range is
+    displayed (see frontend/src/utils/experience.ts formatExperienceRange)."""
+    if min_years is None and max_years is None:
+        return "Not specified"
+    if max_years is None:
+        return f"{min_years:g}+ years"
+    if min_years is None:
+        return f"Up to {max_years:g} years"
+    if min_years == max_years:
+        return f"{min_years:g} years"
+    return f"{min_years:g}-{max_years:g} years"
+
+
 def _build_user_prompt(inputs: dict) -> str:
     return (
         "Role inputs:\n"
         f"Title: {inputs.get('title')}\n"
         f"Department: {inputs.get('department')}\n"
         f"Location: {inputs.get('location')}\n"
-        f"Experience level: {inputs.get('experience_level')}\n"
-        f"Skills: {inputs.get('skills')}\n"
+        f"Experience level: {_format_experience_range(inputs.get('experience_min_years'), inputs.get('experience_max_years'))}\n"
+        f"Technical skills (must-have): {inputs.get('technical_skills_must_have')}\n"
+        f"Technical skills (good-to-have): {inputs.get('technical_skills_good_to_have')}\n"
+        f"Soft skills (must-have): {inputs.get('soft_skills_must_have')}\n"
+        f"Soft skills (good-to-have): {inputs.get('soft_skills_good_to_have')}\n"
         f"Salary band: {inputs.get('salary_band_min')}-{inputs.get('salary_band_max')}\n"
         f"Benefits: {inputs.get('benefits')}\n"
         f"Additional notes: {inputs.get('additional_notes')}"

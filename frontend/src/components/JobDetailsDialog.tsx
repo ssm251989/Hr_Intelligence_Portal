@@ -10,6 +10,8 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
 import type { JobRoleRead } from "../api/types";
+import { formatExperienceRange } from "../utils/experience";
+import { categorizeSkills } from "../utils/skills";
 import PostingLinksEditor from "./PostingLinksEditor";
 import StatusChip from "./StatusChip";
 
@@ -35,8 +37,14 @@ export default function JobDetailsDialog({
               <StatusChip status={job.status} />
             </Stack>
             <Typography variant="body2" color="text.secondary">
-              {[job.department, job.location, job.experience_level, job.job_type].filter(Boolean).join(" · ") ||
-                "No details set"}
+              {[
+                job.department,
+                job.location,
+                formatExperienceRange(job.experience_min_years, job.experience_max_years),
+                job.job_type,
+              ]
+                .filter(Boolean)
+                .join(" · ") || "No details set"}
             </Typography>
 
             <Divider />
@@ -52,13 +60,34 @@ export default function JobDetailsDialog({
               {job.avg_time_to_hire_days != null ? ` · Avg time to hire: ${job.avg_time_to_hire_days}d` : ""}
             </Typography>
 
-            {job.skills && job.skills.length > 0 && (
-              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                {job.skills.map((skill) => (
-                  <Chip key={skill} label={skill} size="small" variant="outlined" />
-                ))}
-              </Stack>
-            )}
+            {(() => {
+              const { mustHave, goodToHave } = categorizeSkills(job);
+              if (mustHave.length === 0 && goodToHave.length === 0) return null;
+              return (
+                <Stack spacing={0.75}>
+                  {mustHave.length > 0 && (
+                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
+                      <Typography variant="caption" color="text.secondary">
+                        Must Have:
+                      </Typography>
+                      {mustHave.map((skill) => (
+                        <Chip key={`must-${skill}`} label={skill} size="small" />
+                      ))}
+                    </Stack>
+                  )}
+                  {goodToHave.length > 0 && (
+                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
+                      <Typography variant="caption" color="text.secondary">
+                        Good to Have:
+                      </Typography>
+                      {goodToHave.map((skill) => (
+                        <Chip key={`good-${skill}`} label={skill} size="small" variant="outlined" />
+                      ))}
+                    </Stack>
+                  )}
+                </Stack>
+              );
+            })()}
 
             {job.benefits && (
               <Typography variant="body2" color="text.secondary">

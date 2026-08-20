@@ -43,8 +43,12 @@ export interface JobRoleBase {
   title: string;
   department?: string | null;
   location?: string | null;
-  experience_level?: string | null;
-  skills?: string[] | null;
+  experience_min_years?: number | null;
+  experience_max_years?: number | null;
+  technical_skills_must_have?: string[] | null;
+  technical_skills_good_to_have?: string[] | null;
+  soft_skills_must_have?: string[] | null;
+  soft_skills_good_to_have?: string[] | null;
   salary_band_min?: number | null;
   salary_band_max?: number | null;
   positions_count: number;
@@ -62,8 +66,12 @@ export interface JobRoleUpdate {
   title?: string;
   department?: string | null;
   location?: string | null;
-  experience_level?: string | null;
-  skills?: string[] | null;
+  experience_min_years?: number | null;
+  experience_max_years?: number | null;
+  technical_skills_must_have?: string[] | null;
+  technical_skills_good_to_have?: string[] | null;
+  soft_skills_must_have?: string[] | null;
+  soft_skills_good_to_have?: string[] | null;
   salary_band_min?: number | null;
   salary_band_max?: number | null;
   positions_count?: number;
@@ -690,8 +698,12 @@ export interface PublicJobRead {
   title: string;
   department?: string | null;
   location?: string | null;
-  experience_level?: string | null;
-  skills?: string[] | null;
+  experience_min_years?: number | null;
+  experience_max_years?: number | null;
+  technical_skills_must_have?: string[] | null;
+  technical_skills_good_to_have?: string[] | null;
+  soft_skills_must_have?: string[] | null;
+  soft_skills_good_to_have?: string[] | null;
   jd_text?: string | null;
 }
 

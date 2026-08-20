@@ -13,6 +13,8 @@ import { useNavigate } from "react-router-dom";
 
 import { extractErrorMessage, publicApi } from "../api/client";
 import type { PublicJobRead } from "../api/types";
+import { formatExperienceRange } from "../utils/experience";
+import { categorizeSkills } from "../utils/skills";
 
 export default function CareersListPage() {
   const navigate = useNavigate();
@@ -49,27 +51,44 @@ export default function CareersListPage() {
         <Typography color="text.secondary">There are no open positions right now. Please check back soon.</Typography>
       ) : (
         <Grid container spacing={2}>
-          {jobs?.map((job) => (
-            <Grid key={job.id} size={{ xs: 12 }}>
-              <Card sx={{ border: 1, borderColor: "divider", borderRadius: 2 }}>
-                <CardActionArea onClick={() => navigate(`/careers/${job.id}`)}>
-                  <CardContent>
-                    <Typography variant="h6">{job.title}</Typography>
-                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap mt={1} mb={job.skills?.length ? 1.5 : 0}>
-                      {job.department && <Chip label={job.department} size="small" />}
-                      {job.location && <Chip label={job.location} size="small" variant="outlined" />}
-                      {job.experience_level && <Chip label={job.experience_level} size="small" variant="outlined" />}
-                    </Stack>
-                    {job.skills && job.skills.length > 0 && (
-                      <Typography variant="body2" color="text.secondary">
-                        {job.skills.join(", ")}
-                      </Typography>
-                    )}
-                  </CardContent>
-                </CardActionArea>
-              </Card>
-            </Grid>
-          ))}
+          {jobs?.map((job) => {
+            const { mustHave, goodToHave } = categorizeSkills(job);
+            return (
+              <Grid key={job.id} size={{ xs: 12 }}>
+                <Card sx={{ border: 1, borderColor: "divider", borderRadius: 2 }}>
+                  <CardActionArea onClick={() => navigate(`/careers/${job.id}`)}>
+                    <CardContent>
+                      <Typography variant="h6">{job.title}</Typography>
+                      <Stack
+                        direction="row" spacing={1} flexWrap="wrap" useFlexGap mt={1}
+                        mb={mustHave.length || goodToHave.length ? 1.5 : 0}
+                      >
+                        {job.department && <Chip label={job.department} size="small" />}
+                        {job.location && <Chip label={job.location} size="small" variant="outlined" />}
+                        {formatExperienceRange(job.experience_min_years, job.experience_max_years) && (
+                          <Chip
+                            label={formatExperienceRange(job.experience_min_years, job.experience_max_years)}
+                            size="small"
+                            variant="outlined"
+                          />
+                        )}
+                      </Stack>
+                      {mustHave.length > 0 && (
+                        <Typography variant="body2" color="text.secondary">
+                          Required: {mustHave.join(", ")}
+                        </Typography>
+                      )}
+                      {goodToHave.length > 0 && (
+                        <Typography variant="body2" color="text.secondary">
+                          Nice to have: {goodToHave.join(", ")}
+                        </Typography>
+                      )}
+                    </CardContent>
+                  </CardActionArea>
+                </Card>
+              </Grid>
+            );
+          })}
         </Grid>
       )}
     </Box>

@@ -22,6 +22,7 @@ import Typography from "@mui/material/Typography";
 
 import { extractErrorMessage, integrationsApi, jobsApi } from "../api/client";
 import type { JobFieldSuggestionsResponse, JobRoleRead } from "../api/types";
+import { formatExperienceRange } from "../utils/experience";
 
 const EMPTY_SUGGESTIONS: JobFieldSuggestionsResponse = { departments: [], locations: [], skills: [] };
 
@@ -39,15 +40,37 @@ const STEPS = [
 
 const JOB_TYPES = ["Full-time", "Part-time", "Contract"];
 
+// Same cross-category rule as the backend's JobRoleBase/JobRoleUpdate validators (see
+// backend/app/schemas/job.py _find_skill_in_multiple_categories) -- checked client-side
+// too so the wizard can flag it before a save round-trip. A skill repeated within the
+// SAME category is left alone; only a skill appearing under more than one of the 4
+// fields is a contradiction.
+function findSkillInMultipleCategories(categories: string[][]): string | null {
+  const seenInCategory = new Map<string, number>();
+  for (let i = 0; i < categories.length; i++) {
+    for (const skill of categories[i]) {
+      const key = skill.trim().toLowerCase();
+      const firstSeenIn = seenInCategory.get(key);
+      if (firstSeenIn !== undefined && firstSeenIn !== i) return skill;
+      seenInCategory.set(key, i);
+    }
+  }
+  return null;
+}
+
 const EMPTY_STATE = {
   title: "",
   department: "",
   location: "",
-  experienceLevel: "",
+  experienceMinYears: "",
+  experienceMaxYears: "",
   jobType: "Full-time",
   positionsCount: "1",
   jdText: "",
-  skills: [] as string[],
+  technicalSkillsMustHave: [] as string[],
+  technicalSkillsGoodToHave: [] as string[],
+  softSkillsMustHave: [] as string[],
+  softSkillsGoodToHave: [] as string[],
   salaryMin: "",
   salaryMax: "",
   benefits: "",
@@ -72,11 +95,15 @@ function formFromJob(job: JobRoleRead): typeof EMPTY_STATE {
     title: job.title,
     department: job.department || "",
     location: job.location || "",
-    experienceLevel: job.experience_level || "",
+    experienceMinYears: job.experience_min_years != null ? String(job.experience_min_years) : "",
+    experienceMaxYears: job.experience_max_years != null ? String(job.experience_max_years) : "",
     jobType: job.job_type || "Full-time",
     positionsCount: String(job.positions_count ?? 1),
     jdText: job.jd_text || "",
-    skills: job.skills || [],
+    technicalSkillsMustHave: job.technical_skills_must_have || [],
+    technicalSkillsGoodToHave: job.technical_skills_good_to_have || [],
+    softSkillsMustHave: job.soft_skills_must_have || [],
+    softSkillsGoodToHave: job.soft_skills_good_to_have || [],
     salaryMin: job.salary_band_min != null ? String(job.salary_band_min) : "",
     salaryMax: job.salary_band_max != null ? String(job.salary_band_max) : "",
     benefits: job.benefits || "",
@@ -161,10 +188,29 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
       if (!form.title.trim()) return "Title is required";
       const positions = Number(form.positionsCount);
       if (!Number.isFinite(positions) || positions < 1) return "Positions must be at least 1";
+      if (form.experienceMinYears.trim()) {
+        const min = Number(form.experienceMinYears);
+        if (!Number.isFinite(min) || min < 0) return "Min experience must be 0 or greater";
+      }
+      if (form.experienceMaxYears.trim()) {
+        const max = Number(form.experienceMaxYears);
+        if (!Number.isFinite(max) || max < 0) return "Max experience must be 0 or greater";
+      }
+      if (form.experienceMinYears.trim() && form.experienceMaxYears.trim()) {
+        if (Number(form.experienceMaxYears) < Number(form.experienceMinYears)) {
+          return "Max experience must be greater than or equal to min experience";
+        }
+      }
       return null;
     }
     if (step === 1) {
-      if (form.skills.length === 0) return "Add at least one required skill";
+      const categories = [
+        form.technicalSkillsMustHave, form.technicalSkillsGoodToHave,
+        form.softSkillsMustHave, form.softSkillsGoodToHave,
+      ];
+      if (categories.every((category) => category.length === 0)) return "Add at least one skill";
+      const duplicate = findSkillInMultipleCategories(categories);
+      if (duplicate) return `"${duplicate}" cannot be in more than one skill category`;
       return null;
     }
     if (step === 2) {
@@ -186,7 +232,11 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
   // leaves without pressing Enter first. Splitting only on those two reasons -- never on
   // "selectOption"/"removeOption"/"clear" -- leaves picking a dropdown suggestion or
   // removing a chip completely untouched.
-  const handleSkillsChange = (newValue: string[], reason: string) => {
+  const handleSkillsChange = (
+    key: "technicalSkillsMustHave" | "technicalSkillsGoodToHave" | "softSkillsMustHave" | "softSkillsGoodToHave",
+    newValue: string[],
+    reason: string,
+  ) => {
     const committedNewText = reason === "createOption" || reason === "blur";
     const raw = newValue[newValue.length - 1];
     if (committedNewText && typeof raw === "string" && raw.includes(",")) {
@@ -194,11 +244,40 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
         .split(",")
         .map((segment) => segment.trim())
         .filter(Boolean);
-      set("skills", Array.from(new Set([...newValue.slice(0, -1), ...segments])));
+      set(key, Array.from(new Set([...newValue.slice(0, -1), ...segments])));
       return;
     }
-    set("skills", newValue);
+    set(key, newValue);
   };
+
+  // One instance of the same creatable-autocomplete pattern the single "Skills" field
+  // used to be, reused 4x (technical/soft x must-have/good-to-have) instead of 1x.
+  const renderSkillsField = (
+    key: "technicalSkillsMustHave" | "technicalSkillsGoodToHave" | "softSkillsMustHave" | "softSkillsGoodToHave",
+    label: string,
+  ) => (
+    <Autocomplete
+      multiple
+      freeSolo
+      autoSelect
+      options={suggestions.skills}
+      value={form[key]}
+      onChange={(_e, value, reason) => handleSkillsChange(key, value, reason)}
+      renderTags={(selected, getTagProps) =>
+        selected.map((skill, index) => {
+          const { key: tagKey, ...tagProps } = getTagProps({ index });
+          return <Chip key={tagKey} label={skill} size="small" {...tagProps} />;
+        })
+      }
+      renderInput={(params) => (
+        <TextField
+          {...params}
+          label={label}
+          helperText="Pick an existing skill, or type one (or several, comma-separated) and press Enter"
+        />
+      )}
+    />
+  );
 
   const handleGenerateJd = async () => {
     if (!jobId) return;
@@ -229,7 +308,8 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
           title: form.title.trim(),
           department: form.department.trim() || null,
           location: form.location.trim() || null,
-          experience_level: form.experienceLevel.trim() || null,
+          experience_min_years: form.experienceMinYears.trim() ? Number(form.experienceMinYears) : null,
+          experience_max_years: form.experienceMaxYears.trim() ? Number(form.experienceMaxYears) : null,
           job_type: form.jobType,
           positions_count: Number(form.positionsCount) || 1,
         };
@@ -237,7 +317,12 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
         setJobId(updated.id);
         setJob(updated);
       } else if (activeStep === 1) {
-        const updated = await jobsApi.update(jobId!, { skills: form.skills });
+        const updated = await jobsApi.update(jobId!, {
+          technical_skills_must_have: form.technicalSkillsMustHave,
+          technical_skills_good_to_have: form.technicalSkillsGoodToHave,
+          soft_skills_must_have: form.softSkillsMustHave,
+          soft_skills_good_to_have: form.softSkillsGoodToHave,
+        });
         setJob(updated);
       } else if (activeStep === 2) {
         const updated = await jobsApi.update(jobId!, {
@@ -317,12 +402,25 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
               onInputChange={(_e, value) => set("location", value)}
               renderInput={(params) => <TextField {...params} label="Location" fullWidth />}
             />
-            <TextField
-              label="Experience level"
-              value={form.experienceLevel}
-              onChange={(e) => set("experienceLevel", e.target.value)}
-              fullWidth
-            />
+            <Stack direction="row" spacing={2}>
+              <TextField
+                label="Min Experience (years)"
+                type="number"
+                inputProps={{ min: 0, step: 0.5 }}
+                value={form.experienceMinYears}
+                onChange={(e) => set("experienceMinYears", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="Max Experience (years)"
+                type="number"
+                inputProps={{ min: 0, step: 0.5 }}
+                placeholder="Blank for open-ended (e.g. 5+ years)"
+                value={form.experienceMaxYears}
+                onChange={(e) => set("experienceMaxYears", e.target.value)}
+                fullWidth
+              />
+            </Stack>
             <TextField
               select
               label="Job type"
@@ -347,28 +445,17 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
         );
       case 1:
         return (
-          <Stack spacing={2} mt={1}>
-            <Autocomplete
-              multiple
-              freeSolo
-              autoSelect
-              options={suggestions.skills}
-              value={form.skills}
-              onChange={(_e, value, reason) => handleSkillsChange(value, reason)}
-              renderTags={(selected, getTagProps) =>
-                selected.map((skill, index) => {
-                  const { key, ...tagProps } = getTagProps({ index });
-                  return <Chip key={key} label={skill} size="small" {...tagProps} />;
-                })
-              }
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="Skills"
-                  helperText="Pick an existing skill, or type one (or several, comma-separated) and press Enter"
-                />
-              )}
-            />
+          <Stack spacing={3} mt={1}>
+            <Stack spacing={2}>
+              <Typography variant="subtitle2">Technical Skills</Typography>
+              {renderSkillsField("technicalSkillsMustHave", "Must Have")}
+              {renderSkillsField("technicalSkillsGoodToHave", "Good to Have")}
+            </Stack>
+            <Stack spacing={2}>
+              <Typography variant="subtitle2">Soft Skills</Typography>
+              {renderSkillsField("softSkillsMustHave", "Must Have")}
+              {renderSkillsField("softSkillsGoodToHave", "Good to Have")}
+            </Stack>
           </Stack>
         );
       case 2:
@@ -441,6 +528,11 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
     }
   };
 
+  const reviewSkills = {
+    mustHave: [...form.technicalSkillsMustHave, ...form.softSkillsMustHave],
+    goodToHave: [...form.technicalSkillsGoodToHave, ...form.softSkillsGoodToHave],
+  };
+
   const renderReviewAndPublish = () => (
     <Stack spacing={2} mt={1}>
       <Typography variant="subtitle1">Review</Typography>
@@ -449,16 +541,28 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
           <strong>{form.title}</strong>
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          {[form.department, form.location, form.experienceLevel].filter(Boolean).join(" · ") || "No details set"}
+          {[
+            form.department,
+            form.location,
+            formatExperienceRange(
+              form.experienceMinYears ? Number(form.experienceMinYears) : null,
+              form.experienceMaxYears ? Number(form.experienceMaxYears) : null,
+            ),
+          ]
+            .filter(Boolean)
+            .join(" · ") || "No details set"}
         </Typography>
         <Typography variant="body2" color="text.secondary">
           {form.jobType} · Positions: {form.positionsCount}
           {form.salaryMin && form.salaryMax ? ` · Salary band: ${form.salaryMin} - ${form.salaryMax}` : ""}
         </Typography>
-        {form.skills.length > 0 && (
+        {(reviewSkills.mustHave.length > 0 || reviewSkills.goodToHave.length > 0) && (
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap mt={0.5}>
-            {form.skills.map((skill) => (
-              <Chip key={skill} label={skill} size="small" variant="outlined" />
+            {reviewSkills.mustHave.map((skill) => (
+              <Chip key={`must-${skill}`} label={skill} size="small" />
+            ))}
+            {reviewSkills.goodToHave.map((skill) => (
+              <Chip key={`good-${skill}`} label={skill} size="small" variant="outlined" />
             ))}
           </Stack>
         )}

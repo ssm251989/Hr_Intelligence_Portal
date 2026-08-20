@@ -12,12 +12,15 @@ SYSTEM_PROMPT = (
     "You compare a candidate resume against a job description. Base this "
     "strictly on evidence in the resume text. Do not infer skills that are not "
     "stated or clearly implied by the candidate's actual experience. Score every "
-    "*_score/skill_match_pct field on a 0-100 scale.\n\n"
-    "You score five independent dimensions, used later as equally-weighted inputs to a "
-    "composite screening score:\n"
-    "- skill_match_pct: how well the candidate's stated skills cover the job's required skills.\n"
-    "- experience_score: how well the candidate's years and type of experience fit what the "
-    "role needs (not just total years -- relevance of that experience to this specific role).\n"
+    "*_score field on a 0-100 scale.\n\n"
+    "You score three independent dimensions -- experience fit and skills fit are "
+    "deliberately not among them, since app/screening/service.py computes both itself: "
+    "experience_score from the job's real experience_min_years/experience_max_years "
+    "against the candidate's parsed total_experience_years, and skill_match_pct from the "
+    "job's 4 categorized skill lists against the candidate's parsed skills -- rather than "
+    "asking you to guess at either from prose. Your three scores are used later as "
+    "equally-weighted inputs (alongside those two computed scores) to a composite "
+    "screening score:\n"
     "- location_score: how well the candidate's location fits the job's location. Score 100 "
     "if either location is unspecified, they match, or the role reads as remote-friendly; "
     "score lower for a real geographic mismatch with no indication of relocation/remote work.\n"
@@ -37,11 +40,8 @@ class ResumeMatchError(Exception):
 
 class ResumeMatchOutput(BaseModel):
     match_score: int
-    skill_match_pct: int
-    experience_score: int
     location_score: int
     certificates_score: int
-    missing_skills: list[str]
     recommendation: Literal["strong_fit", "possible_fit", "weak_fit"]
 
 
@@ -58,9 +58,12 @@ def match_resume(
     candidate_location: Optional[str] = None,
     job_location: Optional[str] = None,
 ) -> dict:
-    """One Haiku call producing all five factors app/screening/service.py needs for its
-    equal-weighted composite score (skill_match_pct, experience_score, location_score,
-    certificates_score, match_score) -- never a separate call per factor.
+    """One Haiku call producing three of the five factors app/screening/service.py needs
+    for its equal-weighted composite score (location_score, certificates_score,
+    match_score) -- never a separate call per factor. The other two, experience_score
+    and skill_match_pct, are computed deterministically by app/screening/service.py's
+    compute_experience_score/compute_skills_score from real structured data instead of
+    being asked of the AI.
 
     The JD text is its own cache_control-marked content block: when the same job is
     screened against many candidates in one run (a bulk "re-evaluate all", or Part G's

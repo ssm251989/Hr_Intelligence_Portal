@@ -3,23 +3,24 @@ from app.models.candidate import Candidate
 from app.models.job_role import JobRole
 from app.screening import service as screening_service
 
+# No "experience_score"/"skill_match_pct"/"missing_skills" keys in either fixture --
+# match_resume no longer produces any of these, and these jobs/candidates carry no
+# experience_min_years/max_years/total_experience_years or skill categories, which both
+# compute_experience_score/compute_skills_score (app/screening/service.py) treat as "no
+# requirement configured" -> a fixed deterministic 100 each. So composite = (three
+# AI-scored factors + 100 + 100) / 5: FAKE_MATCH_RESULT_70 -> (70*3+200)/5 = 82.0,
+# FAKE_MATCH_RESULT_95 -> (95*3+200)/5 = 97.0.
 FAKE_MATCH_RESULT_70 = {
     "match_score": 70,
-    "skill_match_pct": 70,
-    "experience_score": 70,
     "location_score": 70,
     "certificates_score": 70,
-    "missing_skills": [],
     "recommendation": "possible_fit",
 }
 
 FAKE_MATCH_RESULT_95 = {
     "match_score": 95,
-    "skill_match_pct": 95,
-    "experience_score": 95,
     "location_score": 95,
     "certificates_score": 95,
-    "missing_skills": [],
     "recommendation": "strong_fit",
 }
 
@@ -151,16 +152,17 @@ def test_put_settings_rejects_empty_payload(client):
 
 
 def test_changing_interview_threshold_changes_interview_remarks_for_a_new_upload(client, db_session, monkeypatch):
-    # Fixed AI result: composite exactly 70.0, same trick as the dashboard-threshold test
-    # above -- but this time it's the SEPARATE interview_min_score pair being exercised, and
-    # the dashboard pair is pinned so both applications land in the same 'screened' status
-    # regardless (isolating this test to interview_remarks, not a dashboard-threshold effect).
+    # Fixed AI result: composite exactly 82.0 (see FAKE_MATCH_RESULT_70's own comment),
+    # same trick as the dashboard-threshold test above -- but this time it's the
+    # SEPARATE interview_min_score pair being exercised, and the dashboard pair is
+    # pinned so both applications land in the same 'screened' status regardless
+    # (isolating this test to interview_remarks, not a dashboard-threshold effect).
     monkeypatch.setattr("app.screening.service.match_resume", lambda *a, **k: dict(FAKE_MATCH_RESULT_70))
     client.put("/screening/settings", json={"dashboard_min_score": 0, "dashboard_max_score": 100})
 
     job = _make_job(db_session)
 
-    client.put("/screening/settings", json={"interview_min_score": 80, "interview_max_score": 100})
+    client.put("/screening/settings", json={"interview_min_score": 90, "interview_max_score": 100})
     candidate_a = _make_candidate(db_session, parsed_fields={"skills": ["Python"]})
     application_a = _make_application(db_session, job, candidate_a)
     screening_service.attempt_auto_screen(db_session, application_a)
@@ -171,7 +173,7 @@ def test_changing_interview_threshold_changes_interview_remarks_for_a_new_upload
         ).json()["items"]
         if i["application_id"] == str(application_a.id)
     )
-    assert row_a["interview_remarks"] == "Below interview threshold (score 70)"  # 70 < 80
+    assert row_a["interview_remarks"] == "Below interview threshold (score 82)"  # 82 < 90
 
     client.put("/screening/settings", json={"interview_min_score": 50, "interview_max_score": 100})
     candidate_b = _make_candidate(db_session, parsed_fields={"skills": ["Python"]})
@@ -184,30 +186,32 @@ def test_changing_interview_threshold_changes_interview_remarks_for_a_new_upload
         ).json()["items"]
         if i["application_id"] == str(application_b.id)
     )
-    assert row_b["interview_remarks"] == "Interview ready (score 70)"  # 70 >= 50
+    assert row_b["interview_remarks"] == "Interview ready (score 82)"  # 82 >= 50
 
 
 # --- Functional: changing the threshold changes auto-advance for a NEW upload ---
 
 
 def test_changing_threshold_changes_auto_advance_for_a_new_upload(client, db_session, monkeypatch):
-    # Fixed AI result: skills=experience=location=certs=match=70 -> composite exactly 70.0,
-    # regardless of which candidate/application it's run against.
+    # Fixed AI result (location=certs=match=70) + deterministic experience_score/
+    # skill_match_pct=100 each (no experience range or skill categories configured) ->
+    # composite exactly 82.0 (see FAKE_MATCH_RESULT_70's own comment), regardless of
+    # which candidate/application it's run against.
     monkeypatch.setattr("app.screening.service.match_resume", lambda *a, **k: dict(FAKE_MATCH_RESULT_70))
 
     job = _make_job(db_session)
 
     # Raise the threshold above what a new upload will score -- attempt_auto_screen is
     # exactly what the resume-parse/application-creation hooks call for a brand new upload.
-    response = client.put("/screening/settings", json={"dashboard_min_score": 80, "dashboard_max_score": 100})
+    response = client.put("/screening/settings", json={"dashboard_min_score": 90, "dashboard_max_score": 100})
     assert response.status_code == 200
 
     candidate_a = _make_candidate(db_session, parsed_fields={"skills": ["Python"]})
     application_a = _make_application(db_session, job, candidate_a)
     screening_service.attempt_auto_screen(db_session, application_a)
     db_session.refresh(application_a)
-    assert application_a.composite_score == 70.0
-    assert application_a.status == "received"  # 70 < 80 -- never auto-advances
+    assert application_a.composite_score == 82.0
+    assert application_a.status == "received"  # 82 < 90 -- never auto-advances
 
     # Lower the threshold below that same score -- a genuinely new upload (fresh candidate,
     # fresh application) now clears it.
@@ -218,8 +222,8 @@ def test_changing_threshold_changes_auto_advance_for_a_new_upload(client, db_ses
     application_b = _make_application(db_session, job, candidate_b)
     screening_service.attempt_auto_screen(db_session, application_b)
     db_session.refresh(application_b)
-    assert application_b.composite_score == 70.0
-    assert application_b.status == "screened"  # 70 >= 50 -- auto-advances
+    assert application_b.composite_score == 82.0
+    assert application_b.status == "screened"  # 82 >= 50 -- auto-advances
 
 
 # --- Re-evaluate All (Part D) ---
@@ -270,9 +274,9 @@ def test_re_evaluate_all_updates_received_and_screened_but_skips_already_decided
     db_session.refresh(on_hold_app)
 
     assert received_app.status == "screened"
-    assert received_app.composite_score == 95.0
+    assert received_app.composite_score == 97.0
     assert screened_app.status == "screened"
-    assert screened_app.composite_score == 95.0  # refreshed even though status didn't change
+    assert screened_app.composite_score == 97.0  # refreshed even though status didn't change
 
     # Untouched -- never re-screened.
     assert decided_app.status == "hr_selected"

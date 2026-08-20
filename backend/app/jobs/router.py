@@ -121,10 +121,20 @@ def get_job_field_suggestions(
     locations = sorted(
         {row[0] for row in db.query(JobRole.location).filter(JobRole.location.isnot(None)).distinct().all() if row[0]}
     )
-    skill_lists = db.query(JobRole.skills).filter(JobRole.skills.isnot(None)).all()
-    skills = sorted({skill for (row,) in skill_lists if row for skill in row})
+    # Suggestions are pooled across all 4 categorized skill columns -- a skill entered as
+    # e.g. a good-to-have on one job is still a reasonable autocomplete suggestion for any
+    # of the wizard's 4 skill fields on another job, not just the matching category.
+    skill_columns = (
+        JobRole.technical_skills_must_have, JobRole.technical_skills_good_to_have,
+        JobRole.soft_skills_must_have, JobRole.soft_skills_good_to_have,
+    )
+    skills: set[str] = set()
+    for column in skill_columns:
+        for (row,) in db.query(column).filter(column.isnot(None)).all():
+            if row:
+                skills.update(row)
 
-    return JobFieldSuggestionsResponse(departments=departments, locations=locations, skills=skills)
+    return JobFieldSuggestionsResponse(departments=departments, locations=locations, skills=sorted(skills))
 
 
 @router.get("/{job_id}", response_model=JobRoleRead)
@@ -199,8 +209,12 @@ def generate_job_description(
                 "title": job.title,
                 "department": job.department,
                 "location": job.location,
-                "experience_level": job.experience_level,
-                "skills": job.skills,
+                "experience_min_years": job.experience_min_years,
+                "experience_max_years": job.experience_max_years,
+                "technical_skills_must_have": job.technical_skills_must_have,
+                "technical_skills_good_to_have": job.technical_skills_good_to_have,
+                "soft_skills_must_have": job.soft_skills_must_have,
+                "soft_skills_good_to_have": job.soft_skills_good_to_have,
                 "salary_band_min": job.salary_band_min,
                 "salary_band_max": job.salary_band_max,
                 "benefits": job.benefits,

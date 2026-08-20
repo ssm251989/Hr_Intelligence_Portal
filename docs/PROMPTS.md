@@ -16,6 +16,13 @@ the salary range and lists the benefits; if additional notes are given, fold
 them into an "additional_notes_section" so the information is not lost. Never
 invent a salary band, benefits, or notes that were not provided in the input
 -- leave the corresponding output field null instead of fabricating one.
+The role's skills are given as 4 separate categories -- technical/soft, each
+must-have/good-to-have. "required_skills" must be built from the must-have
+technical and must-have soft skills given (soft skills phrased as skills, not
+restated as personality traits); "nice_to_have" must be built the same way
+from the good-to-have technical and good-to-have soft skills. Never move a
+skill from one bucket to the other, and never invent a skill that wasn't
+given in either bucket.
 Respond only with valid JSON, no text outside it:
 {
   "title": string,
@@ -33,8 +40,11 @@ Role inputs:
 Title: {title}
 Department: {department}
 Location: {location}
-Experience level: {experience_level}
-Skills: {skills}
+Experience level: {experience_min_years}-{experience_max_years} years (formatted as "X-Y years" / "X+ years" / "Not specified" -- see app/ai_services/jd_generator.py _format_experience_range)
+Technical skills (must-have): {technical_skills_must_have}
+Technical skills (good-to-have): {technical_skills_good_to_have}
+Soft skills (must-have): {soft_skills_must_have}
+Soft skills (good-to-have): {soft_skills_good_to_have}
 Salary band: {salary_band_min}-{salary_band_max}
 Benefits: {benefits}
 Additional notes: {additional_notes}
@@ -67,14 +77,20 @@ Resume text:
 
 ## 3. Resume Matcher — Claude Haiku (post embedding pre-filter) — Step 4 (AI Screening)
 
+Note: this doc predates two of the five composite-score factors moving out of the AI
+call entirely -- experience_score and skill_match_pct/missing_skills are now computed
+deterministically in app/screening/service.py (compute_experience_score,
+compute_skills_score) from the job's real experience_min_years/experience_max_years and
+4 categorized skill lists, not asked of the model. The AI call still returns
+location_score and certificates_score alongside match_score; see
+app/ai_services/resume_matcher.py's actual SYSTEM_PROMPT for the current, real prompt.
+
 ```
 System:
 You compare a candidate resume against a job description. Respond only with
 valid JSON:
 {
   "match_score": number (0-100),
-  "skill_match_pct": number (0-100),
-  "missing_skills": [string],
   "recommendation": "strong_fit" | "possible_fit" | "weak_fit"
 }
 Base this strictly on evidence in the resume text. Do not infer skills that are

@@ -32,17 +32,19 @@ def _make_application(db_session, job, candidate, match_score=None, **kwargs) ->
     return application
 
 
-# skill_match_pct=65, experience_score=70, location_score=100, certificates_score=100,
-# match_score=78 -> composite = (65+70+100+100+78)/5 = 82.6, comfortably above the default
-# dashboard_min_score=60 seeded by migration e1f3a7c9b2d4, so screening these fixtures
-# always auto-advances to 'screened' unless a test overrides a field to test otherwise.
+# location_score=100, certificates_score=100, match_score=78 from the (mocked) AI call,
+# plus two deterministic scores from test_screen_application_success's job/candidate
+# fixtures below: experience_score=70 (2 years short of a 5-8 year requirement ->
+# 100 - 2*15) and skill_match_pct=80 (both technical_skills_must_have matched -> 50, the
+# one technical_skills_good_to_have entry ("Kubernetes") missed -> 0 of 20, no soft
+# categories configured -> full 20 + 10) -> composite = (80+70+100+100+78)/5 = 85.6,
+# comfortably above the default dashboard_min_score=60 seeded by migration
+# e1f3a7c9b2d4, so screening these fixtures always auto-advances to 'screened' unless a
+# test overrides a field to test otherwise.
 FAKE_MATCH_RESULT = {
     "match_score": 78,
-    "skill_match_pct": 65,
-    "experience_score": 70,
     "location_score": 100,
     "certificates_score": 100,
-    "missing_skills": ["Kubernetes"],
     "recommendation": "possible_fit",
 }
 
@@ -63,8 +65,14 @@ def test_screen_application_success(client, db_session, monkeypatch):
         lambda jd_text, parsed_fields, candidate_location, job_location: FAKE_MATCH_RESULT,
     )
 
-    job = _make_job(db_session, jd_text="We need a backend engineer skilled in Python and FastAPI.")
-    candidate = _make_candidate(db_session, parsed_fields={"skills": ["Python", "FastAPI"]})
+    job = _make_job(
+        db_session, jd_text="We need a backend engineer skilled in Python and FastAPI.",
+        experience_min_years=5, experience_max_years=8,
+        technical_skills_must_have=["Python", "FastAPI"], technical_skills_good_to_have=["Kubernetes"],
+    )
+    candidate = _make_candidate(
+        db_session, parsed_fields={"skills": ["Python", "FastAPI"], "total_experience_years": 3}
+    )
     application = _make_application(db_session, job, candidate)
 
     response = client.post(f"/applications/{application.id}/screen")
@@ -72,9 +80,9 @@ def test_screen_application_success(client, db_session, monkeypatch):
     assert response.status_code == 200
     body = response.json()
     assert body["match_score"] == 78
-    assert body["skill_match_pct"] == 65
+    assert body["skill_match_pct"] == 80
     assert body["missing_skills"] == ["Kubernetes"]
-    assert body["composite_score"] == 82.6
+    assert body["composite_score"] == 85.6
     assert body["status"] == "screened"
 
     audit_entry = (
@@ -83,12 +91,14 @@ def test_screen_application_success(client, db_session, monkeypatch):
         .one_or_none()
     )
     assert audit_entry is not None
-    assert audit_entry.details["skills_score"] == 65
+    assert audit_entry.details["skills_score"] == 80
     assert audit_entry.details["experience_score"] == 70
     assert audit_entry.details["location_score"] == 100
     assert audit_entry.details["certificates_score"] == 100
     assert audit_entry.details["resume_matcher_score"] == 78
-    assert audit_entry.details["composite_score"] == 82.6
+    assert audit_entry.details["composite_score"] == 85.6
+    assert audit_entry.details["missing_required_skills"] == []
+    assert audit_entry.details["missing_preferred_skills"] == ["Kubernetes"]
     assert audit_entry.details["advanced"] is True
     assert audit_entry.details["previous_status"] == "received"
     assert audit_entry.details["new_status"] == "screened"

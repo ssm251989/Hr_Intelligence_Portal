@@ -26,6 +26,30 @@ from app.models.screening_settings import ScreeningSettings
 
 FACTOR_COUNT = 5
 
+# compute_experience_score's linear falloff -- 15 points off per year the candidate's
+# total_experience_years falls outside the job's [experience_min_years,
+# experience_max_years] range, floored at 0 (so it reaches 0 a little under 7 years off).
+EXPERIENCE_SCORE_FALLOFF_PER_YEAR = 15
+# No requirement configured on the job (both bounds null) is not a penalty -- same
+# "absence of a requirement" convention as location_score/certificates_score.
+EXPERIENCE_SCORE_NO_REQUIREMENT = 100
+# The candidate's own total_experience_years couldn't be parsed from their resume. Unlike
+# location/certificates (where missing data defaults to 100, "don't penalize what can't
+# be verified"), experience is central to job fit and there's no other signal to fall
+# back on here -- a neutral 50 is neither a confirmed match nor a confirmed mismatch.
+EXPERIENCE_SCORE_UNKNOWN_CANDIDATE_YEARS = 50
+
+# compute_skills_score's weighted coverage across the job's 4 categorized skill lists --
+# missing a must-have technical skill costs the most, good-to-have technical and
+# must-have soft skills matter roughly equally in the next tier, good-to-have soft
+# skills matter least. Sums to 100 so a full match on every category scores exactly 100.
+SKILLS_SCORE_WEIGHTS = {
+    "technical_must_have": 50,
+    "technical_good_to_have": 20,
+    "soft_must_have": 20,
+    "soft_good_to_have": 10,
+}
+
 # The two actions run_screening ever logs (see run_screening below) -- the complete set of
 # audit_log rows the Candidates List's Remarks column (Part C) needs to look at. Any other
 # action on an application (shortlisting, salary, BGV, offers, ranking, ...) is out of
@@ -53,9 +77,26 @@ def describe_screening_audit_entry(action: str, details: dict) -> str:
     recommendation = _RECOMMENDATION_LABELS.get(details.get("recommendation"), "Screened")
     composite = details.get("composite_score")
     score_text = f" (score {round(composite)})" if composite is not None else ""
-    missing_skills = details.get("missing_skills") or []
-    if missing_skills:
-        return f"{recommendation}{score_text} -- missing {', '.join(missing_skills)}"
+
+    missing_required = details.get("missing_required_skills")
+    missing_preferred = details.get("missing_preferred_skills")
+    if missing_required is None and missing_preferred is None:
+        # Predates the must-have/good-to-have categorization -- this entry's
+        # missing_skills was never split by severity, so render it exactly as it always
+        # has been, rather than inventing a required/preferred split for data that was
+        # never categorized to begin with.
+        missing_skills = details.get("missing_skills") or []
+        if missing_skills:
+            return f"{recommendation}{score_text} -- missing {', '.join(missing_skills)}"
+        return f"{recommendation}{score_text}"
+
+    gaps = []
+    if missing_required:
+        gaps.append(f"missing required: {', '.join(missing_required)}")
+    if missing_preferred:
+        gaps.append(f"missing preferred: {', '.join(missing_preferred)}")
+    if gaps:
+        return f"{recommendation}{score_text} -- {'; '.join(gaps)}"
     return f"{recommendation}{score_text}"
 
 
@@ -101,6 +142,91 @@ def get_screening_settings(db: Session) -> ScreeningSettings:
         db.commit()
         db.refresh(settings_row)
     return settings_row
+
+
+def compute_experience_score(
+    candidate_years: Optional[float], job_min_years: Optional[float], job_max_years: Optional[float]
+) -> float:
+    """Deterministic replacement for what used to be an AI-judged experience_score --
+    now that job_roles has real experience_min_years/experience_max_years (see
+    app/models/job_role.py), comparing them against the candidate's own parsed
+    total_experience_years (app/ai_services/resume_parser.py) is exact, not a holistic
+    AI guess from JD prose.
+
+    Full score (EXPERIENCE_SCORE_NO_REQUIREMENT) when the job has no experience
+    requirement configured at all, or when the candidate's years fall within
+    [job_min_years, job_max_years] (job_max_years null means an open-ended "X+ years"
+    role -- only the floor is checked). EXPERIENCE_SCORE_UNKNOWN_CANDIDATE_YEARS when a
+    requirement IS configured but the candidate's years couldn't be determined. Otherwise,
+    EXPERIENCE_SCORE_FALLOFF_PER_YEAR points come off per year of shortfall (below
+    job_min_years) or excess (above job_max_years), floored at 0.
+    """
+    if job_min_years is None and job_max_years is None:
+        return EXPERIENCE_SCORE_NO_REQUIREMENT
+    if candidate_years is None:
+        return EXPERIENCE_SCORE_UNKNOWN_CANDIDATE_YEARS
+    if job_min_years is not None and candidate_years < job_min_years:
+        shortfall = job_min_years - candidate_years
+        return max(0, round(100 - shortfall * EXPERIENCE_SCORE_FALLOFF_PER_YEAR))
+    if job_max_years is not None and candidate_years > job_max_years:
+        excess = candidate_years - job_max_years
+        return max(0, round(100 - excess * EXPERIENCE_SCORE_FALLOFF_PER_YEAR))
+    return EXPERIENCE_SCORE_NO_REQUIREMENT
+
+
+def _skill_coverage(
+    candidate_skills_normalized: set[str], required_skills: Optional[list[str]]
+) -> tuple[float, list[str]]:
+    """(coverage fraction 0-1, the subset of `required_skills` the candidate is missing)
+    for one category. An empty/absent category has nothing to cover -- full coverage
+    (1.0) and no missing skills, same "absence of a requirement is not a penalty"
+    convention as location_score/certificates_score/experience_score."""
+    required = [skill for skill in (required_skills or []) if skill and skill.strip()]
+    if not required:
+        return 1.0, []
+    missing = [skill for skill in required if skill.strip().lower() not in candidate_skills_normalized]
+    matched = len(required) - len(missing)
+    return matched / len(required), missing
+
+
+def compute_skills_score(
+    candidate_skills: Optional[list[str]],
+    technical_must_have: Optional[list[str]],
+    technical_good_to_have: Optional[list[str]],
+    soft_must_have: Optional[list[str]],
+    soft_good_to_have: Optional[list[str]],
+) -> dict:
+    """Deterministic replacement for what used to be an AI-judged skill_match_pct -- a
+    SKILLS_SCORE_WEIGHTS-weighted coverage across the job's 4 categorized skill lists
+    (see app/models/job_role.py), rather than a holistic AI guess from JD prose. Matching
+    is case/whitespace-insensitive, same convention as app/screening/suitability.py's
+    _keyword_overlap_score.
+
+    Returns {"score": int, "missing_required": [str], "missing_preferred": [str]} --
+    missing_required is every unmatched must-have skill (technical or soft),
+    missing_preferred is every unmatched good-to-have skill, kept separate so Remarks
+    (Part C, see describe_screening_audit_entry) can tell a recruiter apart-severity gaps
+    rather than one flat list.
+    """
+    candidate_normalized = {skill.strip().lower() for skill in (candidate_skills or []) if skill and skill.strip()}
+
+    tech_must_coverage, tech_must_missing = _skill_coverage(candidate_normalized, technical_must_have)
+    tech_good_coverage, tech_good_missing = _skill_coverage(candidate_normalized, technical_good_to_have)
+    soft_must_coverage, soft_must_missing = _skill_coverage(candidate_normalized, soft_must_have)
+    soft_good_coverage, soft_good_missing = _skill_coverage(candidate_normalized, soft_good_to_have)
+
+    score = (
+        tech_must_coverage * SKILLS_SCORE_WEIGHTS["technical_must_have"]
+        + tech_good_coverage * SKILLS_SCORE_WEIGHTS["technical_good_to_have"]
+        + soft_must_coverage * SKILLS_SCORE_WEIGHTS["soft_must_have"]
+        + soft_good_coverage * SKILLS_SCORE_WEIGHTS["soft_good_to_have"]
+    )
+
+    return {
+        "score": round(score),
+        "missing_required": tech_must_missing + soft_must_missing,
+        "missing_preferred": tech_good_missing + soft_good_missing,
+    }
 
 
 def composite_score(result: dict) -> float:
@@ -168,6 +294,19 @@ def run_screening(db: Session, application: Application, job: JobRole, candidate
         )
         raise
 
+    candidate_years = (candidate.parsed_fields or {}).get("total_experience_years")
+    job_min_years = float(job.experience_min_years) if job.experience_min_years is not None else None
+    job_max_years = float(job.experience_max_years) if job.experience_max_years is not None else None
+    result["experience_score"] = compute_experience_score(candidate_years, job_min_years, job_max_years)
+
+    candidate_skills = (candidate.parsed_fields or {}).get("skills")
+    skills_result = compute_skills_score(
+        candidate_skills, job.technical_skills_must_have, job.technical_skills_good_to_have,
+        job.soft_skills_must_have, job.soft_skills_good_to_have,
+    )
+    result["skill_match_pct"] = skills_result["score"]
+    result["missing_skills"] = skills_result["missing_required"] + skills_result["missing_preferred"]
+
     score = composite_score(result)
     previous_status = application.status
     min_score = float(thresholds.dashboard_min_score)
@@ -193,6 +332,8 @@ def run_screening(db: Session, application: Application, job: JobRole, candidate
             "resume_matcher_score": result["match_score"],
             "composite_score": score,
             "missing_skills": result["missing_skills"],
+            "missing_required_skills": skills_result["missing_required"],
+            "missing_preferred_skills": skills_result["missing_preferred"],
             "recommendation": result["recommendation"],
             "threshold_min": min_score,
             "threshold_max": max_score,

@@ -10,6 +10,8 @@ import { Link as RouterLink, useParams } from "react-router-dom";
 
 import { ApiError, extractErrorMessage, publicApi } from "../api/client";
 import type { PublicJobRead } from "../api/types";
+import { formatExperienceRange } from "../utils/experience";
+import { categorizeSkills } from "../utils/skills";
 
 export default function CareersJobDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -64,21 +66,48 @@ export default function CareersJobDetailPage() {
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap mb={3}>
         {job.department && <Chip label={job.department} size="small" />}
         {job.location && <Chip label={job.location} size="small" variant="outlined" />}
-        {job.experience_level && <Chip label={job.experience_level} size="small" variant="outlined" />}
+        {formatExperienceRange(job.experience_min_years, job.experience_max_years) && (
+          <Chip
+            label={formatExperienceRange(job.experience_min_years, job.experience_max_years)}
+            size="small"
+            variant="outlined"
+          />
+        )}
       </Stack>
 
-      {job.skills && job.skills.length > 0 && (
-        <Box mb={3}>
-          <Typography variant="subtitle2" gutterBottom>
-            Skills
-          </Typography>
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-            {job.skills.map((skill) => (
-              <Chip key={skill} label={skill} size="small" />
-            ))}
-          </Stack>
-        </Box>
-      )}
+      {(() => {
+        const { mustHave, goodToHave } = categorizeSkills(job);
+        if (mustHave.length === 0 && goodToHave.length === 0) return null;
+        return (
+          <Box mb={3}>
+            <Typography variant="subtitle2" gutterBottom>
+              Skills
+            </Typography>
+            <Stack spacing={1}>
+              {mustHave.length > 0 && (
+                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
+                  <Typography variant="caption" color="text.secondary">
+                    Required:
+                  </Typography>
+                  {mustHave.map((skill) => (
+                    <Chip key={`must-${skill}`} label={skill} size="small" />
+                  ))}
+                </Stack>
+              )}
+              {goodToHave.length > 0 && (
+                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
+                  <Typography variant="caption" color="text.secondary">
+                    Nice to have:
+                  </Typography>
+                  {goodToHave.map((skill) => (
+                    <Chip key={`good-${skill}`} label={skill} size="small" variant="outlined" />
+                  ))}
+                </Stack>
+              )}
+            </Stack>
+          </Box>
+        );
+      })()}
 
       {job.jd_text && (
         <Box mb={4}>

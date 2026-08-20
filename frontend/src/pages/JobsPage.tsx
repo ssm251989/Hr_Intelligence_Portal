@@ -53,6 +53,7 @@ import StatusChip from "../components/StatusChip";
 import TopPerformingJobs from "../components/TopPerformingJobs";
 import { downloadCsv } from "../utils/csv";
 import { getDepartmentIcon } from "../utils/departmentIcons";
+import { formatExperienceRange } from "../utils/experience";
 import { ROLE_MATRIX } from "../auth/roles";
 
 const ROWS_PER_PAGE_OPTIONS = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
@@ -354,12 +355,21 @@ export default function JobsPage() {
   const handleExportCsv = () => {
     downloadCsv(
       "jobs.csv",
-      ["Title", "Department", "Location", "Experience Level", "Status", "Positions", "Salary Min", "Salary Max", "Created At"],
+      [
+        "Title", "Department", "Location", "Experience Level",
+        "Technical Skills (Must Have)", "Technical Skills (Good to Have)",
+        "Soft Skills (Must Have)", "Soft Skills (Good to Have)",
+        "Status", "Positions", "Salary Min", "Salary Max", "Created At",
+      ],
       visibleJobs.map((job) => [
         job.title,
         job.department,
         job.location,
-        job.experience_level,
+        formatExperienceRange(job.experience_min_years, job.experience_max_years),
+        (job.technical_skills_must_have || []).join(", "),
+        (job.technical_skills_good_to_have || []).join(", "),
+        (job.soft_skills_must_have || []).join(", "),
+        (job.soft_skills_good_to_have || []).join(", "),
         job.status,
         job.positions_count,
         job.salary_band_min,
