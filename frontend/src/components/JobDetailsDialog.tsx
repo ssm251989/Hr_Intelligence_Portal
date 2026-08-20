@@ -46,6 +46,11 @@ export default function JobDetailsDialog({
                 .filter(Boolean)
                 .join(" · ") || "No details set"}
             </Typography>
+            {(job.education_degree_level || job.education_field) && (
+              <Typography variant="body2" color="text.secondary">
+                Education: {[job.education_degree_level, job.education_field].filter(Boolean).join(" in ")}
+              </Typography>
+            )}
 
             <Divider />
 
@@ -89,6 +94,22 @@ export default function JobDetailsDialog({
               );
             })()}
 
+            {job.preferred_certifications && job.preferred_certifications.length > 0 && (
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
+                <Typography variant="caption" color="text.secondary">
+                  Preferred Certifications:
+                </Typography>
+                {job.preferred_certifications.map((cert) => (
+                  <Chip key={cert} label={cert} size="small" variant="outlined" />
+                ))}
+              </Stack>
+            )}
+
+            {job.key_responsibilities && (
+              <Typography variant="body2" color="text.secondary">
+                Key Responsibilities: {job.key_responsibilities}
+              </Typography>
+            )}
             {job.benefits && (
               <Typography variant="body2" color="text.secondary">
                 Benefits: {job.benefits}

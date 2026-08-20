@@ -1,6 +1,8 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from app.ai_services.jd_generator import JDGenerationError
 from app.core.crypto import encrypt
 from app.integrations.linkedin import LinkedInError
@@ -110,6 +112,8 @@ def test_generate_job_description_passes_full_role_inputs(client, db_session, mo
             "experience_required": "x",
             "compensation_and_benefits": "Salary: 1500000-2200000. Benefits: Health insurance, WFH stipend.",
             "additional_notes_section": "Team is fully remote-first",
+            "education_requirement": "Bachelor's degree in Computer Science or related field",
+            "preferred_certifications_section": "PMP, AWS Certified Solutions Architect",
         }
 
     monkeypatch.setattr("app.jobs.router.generate_jd", fake_generate_jd)
@@ -128,6 +132,10 @@ def test_generate_job_description_passes_full_role_inputs(client, db_session, mo
         salary_band_max=2200000,
         benefits="Health insurance, WFH stipend",
         additional_notes="Team is fully remote-first",
+        key_responsibilities="Own backend services end-to-end and mentor junior engineers.",
+        education_degree_level="Bachelor's",
+        education_field="Computer Science",
+        preferred_certifications=["PMP", "AWS Certified Solutions Architect"],
     )
 
     response = client.post(f"/jobs/{job.id}/generate-jd")
@@ -143,6 +151,10 @@ def test_generate_job_description_passes_full_role_inputs(client, db_session, mo
     assert captured["salary_band_max"] == 2200000
     assert captured["benefits"] == "Health insurance, WFH stipend"
     assert captured["additional_notes"] == "Team is fully remote-first"
+    assert captured["key_responsibilities"] == "Own backend services end-to-end and mentor junior engineers."
+    assert captured["education_degree_level"] == "Bachelor's"
+    assert captured["education_field"] == "Computer Science"
+    assert captured["preferred_certifications"] == ["PMP", "AWS Certified Solutions Architect"]
 
     # The AI's compensation/notes output must actually make it into the rendered
     # jd_text -- passing the inputs to the model isn't enough if the render step
@@ -152,6 +164,10 @@ def test_generate_job_description_passes_full_role_inputs(client, db_session, mo
     assert "Health insurance, WFH stipend" in jd_text
     assert "Additional Notes:" in jd_text
     assert "Team is fully remote-first" in jd_text
+    assert "Education:" in jd_text
+    assert "Bachelor's degree in Computer Science or related field" in jd_text
+    assert "Preferred Certifications:" in jd_text
+    assert "PMP, AWS Certified Solutions Architect" in jd_text
 
 
 def test_generate_job_description_omits_compensation_section_when_not_provided(
@@ -181,6 +197,8 @@ def test_generate_job_description_omits_compensation_section_when_not_provided(
     jd_text = response.json()["jd_text"]
     assert "Compensation & Benefits:" not in jd_text
     assert "Additional Notes:" not in jd_text
+    assert "Education:" not in jd_text
+    assert "Preferred Certifications:" not in jd_text
 
 
 def test_generate_job_description_not_found(client):
@@ -565,7 +583,7 @@ def test_field_suggestions_returns_distinct_deduped_sorted_values(client, db_ses
         db_session, department="Engineering", location="Remote",
         soft_skills_must_have=["AWS"],
     )
-    _make_job(db_session, department=None, location=None)
+    _make_job(db_session, department=None, location=None, preferred_certifications=["PMP", "CPA"])
 
     after = client.get("/jobs/field-suggestions").json()
 
@@ -575,6 +593,7 @@ def test_field_suggestions_returns_distinct_deduped_sorted_values(client, db_ses
     assert {"Engineering"}.issubset(set(after["departments"]))
     assert {"Chennai", "Remote"}.issubset(set(after["locations"]))
     assert {"Python", "SQL", "AWS"}.issubset(set(after["skills"]))
+    assert {"PMP", "CPA"}.issubset(set(after["certifications"]))
     # Deduped -- "Engineering" appears on two jobs above but only once in the response.
     assert after["departments"].count("Engineering") == 1
     assert after["departments"] == sorted(after["departments"])
@@ -585,7 +604,7 @@ def test_field_suggestions_route_not_shadowed_by_job_id_route(client):
     # "field-suggestions" as a job_id UUID on the /jobs/{job_id} route.
     response = client.get("/jobs/field-suggestions")
     assert response.status_code == 200
-    assert set(response.json().keys()) == {"departments", "locations", "skills"}
+    assert set(response.json().keys()) == {"departments", "locations", "skills", "certifications"}
 
 
 # --- application deadline enforcement (lazy, on read) ---
@@ -950,6 +969,72 @@ def test_update_job_rejects_a_skill_in_two_categories(client, db_session):
         json={"technical_skills_must_have": ["Python"], "technical_skills_good_to_have": ["Python"]},
     )
     assert response.status_code == 422
+
+
+# --- key_responsibilities / education / preferred_certifications: validation ------
+
+
+def test_create_job_with_responsibilities_education_and_certifications(client):
+    response = client.post(
+        "/jobs",
+        json={
+            "title": "Senior Backend Engineer",
+            "key_responsibilities": "Own backend services end-to-end and mentor junior engineers.",
+            "education_degree_level": "Bachelor's",
+            "education_field": "Computer Science",
+            "preferred_certifications": ["PMP", "AWS Certified Solutions Architect"],
+        },
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["key_responsibilities"] == "Own backend services end-to-end and mentor junior engineers."
+    assert body["education_degree_level"] == "Bachelor's"
+    assert body["education_field"] == "Computer Science"
+    assert body["preferred_certifications"] == ["PMP", "AWS Certified Solutions Architect"]
+
+
+def test_create_job_without_responsibilities_education_or_certifications_defaults_to_null(client):
+    # All three are optional -- a job with none of them configured must not error and
+    # must not silently default to an empty list/string that would then render oddly.
+    response = client.post("/jobs", json={"title": "Bare Bones Role"})
+    assert response.status_code == 201
+    body = response.json()
+    assert body["key_responsibilities"] is None
+    assert body["education_degree_level"] is None
+    assert body["education_field"] is None
+    assert body["preferred_certifications"] is None
+
+
+def test_update_job_sets_education_and_certifications(client, db_session):
+    job = _make_job(db_session)
+    response = client.patch(
+        f"/jobs/{job.id}",
+        json={
+            "education_degree_level": "Master's",
+            "education_field": "Data Science",
+            "preferred_certifications": ["CPA"],
+            "key_responsibilities": "Lead the analytics roadmap.",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["education_degree_level"] == "Master's"
+    assert body["education_field"] == "Data Science"
+    assert body["preferred_certifications"] == ["CPA"]
+    assert body["key_responsibilities"] == "Lead the analytics roadmap."
+
+
+def test_education_degree_level_rejects_a_value_outside_the_allowed_list_at_the_db_level(db_session):
+    # No Pydantic-level enum validation for education_degree_level, same convention as
+    # job_type -- the DB CheckConstraint (job_role.py's EDUCATION_DEGREE_LEVELS) is the
+    # one source of truth, so this is exercised directly against the DB session rather
+    # than through the API.
+    from sqlalchemy.exc import IntegrityError
+
+    job = JobRole(title="Bad Degree Role", education_degree_level="Associate's")
+    db_session.add(job)
+    with pytest.raises(IntegrityError):
+        db_session.commit()
 
 
 # --- per-job table stats: application_count / applications_pct_change / avg_time_to_hire_days

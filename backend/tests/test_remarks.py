@@ -32,16 +32,16 @@ def _make_application(db_session, job, candidate, status="received", **kwargs) -
 
 
 def _fake_result(**overrides) -> dict:
-    # No "experience_score"/"skill_match_pct"/"missing_skills" keys -- match_resume no
-    # longer produces any of these; run_screening computes them itself (see
-    # compute_experience_score/compute_skills_score), and these tests' jobs/candidates
-    # carry no experience_min_years/max_years/total_experience_years or skill categories
-    # unless a test deliberately configures them, which both compute functions treat as
-    # "no requirement configured" -> a fixed 100 each.
+    # No "experience_score"/"skill_match_pct"/"missing_skills"/"certificates_score" keys
+    # -- match_resume no longer produces any of these; run_screening computes them
+    # itself (see compute_experience_score/compute_skills_score/
+    # compute_certificates_score), and these tests' jobs/candidates carry no
+    # experience_min_years/max_years/total_experience_years, skill categories, or
+    # preferred_certifications unless a test deliberately configures them, which all
+    # three compute functions treat as "no requirement configured" -> a fixed 100 each.
     result = {
         "match_score": 80,
         "location_score": 80,
-        "certificates_score": 80,
         "recommendation": "strong_fit",
     }
     result.update(overrides)
@@ -221,7 +221,7 @@ def test_unscreened_application_has_null_remarks(client, db_session):
 
 def test_scored_application_shows_remarks_derived_from_the_real_audit_log_entry(client, db_session, monkeypatch):
     monkeypatch.setattr("app.screening.service.match_resume", lambda *a, **k: _fake_result(
-        match_score=90, location_score=90, certificates_score=90, recommendation="strong_fit",
+        match_score=90, location_score=90, recommendation="strong_fit",
     ))
     job = _make_job(db_session, technical_skills_good_to_have=["Docker"])
     candidate = _make_candidate(db_session, email=f"remarks-{uuid.uuid4().hex[:8]}@example.com")
@@ -242,8 +242,9 @@ def test_scored_application_shows_remarks_derived_from_the_real_audit_log_entry(
     row = response.json()["items"][0]
     assert row["remarks"] == expected
     # skill_match_pct = 100 - 20 (the one technical_skills_good_to_have entry, "Docker",
-    # missed) = 80. Composite = (80_skills + 100_experience + 90*3 AI-scored factors) / 5.
-    assert row["remarks"] == "Strong fit (score 90) -- missing preferred: Docker"
+    # missed) = 80. Composite = (80_skills + 100_experience + 100_certificates + 90 + 90
+    # -- the two AI-scored factors) / 5 = 92.
+    assert row["remarks"] == "Strong fit (score 92) -- missing preferred: Docker"
 
 
 def test_failed_screening_shows_remarks_even_though_application_stays_received(client, db_session, monkeypatch):
@@ -277,21 +278,21 @@ def test_remarks_reflects_the_latest_screening_entry_not_the_first(client, db_se
     application = _make_application(db_session, job, candidate)
 
     monkeypatch.setattr("app.screening.service.match_resume", lambda *a, **k: _fake_result(
-        match_score=20, location_score=20, certificates_score=20, recommendation="weak_fit",
+        match_score=20, location_score=20, recommendation="weak_fit",
     ))
     screening_service.run_screening(db_session, application, job, candidate, "system")
 
     monkeypatch.setattr("app.screening.service.match_resume", lambda *a, **k: _fake_result(
-        match_score=95, location_score=95, certificates_score=95, recommendation="strong_fit",
+        match_score=95, location_score=95, recommendation="strong_fit",
     ))
     screening_service.run_screening(db_session, application, job, candidate, "system")
 
     response = client.get("/candidates/applications", params={"search": candidate.email, "page_size": 50})
     row = response.json()["items"][0]
-    # (95 * 3 AI-scored factors + 100 + 100, the deterministic experience_score/
-    # skill_match_pct for a job with no experience range or skill categories
-    # configured) / 5 = 97.
-    assert row["remarks"] == "Strong fit (score 97)"
+    # (95 * 2 AI-scored factors + 100 + 100 + 100, the deterministic experience_score/
+    # skill_match_pct/certificates_score for a job with no experience range, skill
+    # categories, or preferred_certifications configured) / 5 = 98.
+    assert row["remarks"] == "Strong fit (score 98)"
 
 
 def test_remarks_appear_on_export_endpoint_too(client, db_session, monkeypatch):
@@ -303,10 +304,10 @@ def test_remarks_appear_on_export_endpoint_too(client, db_session, monkeypatch):
 
     response = client.get("/candidates/applications/export", params={"application_ids": [str(application.id)]})
     assert response.status_code == 200
-    # (80 * 3 AI-scored factors + 100 + 100, the deterministic experience_score/
-    # skill_match_pct for a job with no experience range or skill categories
-    # configured) / 5 = 88.
-    assert response.json()[0]["remarks"] == "Strong fit (score 88)"
+    # (80 * 2 AI-scored factors + 100 + 100 + 100, the deterministic experience_score/
+    # skill_match_pct/certificates_score for a job with no experience range, skill
+    # categories, or preferred_certifications configured) / 5 = 92.
+    assert response.json()[0]["remarks"] == "Strong fit (score 92)"
 
 
 def test_missing_skills_remain_in_remarks_alongside_the_new_composite_score_field(client, db_session, monkeypatch):
@@ -317,7 +318,7 @@ def test_missing_skills_remain_in_remarks_alongside_the_new_composite_score_fiel
     # asserted as genuinely distinct numbers here specifically so a future change that
     # collapses them back into one field wouldn't hide a regression in either.
     monkeypatch.setattr("app.screening.service.match_resume", lambda *a, **k: _fake_result(
-        match_score=70, location_score=100, certificates_score=100, recommendation="strong_fit",
+        match_score=70, location_score=100, recommendation="strong_fit",
     ))
     job = _make_job(
         db_session, technical_skills_must_have=["Kubernetes"], technical_skills_good_to_have=["Terraform"],
@@ -344,7 +345,7 @@ def test_no_missing_skills_still_omits_the_suffix_alongside_the_new_composite_sc
     # still get no "-- missing ..." suffix, even though the row now also carries a distinct
     # composite_score field.
     monkeypatch.setattr("app.screening.service.match_resume", lambda *a, **k: _fake_result(
-        match_score=88, location_score=90, certificates_score=90, recommendation="strong_fit",
+        match_score=88, location_score=90, recommendation="strong_fit",
     ))
     job = _make_job(db_session, technical_skills_must_have=["Python"])
     candidate = _make_candidate(
@@ -358,10 +359,11 @@ def test_no_missing_skills_still_omits_the_suffix_alongside_the_new_composite_sc
     row = response.json()["items"][0]
 
     # The candidate's own skills fully cover technical_skills_must_have -> skill_match_pct
-    # 100. (100_skills + 100_experience + 88 + 90 + 90 -- three AI-scored factors) / 5 = 93.6.
-    assert row["remarks"] == "Strong fit (score 94)"
+    # 100. (100_skills + 100_experience + 100_certificates + 88 + 90 -- the two
+    # AI-scored factors) / 5 = 95.6.
+    assert row["remarks"] == "Strong fit (score 96)"
     assert "missing" not in row["remarks"]
-    assert row["composite_score"] == 93.6
+    assert row["composite_score"] == 95.6
 
 
 def test_remarks_appear_on_dashboard_recent_candidates(client, db_session, monkeypatch):
@@ -377,7 +379,7 @@ def test_remarks_appear_on_dashboard_recent_candidates(client, db_session, monke
     # recent_candidates is capped to the latest 8 applications system-wide -- may have
     # scrolled off in a busy shared dev DB; only assert the shape when actually present.
     if matching:
-        # (80 * 3 AI-scored factors + 100 + 100, the deterministic experience_score/
-        # skill_match_pct for a job with no experience range or skill categories
-        # configured) / 5 = 88.
-        assert matching[0]["remarks"] == "Strong fit (score 88)"
+        # (80 * 2 AI-scored factors + 100 + 100 + 100, the deterministic experience_score/
+        # skill_match_pct/certificates_score for a job with no experience range, skill
+        # categories, or preferred_certifications configured) / 5 = 92.
+        assert matching[0]["remarks"] == "Strong fit (score 92)"

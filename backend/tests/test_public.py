@@ -77,7 +77,8 @@ def test_list_public_jobs_excludes_internal_fields(anonymous_client, db_session)
     assert set(body.keys()) == {
         "id", "title", "department", "location", "experience_min_years", "experience_max_years",
         "technical_skills_must_have", "technical_skills_good_to_have",
-        "soft_skills_must_have", "soft_skills_good_to_have", "jd_text",
+        "soft_skills_must_have", "soft_skills_good_to_have",
+        "education_degree_level", "education_field", "preferred_certifications", "jd_text",
     }
     assert "salary_band_min" not in body
     assert "salary_band_max" not in body

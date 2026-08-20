@@ -17,6 +17,9 @@ class PublicJobRead(BaseModel):
     technical_skills_good_to_have: Optional[list[str]] = None
     soft_skills_must_have: Optional[list[str]] = None
     soft_skills_good_to_have: Optional[list[str]] = None
+    education_degree_level: Optional[str] = None
+    education_field: Optional[str] = None
+    preferred_certifications: Optional[list[str]] = None
     jd_text: Optional[str] = None
 
 

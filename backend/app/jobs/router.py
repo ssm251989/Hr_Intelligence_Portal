@@ -66,9 +66,16 @@ def _render_jd_text(jd: dict) -> str:
         "",
         f"Experience required: {jd['experience_required']}",
     ]
-    # Both are optional (None) whenever the corresponding role inputs -- salary
-    # band/benefits, additional notes -- weren't provided; the model is instructed
-    # not to fabricate either, so a section only appears when there's real content.
+    # All three below are optional (None) whenever the corresponding role inputs --
+    # education requirement, preferred certifications, salary band/benefits, additional
+    # notes -- weren't provided; the model is instructed not to fabricate any of them, so
+    # a section only appears when there's real content.
+    education_requirement = jd.get("education_requirement")
+    if education_requirement:
+        sections += ["", "Education:", education_requirement]
+    preferred_certifications_section = jd.get("preferred_certifications_section")
+    if preferred_certifications_section:
+        sections += ["", "Preferred Certifications:", preferred_certifications_section]
     compensation = jd.get("compensation_and_benefits")
     if compensation:
         sections += ["", "Compensation & Benefits:", compensation]
@@ -134,7 +141,16 @@ def get_job_field_suggestions(
             if row:
                 skills.update(row)
 
-    return JobFieldSuggestionsResponse(departments=departments, locations=locations, skills=sorted(skills))
+    certifications = {
+        cert
+        for (row,) in db.query(JobRole.preferred_certifications).filter(JobRole.preferred_certifications.isnot(None)).all()
+        if row
+        for cert in row
+    }
+
+    return JobFieldSuggestionsResponse(
+        departments=departments, locations=locations, skills=sorted(skills), certifications=sorted(certifications),
+    )
 
 
 @router.get("/{job_id}", response_model=JobRoleRead)
@@ -215,6 +231,10 @@ def generate_job_description(
                 "technical_skills_good_to_have": job.technical_skills_good_to_have,
                 "soft_skills_must_have": job.soft_skills_must_have,
                 "soft_skills_good_to_have": job.soft_skills_good_to_have,
+                "key_responsibilities": job.key_responsibilities,
+                "education_degree_level": job.education_degree_level,
+                "education_field": job.education_field,
+                "preferred_certifications": job.preferred_certifications,
                 "salary_band_min": job.salary_band_min,
                 "salary_band_max": job.salary_band_max,
                 "benefits": job.benefits,

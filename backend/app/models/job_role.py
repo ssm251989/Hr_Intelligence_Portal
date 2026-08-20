@@ -5,6 +5,7 @@ from app.core.database import Base
 
 JOB_ROLE_STATUSES = ("draft", "ready_for_publishing", "published", "closed", "on_hold")
 JOB_TYPES = ("Full-time", "Part-time", "Contract")
+EDUCATION_DEGREE_LEVELS = ("Any", "Bachelor's", "Master's", "PhD", "Diploma")
 
 
 class JobRole(Base):
@@ -18,6 +19,12 @@ class JobRole(Base):
             "job_type IN (" + ",".join(f"'{t}'" for t in JOB_TYPES) + ")",
             name="job_roles_job_type_check",
         ),
+        CheckConstraint(
+            "education_degree_level IN ("
+            + ",".join(f"'{level.replace(chr(39), chr(39) * 2)}'" for level in EDUCATION_DEGREE_LEVELS)
+            + ") OR education_degree_level IS NULL",
+            name="job_roles_education_degree_level_check",
+        ),
     )
 
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
@@ -30,6 +37,10 @@ class JobRole(Base):
     technical_skills_good_to_have = Column(JSONB)
     soft_skills_must_have = Column(JSONB)
     soft_skills_good_to_have = Column(JSONB)
+    key_responsibilities = Column(Text)
+    education_degree_level = Column(String(50))
+    education_field = Column(String(255))
+    preferred_certifications = Column(JSONB)
     salary_band_min = Column(Numeric)
     salary_band_max = Column(Numeric)
     hiring_manager_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))

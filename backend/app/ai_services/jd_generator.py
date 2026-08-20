@@ -23,7 +23,19 @@ SYSTEM_PROMPT = (
     "'Clear written communication', not restated as personality traits); "
     "'nice_to_have' must be built the same way from the good-to-have technical and "
     "good-to-have soft skills. Never move a skill from one bucket to the other, and "
-    "never invent a skill that wasn't given in either bucket."
+    "never invent a skill that wasn't given in either bucket.\n\n"
+    "If key_responsibilities is given, treat it as a strong starting point and anchor "
+    "for the 'responsibilities' output: expand/rephrase/reformat it into clear list "
+    "items rather than inventing a different set of responsibilities from scratch, and "
+    "never drop or contradict anything it says. If it is not given, generate typical "
+    "responsibilities for the role yourself, as before. If an education requirement "
+    "(degree level and/or field) is given, write an 'education_requirement' section "
+    "stating it plainly (e.g. \"Bachelor's degree in Computer Science or related "
+    "field\"); if preferred_certifications is given, write a "
+    "'preferred_certifications_section' listing them. Leave either field null, exactly "
+    "like compensation_and_benefits/additional_notes_section, if the corresponding "
+    "input was not provided -- never invent an education requirement or a "
+    "certification that wasn't given."
 )
 
 _client: Anthropic | None = None
@@ -40,6 +52,8 @@ class JDOutput(BaseModel):
     required_skills: list[str]
     nice_to_have: list[str]
     experience_required: str
+    education_requirement: str | None = None
+    preferred_certifications_section: str | None = None
     compensation_and_benefits: str | None = None
     additional_notes_section: str | None = None
 
@@ -77,6 +91,11 @@ def _build_user_prompt(inputs: dict) -> str:
         f"Technical skills (good-to-have): {inputs.get('technical_skills_good_to_have')}\n"
         f"Soft skills (must-have): {inputs.get('soft_skills_must_have')}\n"
         f"Soft skills (good-to-have): {inputs.get('soft_skills_good_to_have')}\n"
+        f"Key responsibilities (use as a strong starting point, not a suggestion to "
+        f"ignore): {inputs.get('key_responsibilities')}\n"
+        f"Education requirement: {inputs.get('education_degree_level')} "
+        f"{inputs.get('education_field') or ''}\n"
+        f"Preferred certifications: {inputs.get('preferred_certifications')}\n"
         f"Salary band: {inputs.get('salary_band_min')}-{inputs.get('salary_band_max')}\n"
         f"Benefits: {inputs.get('benefits')}\n"
         f"Additional notes: {inputs.get('additional_notes')}"

@@ -72,6 +72,13 @@ export default function CareersListPage() {
                             variant="outlined"
                           />
                         )}
+                        {(job.education_degree_level || job.education_field) && (
+                          <Chip
+                            label={[job.education_degree_level, job.education_field].filter(Boolean).join(" in ")}
+                            size="small"
+                            variant="outlined"
+                          />
+                        )}
                       </Stack>
                       {mustHave.length > 0 && (
                         <Typography variant="body2" color="text.secondary">

@@ -45,16 +45,16 @@ def _make_candidate(db_session, parsed_fields=None, **kwargs) -> Candidate:
 
 
 def _fake_result(**overrides) -> dict:
-    # No "experience_score"/"skill_match_pct"/"missing_skills" keys -- match_resume no
-    # longer produces any of these; suitability.py computes them itself (see
-    # compute_experience_score/compute_skills_score) and overwrites these keys, and these
-    # jobs/candidates carry no experience_min_years/max_years/total_experience_years
-    # unless a test deliberately configures them, which compute_experience_score treats
-    # as "no requirement configured" -> a fixed 100.
+    # No "experience_score"/"skill_match_pct"/"missing_skills"/"certificates_score" keys
+    # -- match_resume no longer produces any of these; suitability.py computes them
+    # itself (see compute_experience_score/compute_skills_score/
+    # compute_certificates_score) and overwrites these keys, and these jobs/candidates
+    # carry no experience_min_years/max_years/total_experience_years or
+    # preferred_certifications unless a test deliberately configures them, which all
+    # three compute functions treat as "no requirement configured" -> a fixed 100.
     result = {
         "match_score": 80,
         "location_score": 80,
-        "certificates_score": 80,
         "recommendation": "strong_fit",
     }
     result.update(overrides)
@@ -188,8 +188,8 @@ def test_attempt_auto_suggest_picks_highest_scoring_job_among_considered(db_sess
 
     def fake_match_resume(jd_text, *args, **kwargs):
         if jd_text == strong_jd:
-            return _fake_result(match_score=95, location_score=95, certificates_score=95)
-        return _fake_result(match_score=20, location_score=20, certificates_score=20)
+            return _fake_result(match_score=95, location_score=95)
+        return _fake_result(match_score=20, location_score=20)
 
     monkeypatch.setattr(suitability, "match_resume", fake_match_resume)
     candidate = _make_candidate(db_session, parsed_fields={"skills": [skill]})
@@ -199,10 +199,33 @@ def test_attempt_auto_suggest_picks_highest_scoring_job_among_considered(db_sess
     assert outcome is not None
     assert outcome.suitable_job_id == strong_job.id
     # Candidate's skill fully covers each job's technical_skills_must_have=[skill] ->
-    # skill_match_pct 100 for both. (95 * 3 AI-scored factors + 100_experience +
-    # 100_skills) / 5 = 97.
-    assert float(outcome.suitable_job_score) == 97.0
+    # skill_match_pct 100 for both, and neither job configures preferred_certifications
+    # -> certificates_score 100 too. (95 * 2 AI-scored factors + 100_experience +
+    # 100_skills + 100_certificates) / 5 = 98.
+    assert float(outcome.suitable_job_score) == 98.0
     assert weak_job.id != outcome.suitable_job_id
+
+
+def test_attempt_auto_suggest_uses_real_preferred_certifications(db_session, monkeypatch):
+    # Regression coverage for a real bug this change would otherwise have reintroduced:
+    # composite_score() requires a "certificates_score" key, and match_resume no longer
+    # provides one -- attempt_auto_suggest_suitable_job must set it itself (via
+    # compute_certificates_score) before scoring, the same way it already does for
+    # experience_score/skill_match_pct.
+    skill = _unique_skill()
+    job = _make_job(db_session, skills=[skill], preferred_certifications=["PMP", "CPA"])
+    monkeypatch.setattr(suitability, "match_resume", lambda *a, **k: _fake_result())
+    candidate = _make_candidate(
+        db_session, parsed_fields={"skills": [skill], "certificates": ["PMP"]}
+    )
+
+    outcome = suitability.attempt_auto_suggest_suitable_job(db_session, candidate)
+
+    assert outcome is not None
+    assert outcome.suitable_job_id == job.id
+    # 1 of 2 preferred certifications held -> certificates_score 50. (100_skills +
+    # 100_experience + 50_certificates + 80 + 80 -- the two AI-scored factors) / 5 = 82.
+    assert float(outcome.suitable_job_score) == 82.0
 
 
 def test_attempt_auto_suggest_never_touches_any_application(db_session, monkeypatch):
@@ -345,8 +368,9 @@ def test_candidates_list_and_dashboard_expose_suitable_job_fields(client, db_ses
     assert row["suitable_job_id"] == str(job.id)
     assert row["suitable_job_title"] == "Suggested Job"
     # Candidate's skill fully covers the job's technical_skills_must_have -> skill_match_pct
-    # 100. (80 * 3 AI-scored factors + 100_experience + 100_skills) / 5 = 88.
-    assert row["suitable_job_score"] == 88.0
+    # 100, and the job configures no preferred_certifications -> certificates_score 100.
+    # (80 * 2 AI-scored factors + 100_experience + 100_skills + 100_certificates) / 5 = 92.
+    assert row["suitable_job_score"] == 92.0
     # Never the applied-for job's id/title -- that stays job_role_id/job_title above.
     assert row["job_role_id"] == str(other_job.id)
 

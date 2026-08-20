@@ -48,18 +48,19 @@ def _make_docx_bytes(text: str) -> bytes:
 
 
 def _fake_result(**overrides) -> dict:
-    # No "experience_score"/"skill_match_pct"/"missing_skills" keys -- match_resume (the
-    # AI call) no longer produces any of these; run_screening computes them itself via
-    # compute_experience_score/compute_skills_score and overwrites whatever's in `result`
-    # for those keys, so these tests' jobs/candidates deliberately carry no
-    # experience_min_years/max_years/total_experience_years or skill categories, which
-    # both compute functions treat as "no requirement configured" -> a fixed 100 (see
-    # test_compute_experience_score_*/test_compute_skills_score_* below for the cases
-    # that actually vary these inputs).
+    # No "experience_score"/"skill_match_pct"/"missing_skills"/"certificates_score" keys
+    # -- match_resume (the AI call) no longer produces any of these; run_screening
+    # computes them itself via compute_experience_score/compute_skills_score/
+    # compute_certificates_score and overwrites whatever's in `result` for those keys, so
+    # these tests' jobs/candidates deliberately carry no experience_min_years/max_years/
+    # total_experience_years, skill categories, or preferred_certifications, which all
+    # three compute functions treat as "no requirement configured" -> a fixed 100 (see
+    # test_compute_experience_score_*/test_compute_skills_score_*/
+    # test_compute_certificates_score_* below for the cases that actually vary these
+    # inputs).
     result = {
         "match_score": 80,
         "location_score": 80,
-        "certificates_score": 80,
         "recommendation": "strong_fit",
     }
     result.update(overrides)
@@ -227,13 +228,61 @@ def test_compute_skills_score_missing_required_combines_technical_and_soft_must_
     assert set(result["missing_required"]) == {"Python", "Communication"}
 
 
+# --- compute_certificates_score: deterministic replacement for the old AI-judged certificates_score ---
+
+
+def test_compute_certificates_score_no_certifications_configured_is_full_score():
+    # No preferred_certifications at all -- same "absence of a requirement is not a
+    # penalty" convention as location_score/experience_score/skill_match_pct.
+    result = screening_service.compute_certificates_score(["PMP"], None)
+    assert result["score"] == 100
+    assert result["missing"] == []
+    assert screening_service.compute_certificates_score(None, None) == {"score": 100, "missing": []}
+
+
+def test_compute_certificates_score_full_coverage_is_100():
+    result = screening_service.compute_certificates_score(
+        ["AWS Certified Solutions Architect", "PMP"], ["PMP"]
+    )
+    assert result["score"] == 100
+    assert result["missing"] == []
+
+
+def test_compute_certificates_score_partial_coverage_is_scaled_fraction():
+    # Candidate holds 1 of 2 preferred certifications -> 50% coverage.
+    result = screening_service.compute_certificates_score(["PMP"], ["PMP", "CPA"])
+    assert result["score"] == 50
+    assert result["missing"] == ["CPA"]
+
+
+def test_compute_certificates_score_zero_coverage_when_candidate_has_none_of_them():
+    result = screening_service.compute_certificates_score([], ["PMP", "CPA"])
+    assert result["score"] == 0
+    assert set(result["missing"]) == {"PMP", "CPA"}
+
+
+def test_compute_certificates_score_zero_coverage_when_candidate_certificates_is_none():
+    # The candidate's resume was parsed but held no certificates section at all --
+    # distinct from an empty list only in how resume_parser.py might represent it, same
+    # treatment either way.
+    result = screening_service.compute_certificates_score(None, ["PMP"])
+    assert result["score"] == 0
+    assert result["missing"] == ["PMP"]
+
+
+def test_compute_certificates_score_matching_is_case_and_whitespace_insensitive():
+    result = screening_service.compute_certificates_score(["  pmp  "], ["PMP"])
+    assert result["score"] == 100
+    assert result["missing"] == []
+
+
 # --- run_screening: the deterministic experience_score actually feeds the composite ---
 
 
 def test_run_screening_uses_real_experience_range_against_candidate_years(db_session, monkeypatch):
     monkeypatch.setattr(
         "app.screening.service.match_resume",
-        lambda *a, **k: _fake_result(match_score=100, location_score=100, certificates_score=100),
+        lambda *a, **k: _fake_result(match_score=100, location_score=100),
     )
     job = _make_job(db_session, experience_min_years=3, experience_max_years=5)
     candidate = _make_candidate(db_session, parsed_fields={"skills": ["Python"], "total_experience_years": 4})
@@ -255,7 +304,7 @@ def test_run_screening_uses_real_experience_range_against_candidate_years(db_ses
 def test_run_screening_penalizes_candidate_below_the_jobs_min_years(db_session, monkeypatch):
     monkeypatch.setattr(
         "app.screening.service.match_resume",
-        lambda *a, **k: _fake_result(match_score=100, location_score=100, certificates_score=100),
+        lambda *a, **k: _fake_result(match_score=100, location_score=100),
     )
     job = _make_job(db_session, experience_min_years=5, experience_max_years=8)
     candidate = _make_candidate(db_session, parsed_fields={"skills": ["Python"], "total_experience_years": 3})
@@ -276,7 +325,7 @@ def test_run_screening_penalizes_candidate_below_the_jobs_min_years(db_session, 
 def test_run_screening_neutral_score_when_candidate_years_unparsed_but_job_has_a_range(db_session, monkeypatch):
     monkeypatch.setattr(
         "app.screening.service.match_resume",
-        lambda *a, **k: _fake_result(match_score=100, location_score=100, certificates_score=100),
+        lambda *a, **k: _fake_result(match_score=100, location_score=100),
     )
     job = _make_job(db_session, experience_min_years=3, experience_max_years=5)
     candidate = _make_candidate(db_session, parsed_fields={"skills": ["Python"]})  # no total_experience_years
@@ -300,7 +349,7 @@ def test_run_screening_neutral_score_when_candidate_years_unparsed_but_job_has_a
 def test_run_screening_uses_real_skill_categories_against_candidate_skills(db_session, monkeypatch):
     monkeypatch.setattr(
         "app.screening.service.match_resume",
-        lambda *a, **k: _fake_result(match_score=100, location_score=100, certificates_score=100),
+        lambda *a, **k: _fake_result(match_score=100, location_score=100),
     )
     job = _make_job(
         db_session, technical_skills_must_have=["Python"], technical_skills_good_to_have=["Kubernetes"],
@@ -329,7 +378,7 @@ def test_run_screening_uses_real_skill_categories_against_candidate_skills(db_se
 def test_run_screening_missing_required_skills_recorded_distinctly_from_preferred(db_session, monkeypatch):
     monkeypatch.setattr(
         "app.screening.service.match_resume",
-        lambda *a, **k: _fake_result(match_score=100, location_score=100, certificates_score=100),
+        lambda *a, **k: _fake_result(match_score=100, location_score=100),
     )
     job = _make_job(
         db_session, technical_skills_must_have=["Python", "SQL"], technical_skills_good_to_have=["Docker"],
@@ -349,6 +398,34 @@ def test_run_screening_missing_required_skills_recorded_distinctly_from_preferre
     # missing_skills (the flat, backward-compatible union stored on Application) still
     # carries both severities together.
     assert set(audit_entry.details["missing_skills"]) == {"Python", "SQL", "Docker"}
+
+
+# --- run_screening: the deterministic certificates_score actually feeds the composite ---
+
+
+def test_run_screening_uses_real_preferred_certifications_against_candidate_certificates(db_session, monkeypatch):
+    monkeypatch.setattr(
+        "app.screening.service.match_resume",
+        lambda *a, **k: _fake_result(match_score=100, location_score=100),
+    )
+    job = _make_job(db_session, preferred_certifications=["PMP", "CPA"])
+    candidate = _make_candidate(
+        db_session, parsed_fields={"skills": ["Python"], "certificates": ["PMP"]}
+    )
+    application = _make_application(db_session, job, candidate)
+
+    result = screening_service.run_screening(db_session, application, job, candidate, "system")
+
+    audit_entry = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.entity_id == application.id, AuditLog.action == "ai_screening_scored")
+        .one()
+    )
+    # 1 of 2 preferred certifications held -> 50. Composite = (100_experience + 100_skills
+    # + 50_certificates + 100_location + 100_match) / 5 = 90.
+    assert audit_entry.details["certificates_score"] == 50
+    assert audit_entry.details["missing_preferred_certifications"] == ["CPA"]
+    assert float(result.composite_score) == 90.0
 
 
 # --- is_eligible_for_screening ---
@@ -375,11 +452,11 @@ def test_run_screening_in_range_advances_to_screened(db_session, monkeypatch):
 
     result = screening_service.run_screening(db_session, application, job, candidate, "system")
 
-    # (80 + 80 + 80 -- the three AI-scored factors -- + 100 + 100, the deterministic
-    # experience_score/skill_match_pct for a job with no experience range or skill
-    # categories configured) / 5.
+    # (80 + 80 -- the two AI-scored factors -- + 100 + 100 + 100, the deterministic
+    # experience_score/skill_match_pct/certificates_score for a job with no experience
+    # range, skill categories, or preferred_certifications configured) / 5.
     assert result.status == "screened"
-    assert float(result.composite_score) == 88.0
+    assert float(result.composite_score) == 92.0
 
 
 def test_run_screening_at_max_boundary_advances_to_screened_same_as_in_range(db_session, monkeypatch):
@@ -388,7 +465,7 @@ def test_run_screening_at_max_boundary_advances_to_screened_same_as_in_range(db_
     # high-priority outcome. Default max seeded by migration e1f3a7c9b2d4 is 100.
     monkeypatch.setattr(
         "app.screening.service.match_resume",
-        lambda *a, **k: _fake_result(match_score=100, location_score=100, certificates_score=100),
+        lambda *a, **k: _fake_result(match_score=100, location_score=100),
     )
     job = _make_job(db_session)
     candidate = _make_candidate(db_session)
@@ -403,7 +480,7 @@ def test_run_screening_at_max_boundary_advances_to_screened_same_as_in_range(db_
 def test_run_screening_below_min_threshold_stays_received_but_is_still_scored(db_session, monkeypatch):
     monkeypatch.setattr(
         "app.screening.service.match_resume",
-        lambda *a, **k: _fake_result(match_score=10, location_score=10, certificates_score=10),
+        lambda *a, **k: _fake_result(match_score=10, location_score=10),
     )
     job = _make_job(db_session)
     candidate = _make_candidate(db_session)
@@ -411,9 +488,9 @@ def test_run_screening_below_min_threshold_stays_received_but_is_still_scored(db
 
     result = screening_service.run_screening(db_session, application, job, candidate, "system")
 
-    # (10 + 10 + 10 + 100 + 100 -- no experience range or skill categories configured)
-    # / 5 = 46.
-    assert float(result.composite_score) == 46.0
+    # (10 + 10 + 100 + 100 + 100 -- no experience range, skill categories, or
+    # preferred_certifications configured) / 5 = 64.
+    assert float(result.composite_score) == 64.0
     assert result.status == "received"
 
     audit_entry = (
@@ -434,7 +511,7 @@ def test_run_screening_respects_configured_threshold_not_just_the_default(db_ses
 
     monkeypatch.setattr(
         "app.screening.service.match_resume",
-        lambda *a, **k: _fake_result(match_score=55, location_score=55, certificates_score=55),
+        lambda *a, **k: _fake_result(match_score=55, location_score=55),
     )
     job = _make_job(db_session)
     candidate = _make_candidate(db_session)
@@ -519,10 +596,10 @@ def test_create_application_triggers_auto_screen_when_resume_already_parsed(clie
     assert response.status_code == 201
     body = response.json()
     assert body["status"] == "screened"
-    # (80 * 3 AI-scored factors + 100 + 100, the deterministic experience_score/
-    # skill_match_pct for a job with no experience range or skill categories
-    # configured) / 5.
-    assert body["composite_score"] == 88.0
+    # (80 * 2 AI-scored factors + 100 + 100 + 100, the deterministic experience_score/
+    # skill_match_pct/certificates_score for a job with no experience range, skill
+    # categories, or preferred_certifications configured) / 5.
+    assert body["composite_score"] == 92.0
 
     audit_entry = (
         db_session.query(AuditLog)

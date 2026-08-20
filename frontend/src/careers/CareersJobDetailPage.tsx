@@ -73,6 +73,13 @@ export default function CareersJobDetailPage() {
             variant="outlined"
           />
         )}
+        {(job.education_degree_level || job.education_field) && (
+          <Chip
+            label={[job.education_degree_level, job.education_field].filter(Boolean).join(" in ")}
+            size="small"
+            variant="outlined"
+          />
+        )}
       </Stack>
 
       {(() => {
@@ -108,6 +115,19 @@ export default function CareersJobDetailPage() {
           </Box>
         );
       })()}
+
+      {job.preferred_certifications && job.preferred_certifications.length > 0 && (
+        <Box mb={3}>
+          <Typography variant="subtitle2" gutterBottom>
+            Preferred Certifications
+          </Typography>
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            {job.preferred_certifications.map((cert) => (
+              <Chip key={cert} label={cert} size="small" variant="outlined" />
+            ))}
+          </Stack>
+        </Box>
+      )}
 
       {job.jd_text && (
         <Box mb={4}>

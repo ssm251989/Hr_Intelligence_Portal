@@ -49,6 +49,10 @@ export interface JobRoleBase {
   technical_skills_good_to_have?: string[] | null;
   soft_skills_must_have?: string[] | null;
   soft_skills_good_to_have?: string[] | null;
+  key_responsibilities?: string | null;
+  education_degree_level?: string | null;
+  education_field?: string | null;
+  preferred_certifications?: string[] | null;
   salary_band_min?: number | null;
   salary_band_max?: number | null;
   positions_count: number;
@@ -72,6 +76,10 @@ export interface JobRoleUpdate {
   technical_skills_good_to_have?: string[] | null;
   soft_skills_must_have?: string[] | null;
   soft_skills_good_to_have?: string[] | null;
+  key_responsibilities?: string | null;
+  education_degree_level?: string | null;
+  education_field?: string | null;
+  preferred_certifications?: string[] | null;
   salary_band_min?: number | null;
   salary_band_max?: number | null;
   positions_count?: number;
@@ -129,7 +137,13 @@ export interface JobFieldSuggestionsResponse {
   departments: string[];
   locations: string[];
   skills: string[];
+  certifications: string[];
 }
+
+// backend/app/models/job_role.py EDUCATION_DEGREE_LEVELS -- the dropdown's fixed choices,
+// DB-enforced by a CHECK constraint (same "no application-level enum validation, DB is
+// the one source of truth" convention as job_type).
+export const EDUCATION_DEGREE_LEVELS = ["Any", "Bachelor's", "Master's", "PhD", "Diploma"] as const;
 
 // ---- candidates ----
 
@@ -251,6 +265,7 @@ export interface ApplicationRead {
   match_score?: number | null;
   skill_match_pct?: number | null;
   missing_skills?: string[] | null;
+  composite_score?: number | null;
   ranking_score?: number | null;
   ranking_rationale?: string | null;
   status: string;
@@ -704,6 +719,9 @@ export interface PublicJobRead {
   technical_skills_good_to_have?: string[] | null;
   soft_skills_must_have?: string[] | null;
   soft_skills_good_to_have?: string[] | null;
+  education_degree_level?: string | null;
+  education_field?: string | null;
+  preferred_certifications?: string[] | null;
   jd_text?: string | null;
 }
 

@@ -229,6 +229,32 @@ def compute_skills_score(
     }
 
 
+def compute_certificates_score(
+    candidate_certificates: Optional[list[str]], preferred_certifications: Optional[list[str]]
+) -> dict:
+    """Deterministic replacement for what used to be an AI-judged certificates_score --
+    coverage of the job's preferred_certifications by the candidate's own parsed
+    certificates (app/ai_services/resume_parser.py), reusing the exact same
+    case/whitespace-insensitive matching as compute_skills_score's _skill_coverage.
+    preferred_certifications is a single flat list -- every entry is already "preferred,"
+    not required, so unlike skills there's no must-have/good-to-have weighting here, just
+    the plain coverage fraction scaled to 0-100: full score when the job names no
+    certifications at all (absence of a requirement is not a penalty, same convention as
+    location_score/experience_score/skill_match_pct), otherwise however much of the list
+    the candidate's own certificates cover.
+
+    Returns {"score": int, "missing": [str]} -- missing is every preferred certification
+    the candidate doesn't hold, logged on the audit_log entry for the same transparency
+    compute_skills_score's missing_required/missing_preferred give, even though it isn't
+    (yet) surfaced in Remarks text the way skill gaps are.
+    """
+    candidate_normalized = {
+        cert.strip().lower() for cert in (candidate_certificates or []) if cert and cert.strip()
+    }
+    coverage, missing = _skill_coverage(candidate_normalized, preferred_certifications)
+    return {"score": round(coverage * 100), "missing": missing}
+
+
 def composite_score(result: dict) -> float:
     """Equal-weighted average of the five screening factors -- skills (skill_match_pct),
     experience, location, certificates, and the existing Resume Matcher score
@@ -307,6 +333,10 @@ def run_screening(db: Session, application: Application, job: JobRole, candidate
     result["skill_match_pct"] = skills_result["score"]
     result["missing_skills"] = skills_result["missing_required"] + skills_result["missing_preferred"]
 
+    candidate_certificates = (candidate.parsed_fields or {}).get("certificates")
+    certificates_result = compute_certificates_score(candidate_certificates, job.preferred_certifications)
+    result["certificates_score"] = certificates_result["score"]
+
     score = composite_score(result)
     previous_status = application.status
     min_score = float(thresholds.dashboard_min_score)
@@ -334,6 +364,7 @@ def run_screening(db: Session, application: Application, job: JobRole, candidate
             "missing_skills": result["missing_skills"],
             "missing_required_skills": skills_result["missing_required"],
             "missing_preferred_skills": skills_result["missing_preferred"],
+            "missing_preferred_certifications": certificates_result["missing"],
             "recommendation": result["recommendation"],
             "threshold_min": min_score,
             "threshold_max": max_score,

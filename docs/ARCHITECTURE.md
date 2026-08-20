@@ -114,6 +114,11 @@ CREATE TABLE job_roles (
     technical_skills_good_to_have JSONB,
     soft_skills_must_have JSONB,
     soft_skills_good_to_have JSONB,     -- 4 categorized skill lists, replacing one flat "skills" list
+    key_responsibilities TEXT,
+    education_degree_level VARCHAR(50) -- 'Any','Bachelor''s','Master''s','PhD','Diploma', or null
+        CHECK (education_degree_level IN ('Any','Bachelor''s','Master''s','PhD','Diploma') OR education_degree_level IS NULL),
+    education_field VARCHAR(255),
+    preferred_certifications JSONB,
     salary_band_min NUMERIC,
     salary_band_max NUMERIC,
     hiring_manager_id UUID REFERENCES users(id),
@@ -228,21 +233,24 @@ General principles applied to all seven services below:
 System: You are an HR job-description writer. Given structured role inputs,
 produce a complete, professional job description. Respond only with valid JSON:
 {"title": string, "summary": string, "responsibilities": [string],
- "required_skills": [string], "nice_to_have": [string], "experience_required": string}
+ "required_skills": [string], "nice_to_have": [string], "experience_required": string,
+ "education_requirement": string | null, "preferred_certifications_section": string | null}
 No text outside the JSON.
 
 User: Role inputs:
 {title}, {department}, {location}, {experience_min_years}-{experience_max_years} years,
 {technical_skills_must_have}, {technical_skills_good_to_have}, {soft_skills_must_have},
-{soft_skills_good_to_have}, {salary_band}
+{soft_skills_good_to_have}, {key_responsibilities}, {education_degree_level}
+{education_field}, {preferred_certifications}, {salary_band}
 ```
 
 ### Example: Resume Matcher (Claude Haiku, post embedding pre-filter)
 
-experience_score and skill_match_pct/missing_skills are computed deterministically (see
-app/screening/service.py) from the job's real experience_min_years/experience_max_years
-and 4 categorized skill lists rather than asked of the model -- the AI call below only
-covers match_score/location_score/certificates_score/recommendation.
+experience_score, skill_match_pct/missing_skills, and certificates_score are all
+computed deterministically (see app/screening/service.py) from the job's real
+experience_min_years/experience_max_years, 4 categorized skill lists, and
+preferred_certifications rather than asked of the model -- the AI call below only
+covers match_score/location_score/recommendation.
 
 ```
 System: You compare a candidate resume against a job description. Respond only

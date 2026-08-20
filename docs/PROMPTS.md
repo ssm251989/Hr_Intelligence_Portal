@@ -23,6 +23,16 @@ restated as personality traits); "nice_to_have" must be built the same way
 from the good-to-have technical and good-to-have soft skills. Never move a
 skill from one bucket to the other, and never invent a skill that wasn't
 given in either bucket.
+If key_responsibilities is given, treat it as a strong starting point and
+anchor for the "responsibilities" output: expand/rephrase/reformat it into
+clear list items rather than inventing a different set from scratch, and
+never drop or contradict anything it says. If not given, generate typical
+responsibilities yourself, as before. If an education requirement is given,
+write an "education_requirement" section stating it plainly; if
+preferred_certifications is given, write a
+"preferred_certifications_section" listing them. Leave either null, exactly
+like compensation_and_benefits/additional_notes_section, if not provided --
+never invent an education requirement or certification that wasn't given.
 Respond only with valid JSON, no text outside it:
 {
   "title": string,
@@ -31,6 +41,8 @@ Respond only with valid JSON, no text outside it:
   "required_skills": [string],
   "nice_to_have": [string],
   "experience_required": string,
+  "education_requirement": string | null,
+  "preferred_certifications_section": string | null,
   "compensation_and_benefits": string | null,
   "additional_notes_section": string | null
 }
@@ -45,6 +57,9 @@ Technical skills (must-have): {technical_skills_must_have}
 Technical skills (good-to-have): {technical_skills_good_to_have}
 Soft skills (must-have): {soft_skills_must_have}
 Soft skills (good-to-have): {soft_skills_good_to_have}
+Key responsibilities: {key_responsibilities}
+Education requirement: {education_degree_level} {education_field}
+Preferred certifications: {preferred_certifications}
 Salary band: {salary_band_min}-{salary_band_max}
 Benefits: {benefits}
 Additional notes: {additional_notes}
@@ -77,12 +92,13 @@ Resume text:
 
 ## 3. Resume Matcher — Claude Haiku (post embedding pre-filter) — Step 4 (AI Screening)
 
-Note: this doc predates two of the five composite-score factors moving out of the AI
-call entirely -- experience_score and skill_match_pct/missing_skills are now computed
-deterministically in app/screening/service.py (compute_experience_score,
-compute_skills_score) from the job's real experience_min_years/experience_max_years and
-4 categorized skill lists, not asked of the model. The AI call still returns
-location_score and certificates_score alongside match_score; see
+Note: this doc predates three of the five composite-score factors moving out of the AI
+call entirely -- experience_score, skill_match_pct/missing_skills, and certificates_score
+are now computed deterministically in app/screening/service.py
+(compute_experience_score, compute_skills_score, compute_certificates_score) from the
+job's real experience_min_years/experience_max_years, 4 categorized skill lists, and
+preferred_certifications against the candidate's own parsed data, not asked of the
+model. The AI call now only returns location_score and match_score; see
 app/ai_services/resume_matcher.py's actual SYSTEM_PROMPT for the current, real prompt.
 
 ```

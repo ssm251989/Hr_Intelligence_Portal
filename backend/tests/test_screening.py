@@ -32,19 +32,19 @@ def _make_application(db_session, job, candidate, match_score=None, **kwargs) ->
     return application
 
 
-# location_score=100, certificates_score=100, match_score=78 from the (mocked) AI call,
-# plus two deterministic scores from test_screen_application_success's job/candidate
-# fixtures below: experience_score=70 (2 years short of a 5-8 year requirement ->
-# 100 - 2*15) and skill_match_pct=80 (both technical_skills_must_have matched -> 50, the
-# one technical_skills_good_to_have entry ("Kubernetes") missed -> 0 of 20, no soft
-# categories configured -> full 20 + 10) -> composite = (80+70+100+100+78)/5 = 85.6,
-# comfortably above the default dashboard_min_score=60 seeded by migration
-# e1f3a7c9b2d4, so screening these fixtures always auto-advances to 'screened' unless a
-# test overrides a field to test otherwise.
+# location_score=100, match_score=78 from the (mocked) AI call, plus three deterministic
+# scores from test_screen_application_success's job/candidate fixtures below:
+# experience_score=70 (2 years short of a 5-8 year requirement -> 100 - 2*15),
+# skill_match_pct=80 (both technical_skills_must_have matched -> 50, the one
+# technical_skills_good_to_have entry ("Kubernetes") missed -> 0 of 20, no soft
+# categories configured -> full 20 + 10), and certificates_score=100 (no
+# preferred_certifications configured on the job -- absence of a requirement is not a
+# penalty) -> composite = (80+70+100+100+78)/5 = 85.6, comfortably above the default
+# dashboard_min_score=60 seeded by migration e1f3a7c9b2d4, so screening these fixtures
+# always auto-advances to 'screened' unless a test overrides a field to test otherwise.
 FAKE_MATCH_RESULT = {
     "match_score": 78,
     "location_score": 100,
-    "certificates_score": 100,
     "recommendation": "possible_fit",
 }
 

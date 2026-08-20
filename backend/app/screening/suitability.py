@@ -22,7 +22,12 @@ from app.ai_services.resume_matcher import ResumeMatchError, match_resume
 from app.audit.service import log_action
 from app.models.candidate import Candidate
 from app.models.job_role import JobRole
-from app.screening.service import composite_score, compute_experience_score, compute_skills_score
+from app.screening.service import (
+    composite_score,
+    compute_certificates_score,
+    compute_experience_score,
+    compute_skills_score,
+)
 
 # "Top 2-3" per the feature spec -- 3 is the cap, not a guarantee; fewer published jobs
 # (or fewer with jd_text) simply means fewer AI calls, never more.
@@ -97,6 +102,9 @@ def attempt_auto_suggest_suitable_job(db: Session, candidate: Candidate, actor: 
         result["skill_match_pct"] = compute_skills_score(
             (candidate.parsed_fields or {}).get("skills"), job.technical_skills_must_have,
             job.technical_skills_good_to_have, job.soft_skills_must_have, job.soft_skills_good_to_have,
+        )["score"]
+        result["certificates_score"] = compute_certificates_score(
+            (candidate.parsed_fields or {}).get("certificates"), job.preferred_certifications,
         )["score"]
         score = composite_score(result)
         if best_score is None or score > best_score:

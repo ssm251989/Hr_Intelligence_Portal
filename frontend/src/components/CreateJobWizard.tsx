@@ -21,10 +21,13 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 import { extractErrorMessage, integrationsApi, jobsApi } from "../api/client";
+import { EDUCATION_DEGREE_LEVELS } from "../api/types";
 import type { JobFieldSuggestionsResponse, JobRoleRead } from "../api/types";
 import { formatExperienceRange } from "../utils/experience";
 
-const EMPTY_SUGGESTIONS: JobFieldSuggestionsResponse = { departments: [], locations: [], skills: [] };
+const EMPTY_SUGGESTIONS: JobFieldSuggestionsResponse = {
+  departments: [], locations: [], skills: [], certifications: [],
+};
 
 // JD generation moved to step 4 (after Requirements/Salary/Additional Info, not
 // immediately after Job Details) specifically so the AI has skills, salary band,
@@ -64,6 +67,8 @@ const EMPTY_STATE = {
   location: "",
   experienceMinYears: "",
   experienceMaxYears: "",
+  educationDegreeLevel: "",
+  educationField: "",
   jobType: "Full-time",
   positionsCount: "1",
   jdText: "",
@@ -71,10 +76,12 @@ const EMPTY_STATE = {
   technicalSkillsGoodToHave: [] as string[],
   softSkillsMustHave: [] as string[],
   softSkillsGoodToHave: [] as string[],
+  preferredCertifications: [] as string[],
   salaryMin: "",
   salaryMax: "",
   benefits: "",
   additionalNotes: "",
+  keyResponsibilities: "",
   naukri: false,
   linkedin: false,
   careerPortal: true,
@@ -97,6 +104,8 @@ function formFromJob(job: JobRoleRead): typeof EMPTY_STATE {
     location: job.location || "",
     experienceMinYears: job.experience_min_years != null ? String(job.experience_min_years) : "",
     experienceMaxYears: job.experience_max_years != null ? String(job.experience_max_years) : "",
+    educationDegreeLevel: job.education_degree_level || "",
+    educationField: job.education_field || "",
     jobType: job.job_type || "Full-time",
     positionsCount: String(job.positions_count ?? 1),
     jdText: job.jd_text || "",
@@ -104,10 +113,12 @@ function formFromJob(job: JobRoleRead): typeof EMPTY_STATE {
     technicalSkillsGoodToHave: job.technical_skills_good_to_have || [],
     softSkillsMustHave: job.soft_skills_must_have || [],
     softSkillsGoodToHave: job.soft_skills_good_to_have || [],
+    preferredCertifications: job.preferred_certifications || [],
     salaryMin: job.salary_band_min != null ? String(job.salary_band_min) : "",
     salaryMax: job.salary_band_max != null ? String(job.salary_band_max) : "",
     benefits: job.benefits || "",
     additionalNotes: job.additional_notes || "",
+    keyResponsibilities: job.key_responsibilities || "",
     naukri: Boolean(platforms?.naukri),
     linkedin: Boolean(platforms?.linkedin),
     careerPortal: Boolean(platforms?.career_portal),
@@ -233,7 +244,10 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
   // "selectOption"/"removeOption"/"clear" -- leaves picking a dropdown suggestion or
   // removing a chip completely untouched.
   const handleSkillsChange = (
-    key: "technicalSkillsMustHave" | "technicalSkillsGoodToHave" | "softSkillsMustHave" | "softSkillsGoodToHave",
+    key:
+      | "technicalSkillsMustHave" | "technicalSkillsGoodToHave"
+      | "softSkillsMustHave" | "softSkillsGoodToHave"
+      | "preferredCertifications",
     newValue: string[],
     reason: string,
   ) => {
@@ -251,16 +265,22 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
   };
 
   // One instance of the same creatable-autocomplete pattern the single "Skills" field
-  // used to be, reused 4x (technical/soft x must-have/good-to-have) instead of 1x.
+  // used to be, reused 4x for technical/soft x must-have/good-to-have and a 5th time for
+  // Preferred Certifications (its own suggestions pool, see options below).
   const renderSkillsField = (
-    key: "technicalSkillsMustHave" | "technicalSkillsGoodToHave" | "softSkillsMustHave" | "softSkillsGoodToHave",
+    key:
+      | "technicalSkillsMustHave" | "technicalSkillsGoodToHave"
+      | "softSkillsMustHave" | "softSkillsGoodToHave"
+      | "preferredCertifications",
     label: string,
+    options: string[] = suggestions.skills,
+    helperText = "Pick an existing skill, or type one (or several, comma-separated) and press Enter",
   ) => (
     <Autocomplete
       multiple
       freeSolo
       autoSelect
-      options={suggestions.skills}
+      options={options}
       value={form[key]}
       onChange={(_e, value, reason) => handleSkillsChange(key, value, reason)}
       renderTags={(selected, getTagProps) =>
@@ -273,7 +293,7 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
         <TextField
           {...params}
           label={label}
-          helperText="Pick an existing skill, or type one (or several, comma-separated) and press Enter"
+          helperText={helperText}
         />
       )}
     />
@@ -310,6 +330,8 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
           location: form.location.trim() || null,
           experience_min_years: form.experienceMinYears.trim() ? Number(form.experienceMinYears) : null,
           experience_max_years: form.experienceMaxYears.trim() ? Number(form.experienceMaxYears) : null,
+          education_degree_level: form.educationDegreeLevel || null,
+          education_field: form.educationField.trim() || null,
           job_type: form.jobType,
           positions_count: Number(form.positionsCount) || 1,
         };
@@ -322,6 +344,7 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
           technical_skills_good_to_have: form.technicalSkillsGoodToHave,
           soft_skills_must_have: form.softSkillsMustHave,
           soft_skills_good_to_have: form.softSkillsGoodToHave,
+          preferred_certifications: form.preferredCertifications,
         });
         setJob(updated);
       } else if (activeStep === 2) {
@@ -333,6 +356,7 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
         setJob(updated);
       } else if (activeStep === 3) {
         const updated = await jobsApi.update(jobId!, {
+          key_responsibilities: form.keyResponsibilities.trim() || null,
           additional_notes: form.additionalNotes.trim() || null,
         });
         setJob(updated);
@@ -421,6 +445,31 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
                 fullWidth
               />
             </Stack>
+            <Stack direction="row" spacing={2}>
+              <TextField
+                select
+                label="Education (degree level)"
+                value={form.educationDegreeLevel}
+                onChange={(e) => set("educationDegreeLevel", e.target.value)}
+                fullWidth
+              >
+                <MenuItem value="">
+                  <em>Not specified</em>
+                </MenuItem>
+                {EDUCATION_DEGREE_LEVELS.map((level) => (
+                  <MenuItem key={level} value={level}>
+                    {level}
+                  </MenuItem>
+                ))}
+              </TextField>
+              <TextField
+                label="Education (field)"
+                placeholder="e.g. Computer Science"
+                value={form.educationField}
+                onChange={(e) => set("educationField", e.target.value)}
+                fullWidth
+              />
+            </Stack>
             <TextField
               select
               label="Job type"
@@ -456,6 +505,15 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
               {renderSkillsField("softSkillsMustHave", "Must Have")}
               {renderSkillsField("softSkillsGoodToHave", "Good to Have")}
             </Stack>
+            <Stack spacing={2}>
+              <Typography variant="subtitle2">Preferred Certifications</Typography>
+              {renderSkillsField(
+                "preferredCertifications",
+                "Preferred Certifications (optional)",
+                suggestions.certifications,
+                "Pick an existing certification, or type one (or several, comma-separated) and press Enter",
+              )}
+            </Stack>
           </Stack>
         );
       case 2:
@@ -490,6 +548,15 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
       case 3:
         return (
           <Stack spacing={2} mt={1}>
+            <TextField
+              label="Key responsibilities (optional)"
+              placeholder="A short paragraph describing what this person will actually do -- used as a starting point for the generated JD's Responsibilities section, not replaced by AI-invented content."
+              value={form.keyResponsibilities}
+              onChange={(e) => set("keyResponsibilities", e.target.value)}
+              multiline
+              minRows={4}
+              fullWidth
+            />
             <TextField
               label="Additional notes (optional)"
               value={form.additionalNotes}
@@ -556,6 +623,11 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
           {form.jobType} · Positions: {form.positionsCount}
           {form.salaryMin && form.salaryMax ? ` · Salary band: ${form.salaryMin} - ${form.salaryMax}` : ""}
         </Typography>
+        {(form.educationDegreeLevel || form.educationField) && (
+          <Typography variant="body2" color="text.secondary">
+            Education: {[form.educationDegreeLevel, form.educationField].filter(Boolean).join(" in ")}
+          </Typography>
+        )}
         {(reviewSkills.mustHave.length > 0 || reviewSkills.goodToHave.length > 0) && (
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap mt={0.5}>
             {reviewSkills.mustHave.map((skill) => (
@@ -565,6 +637,21 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
               <Chip key={`good-${skill}`} label={skill} size="small" variant="outlined" />
             ))}
           </Stack>
+        )}
+        {form.preferredCertifications.length > 0 && (
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap mt={0.5} alignItems="center">
+            <Typography variant="caption" color="text.secondary">
+              Preferred certifications:
+            </Typography>
+            {form.preferredCertifications.map((cert) => (
+              <Chip key={cert} label={cert} size="small" variant="outlined" />
+            ))}
+          </Stack>
+        )}
+        {form.keyResponsibilities && (
+          <Typography variant="body2" color="text.secondary" mt={0.5}>
+            Key responsibilities: {form.keyResponsibilities}
+          </Typography>
         )}
         {form.benefits && (
           <Typography variant="body2" color="text.secondary" mt={0.5}>

@@ -36,6 +36,13 @@ class JobRoleBase(BaseModel):
     technical_skills_good_to_have: Optional[list[str]] = None
     soft_skills_must_have: Optional[list[str]] = None
     soft_skills_good_to_have: Optional[list[str]] = None
+    key_responsibilities: Optional[str] = None
+    # No application-level enum validation, same as `job_type` below -- the DB
+    # CheckConstraint (EDUCATION_DEGREE_LEVELS in app/models/job_role.py) is the one
+    # source of truth.
+    education_degree_level: Optional[str] = None
+    education_field: Optional[str] = None
+    preferred_certifications: Optional[list[str]] = None
     salary_band_min: Optional[float] = None
     salary_band_max: Optional[float] = None
     positions_count: int = 1
@@ -85,6 +92,10 @@ class JobRoleUpdate(BaseModel):
     technical_skills_good_to_have: Optional[list[str]] = None
     soft_skills_must_have: Optional[list[str]] = None
     soft_skills_good_to_have: Optional[list[str]] = None
+    key_responsibilities: Optional[str] = None
+    education_degree_level: Optional[str] = None
+    education_field: Optional[str] = None
+    preferred_certifications: Optional[list[str]] = None
     salary_band_min: Optional[float] = None
     salary_band_max: Optional[float] = None
     positions_count: Optional[int] = None
@@ -176,3 +187,4 @@ class JobFieldSuggestionsResponse(BaseModel):
     departments: list[str]
     locations: list[str]
     skills: list[str]
+    certifications: list[str]

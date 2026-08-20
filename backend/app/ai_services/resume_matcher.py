@@ -13,21 +13,19 @@ SYSTEM_PROMPT = (
     "strictly on evidence in the resume text. Do not infer skills that are not "
     "stated or clearly implied by the candidate's actual experience. Score every "
     "*_score field on a 0-100 scale.\n\n"
-    "You score three independent dimensions -- experience fit and skills fit are "
-    "deliberately not among them, since app/screening/service.py computes both itself: "
-    "experience_score from the job's real experience_min_years/experience_max_years "
-    "against the candidate's parsed total_experience_years, and skill_match_pct from the "
-    "job's 4 categorized skill lists against the candidate's parsed skills -- rather than "
-    "asking you to guess at either from prose. Your three scores are used later as "
-    "equally-weighted inputs (alongside those two computed scores) to a composite "
+    "You score two independent dimensions -- experience fit, skills fit, and "
+    "certifications fit are deliberately not among them, since app/screening/service.py "
+    "computes all three itself: experience_score from the job's real "
+    "experience_min_years/experience_max_years against the candidate's parsed "
+    "total_experience_years, skill_match_pct from the job's 4 categorized skill lists "
+    "against the candidate's parsed skills, and certificates_score from the job's "
+    "preferred_certifications against the candidate's parsed certificates -- rather than "
+    "asking you to guess at any of them from prose. Your two scores are used later as "
+    "equally-weighted inputs (alongside those three computed scores) to a composite "
     "screening score:\n"
     "- location_score: how well the candidate's location fits the job's location. Score 100 "
     "if either location is unspecified, they match, or the role reads as remote-friendly; "
     "score lower for a real geographic mismatch with no indication of relocation/remote work.\n"
-    "- certificates_score: how well the candidate's certifications support this role. Score "
-    "100 if the job doesn't call for any particular certification and the candidate has none "
-    "to weigh against it (absence of a requirement is not a penalty) -- score lower only when "
-    "the JD implies certifications matter and the candidate's don't support that.\n"
     "- match_score: your overall holistic fit assessment.\n"
 )
 
@@ -41,7 +39,6 @@ class ResumeMatchError(Exception):
 class ResumeMatchOutput(BaseModel):
     match_score: int
     location_score: int
-    certificates_score: int
     recommendation: Literal["strong_fit", "possible_fit", "weak_fit"]
 
 
@@ -58,12 +55,12 @@ def match_resume(
     candidate_location: Optional[str] = None,
     job_location: Optional[str] = None,
 ) -> dict:
-    """One Haiku call producing three of the five factors app/screening/service.py needs
-    for its equal-weighted composite score (location_score, certificates_score,
-    match_score) -- never a separate call per factor. The other two, experience_score
-    and skill_match_pct, are computed deterministically by app/screening/service.py's
-    compute_experience_score/compute_skills_score from real structured data instead of
-    being asked of the AI.
+    """One Haiku call producing two of the five factors app/screening/service.py needs
+    for its equal-weighted composite score (location_score, match_score) -- never a
+    separate call per factor. The other three -- experience_score, skill_match_pct, and
+    certificates_score -- are computed deterministically by app/screening/service.py's
+    compute_experience_score/compute_skills_score/compute_certificates_score from real
+    structured data instead of being asked of the AI.
 
     The JD text is its own cache_control-marked content block: when the same job is
     screened against many candidates in one run (a bulk "re-evaluate all", or Part G's
