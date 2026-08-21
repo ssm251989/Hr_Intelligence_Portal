@@ -99,6 +99,15 @@ def google_status(
     )
 
 
+# The shared, org-level HR mailbox ("CTDHR") used to be a second Google OAuth connection
+# here, admin-only, distinct from the per-user one above. It's now plain SMTP/IMAP
+# credentials instead (universal across providers, not Google-specific) -- see
+# app/hr_inbox/router.py for its settings/test-connection endpoints, and
+# app/integrations/hr_email.py / app/integrations/imap_poll.py for the send/poll logic
+# itself. The per-user Google connection above (Calendar, and each recruiter's own
+# integration) is a completely different feature and is untouched by that change.
+
+
 @router.get("/integrations/docusign/connect", response_model=DocuSignAuthUrl)
 def connect_docusign(current_user: User = Depends(get_current_user)):
     # Same JSON-not-redirect reasoning as Google's /connect. This is a standard

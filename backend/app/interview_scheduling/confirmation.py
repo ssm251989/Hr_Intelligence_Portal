@@ -2,7 +2,7 @@
 
 An earlier plan had the candidate confirm a slot over WhatsApp once real Twilio credentials
 existed; that was dropped before any of it was built, in favor of emailing the candidate
-directly via this app's existing Gmail integration (app/integrations/gmail.py) with a
+directly via the shared HR mailbox's SMTP integration (app/integrations/hr_email.py) with a
 secure, single-use link per proposed slot -- no new third-party integration needed.
 
 Flow:
@@ -32,7 +32,7 @@ from sqlalchemy.orm import Session
 from app.audit.service import log_action
 from app.core.crypto import decrypt
 from app.core.config import settings
-from app.integrations.gmail import send_email
+from app.integrations.hr_email import send_hr_email
 from app.integrations.google_calendar import (
     APP_TIMEZONE,
     DEFAULT_INTERVIEW_DURATION_MINUTES,
@@ -120,7 +120,7 @@ def propose_interview_slots(
     tracker_path: str,
     candidate: Candidate,
     job: JobRole,
-    sender_refresh_token: str,
+    hr_integration,
     actor: str,
     now: Optional[datetime] = None,
 ) -> dict:
@@ -195,8 +195,8 @@ def propose_interview_slots(
 
     db.commit()
 
-    send_email(
-        sender_refresh_token,
+    send_hr_email(
+        hr_integration,
         to=candidate.email,
         subject=f"Interview scheduling for {job.title}",
         body=_build_proposal_email_body(candidate.full_name, job.title, offered),

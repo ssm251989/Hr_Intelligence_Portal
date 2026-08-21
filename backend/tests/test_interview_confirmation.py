@@ -17,6 +17,7 @@ from app.models.application import Application
 from app.models.candidate import Candidate
 from app.models.interview import Interview
 from app.models.interview_confirmation_token import InterviewConfirmationToken
+from app.models.hr_integration import HrIntegration
 from app.models.interview_scheduling_settings import InterviewSchedulingSettings
 from app.models.job_role import JobRole
 from app.models.user import User
@@ -69,6 +70,33 @@ def _connect_google(db_session, user) -> UserIntegration:
     return integration
 
 
+def _connect_hr_smtp(db_session, password="hr-smtp-password") -> HrIntegration:
+    # The shared, org-level HR mailbox every automated/manual HR email now sends from --
+    # distinct from an interviewer's own UserIntegration (used only for Calendar, above).
+    row = db_session.get(HrIntegration, 1)
+    if row is None:
+        row = HrIntegration(id=1)
+        db_session.add(row)
+    row.smtp_host = "smtp.example.com"
+    row.smtp_port = 587
+    row.use_tls = True
+    row.smtp_username = "hr@example.com"
+    row.smtp_password = encrypt(password)
+    row.from_address = "hr@example.com"
+    db_session.commit()
+    db_session.refresh(row)
+    return row
+
+
+def _disconnect_hr_smtp(db_session) -> None:
+    row = db_session.get(HrIntegration, 1)
+    if row is not None:
+        row.smtp_host = None
+        row.smtp_username = None
+        row.smtp_password = None
+        db_session.commit()
+
+
 def _setup_pool(tmp_path, job_title, interviewer_name):
     path = tmp_path / "tracker.xlsx"
     ensure_tracker_file(path)
@@ -94,13 +122,13 @@ def test_propose_interview_slots_offers_three_and_sends_one_email(db_session, tm
     sent = {}
     monkeypatch.setattr(
         interview_confirmation,
-        "send_email",
-        lambda refresh_token, *, to, subject, body: sent.update(to=to, subject=subject, body=body) or "msg-id",
+        "send_hr_email",
+        lambda hr_integration, *, to, subject, body: sent.update(to=to, subject=subject, body=body),
     )
 
     result = interview_confirmation.propose_interview_slots(
         db_session, application, tracker_path=str(tracker_path), candidate=candidate, job=job,
-        sender_refresh_token="sender-token", actor="recruiter@example.com",
+        hr_integration=None, actor="recruiter@example.com",
     )
 
     assert result["slots_offered"] == 3
@@ -132,11 +160,11 @@ def test_propose_interview_slots_drops_slots_with_no_availability(db_session, tm
     _connect_google(db_session, interviewer)
 
     monkeypatch.setattr(interview_scheduling_service, "check_calendar_availability", lambda *a, **k: False)
-    monkeypatch.setattr(interview_confirmation, "send_email", lambda *a, **k: (_ for _ in ()).throw(AssertionError))
+    monkeypatch.setattr(interview_confirmation, "send_hr_email", lambda *a, **k: (_ for _ in ()).throw(AssertionError))
 
     result = interview_confirmation.propose_interview_slots(
         db_session, application, tracker_path=str(tracker_path), candidate=candidate, job=job,
-        sender_refresh_token="sender-token", actor="recruiter@example.com",
+        hr_integration=None, actor="recruiter@example.com",
     )
 
     assert result["slots_offered"] == 0
@@ -153,7 +181,7 @@ def test_propose_interview_slots_rejects_candidate_without_email(db_session, tmp
     try:
         interview_confirmation.propose_interview_slots(
             db_session, application, tracker_path=str(tracker_path), candidate=candidate, job=job,
-            sender_refresh_token="sender-token", actor="recruiter@example.com",
+            hr_integration=None, actor="recruiter@example.com",
         )
         assert False, "expected ValueError"
     except ValueError:
@@ -170,15 +198,15 @@ def test_propose_interview_slots_invalidates_previous_live_proposal(db_session, 
     _connect_google(db_session, interviewer)
 
     monkeypatch.setattr(interview_scheduling_service, "check_calendar_availability", lambda *a, **k: True)
-    monkeypatch.setattr(interview_confirmation, "send_email", lambda *a, **k: "msg-id")
+    monkeypatch.setattr(interview_confirmation, "send_hr_email", lambda *a, **k: None)
 
     first = interview_confirmation.propose_interview_slots(
         db_session, application, tracker_path=str(tracker_path), candidate=candidate, job=job,
-        sender_refresh_token="sender-token", actor="recruiter@example.com",
+        hr_integration=None, actor="recruiter@example.com",
     )
     interview_confirmation.propose_interview_slots(
         db_session, application, tracker_path=str(tracker_path), candidate=candidate, job=job,
-        sender_refresh_token="sender-token", actor="recruiter@example.com",
+        hr_integration=None, actor="recruiter@example.com",
     )
 
     first_tokens = (
@@ -202,11 +230,11 @@ def _propose(db_session, tmp_path, monkeypatch, job_title="Confirm", interviewer
     _connect_google(db_session, interviewer)
 
     monkeypatch.setattr(interview_scheduling_service, "check_calendar_availability", lambda *a, **k: True)
-    monkeypatch.setattr(interview_confirmation, "send_email", lambda *a, **k: "msg-id")
+    monkeypatch.setattr(interview_confirmation, "send_hr_email", lambda *a, **k: None)
 
     result = interview_confirmation.propose_interview_slots(
         db_session, application, tracker_path=str(tracker_path), candidate=candidate, job=job,
-        sender_refresh_token="sender-token", actor="recruiter@example.com",
+        hr_integration=None, actor="recruiter@example.com",
     )
     return application, candidate, interviewer, tracker_path, result
 
@@ -383,13 +411,13 @@ def test_propose_interview_slots_email_uses_date_based_format_not_weekday(db_ses
     monkeypatch.setattr(interview_scheduling_service, "check_calendar_availability", lambda *a, **k: True)
     sent = {}
     monkeypatch.setattr(
-        interview_confirmation, "send_email",
-        lambda refresh_token, *, to, subject, body: sent.update(body=body),
+        interview_confirmation, "send_hr_email",
+        lambda hr_integration, *, to, subject, body: sent.update(body=body),
     )
 
     result = interview_confirmation.propose_interview_slots(
         db_session, application, tracker_path=str(tracker_path), candidate=candidate, job=job,
-        sender_refresh_token="sender-token", actor="recruiter@example.com",
+        hr_integration=None, actor="recruiter@example.com",
     )
 
     for slot in result["tokens"]:
@@ -452,11 +480,11 @@ def test_propose_interview_slots_syncs_interviewer_pool_for_other_published_jobs
     other_job = _make_job(db_session, _unique_job_title("OtherPublishedJob"))
 
     monkeypatch.setattr(interview_scheduling_service, "check_calendar_availability", lambda *a, **k: True)
-    monkeypatch.setattr(interview_confirmation, "send_email", lambda *a, **k: "msg-id")
+    monkeypatch.setattr(interview_confirmation, "send_hr_email", lambda *a, **k: None)
 
     interview_confirmation.propose_interview_slots(
         db_session, application, tracker_path=str(tracker_path), candidate=candidate, job=job,
-        sender_refresh_token="sender-token", actor="recruiter@example.com",
+        hr_integration=None, actor="recruiter@example.com",
     )
 
     pool = read_interviewer_pool(tracker_path)
@@ -481,16 +509,39 @@ def test_propose_slots_endpoint_success(client, db_session, tmp_path, monkeypatc
     interviewer = _make_interviewer(db_session, "Solo Interviewer")
     _connect_google(db_session, interviewer)
 
-    admin_user = db_session.query(User).filter(User.email == "test-admin@example.com").first()
-    _connect_google(db_session, admin_user)
+    # The actor (the default admin client) has NO personal Google connection at all here --
+    # sending must still succeed, since it now sources credentials from the shared HR
+    # mailbox's SMTP configuration, not the actor's own.
+    _connect_hr_smtp(db_session)
 
     monkeypatch.setattr(interview_scheduling_service, "check_calendar_availability", lambda *a, **k: True)
-    monkeypatch.setattr(interview_confirmation, "send_email", lambda *a, **k: "msg-id")
+    monkeypatch.setattr(interview_confirmation, "send_hr_email", lambda *a, **k: None)
 
     response = client.post(f"/interview-scheduling/applications/{application.id}/propose-slots")
 
     assert response.status_code == 200
     assert response.json()["slots_offered"] == 3
+
+
+def test_propose_slots_endpoint_requires_hr_smtp_configured(client, db_session, tmp_path):
+    _disconnect_hr_smtp(db_session)
+    job_title = _unique_job_title("HTTPProposeNoHr")
+    tracker_path = _setup_pool(tmp_path, job_title, "Solo Interviewer")
+    settings_row = db_session.get(InterviewSchedulingSettings, 1) or InterviewSchedulingSettings(id=1)
+    settings_row.tracker_path = str(tracker_path)
+    db_session.add(settings_row)
+    db_session.commit()
+
+    job = _make_job(db_session, job_title)
+    candidate = _make_candidate(db_session)
+    application = _make_application(db_session, job, candidate)
+    interviewer = _make_interviewer(db_session, "Solo Interviewer")
+    _connect_google(db_session, interviewer)
+
+    response = client.post(f"/interview-scheduling/applications/{application.id}/propose-slots")
+
+    assert response.status_code == 400
+    assert "SMTP" in response.json()["detail"]
 
 
 def test_propose_slots_endpoint_requires_hr_selected_status(client, db_session, tmp_path):

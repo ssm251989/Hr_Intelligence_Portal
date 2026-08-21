@@ -542,3 +542,214 @@ def test_linkedin_status_connected_but_expired(client, db_session):
 def test_linkedin_status_requires_authentication(anonymous_client):
     response = anonymous_client.get("/integrations/linkedin/status")
     assert response.status_code == 401
+
+
+# --- HR mailbox: the single shared, org-level mailbox (app/integrations/hr_email.py,
+# app/hr_inbox/router.py) -- plain SMTP/IMAP credentials rather than a Google OAuth
+# connection. Configuring it is admin-only; the settings land on the hr_integrations
+# singleton row (id=1) rather than any admin's own UserIntegration.
+
+
+def _reset_hr_integration(db_session):
+    from app.models.hr_integration import HrIntegration
+
+    row = db_session.get(HrIntegration, 1)
+    if row is not None:
+        row.smtp_host = None
+        row.smtp_port = None
+        row.use_tls = None
+        row.smtp_username = None
+        row.smtp_password = None
+        row.from_address = None
+        row.hr_module_email = None
+        row.imap_host = None
+        row.imap_port = None
+        row.use_ssl = None
+        row.imap_last_uid = None
+        db_session.commit()
+
+
+def test_hr_inbox_settings_get_requires_admin_role(client, make_auth_headers):
+    headers = make_auth_headers(role="recruiter", email="non-admin-settings@example.com")
+    response = client.get("/hr-inbox/settings", headers=headers)
+    assert response.status_code == 403
+
+
+def test_hr_inbox_settings_get_requires_authentication(anonymous_client):
+    response = anonymous_client.get("/hr-inbox/settings")
+    assert response.status_code == 401
+
+
+def test_hr_inbox_settings_get_reports_unconfigured_by_default(client, db_session):
+    # `client` defaults to an admin session (see conftest.py) -- admin passes the
+    # admin-only check on this endpoint.
+    _reset_hr_integration(db_session)
+
+    response = client.get("/hr-inbox/settings")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["smtp_configured"] is False
+    assert body["imap_configured"] is False
+
+
+def test_hr_inbox_settings_update_requires_admin_role(client, make_auth_headers):
+    headers = make_auth_headers(role="recruiter", email="non-admin-update@example.com")
+    response = client.put("/hr-inbox/settings", json={"smtp_host": "smtp.example.com"}, headers=headers)
+    assert response.status_code == 403
+
+
+def test_hr_inbox_settings_update_stores_and_encrypts_password_never_returning_it(client, db_session):
+    _reset_hr_integration(db_session)
+
+    response = client.put(
+        "/hr-inbox/settings",
+        json={
+            "smtp_host": "smtp.example.com", "smtp_port": 587, "use_tls": True,
+            "smtp_username": "hr@example.com", "smtp_password": "super-secret-password",
+            "from_address": "hr@example.com", "hr_module_email": "hr-module@example.com",
+            "imap_host": "imap.example.com", "imap_port": 993, "use_ssl": True,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["smtp_configured"] is True
+    assert body["imap_configured"] is True
+    assert "smtp_password" not in body
+    assert body["smtp_host"] == "smtp.example.com"
+    assert body["hr_module_email"] == "hr-module@example.com"
+
+    from app.models.hr_integration import HrIntegration
+
+    row = db_session.get(HrIntegration, 1)
+    assert row.smtp_password != "super-secret-password"
+    assert decrypt(row.smtp_password) == "super-secret-password"
+
+
+def test_hr_inbox_settings_update_omitted_password_leaves_existing_one_unchanged(client, db_session):
+    _reset_hr_integration(db_session)
+    client.put(
+        "/hr-inbox/settings",
+        json={"smtp_host": "smtp.example.com", "smtp_username": "hr@example.com", "smtp_password": "first-password"},
+    )
+
+    response = client.put("/hr-inbox/settings", json={"from_address": "hr2@example.com"})
+
+    assert response.status_code == 200
+    assert response.json()["from_address"] == "hr2@example.com"
+
+    from app.models.hr_integration import HrIntegration
+
+    row = db_session.get(HrIntegration, 1)
+    assert decrypt(row.smtp_password) == "first-password"
+
+
+def test_hr_inbox_send_test_email_requires_smtp_configured(client, db_session):
+    _reset_hr_integration(db_session)
+
+    response = client.post("/hr-inbox/settings/send-test-email", json={"to": "someone@example.com"})
+
+    assert response.status_code == 400
+
+
+def test_hr_inbox_send_test_email_success(client, db_session, monkeypatch):
+    _reset_hr_integration(db_session)
+    client.put(
+        "/hr-inbox/settings",
+        json={"smtp_host": "smtp.example.com", "smtp_username": "hr@example.com", "smtp_password": "pw"},
+    )
+    captured = {}
+    monkeypatch.setattr(
+        "app.hr_inbox.router.send_hr_email",
+        lambda hr_integration, **kwargs: captured.update(kwargs),
+    )
+
+    response = client.post("/hr-inbox/settings/send-test-email", json={"to": "someone@example.com"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["sent"] is True
+    assert captured["to"] == "someone@example.com"
+
+
+def test_hr_inbox_send_test_email_smtp_failure_reported_inline_not_502(client, db_session, monkeypatch):
+    from app.integrations.hr_email import SmtpError
+
+    _reset_hr_integration(db_session)
+    client.put(
+        "/hr-inbox/settings",
+        json={"smtp_host": "smtp.example.com", "smtp_username": "hr@example.com", "smtp_password": "pw"},
+    )
+    monkeypatch.setattr(
+        "app.hr_inbox.router.send_hr_email",
+        lambda *a, **k: (_ for _ in ()).throw(SmtpError("Connection refused")),
+    )
+
+    response = client.post("/hr-inbox/settings/send-test-email", json={"to": "someone@example.com"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["sent"] is False
+    assert "Connection refused" in body["detail"]
+
+
+def test_hr_inbox_send_test_email_requires_admin_role(client, make_auth_headers):
+    headers = make_auth_headers(role="recruiter", email="non-admin-test-email@example.com")
+    response = client.post("/hr-inbox/settings/send-test-email", json={"to": "someone@example.com"}, headers=headers)
+    assert response.status_code == 403
+
+
+def test_hr_inbox_test_imap_connection_requires_imap_configured(client, db_session):
+    _reset_hr_integration(db_session)
+
+    response = client.post("/hr-inbox/settings/test-imap-connection")
+
+    assert response.status_code == 400
+
+
+def test_hr_inbox_test_imap_connection_success(client, db_session, monkeypatch):
+    _reset_hr_integration(db_session)
+    client.put(
+        "/hr-inbox/settings",
+        json={
+            "smtp_username": "hr@example.com", "smtp_password": "pw",
+            "imap_host": "imap.example.com", "imap_port": 993, "use_ssl": True,
+        },
+    )
+    monkeypatch.setattr("app.hr_inbox.router.test_imap_connection", lambda hr_integration: None)
+
+    response = client.post("/hr-inbox/settings/test-imap-connection")
+
+    assert response.status_code == 200
+    assert response.json()["connected"] is True
+
+
+def test_hr_inbox_test_imap_connection_failure_reported_inline_not_502(client, db_session, monkeypatch):
+    from app.integrations.imap_poll import ImapError
+
+    _reset_hr_integration(db_session)
+    client.put(
+        "/hr-inbox/settings",
+        json={
+            "smtp_username": "hr@example.com", "smtp_password": "pw",
+            "imap_host": "imap.example.com", "imap_port": 993, "use_ssl": True,
+        },
+    )
+    monkeypatch.setattr(
+        "app.hr_inbox.router.test_imap_connection",
+        lambda hr_integration: (_ for _ in ()).throw(ImapError("Authentication failed")),
+    )
+
+    response = client.post("/hr-inbox/settings/test-imap-connection")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["connected"] is False
+    assert "Authentication failed" in body["detail"]
+
+
+def test_hr_inbox_test_imap_connection_requires_admin_role(client, make_auth_headers):
+    headers = make_auth_headers(role="recruiter", email="non-admin-test-imap@example.com")
+    response = client.post("/hr-inbox/settings/test-imap-connection", headers=headers)
+    assert response.status_code == 403

@@ -16,6 +16,10 @@ import type {
   CandidateUpdate,
   DocuSignAuthUrl,
   GoogleAuthUrl,
+  HrInboundEmailRead,
+  HrInboxListPage,
+  HrIntegrationRead,
+  HrIntegrationUpdate,
   IntegrationStatus,
   InterviewCreate,
   InterviewFeedbackUpdate,
@@ -50,6 +54,7 @@ import type {
   ScreeningDashboardStatsResponse,
   ScreeningSettings,
   ScreeningSettingsUpdate,
+  SendTestEmailResult,
   ShortlistBulkDecisionRequest,
   ShortlistBulkDecisionResult,
   InterviewSchedulingSettings,
@@ -60,6 +65,7 @@ import type {
   ShortlistingDashboardStatsResponse,
   ShortlistStatus,
   ShortlistStatusUpdateRequest,
+  TestImapConnectionResult,
   TokenResponse,
   UserLogin,
   UserRead,
@@ -221,6 +227,36 @@ export const integrationsApi = {
   connectLinkedin: () => get<LinkedInAuthUrl>("/integrations/linkedin/connect"),
   linkedinStatus: (userId?: UUID) =>
     get<IntegrationStatus>(`/integrations/linkedin/status${userId ? `?user_id=${userId}` : ""}`),
+};
+
+// ---- HR mailbox (shared, org-level SMTP/IMAP settings + inbound mail list) ----
+
+export interface HrInboxListParams {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  matched?: boolean;
+}
+
+export const hrInboxApi = {
+  getSettings: () => get<HrIntegrationRead>("/hr-inbox/settings"),
+  updateSettings: (payload: HrIntegrationUpdate) => put<HrIntegrationRead>("/hr-inbox/settings", payload),
+  sendTestEmail: (to: string) => post<SendTestEmailResult>("/hr-inbox/settings/send-test-email", { to }),
+  testImapConnection: () => post<TestImapConnectionResult>("/hr-inbox/settings/test-imap-connection"),
+  list: (params: HrInboxListParams = {}) => {
+    const query = new URLSearchParams();
+    query.set("page", String(params.page ?? 1));
+    query.set("page_size", String(params.pageSize ?? 10));
+    if (params.search) query.set("search", params.search);
+    if (params.matched !== undefined) query.set("matched", String(params.matched));
+    return get<HrInboxListPage>(`/hr-inbox/list?${query.toString()}`);
+  },
+  export: (params: Omit<HrInboxListParams, "page" | "pageSize"> = {}) => {
+    const query = new URLSearchParams();
+    if (params.search) query.set("search", params.search);
+    if (params.matched !== undefined) query.set("matched", String(params.matched));
+    return get<HrInboundEmailRead[]>(`/hr-inbox/export?${query.toString()}`);
+  },
 };
 
 // ---- jobs ----

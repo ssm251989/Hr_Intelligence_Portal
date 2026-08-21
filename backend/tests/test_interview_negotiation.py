@@ -28,6 +28,7 @@ from app.interview_scheduling.tracker import INTERVIEWER_POOL_SHEET, MAILS_SHEET
 from app.models.application import Application
 from app.models.audit_log import AuditLog
 from app.models.candidate import Candidate
+from app.models.hr_integration import HrIntegration
 from app.models.interview import Interview
 from app.models.job_role import JobRole
 from app.models.negotiation_token import NegotiationToken
@@ -95,6 +96,37 @@ def _connect_google(db_session, user) -> UserIntegration:
     return integration
 
 
+def _connect_hr_smtp(db_session, smtp_username="hr@example.com") -> HrIntegration:
+    # The shared, org-level HR mailbox every negotiation email now sends from -- distinct
+    # from any interviewer's/recruiter's own UserIntegration (still used only for Calendar
+    # availability/event creation, unchanged by this).
+    row = db_session.get(HrIntegration, 1)
+    if row is None:
+        row = HrIntegration(id=1)
+        db_session.add(row)
+    row.smtp_host = "smtp.example.com"
+    row.smtp_port = 587
+    row.use_tls = True
+    row.smtp_username = smtp_username
+    row.smtp_password = encrypt("hr-smtp-password")
+    row.from_address = smtp_username
+    db_session.commit()
+    db_session.refresh(row)
+    return row
+
+
+def _disconnect_hr_smtp(db_session) -> None:
+    # The hr_integrations row is a singleton (id=1) that -- like every other settings
+    # singleton in this app -- an earlier test's own db.commit() can leave configured;
+    # explicitly reset it rather than assuming isolation.
+    row = db_session.get(HrIntegration, 1)
+    if row is not None:
+        row.smtp_host = None
+        row.smtp_username = None
+        row.smtp_password = None
+        db_session.commit()
+
+
 def _real_pool_interviewer(db_session) -> User:
     """Reuses the real, already-registered "Kishore" account (see the module docstring)
     rather than minting a duplicate -- a second same-named user would make
@@ -149,17 +181,22 @@ def _make_application(db_session, job, candidate, status="hr_selected") -> Appli
 def _capture_emails(monkeypatch) -> list:
     sent = []
     monkeypatch.setattr(
-        neg, "send_email",
-        lambda refresh_token, *, to, subject, body: sent.append({"to": to, "subject": subject, "body": body}) or "msg-id",
+        neg, "send_hr_email",
+        lambda hr_integration, *, to, subject, body: sent.append(
+            {"identity": hr_integration.smtp_username, "to": to, "subject": subject, "body": body}
+        ),
     )
     return sent
 
 
-def _mock_calendar_event(monkeypatch) -> None:
+def _mock_calendar_event(monkeypatch) -> list:
+    calls = []
     monkeypatch.setattr(
         interview_confirmation, "create_calendar_event",
-        lambda *a, **k: {"event_id": "evt-1", "html_link": "https://calendar.example/evt-1"},
+        lambda refresh_token, **k: calls.append({"refresh_token": refresh_token, **k})
+        or {"event_id": "evt-1", "html_link": "https://calendar.example/evt-1"},
     )
+    return calls
 
 
 def _interviewer_batch(db_session, application) -> list[NegotiationToken]:
@@ -198,7 +235,7 @@ def test_walks_past_a_busy_interviewer_to_the_next_in_the_pool(db_session, tmp_p
     candidate = _make_candidate(db_session)
     application = _make_application(db_session, job, candidate)
     recruiter = _make_user(db_session, "Recruiter", role="recruiter")
-    _connect_google(db_session, recruiter)
+    _connect_hr_smtp(db_session)
 
     sent = _capture_emails(monkeypatch)
     outcome = neg.attempt_auto_negotiate_interview_slots(db_session, application, recruiter)
@@ -247,7 +284,7 @@ def test_not_available_click_falls_back_to_the_next_interviewer_same_day(db_sess
     candidate = _make_candidate(db_session)
     application = _make_application(db_session, job, candidate)
     recruiter = _make_user(db_session, "Recruiter", role="recruiter")
-    _connect_google(db_session, recruiter)
+    _connect_hr_smtp(db_session)
 
     sent = _capture_emails(monkeypatch)
     outcome = neg.attempt_auto_negotiate_interview_slots(db_session, application, recruiter)
@@ -280,7 +317,7 @@ def test_interviewer_can_mark_multiple_slots_available_before_done(db_session, t
     candidate = _make_candidate(db_session)
     application = _make_application(db_session, job, candidate)
     recruiter = _make_user(db_session, "Recruiter", role="recruiter")
-    _connect_google(db_session, recruiter)
+    _connect_hr_smtp(db_session)
 
     sent = _capture_emails(monkeypatch)
     outcome = neg.attempt_auto_negotiate_interview_slots(db_session, application, recruiter)
@@ -320,7 +357,7 @@ def test_both_days_exhausted_flags_the_application_for_manual_scheduling(db_sess
     candidate = _make_candidate(db_session)
     application = _make_application(db_session, job, candidate)
     recruiter = _make_user(db_session, "Recruiter", role="recruiter")
-    _connect_google(db_session, recruiter)
+    _connect_hr_smtp(db_session)
 
     sent = _capture_emails(monkeypatch)
     outcome = neg.attempt_auto_negotiate_interview_slots(db_session, application, recruiter)
@@ -372,10 +409,10 @@ def test_earliest_of_the_candidate_confirmed_slots_is_scheduled(db_session, tmp_
     candidate = _make_candidate(db_session)
     application = _make_application(db_session, job, candidate)
     recruiter = _make_user(db_session, "Recruiter", role="recruiter")
-    _connect_google(db_session, recruiter)
+    _connect_hr_smtp(db_session, smtp_username="hr-shared-token")
 
     sent = _capture_emails(monkeypatch)
-    _mock_calendar_event(monkeypatch)
+    calendar_calls = _mock_calendar_event(monkeypatch)
 
     neg.attempt_auto_negotiate_interview_slots(db_session, application, recruiter)
     interviewer_batch = _interviewer_batch(db_session, application)
@@ -410,6 +447,115 @@ def test_earliest_of_the_candidate_confirmed_slots_is_scheduled(db_session, tmp_
     assert interview.scheduled_at == candidate_slot_rows[1].slot_time
     assert interview.scheduling_method == "auto"
 
+    # Every negotiation email (interviewer offer + candidate offer) went out via the
+    # shared HR account -- and the eventual Calendar event was created via the
+    # INTERVIEWER's own connection, never the HR account's -- Calendar creation is
+    # untouched by this feature. (Not asserted as the literal "fake-refresh-token": the
+    # real pool interviewer "Kishore" may already have a REAL Google connection in this
+    # shared dev database, in which case _real_pool_interviewer reuses it as-is rather
+    # than overwriting it with a fake one -- the only thing that must hold either way is
+    # that it's the interviewer's own token, not the HR account's.)
+    assert len(sent) == 2
+    assert all(email["identity"] == "hr-shared-token" for email in sent)
+    assert len(calendar_calls) == 1
+    assert calendar_calls[0]["refresh_token"] != "hr-shared-token"
+
+
+# --- shared HR mailbox: same sender regardless of actor, graceful skip when absent ---
+
+
+def test_email_uses_shared_hr_credentials_regardless_of_which_recruiter_triggered_it(db_session, tmp_path, monkeypatch):
+    tracker_path = _real_tracker_copy(tmp_path)
+    _configure_tracker(db_session, tracker_path)
+    _real_pool_interviewer(db_session)
+    _connect_hr_smtp(db_session, smtp_username="hr-shared-token")
+
+    sent = _capture_emails(monkeypatch)
+
+    # Two entirely different recruiters, NEITHER of whom has any personal Google
+    # connection at all, each shortlisting their own separate candidate.
+    recruiter_1 = _make_user(db_session, "Recruiter One", role="recruiter")
+    job_1 = _make_job(db_session)
+    application_1 = _make_application(db_session, job_1, _make_candidate(db_session))
+    outcome_1 = neg.attempt_auto_negotiate_interview_slots(db_session, application_1, recruiter_1)
+
+    recruiter_2 = _make_user(db_session, "Recruiter Two", role="recruiter")
+    job_2 = _make_job(db_session)
+    application_2 = _make_application(db_session, job_2, _make_candidate(db_session))
+    outcome_2 = neg.attempt_auto_negotiate_interview_slots(db_session, application_2, recruiter_2)
+
+    assert outcome_1 == "started"
+    assert outcome_2 == "started"
+    assert len(sent) == 2
+    assert all(email["identity"] == "hr-shared-token" for email in sent)
+
+
+def test_skips_gracefully_and_logs_a_clear_reason_when_hr_smtp_is_not_configured(db_session, tmp_path, monkeypatch):
+    tracker_path = _real_tracker_copy(tmp_path)
+    _configure_tracker(db_session, tracker_path)
+    _real_pool_interviewer(db_session)
+    _disconnect_hr_smtp(db_session)
+
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application(db_session, job, candidate)
+    recruiter = _make_user(db_session, "Recruiter", role="recruiter")
+
+    sent = _capture_emails(monkeypatch)
+    outcome = neg.attempt_auto_negotiate_interview_slots(db_session, application, recruiter)
+
+    assert outcome is None
+    assert sent == []
+
+    skipped = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.entity_id == application.id, AuditLog.action == "interview_negotiation_skipped")
+        .order_by(AuditLog.created_at.desc())
+        .first()
+    )
+    assert skipped is not None
+    assert "SMTP" in skipped.details["reason"]
+    assert "not configured" in skipped.details["reason"]
+
+    # No orphaned negotiation state was left behind either -- the skip happens before any
+    # batch is created.
+    assert _interviewer_batch(db_session, application) == []
+
+
+def test_undecryptable_hr_smtp_password_skips_gracefully(db_session, tmp_path, monkeypatch):
+    # Deliberately NOT mocking send_hr_email here -- this exercises the real decrypt
+    # failure inside app.integrations.hr_email.send_hr_email, not a mocked stand-in.
+    tracker_path = _real_tracker_copy(tmp_path)
+    _configure_tracker(db_session, tracker_path)
+    _real_pool_interviewer(db_session)
+
+    row = db_session.get(HrIntegration, 1)
+    if row is None:
+        row = HrIntegration(id=1)
+        db_session.add(row)
+    row.smtp_host = "smtp.example.com"
+    row.smtp_username = "hr@example.com"
+    row.smtp_password = "not-a-valid-fernet-token"
+    db_session.commit()
+
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application(db_session, job, candidate)
+    recruiter = _make_user(db_session, "Recruiter", role="recruiter")
+
+    outcome = neg.attempt_auto_negotiate_interview_slots(db_session, application, recruiter)
+
+    assert outcome is None
+
+    skipped = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.entity_id == application.id, AuditLog.action == "interview_negotiation_skipped")
+        .order_by(AuditLog.created_at.desc())
+        .first()
+    )
+    assert skipped is not None
+    assert "could not be decrypted" in skipped.details["reason"]
+
 
 # --- idempotency guard ---
 
@@ -423,7 +569,7 @@ def test_idempotency_guard_prevents_a_second_negotiation_for_the_same_applicatio
     candidate = _make_candidate(db_session)
     application = _make_application(db_session, job, candidate)
     recruiter = _make_user(db_session, "Recruiter", role="recruiter")
-    _connect_google(db_session, recruiter)
+    _connect_hr_smtp(db_session)
 
     sent = _capture_emails(monkeypatch)
     first = neg.attempt_auto_negotiate_interview_slots(db_session, application, recruiter)
@@ -457,12 +603,124 @@ def test_idempotency_guard_does_not_fire_for_an_application_already_shortlisted_
     assert sent == []
 
 
+# --- atomicity: a failed send must not leave its batch's NegotiationToken rows live
+# (the orphaned-token incident -- a send failure after _create_batch already committed
+# the batch left it blocking _has_live_negotiation_or_scheduled_interview's idempotency
+# guard for up to TOKEN_EXPIRY_DAYS even once the send issue itself was fixed) ---
+
+
+def test_advance_interviewer_round_invalidates_batch_on_send_failure_and_unblocks_retry(db_session, tmp_path, monkeypatch):
+    from app.integrations.hr_email import SmtpError
+
+    tracker_path = _real_tracker_copy(tmp_path)
+    _configure_tracker(db_session, tracker_path)
+    _real_pool_interviewer(db_session)
+
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application(db_session, job, candidate)
+    recruiter = _make_user(db_session, "Recruiter", role="recruiter")
+    _connect_hr_smtp(db_session)
+
+    monkeypatch.setattr(neg, "send_hr_email", lambda *a, **k: (_ for _ in ()).throw(SmtpError("SMTP down")))
+
+    outcome = neg.attempt_auto_negotiate_interview_slots(db_session, application, recruiter)
+    assert outcome is None
+
+    batch = _interviewer_batch(db_session, application)
+    assert len(batch) == 5  # 3 slots + not_available + done
+    assert all(row.invalidated_at is not None for row in batch)
+
+    skipped = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.entity_id == application.id, AuditLog.action == "interview_negotiation_skipped")
+        .order_by(AuditLog.created_at.desc())
+        .first()
+    )
+    assert skipped is not None
+    assert "SMTP down" in skipped.details["reason"]
+
+    # The now-invalidated batch must not trip _has_live_negotiation_or_scheduled_interview
+    # -- a subsequent attempt (SMTP working this time) must actually start, not be skipped
+    # as "already has a live negotiation".
+    monkeypatch.setattr(neg, "send_hr_email", lambda *a, **k: None)
+    retry_outcome = neg.attempt_auto_negotiate_interview_slots(db_session, application, recruiter)
+    assert retry_outcome == "started"
+
+
+def test_start_candidate_round_invalidates_batch_on_send_failure_and_unblocks_guard(db_session, tmp_path, monkeypatch):
+    from app.integrations.hr_email import SmtpError
+
+    tracker_path = _real_tracker_copy(tmp_path)
+    _configure_tracker(db_session, tracker_path)
+    _real_pool_interviewer(db_session)
+
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application(db_session, job, candidate)
+    recruiter = _make_user(db_session, "Recruiter", role="recruiter")
+    _connect_hr_smtp(db_session)
+
+    monkeypatch.setattr(neg, "send_hr_email", lambda *a, **k: None)
+    outcome = neg.attempt_auto_negotiate_interview_slots(db_session, application, recruiter)
+    assert outcome == "started"
+
+    interviewer_batch = _interviewer_batch(db_session, application)
+    # Resolve the interviewer side out of the way first, so what's left to prove is that
+    # the CANDIDATE batch's own invalidation-on-failure (not some other still-live batch)
+    # is what keeps the guard clear.
+    for row in interviewer_batch:
+        row.invalidated_at = datetime.now(timezone.utc)
+    db_session.commit()
+
+    marked_rows = [row for row in interviewer_batch if row.kind == "slot"][:1]
+    monkeypatch.setattr(neg, "send_hr_email", lambda *a, **k: (_ for _ in ()).throw(SmtpError("candidate smtp fail")))
+    neg.start_candidate_round(db_session, application, interviewer_batch, marked_rows, actor_email=recruiter.email)
+
+    candidate_batch = _candidate_batch(db_session, application)
+    assert len(candidate_batch) == 3  # 1 marked slot + not_available + done
+    assert all(row.invalidated_at is not None for row in candidate_batch)
+
+    assert neg._has_live_negotiation_or_scheduled_interview(db_session, application) is False
+
+
+def test_start_candidate_round_does_not_write_tracker_row_or_audit_log_on_send_failure(db_session, tmp_path, monkeypatch):
+    from app.integrations.hr_email import SmtpError
+
+    tracker_path = _real_tracker_copy(tmp_path)
+    _configure_tracker(db_session, tracker_path)
+    _real_pool_interviewer(db_session)
+
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application(db_session, job, candidate)
+    recruiter = _make_user(db_session, "Recruiter", role="recruiter")
+    _connect_hr_smtp(db_session)
+
+    monkeypatch.setattr(neg, "send_hr_email", lambda *a, **k: None)
+    outcome = neg.attempt_auto_negotiate_interview_slots(db_session, application, recruiter)
+    assert outcome == "started"
+    interviewer_batch = _interviewer_batch(db_session, application)
+    marked_rows = [row for row in interviewer_batch if row.kind == "slot"][:1]
+
+    monkeypatch.setattr(neg, "send_hr_email", lambda *a, **k: (_ for _ in ()).throw(SmtpError("candidate smtp fail")))
+    neg.start_candidate_round(db_session, application, interviewer_batch, marked_rows, actor_email=recruiter.email)
+
+    started_entry = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.entity_id == application.id, AuditLog.action == "interview_negotiation_candidate_round_started")
+        .first()
+    )
+    assert started_entry is None
+
+    workbook = load_workbook(tracker_path)
+    log_rows = list(workbook["Interview Log"].iter_rows(min_row=2, values_only=True))
+    header = [cell.value for cell in next(workbook["Interview Log"].iter_rows(min_row=1, max_row=1))]
+    status_col = header.index("Status")
+    assert not any(row[status_col] == "Awaiting Candidate Confirmation" for row in log_rows)
+
+
 # --- router wiring: fires on the real Shortlisted transition through both endpoints ---
-
-
-def _connect_google_for_email(db_session, email) -> None:
-    user = db_session.query(User).filter(User.email == email).one()
-    _connect_google(db_session, user)
 
 
 def test_legacy_shortlist_decision_select_triggers_the_negotiation(client, db_session, tmp_path, monkeypatch, make_auth_headers):
@@ -474,7 +732,7 @@ def test_legacy_shortlist_decision_select_triggers_the_negotiation(client, db_se
     application = _make_application(db_session, job, candidate, status="screened")
     email = f"recruiter-{uuid.uuid4().hex[:8]}@example.com"
     headers = make_auth_headers(role="recruiter", email=email)
-    _connect_google_for_email(db_session, email)
+    _connect_hr_smtp(db_session)
 
     sent = _capture_emails(monkeypatch)
     response = client.post(f"/applications/{application.id}/shortlist-decision", json={"decision": "select"}, headers=headers)
@@ -493,7 +751,7 @@ def test_shortlist_status_transition_to_shortlisted_triggers_the_negotiation(cli
     application = _make_application(db_session, job, candidate, status="screened")
     email = f"recruiter-{uuid.uuid4().hex[:8]}@example.com"
     headers = make_auth_headers(role="recruiter", email=email)
-    _connect_google_for_email(db_session, email)
+    _connect_hr_smtp(db_session)
 
     sent = _capture_emails(monkeypatch)
     response = client.post(f"/applications/{application.id}/shortlist-status", json={"target_status": "shortlisted"}, headers=headers)

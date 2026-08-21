@@ -437,6 +437,71 @@ export interface IntegrationStatus {
   expired?: boolean | null;
 }
 
+// The single shared, org-level HR mailbox every automated HR email sends from -- plain
+// SMTP/IMAP credentials rather than a Google OAuth connection, distinct from
+// IntegrationStatus above, which is always per-user. smtp_password is deliberately never
+// returned by the backend -- see app/schemas/hr_integration.py.
+export interface HrIntegrationRead {
+  smtp_host?: string | null;
+  smtp_port?: number | null;
+  use_tls?: boolean | null;
+  smtp_username?: string | null;
+  from_address?: string | null;
+  hr_module_email?: string | null;
+  smtp_configured: boolean;
+  imap_host?: string | null;
+  imap_port?: number | null;
+  use_ssl?: boolean | null;
+  imap_configured: boolean;
+}
+
+export interface HrIntegrationUpdate {
+  smtp_host?: string | null;
+  smtp_port?: number | null;
+  use_tls?: boolean | null;
+  smtp_username?: string | null;
+  smtp_password?: string | null;
+  from_address?: string | null;
+  hr_module_email?: string | null;
+  imap_host?: string | null;
+  imap_port?: number | null;
+  use_ssl?: boolean | null;
+}
+
+export interface SendTestEmailResult {
+  sent: boolean;
+  detail?: string | null;
+}
+
+export interface TestImapConnectionResult {
+  connected: boolean;
+  detail?: string | null;
+}
+
+// One incoming message to the shared HR mailbox -- matched or not -- see the "HR Inbox"
+// list page (app/hr_inbox/router.py).
+export interface HrInboundEmailRead {
+  id: UUID;
+  from_address: string;
+  to_address?: string | null;
+  subject?: string | null;
+  body?: string | null;
+  received_at?: string | null;
+  message_id?: string | null;
+  matched_candidate_id?: UUID | null;
+  matched_candidate_name?: string | null;
+  matched_application_id?: UUID | null;
+  matched_job_title?: string | null;
+  created_at: string;
+}
+
+export interface HrInboxListPage {
+  total: number;
+  page: number;
+  page_size: number;
+  items: HrInboundEmailRead[];
+}
+
 export interface InterviewFeedbackUpdate {
   technical_rating?: number | null;
   communication_rating?: number | null;

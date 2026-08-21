@@ -1,15 +1,13 @@
 import uuid
 from pathlib import Path
 
-from cryptography.fernet import InvalidToken
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_roles
 from app.candidates.hold import assert_application_not_on_hold
-from app.core.crypto import decrypt
 from app.core.database import get_db
-from app.integrations.gmail import GmailError
+from app.integrations.hr_email import get_hr_integration, is_smtp_configured, SmtpError
 from app.interview_scheduling.confirmation import propose_interview_slots
 from app.interview_scheduling.storage import get_interview_scheduling_settings
 from app.interview_scheduling.tracker import ensure_tracker_file, sync_interviewer_pool_job_titles
@@ -17,7 +15,6 @@ from app.models.application import Application
 from app.models.candidate import Candidate
 from app.models.job_role import JobRole
 from app.models.user import User
-from app.models.user_integration import UserIntegration
 from app.schemas.interview_scheduling import (
     InterviewSchedulingSettingsRead,
     InterviewSchedulingSettingsSaveResult,
@@ -79,8 +76,8 @@ def propose_slots(
 ):
     """Kicks off Part 3: runs the interviewer-selection logic for up to 3 candidate-facing
     slots and emails the candidate a distinct confirmation link per slot that actually found
-    someone free, via the current user's own connected Gmail -- same sender pattern as
-    /applications/{id}/message."""
+    someone free, via the shared, org-level HR mailbox's SMTP settings (app/integrations/
+    hr_email.py) -- same sender pattern as /applications/{id}/message."""
     application = db.get(Application, application_id)
     if not application:
         raise HTTPException(status_code=404, detail="Application not found")
@@ -105,22 +102,17 @@ def propose_slots(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    integration = (
-        db.query(UserIntegration)
-        .filter(UserIntegration.user_id == current_user.id, UserIntegration.provider == "google")
-        .first()
-    )
-    if not integration:
-        raise HTTPException(status_code=400, detail="Connect Google in Settings to send interview slot emails")
+    hr_integration = get_hr_integration(db)
+    if not is_smtp_configured(hr_integration):
+        raise HTTPException(status_code=400, detail="Configure the HR mailbox's SMTP settings to send interview slot emails")
 
     try:
         result = propose_interview_slots(
             db, application, tracker_path=settings_row.tracker_path, candidate=candidate, job=job,
-            sender_refresh_token=decrypt(integration.refresh_token), actor=current_user.email,
+            hr_integration=hr_integration, actor=current_user.email,
         )
-    except (GmailError, InvalidToken) as exc:
-        detail = str(exc) or "Stored Google refresh token could not be decrypted"
-        raise HTTPException(status_code=502, detail=detail) from exc
+    except SmtpError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     if result["slots_offered"] == 0:
         raise HTTPException(

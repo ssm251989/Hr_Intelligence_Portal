@@ -6,8 +6,8 @@ from app.core.crypto import encrypt
 from app.models.application import Application, TERMINAL_APPLICATION_STATUSES
 from app.models.audit_log import AuditLog
 from app.models.candidate import Candidate
+from app.models.hr_integration import HrIntegration
 from app.models.job_role import JobRole
-from app.models.user_integration import UserIntegration
 
 
 def _make_job(db_session, **kwargs) -> JobRole:
@@ -16,6 +16,37 @@ def _make_job(db_session, **kwargs) -> JobRole:
     db_session.commit()
     db_session.refresh(job)
     return job
+
+
+def _connect_hr_smtp(db_session, password="hr-smtp-password") -> HrIntegration:
+    # The shared, org-level HR mailbox every automated/manual HR email now sends from --
+    # distinct from any individual recruiter's own UserIntegration.
+    row = db_session.get(HrIntegration, 1)
+    if row is None:
+        row = HrIntegration(id=1)
+        db_session.add(row)
+    row.smtp_host = "smtp.example.com"
+    row.smtp_port = 587
+    row.use_tls = True
+    row.smtp_username = "hr@example.com"
+    row.smtp_password = encrypt(password)
+    row.from_address = "hr@example.com"
+    db_session.commit()
+    db_session.refresh(row)
+    return row
+
+
+def _disconnect_hr_smtp(db_session) -> None:
+    # The hr_integrations row is a singleton (id=1) that -- like every other settings
+    # singleton in this app -- an earlier test's own db.commit() can leave configured;
+    # explicitly reset it rather than assuming isolation, same pattern
+    # test_interview_scheduling.py's own settings tests already use.
+    row = db_session.get(HrIntegration, 1)
+    if row is not None:
+        row.smtp_host = None
+        row.smtp_username = None
+        row.smtp_password = None
+        db_session.commit()
 
 
 def _make_candidate(db_session, full_name="Jane Doe", **kwargs) -> Candidate:
@@ -67,23 +98,23 @@ def test_create_application_missing_candidate_returns_404(client, db_session):
 # --- email notification wiring (POST /applications) --------------------------
 
 
-def test_create_application_triggers_notification_when_owner_enabled_and_connected(
+def test_create_application_triggers_notification_when_owner_enabled_and_hr_configured(
     client, db_session, make_auth_headers, monkeypatch
 ):
+    # The job owner's OWN Google connection is irrelevant now -- only the shared HR
+    # mailbox's SMTP configuration decides whether this notification can send.
     headers = make_auth_headers(role="recruiter", email="owner@example.com")
-    # The token's subject is the user id -- fetch it back out to attach as job.created_by.
     from app.core.security import decode_access_token
 
     owner_id = uuid.UUID(decode_access_token(headers["Authorization"].split(" ")[1])["sub"])
-    db_session.add(UserIntegration(user_id=owner_id, provider="google", refresh_token=encrypt("refresh-token")))
-    db_session.commit()
+    _connect_hr_smtp(db_session)
     job = _make_job(db_session, created_by=owner_id, publish_settings={"email_notifications": True})
     candidate = _make_candidate(db_session)
 
     captured = {}
     monkeypatch.setattr(
-        "app.jobs.service.send_email",
-        lambda refresh_token, **kwargs: captured.update(kwargs) or "msg_1",
+        "app.jobs.service.send_hr_email",
+        lambda hr_integration, **kwargs: captured.update(kwargs),
     )
 
     response = client.post(
@@ -94,8 +125,36 @@ def test_create_application_triggers_notification_when_owner_enabled_and_connect
     assert captured.get("to") == "owner@example.com"
 
 
+def test_create_application_notification_fires_even_without_owners_own_google_connection(
+    client, db_session, make_auth_headers, monkeypatch
+):
+    # Regression check for the SMTP migration: the owner having NO personal Google
+    # connection at all must no longer block their own new-application notification, since
+    # sending no longer depends on it.
+    headers = make_auth_headers(role="recruiter", email="owner-no-personal-google@example.com")
+    from app.core.security import decode_access_token
+
+    owner_id = uuid.UUID(decode_access_token(headers["Authorization"].split(" ")[1])["sub"])
+    _connect_hr_smtp(db_session)
+    job = _make_job(db_session, created_by=owner_id, publish_settings={"email_notifications": True})
+    candidate = _make_candidate(db_session)
+
+    captured = {}
+    monkeypatch.setattr(
+        "app.jobs.service.send_hr_email",
+        lambda hr_integration, **kwargs: captured.update(kwargs),
+    )
+
+    response = client.post(
+        "/applications", json={"job_role_id": str(job.id), "candidate_id": str(candidate.id)}
+    )
+
+    assert response.status_code == 201
+    assert captured.get("to") == "owner-no-personal-google@example.com"
+
+
 def test_create_application_succeeds_even_if_notification_helper_would_fail(client, db_session, monkeypatch):
-    # No integration connected at all -- create_application must still succeed; the
+    # No HR integration connected at all -- create_application must still succeed; the
     # notification is fire-and-forget and must never block the response.
     job = _make_job(db_session, publish_settings={"email_notifications": True})
     candidate = _make_candidate(db_session)
@@ -276,7 +335,8 @@ def test_candidate_detail_not_found(client):
 # --- POST /applications/{id}/message ---
 
 
-def test_message_candidate_without_google_connection_returns_400(client, db_session):
+def test_message_candidate_without_hr_smtp_configured_returns_400(client, db_session):
+    _disconnect_hr_smtp(db_session)
     job = _make_job(db_session)
     candidate = _make_candidate(db_session, email="candidate@example.com")
     application = _make_application_with_status(db_session, job, candidate, "received")
@@ -286,7 +346,7 @@ def test_message_candidate_without_google_connection_returns_400(client, db_sess
     )
 
     assert response.status_code == 400
-    assert "Connect Google" in response.json()["detail"]
+    assert "SMTP" in response.json()["detail"]
 
 
 def test_message_candidate_without_email_on_file_returns_400(client, db_session):
@@ -301,22 +361,20 @@ def test_message_candidate_without_email_on_file_returns_400(client, db_session)
     assert response.status_code == 400
 
 
-def test_message_candidate_sends_real_email_via_connected_gmail(client, db_session, monkeypatch):
+def test_message_candidate_sends_real_email_via_hr_mailbox_regardless_of_actor(client, db_session, monkeypatch):
+    # The recruiter clicking "Message Candidate" has no personal Google connection at all
+    # here -- sending must still work, since it no longer depends on the actor's own
+    # connection, only on the shared HR mailbox's SMTP configuration.
     job = _make_job(db_session)
     candidate = _make_candidate(db_session, email="candidate@example.com")
     application = _make_application_with_status(db_session, job, candidate, "received")
 
-    from app.core.security import decode_access_token
-
-    token = client.headers["Authorization"].split(" ")[1]
-    user_id = uuid.UUID(decode_access_token(token)["sub"])
-    db_session.add(UserIntegration(user_id=user_id, provider="google", refresh_token=encrypt("refresh-token")))
-    db_session.commit()
+    _connect_hr_smtp(db_session)
 
     captured = {}
     monkeypatch.setattr(
-        "app.candidates.applications_router.send_email",
-        lambda refresh_token, **kwargs: captured.update(kwargs) or "msg_1",
+        "app.candidates.applications_router.send_hr_email",
+        lambda hr_integration, **kwargs: captured.update(kwargs),
     )
 
     response = client.post(
@@ -341,24 +399,19 @@ def test_message_candidate_sends_real_email_via_connected_gmail(client, db_sessi
     assert entry.details["to"] == "candidate@example.com"
 
 
-def test_message_candidate_gmail_failure_returns_502(client, db_session, monkeypatch):
-    from app.integrations.gmail import GmailError
+def test_message_candidate_smtp_failure_returns_502(client, db_session, monkeypatch):
+    from app.integrations.hr_email import SmtpError
 
     job = _make_job(db_session)
     candidate = _make_candidate(db_session, email="candidate@example.com")
     application = _make_application_with_status(db_session, job, candidate, "received")
 
-    from app.core.security import decode_access_token
+    _connect_hr_smtp(db_session)
 
-    token = client.headers["Authorization"].split(" ")[1]
-    user_id = uuid.UUID(decode_access_token(token)["sub"])
-    db_session.add(UserIntegration(user_id=user_id, provider="google", refresh_token=encrypt("refresh-token")))
-    db_session.commit()
+    def fake_send_hr_email(hr_integration, **kwargs):
+        raise SmtpError("SMTP server is down")
 
-    def fake_send_email(refresh_token, **kwargs):
-        raise GmailError("Gmail is down")
-
-    monkeypatch.setattr("app.candidates.applications_router.send_email", fake_send_email)
+    monkeypatch.setattr("app.candidates.applications_router.send_hr_email", fake_send_hr_email)
 
     response = client.post(
         f"/applications/{application.id}/message", json={"subject": "Hi", "body": "Hello"}

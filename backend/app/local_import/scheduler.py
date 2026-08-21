@@ -1,11 +1,16 @@
 """Part G: the scheduled trigger for run_local_import_scan, interval configurable via
 local_import_settings.scan_interval_minutes (defaults to 30, the original hardcoded value).
 
+Also hosts the shared HR mailbox's IMAP poll (app/integrations/imap_poll.py) -- reuses this
+exact same BackgroundScheduler instance as a second registered job, fixed at 30 minutes and
+not admin-configurable (unlike the scan above), rather than building a second scheduler.
+
 APScheduler's BackgroundScheduler (thread-based) rather than AsyncIOScheduler -- everything
-this job touches (the SQLAlchemy session, the synchronous Anthropic client) is sync code, so
-a background thread is the natural fit; there's no async event loop involved anywhere in
-this job. Wired into app/main.py's lifespan (start on startup, shut down on shutdown) --
-this app's first background job, so also its first-ever scheduler.
+these jobs touch (the SQLAlchemy session, the synchronous Anthropic client, plain blocking
+smtplib/imaplib calls) is sync code, so a background thread is the natural fit; there's no
+async event loop involved anywhere here. Wired into app/main.py's lifespan (start on
+startup, shut down on shutdown) -- this app's first background job, so also its first-ever
+scheduler.
 """
 
 import logging
@@ -22,6 +27,9 @@ logger = logging.getLogger(__name__)
 JOB_ID = "local_import_scan"
 DEFAULT_INTERVAL_MINUTES = 30
 
+HR_INBOX_POLL_JOB_ID = "hr_inbox_poll"
+HR_INBOX_POLL_INTERVAL_MINUTES = 30
+
 _scheduler: BackgroundScheduler | None = None
 
 
@@ -32,6 +40,30 @@ def _run_scheduled_scan() -> None:
         # A single bad run (e.g. a transient Anthropic outage) must never crash the
         # scheduler thread or stop future scheduled ticks from firing.
         logger.exception("Local import scheduled scan failed")
+
+
+def _run_scheduled_hr_inbox_poll() -> None:
+    # Local imports -- avoids a module-level import cycle risk between this module and
+    # app.integrations.imap_poll/hr_email, and keeps this scheduler file's own import list
+    # focused on what its OTHER job (the scan above) actually needs.
+    from app.integrations.hr_email import get_hr_integration
+    from app.integrations.imap_poll import ImapError, is_imap_configured, poll_hr_inbox
+
+    db = SessionLocal()
+    try:
+        hr_integration = get_hr_integration(db)
+        if not is_imap_configured(hr_integration):
+            return
+        poll_hr_inbox(db, hr_integration)
+    except ImapError:
+        # A single bad tick (mailbox unreachable, credentials revoked, ...) must never
+        # crash the scheduler thread or stop future ticks from firing -- same treatment
+        # as _run_scheduled_scan above.
+        logger.exception("HR inbox IMAP poll failed")
+    except Exception:
+        logger.exception("HR inbox IMAP poll failed")
+    finally:
+        db.close()
 
 
 def _current_interval_minutes() -> int:
@@ -47,6 +79,11 @@ def start_scheduler() -> BackgroundScheduler:
     scheduler = BackgroundScheduler()
     interval_minutes = _current_interval_minutes()
     scheduler.add_job(_run_scheduled_scan, trigger=IntervalTrigger(minutes=interval_minutes), id=JOB_ID)
+    scheduler.add_job(
+        _run_scheduled_hr_inbox_poll,
+        trigger=IntervalTrigger(minutes=HR_INBOX_POLL_INTERVAL_MINUTES),
+        id=HR_INBOX_POLL_JOB_ID,
+    )
     scheduler.start()
     _scheduler = scheduler
     return scheduler

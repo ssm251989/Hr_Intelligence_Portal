@@ -11,6 +11,7 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
+import MailOutlineIcon from "@mui/icons-material/MailOutline";
 import NotificationsOutlinedIcon from "@mui/icons-material/NotificationsOutlined";
 import PaidOutlinedIcon from "@mui/icons-material/PaidOutlined";
 import PeopleAltOutlinedIcon from "@mui/icons-material/PeopleAltOutlined";
@@ -108,6 +109,7 @@ const MODULES: ModuleLink[] = [
       { label: "Interview List", path: "/interviews/list" },
     ],
   },
+  { label: "HR Inbox", path: "/hr-inbox", icon: MailOutlineIcon },
   { label: "Salary", path: "/salary", icon: PaidOutlinedIcon },
   { label: "BGV", path: "/bgv", icon: VerifiedUserOutlinedIcon },
   { label: "Offers", path: "/offers", icon: DescriptionOutlinedIcon },

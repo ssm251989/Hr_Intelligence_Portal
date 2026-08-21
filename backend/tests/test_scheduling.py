@@ -547,12 +547,12 @@ def test_list_all_interviews_filters_by_scheduling_method(client, db_session, tm
     db_session.commit()
 
     monkeypatch.setattr(interview_scheduling_service, "check_calendar_availability", lambda *a, **k: True)
-    monkeypatch.setattr(interview_confirmation, "send_email", lambda *a, **k: "msg-id")
+    monkeypatch.setattr(interview_confirmation, "send_hr_email", lambda *a, **k: None)
     monkeypatch.setattr(interview_confirmation, "create_calendar_event", lambda *a, **k: None)
 
     result = interview_confirmation.propose_interview_slots(
         db_session, auto_app, tracker_path=str(tracker_path), candidate=auto_candidate, job=auto_job,
-        sender_refresh_token="sender-token", actor="recruiter@example.com",
+        hr_integration=None, actor="recruiter@example.com",
     )
     assert result["slots_offered"] >= 1
     outcome = interview_confirmation.confirm_token(db_session, result["tokens"][0]["token"])

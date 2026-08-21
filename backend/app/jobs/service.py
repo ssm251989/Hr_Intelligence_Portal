@@ -1,15 +1,12 @@
 from datetime import date
 
-from cryptography.fernet import InvalidToken
 from sqlalchemy.orm import Session
 
 from app.audit.service import log_action
-from app.core.crypto import decrypt
-from app.integrations.gmail import GmailError, send_email
+from app.integrations.hr_email import get_hr_integration, is_smtp_configured, send_hr_email, SmtpError
 from app.models.candidate import Candidate
 from app.models.job_role import JobRole
 from app.models.user import User
-from app.models.user_integration import UserIntegration
 
 
 def validate_status_transition(current_status: str, new_status: str) -> None:
@@ -113,49 +110,50 @@ def resume_job(db: Session, job: JobRole) -> None:
 
 
 def notify_job_owner_of_new_application(db: Session, job: JobRole, candidate: Candidate) -> None:
-    """Best-effort real email to the publishing recruiter when a new application comes in.
+    """Best-effort real email to the publishing recruiter when a new application comes in,
+    sent from the shared, org-level HR mailbox (app/integrations/hr_email.py) over SMTP --
+    not the job owner's own connection, which is no longer relevant to sending at all,
+    only to knowing who the recipient is.
 
-    Only fires when the job has "Email notifications" enabled (job.publish_settings)
-    AND the user who created/published it (job.created_by) has Google connected. Sends
-    to that user's own inbox as a simple demo/test case, not to the candidate. Never
-    raises -- a missing connection, an old token without the gmail.send scope, or any
-    Gmail API failure must not block application creation, same treatment as the
-    Calendar/DocuSign integrations elsewhere in this app.
+    Only fires when the job has "Email notifications" enabled (job.publish_settings) AND
+    the HR mailbox's SMTP settings are configured. Sends to job.created_by's own inbox as a
+    simple demo/test case, not to the candidate. Never raises -- a missing/broken HR mailbox
+    configuration must not block application creation, same treatment as the Calendar/
+    DocuSign integrations elsewhere in this app.
     """
     if not (job.publish_settings or {}).get("email_notifications"):
         return
     if not job.created_by:
         return
 
-    integration = (
-        db.query(UserIntegration)
-        .filter(UserIntegration.user_id == job.created_by, UserIntegration.provider == "google")
-        .first()
-    )
-    if not integration:
-        return
-
     user = db.get(User, job.created_by)
     if not user or not user.email:
         return
 
+    hr_integration = get_hr_integration(db)
+    if not is_smtp_configured(hr_integration):
+        log_action(
+            db, "job_role", job.id, "new_application_email_skipped", "system",
+            {"reason": "HR mailbox's SMTP settings are not configured", "candidate_id": str(candidate.id)},
+        )
+        return
+
     try:
-        send_email(
-            decrypt(integration.refresh_token),
+        send_hr_email(
+            hr_integration,
             to=user.email,
             subject=f"New application for {job.title}",
             body=(
                 f"{candidate.full_name or 'A candidate'} just applied for {job.title}.\n\n"
-                "This is a demo notification sent to your own inbox via your connected Google account."
+                "This is a demo notification sent to your own inbox via the shared HR mailbox."
             ),
         )
         log_action(
             db, "job_role", job.id, "new_application_email_sent", "system",
             {"to": user.email, "candidate_id": str(candidate.id)},
         )
-    except (GmailError, InvalidToken) as exc:
-        error = str(exc) or "Stored Google refresh token could not be decrypted"
+    except SmtpError as exc:
         log_action(
             db, "job_role", job.id, "new_application_email_failed", "system",
-            {"error": error, "candidate_id": str(candidate.id)},
+            {"error": str(exc), "candidate_id": str(candidate.id)},
         )

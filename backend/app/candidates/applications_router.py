@@ -1,7 +1,6 @@
 import uuid
 from typing import Optional
 
-from cryptography.fernet import InvalidToken
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -9,15 +8,13 @@ from app.audit.service import log_action
 from app.auth.dependencies import get_current_user, require_roles
 from app.candidates.hold import put_application_on_hold, resume_application_from_hold
 from app.candidates.pipeline_actions import compute_next_actions
-from app.core.crypto import decrypt
 from app.core.database import get_db
-from app.integrations.gmail import GmailError, send_email
+from app.integrations.hr_email import get_hr_integration, is_smtp_configured, send_hr_email, SmtpError
 from app.jobs.service import notify_job_owner_of_new_application
 from app.models.application import Application
 from app.models.candidate import Candidate
 from app.models.job_role import JobRole
 from app.models.user import User
-from app.models.user_integration import UserIntegration
 from app.schemas.application import ApplicationCreate, ApplicationRead
 from app.schemas.candidates_dashboard import (
     CandidateApplicationDetail,
@@ -186,29 +183,23 @@ def message_candidate(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("recruiter", "hiring_manager", "admin")),
 ):
-    """Sends a real email to the candidate via the current user's connected Gmail
-    (the same 'google' UserIntegration used for Calendar). There is no separate bypass
-    here -- if the recruiter hasn't connected Google, this fails the same way any other
-    Gmail-backed action in the app does, and the frontend gates the button on connection
-    status beforehand (see app/jobs/service.py's notification pattern)."""
+    """Sends a real email to the candidate via the shared, org-level HR mailbox
+    (app/integrations/hr_email.py) over SMTP -- not current_user's own connection, which is
+    no longer relevant to sending any HR email in this app. If the HR mailbox's SMTP
+    settings haven't been configured yet, this fails accordingly."""
     application = _get_application_or_404(db, application_id)
     candidate = db.get(Candidate, application.candidate_id)
     if not candidate or not candidate.email:
         raise HTTPException(status_code=400, detail="Candidate has no email on file")
 
-    integration = (
-        db.query(UserIntegration)
-        .filter(UserIntegration.user_id == current_user.id, UserIntegration.provider == "google")
-        .first()
-    )
-    if not integration:
-        raise HTTPException(status_code=400, detail="Connect Google in Settings to send email to candidates")
+    hr_integration = get_hr_integration(db)
+    if not is_smtp_configured(hr_integration):
+        raise HTTPException(status_code=400, detail="Configure the HR mailbox's SMTP settings to send email to candidates")
 
     try:
-        send_email(decrypt(integration.refresh_token), to=candidate.email, subject=payload.subject, body=payload.body)
-    except (GmailError, InvalidToken) as exc:
-        detail = str(exc) or "Stored Google refresh token could not be decrypted"
-        raise HTTPException(status_code=502, detail=detail) from exc
+        send_hr_email(hr_integration, to=candidate.email, subject=payload.subject, body=payload.body)
+    except SmtpError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     log_action(
         db,

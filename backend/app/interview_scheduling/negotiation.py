@@ -48,14 +48,12 @@ from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
-from cryptography.fernet import InvalidToken
 from sqlalchemy.orm import Session
 
 from app.audit.service import log_action
-from app.core.crypto import decrypt
 from app.core.config import settings
-from app.integrations.gmail import GmailError, send_email
 from app.integrations.google_calendar import APP_TIMEZONE, format_ist_datetime
+from app.integrations.hr_email import get_hr_integration, is_smtp_configured, send_hr_email, SmtpError
 from app.interview_scheduling.confirmation import create_confirmed_calendar_event
 from app.interview_scheduling.service import _find_interviewer_user, _google_integration
 from app.interview_scheduling.storage import get_interview_scheduling_settings
@@ -240,6 +238,18 @@ def _create_batch(
     return rows
 
 
+def _invalidate_batch(db: Session, rows: list[NegotiationToken], now: Optional[datetime] = None) -> None:
+    """_create_batch above already committed these rows before the caller ever attempts to
+    send the corresponding email -- if that send then fails, the batch must not survive as
+    live, or _has_live_negotiation_or_scheduled_interview's idempotency guard blocks every
+    retry of this application for up to TOKEN_EXPIRY_DAYS even after the send issue itself
+    is fixed (the exact orphaned-token incident this exists to prevent)."""
+    now = now or datetime.now(timezone.utc)
+    for row in rows:
+        row.invalidated_at = now
+    db.commit()
+
+
 def _slot_links(rows: list[NegotiationToken]) -> list[dict]:
     return [
         {"label": _format_slot(row.slot_time), "url": _token_url(row.token)}
@@ -261,7 +271,7 @@ def _flag_for_manual_scheduling(db: Session, application: Application, tracker_p
 
 def _advance_interviewer_round(
     db: Session, application: Application, candidate: Candidate, job: JobRole, tracker_path: str,
-    round_day: date, actor_user: User, sender_refresh_token: str,
+    round_day: date, actor_user: User, hr_integration,
 ) -> str:
     """Walks the job's Interviewer Pool, in order, for `round_day`, skipping anyone already
     attempted for this exact (application, round_day) pair (see _already_attempted_names --
@@ -301,12 +311,20 @@ def _advance_interviewer_round(
         )
         not_available = next(r for r in batch if r.kind == "not_available")
         done = next(r for r in batch if r.kind == "done")
-        send_email(
-            sender_refresh_token, to=email, subject=f"Interview scheduling for {job.title}",
-            body=_build_interviewer_email_body(
-                candidate.full_name, job.title, round_day, _slot_links(batch), _token_url(not_available.token), _token_url(done.token),
-            ),
-        )
+        try:
+            send_hr_email(
+                hr_integration, to=email, subject=f"Interview scheduling for {job.title}",
+                body=_build_interviewer_email_body(
+                    candidate.full_name, job.title, round_day, _slot_links(batch), _token_url(not_available.token), _token_url(done.token),
+                ),
+            )
+        except SmtpError:
+            # The batch's rows are already committed live (see _create_batch) -- a failed
+            # send must not leave them behind for the idempotency guard to trip over.
+            # Re-raised unchanged so every existing caller's own SmtpError handling (skip +
+            # audit log) still runs exactly as before.
+            _invalidate_batch(db, batch)
+            raise
         append_interview_log_row(
             Path(tracker_path),
             {
@@ -360,15 +378,9 @@ def attempt_auto_negotiate_interview_slots(db: Session, application: Application
         _skip(db, application, actor_user.email, "Job not found")
         return None
 
-    integration = _google_integration(db, actor_user)
-    if integration is None:
-        _skip(db, application, actor_user.email, f"{actor_user.email} has not connected Google -- cannot send negotiation emails")
-        return None
-
-    try:
-        sender_refresh_token = decrypt(integration.refresh_token)
-    except InvalidToken:
-        _skip(db, application, actor_user.email, "Stored Google refresh token could not be decrypted")
+    hr_integration = get_hr_integration(db)
+    if not is_smtp_configured(hr_integration):
+        _skip(db, application, actor_user.email, "HR mailbox's SMTP settings are not configured -- cannot send negotiation emails")
         return None
 
     # Interview Scheduling has no scheduler of its own to keep the Interviewer Pool sheet's
@@ -380,8 +392,8 @@ def attempt_auto_negotiate_interview_slots(db: Session, application: Application
     round_day = _tomorrow_ist(now)
 
     try:
-        outcome = _advance_interviewer_round(db, application, candidate, job, tracker_path, round_day, actor_user, sender_refresh_token)
-    except (GmailError, InvalidToken) as exc:
+        outcome = _advance_interviewer_round(db, application, candidate, job, tracker_path, round_day, actor_user, hr_integration)
+    except SmtpError as exc:
         _skip(db, application, actor_user.email, str(exc) or "Could not send the interviewer negotiation email")
         return None
 
@@ -391,8 +403,8 @@ def attempt_auto_negotiate_interview_slots(db: Session, application: Application
     # Whole pool exhausted for the first day -- one retry, for the day after.
     retry_day = round_day + timedelta(days=1)
     try:
-        outcome = _advance_interviewer_round(db, application, candidate, job, tracker_path, retry_day, actor_user, sender_refresh_token)
-    except (GmailError, InvalidToken) as exc:
+        outcome = _advance_interviewer_round(db, application, candidate, job, tracker_path, retry_day, actor_user, hr_integration)
+    except SmtpError as exc:
         _skip(db, application, actor_user.email, str(exc) or "Could not send the interviewer negotiation email")
         return None
 
@@ -421,17 +433,15 @@ def advance_after_interviewer_batch_resolved(db: Session, application: Applicati
     actor_user = db.query(User).filter(User.email == actor_email).first()
     if actor_user is None:
         return
-    integration = _google_integration(db, actor_user)
-    if integration is None:
-        return
-    try:
-        sender_refresh_token = decrypt(integration.refresh_token)
-    except InvalidToken:
+
+    hr_integration = get_hr_integration(db)
+    if not is_smtp_configured(hr_integration):
+        _skip(db, application, actor_email, "HR mailbox's SMTP settings are not configured -- cannot send negotiation emails")
         return
 
     try:
-        outcome = _advance_interviewer_round(db, application, candidate, job, tracker_path, batch_round_day, actor_user, sender_refresh_token)
-    except (GmailError, InvalidToken):
+        outcome = _advance_interviewer_round(db, application, candidate, job, tracker_path, batch_round_day, actor_user, hr_integration)
+    except SmtpError:
         return
     if outcome == "started":
         return
@@ -443,8 +453,8 @@ def advance_after_interviewer_batch_resolved(db: Session, application: Applicati
 
     retry_day = batch_round_day + timedelta(days=1)
     try:
-        outcome = _advance_interviewer_round(db, application, candidate, job, tracker_path, retry_day, actor_user, sender_refresh_token)
-    except (GmailError, InvalidToken):
+        outcome = _advance_interviewer_round(db, application, candidate, job, tracker_path, retry_day, actor_user, hr_integration)
+    except SmtpError:
         return
     if outcome == "started":
         return
@@ -465,13 +475,12 @@ def start_candidate_round(
     interviewer_user_id = sample.interviewer_user_id
     interviewer_name = sample.interviewer_name
 
-    actor_user = db.query(User).filter(User.email == actor_email).first()
-    integration = _google_integration(db, actor_user) if actor_user else None
-    if integration is None or not candidate or not job or not tracker_path:
+    if not candidate or not job or not tracker_path:
         return
-    try:
-        sender_refresh_token = decrypt(integration.refresh_token)
-    except InvalidToken:
+
+    hr_integration = get_hr_integration(db)
+    if not is_smtp_configured(hr_integration):
+        _skip(db, application, actor_email, "HR mailbox's SMTP settings are not configured -- cannot send negotiation emails")
         return
 
     slot_times = sorted(row.slot_time for row in marked_rows)
@@ -485,14 +494,20 @@ def start_candidate_round(
     done = next(r for r in batch if r.kind == "done")
 
     try:
-        send_email(
-            sender_refresh_token, to=candidate.email, subject=f"Interview scheduling for {job.title}",
+        send_hr_email(
+            hr_integration, to=candidate.email, subject=f"Interview scheduling for {job.title}",
             body=_build_candidate_email_body(
                 candidate.full_name, job.title, _slot_links(batch), _token_url(not_available.token), _token_url(done.token),
             ),
         )
-    except (GmailError, InvalidToken):
-        pass
+    except SmtpError as exc:
+        # A failed send must not leave this batch's rows live (same reasoning as
+        # _advance_interviewer_round), and must not partially proceed as if it had
+        # succeeded -- skip means skip, so this returns before the tracker row / audit log
+        # below, which describe a round that was actually started.
+        _invalidate_batch(db, batch)
+        _skip(db, application, actor_email, str(exc) or "Could not send the candidate negotiation email")
+        return
 
     append_interview_log_row(
         Path(tracker_path),

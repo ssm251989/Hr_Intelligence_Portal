@@ -11,6 +11,9 @@ import Typography from "@mui/material/Typography";
 
 import { extractErrorMessage, integrationsApi } from "../api/client";
 import type { IntegrationStatus } from "../api/types";
+import { useAuth } from "../auth/AuthContext";
+import { ROLE_MATRIX } from "../auth/roles";
+import HrMailboxSettingsCard from "../components/HrMailboxSettingsCard";
 import InterviewTrackerSettingsCard from "../components/InterviewTrackerSettingsCard";
 
 function IntegrationCard({
@@ -110,6 +113,9 @@ function IntegrationCard({
 }
 
 export default function SettingsPage() {
+  const { can } = useAuth();
+  const canManageHrIntegration = can(ROLE_MATRIX.hrIntegrationWrite);
+
   return (
     <Box>
       <Typography variant="h4" mb={3}>
@@ -124,6 +130,7 @@ export default function SettingsPage() {
           fetchStatus={integrationsApi.googleStatus}
           connect={integrationsApi.connectGoogle}
         />
+        {canManageHrIntegration && <HrMailboxSettingsCard />}
         <IntegrationCard
           title="DocuSign"
           description="Connect your DocuSign account so offers you generate are sent as a real e-signature envelope to the candidate, instead of relying on a manually recorded signature."

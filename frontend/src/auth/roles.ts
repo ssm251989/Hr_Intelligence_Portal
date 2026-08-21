@@ -10,6 +10,10 @@ export const ROLE_MATRIX = {
   salaryWrite: ["hiring_manager", "admin"],
   bgvWrite: ["recruiter", "admin"],
   offersWrite: ["recruiter", "admin"],
+  hrIntegrationWrite: ["admin"],
+  // Same gating as POST /applications/{id}/message -- viewing the HR Inbox list is not
+  // admin-only, only configuring the mailbox's SMTP/IMAP settings (hrIntegrationWrite) is.
+  hrInboxView: ["recruiter", "hiring_manager", "admin"],
 } satisfies Record<string, UserRole[]>;
 
 export function roleAllows(role: UserRole | undefined, allowed: readonly UserRole[]): boolean {

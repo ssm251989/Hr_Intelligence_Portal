@@ -8,9 +8,9 @@ from app.core.security import hash_password
 from app.models.application import Application
 from app.models.audit_log import AuditLog
 from app.models.candidate import Candidate
+from app.models.hr_integration import HrIntegration
 from app.models.job_role import JobRole
 from app.models.user import User
-from app.models.user_integration import UserIntegration
 
 
 def _make_docx_bytes(text: str) -> bytes:
@@ -353,13 +353,23 @@ def test_submit_application_past_deadline_returns_400_not_404(anonymous_client, 
 def test_submit_application_triggers_owner_notification_when_enabled_and_connected(
     anonymous_client, db_session, monkeypatch
 ):
+    # The job owner has NO personal Google connection at all here -- sending must still
+    # work, since the notification now sources credentials from the shared, org-level
+    # HR mailbox's SMTP configuration (app/integrations/hr_email.py), not the owner's own
+    # connection.
     owner = User(
         email="owner-public@example.com", hashed_password=hash_password("testpassword123"),
         full_name="Owner", role="recruiter",
     )
     db_session.add(owner)
     db_session.commit()
-    db_session.add(UserIntegration(user_id=owner.id, provider="google", refresh_token=encrypt("refresh-token")))
+    hr_row = db_session.get(HrIntegration, 1)
+    if hr_row is None:
+        hr_row = HrIntegration(id=1)
+        db_session.add(hr_row)
+    hr_row.smtp_host = "smtp.example.com"
+    hr_row.smtp_username = "hr@example.com"
+    hr_row.smtp_password = encrypt("hr-smtp-password")
     db_session.commit()
     job = _make_job(
         db_session, title="Notify Role", status="published",
@@ -369,8 +379,8 @@ def test_submit_application_triggers_owner_notification_when_enabled_and_connect
 
     captured = {}
     monkeypatch.setattr(
-        "app.jobs.service.send_email",
-        lambda refresh_token, **kwargs: captured.update(kwargs) or "msg_1",
+        "app.jobs.service.send_hr_email",
+        lambda hr_integration, **kwargs: captured.update(kwargs),
     )
 
     response = anonymous_client.post(
