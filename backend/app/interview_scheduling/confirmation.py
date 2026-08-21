@@ -208,13 +208,17 @@ def propose_interview_slots(
     return {"slots_offered": len(offered), "expires_at": expires_at, "tokens": offered}
 
 
-def _create_confirmed_calendar_event(
-    db: Session, application: Application, token_row: InterviewConfirmationToken
-) -> Optional[dict]:
+def create_confirmed_calendar_event(db: Session, application: Application, token_row) -> Optional[dict]:
     """Best-effort, like every other Google Calendar call in this app (see
     scheduling/router.py _try_create_calendar_event) -- a missing/broken interviewer
-    connection is logged, not raised, so it can never block a candidate's confirmation that
-    has already been recorded."""
+    connection is logged, not raised, so it can never block a confirmation that has already
+    been recorded.
+
+    Duck-typed on `token_row` deliberately (not annotated to InterviewConfirmationToken) --
+    it only ever reads .interviewer_user_id/.slot_time/.duration_minutes/.job_title, which
+    app.models.negotiation_token.NegotiationToken's rows carry too, so the interviewer-first
+    negotiation flow (app/interview_scheduling/negotiation.py) reuses this exact function for
+    its own final calendar-event step rather than duplicating it."""
     if token_row.interviewer_user_id is None:
         return None
     interviewer = db.get(User, token_row.interviewer_user_id)
@@ -314,7 +318,7 @@ def confirm_token(db: Session, token: str) -> ConfirmationOutcome:
     for other in other_tokens:
         other.invalidated_at = now
 
-    calendar_event = _create_confirmed_calendar_event(db, application, token_row)
+    calendar_event = create_confirmed_calendar_event(db, application, token_row)
 
     # The manual scheduling flow (app/scheduling/router.py schedule_interview) always
     # creates an Interview row; this flow -- the only other path that can schedule one --

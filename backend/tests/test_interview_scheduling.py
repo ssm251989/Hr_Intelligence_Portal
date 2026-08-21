@@ -11,6 +11,8 @@ from app.interview_scheduling.tracker import (
     INTERVIEW_LOG_SHEET,
     INTERVIEWER_POOL_COLUMNS,
     INTERVIEWER_POOL_SHEET,
+    MAILS_COLUMNS,
+    MAILS_SHEET,
     append_interview_log_row,
     ensure_tracker_file,
     eligible_interviewers_for_job,
@@ -62,15 +64,17 @@ def test_ensure_tracker_file_creates_fresh_file_with_expected_sheets_and_columns
     result = ensure_tracker_file(path)
 
     assert result["created"] is True
-    assert set(result["sheets_added"]) == {INTERVIEWER_POOL_SHEET, INTERVIEW_LOG_SHEET}
+    assert set(result["sheets_added"]) == {INTERVIEWER_POOL_SHEET, INTERVIEW_LOG_SHEET, MAILS_SHEET}
     assert path.exists()
 
     workbook = load_workbook(path)
-    assert set(workbook.sheetnames) == {INTERVIEWER_POOL_SHEET, INTERVIEW_LOG_SHEET}
+    assert set(workbook.sheetnames) == {INTERVIEWER_POOL_SHEET, INTERVIEW_LOG_SHEET, MAILS_SHEET}
     pool_header = [cell.value for cell in next(workbook[INTERVIEWER_POOL_SHEET].iter_rows(min_row=1, max_row=1))]
     log_header = [cell.value for cell in next(workbook[INTERVIEW_LOG_SHEET].iter_rows(min_row=1, max_row=1))]
+    mails_header = [cell.value for cell in next(workbook[MAILS_SHEET].iter_rows(min_row=1, max_row=1))]
     assert pool_header == INTERVIEWER_POOL_COLUMNS
     assert log_header == INTERVIEW_LOG_COLUMNS
+    assert mails_header == MAILS_COLUMNS
 
 
 def test_ensure_tracker_file_creates_parent_directories(tmp_path):
@@ -115,14 +119,16 @@ def test_ensure_tracker_file_adds_missing_sheet_without_touching_the_other(tmp_p
     result = ensure_tracker_file(path)
 
     assert result["created"] is False
-    assert result["sheets_added"] == [INTERVIEW_LOG_SHEET]
+    assert set(result["sheets_added"]) == {INTERVIEW_LOG_SHEET, MAILS_SHEET}
 
     reloaded = load_workbook(path)
-    assert set(reloaded.sheetnames) == {INTERVIEWER_POOL_SHEET, INTERVIEW_LOG_SHEET}
+    assert set(reloaded.sheetnames) == {INTERVIEWER_POOL_SHEET, INTERVIEW_LOG_SHEET, MAILS_SHEET}
     pool_rows = list(reloaded[INTERVIEWER_POOL_SHEET].iter_rows(min_row=2, values_only=True))
     assert pool_rows == [("Data Analyst", "Priya Nair")]  # untouched
     log_header = [cell.value for cell in next(reloaded[INTERVIEW_LOG_SHEET].iter_rows(min_row=1, max_row=1))]
     assert log_header == INTERVIEW_LOG_COLUMNS
+    mails_header = [cell.value for cell in next(reloaded[MAILS_SHEET].iter_rows(min_row=1, max_row=1))]
+    assert mails_header == MAILS_COLUMNS
 
 
 def test_ensure_tracker_file_adds_missing_columns_to_end_of_existing_header(tmp_path):

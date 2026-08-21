@@ -9,6 +9,7 @@ from app.candidates.applications_router import router as applications_router
 from app.candidates.router import router as candidates_router
 from app.integrations.router import router as integrations_router
 from app.interview_scheduling.confirm_router import router as interview_confirm_router
+from app.interview_scheduling.negotiation_router import router as interview_negotiation_router
 from app.interview_scheduling.router import router as interview_scheduling_router
 from app.jobs.router import router as jobs_router
 from app.local_import.router import router as local_import_router
@@ -64,6 +65,7 @@ app.include_router(public_router)
 app.include_router(local_import_router)
 app.include_router(interview_scheduling_router)
 app.include_router(interview_confirm_router)
+app.include_router(interview_negotiation_router)
 
 
 @app.get("/health")

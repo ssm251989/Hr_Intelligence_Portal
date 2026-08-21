@@ -20,6 +20,7 @@ from app.candidates.router import (
     row_to_item,
 )
 from app.core.database import get_db
+from app.interview_scheduling.negotiation import attempt_auto_negotiate_interview_slots
 from app.models.application import Application
 from app.models.candidate import Candidate
 from app.models.job_role import JobRole
@@ -33,7 +34,12 @@ from app.schemas.shortlisting import (
     ShortlistFeedbackSuggestionResponse,
     ShortlistStatusUpdateRequest,
 )
-from app.shortlisting.service import SHORTLIST_STATUSES, shortlisting_scope_condition, update_shortlist_status
+from app.shortlisting.service import (
+    SHORTLIST_STATUSES,
+    SHORTLISTED,
+    shortlisting_scope_condition,
+    update_shortlist_status,
+)
 
 router = APIRouter(tags=["shortlisting"])
 
@@ -87,6 +93,8 @@ def make_shortlist_decision(
             "match_score": float(application.match_score) if application.match_score is not None else None,
         },
     )
+    if new_status == "hr_selected":
+        attempt_auto_negotiate_interview_slots(db, application, current_user)
     return application
 
 
@@ -235,9 +243,12 @@ def update_shortlist_status_endpoint(
     application = db.get(Application, application_id)
     if not application:
         raise HTTPException(status_code=404, detail="Application not found")
-    return update_shortlist_status(
+    updated = update_shortlist_status(
         db, application, payload.target_status, current_user.email, reason=payload.reason, feedback=payload.feedback
     )
+    if payload.target_status == SHORTLISTED:
+        attempt_auto_negotiate_interview_slots(db, updated, current_user)
+    return updated
 
 
 @router.post("/shortlisting/bulk-decision", response_model=ShortlistBulkDecisionResult)
@@ -263,13 +274,15 @@ def bulk_shortlist_decision(
             skipped.append(ShortlistBulkDecisionSkipped(application_id=application_id, reason="Application not found"))
             continue
         try:
-            update_shortlist_status(
+            updated = update_shortlist_status(
                 db, application, payload.target_status, current_user.email,
                 reason=payload.reason, feedback=payload.feedback,
             )
         except HTTPException as exc:
             skipped.append(ShortlistBulkDecisionSkipped(application_id=application_id, reason=str(exc.detail)))
             continue
+        if payload.target_status == SHORTLISTED:
+            attempt_auto_negotiate_interview_slots(db, updated, current_user)
         succeeded.append(application_id)
     return ShortlistBulkDecisionResult(succeeded=succeeded, skipped=skipped)
 

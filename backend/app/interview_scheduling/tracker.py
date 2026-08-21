@@ -1,9 +1,12 @@
 """Interview Scheduling automation's Excel tracker -- a workbook the recruiter owns and can
-open/edit directly, with two sheets:
+open/edit directly, with three sheets:
 
   "Interviewer Pool": Job Title | Eligible Interviewers (comma-separated names)
   "Interview Log": Candidate | Job Title | Assigned Interviewer | Candidate Preferred Time |
-                   Interviewer Confirmed | Candidate Confirmed | Final Scheduled Time | Status
+                   Interviewer Confirmed | Candidate Confirmed | Final Scheduled Time |
+                   Status | Slots Offered | Candidate Selected Slot | Confirmation Link Token
+  "Mails": Name | Mail Id -- interviewer full_name -> the address the interviewer-first
+           negotiation flow (app/interview_scheduling/negotiation.py) emails slot offers to.
 
 Each row starts out written by service.py's select_interviewer with "Interviewer
 Confirmed"/"Candidate Confirmed"/"Final Scheduled Time" blank and Status "Interviewer
@@ -13,14 +16,20 @@ Status once the candidate actually confirms a slot via their emailed link, using
 update_interview_log_row below. An earlier plan to do that confirmation over WhatsApp/
 Twilio was dropped before any of it was built, in favor of email + a secure single-use link,
 which this app already had a real Gmail integration for.
+
+"Slots Offered"/"Candidate Selected Slot"/"Confirmation Link Token" and the "Mails" sheet
+are the interviewer-first negotiation flow's own columns/sheet -- negotiation.py writes and
+reads them; the older select_interviewer/confirmation.py flow above never touches them.
 """
 
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
 from openpyxl import Workbook, load_workbook
 from sqlalchemy.orm import Session
 
+from app.integrations.google_calendar import APP_TIMEZONE
 from app.local_import.job_folders import FOLDER_SYNC_STATUSES
 from app.models.job_role import JobRole
 
@@ -31,9 +40,25 @@ INTERVIEW_LOG_SHEET = "Interview Log"
 INTERVIEW_LOG_COLUMNS = [
     "Candidate", "Job Title", "Assigned Interviewer", "Candidate Preferred Time",
     "Interviewer Confirmed", "Candidate Confirmed", "Final Scheduled Time", "Status",
+    "Slots Offered", "Candidate Selected Slot", "Confirmation Link Token",
 ]
 
-_SHEET_SPECS = ((INTERVIEWER_POOL_SHEET, INTERVIEWER_POOL_COLUMNS), (INTERVIEW_LOG_SHEET, INTERVIEW_LOG_COLUMNS))
+MAILS_SHEET = "Mails"
+MAILS_COLUMNS = ["Name", "Mail Id"]
+
+_SHEET_SPECS = (
+    (INTERVIEWER_POOL_SHEET, INTERVIEWER_POOL_COLUMNS),
+    (INTERVIEW_LOG_SHEET, INTERVIEW_LOG_COLUMNS),
+    (MAILS_SHEET, MAILS_COLUMNS),
+)
+
+# Interview Log Status values that represent a genuinely negative/declined outcome -- a row
+# with one of these never counts as evidence an interviewer is "busy," since nothing was
+# actually booked for them.
+_NON_BUSY_STATUSES = {
+    "no interviewer available", "not available", "slot not selected by candidate",
+    "manual scheduling required",
+}
 
 
 def ensure_tracker_file(path: Path) -> dict:
@@ -95,6 +120,116 @@ def ensure_tracker_file(path: Path) -> dict:
         workbook.save(path)
 
     return {"created": False, "sheets_added": sheets_added, "columns_added": columns_added}
+
+
+def read_mail_directory(path: Path) -> dict[str, str]:
+    """Interviewer full_name (lowercased/whitespace-stripped) -> the email address the
+    interviewer-first negotiation flow (app/interview_scheduling/negotiation.py) sends slot
+    offers to, from the tracker's "Mails" sheet. Deliberately separate from a registered
+    User's own `email` column -- an Interviewer Pool name might not even resolve to a
+    registered account (negotiation.py checks that independently, for the later
+    calendar-event step), and this sheet is the recruiter's own record of where to actually
+    reach that person. Empty dict if the sheet or its expected columns aren't present --
+    same "nothing configured yet, not an error" convention as read_interviewer_pool."""
+    workbook = load_workbook(path, read_only=True, data_only=True)
+    if MAILS_SHEET not in workbook.sheetnames:
+        return {}
+    sheet = workbook[MAILS_SHEET]
+    header_row = next(sheet.iter_rows(min_row=1, max_row=1), ())
+    header = [cell.value for cell in header_row]
+    if "Name" not in header or "Mail Id" not in header:
+        return {}
+    name_col = header.index("Name")
+    mail_col = header.index("Mail Id")
+
+    directory: dict[str, str] = {}
+    for row in sheet.iter_rows(min_row=2, values_only=True):
+        if row is None or len(row) <= max(name_col, mail_col):
+            continue
+        name, mail = row[name_col], row[mail_col]
+        if not name or not mail:
+            continue
+        directory[str(name).strip().lower()] = str(mail).strip()
+    return directory
+
+
+def email_for_interviewer(path: Path, interviewer_name: str) -> Optional[str]:
+    """The one email address the Mails sheet has for this interviewer name (case/
+    whitespace-insensitive), or None if it isn't listed there at all."""
+    return read_mail_directory(path).get(interviewer_name.strip().lower())
+
+
+def _parse_ist_datetime(value: object) -> Optional[datetime]:
+    """Reverse of app.integrations.google_calendar.format_ist_datetime -- the exact string
+    format every date/time column in this tracker is written in (e.g.
+    "26 Aug 2026, 10:00 AM IST"). None for a blank cell or anything that doesn't parse (a
+    hand-edited cell in some other format) -- an unreadable date is simply never counted as
+    evidence of anything, not an error."""
+    if not value:
+        return None
+    text_value = str(value).strip()
+    if text_value.upper().endswith(" IST"):
+        text_value = text_value[: -len(" IST")].strip()
+    try:
+        naive = datetime.strptime(text_value, "%d %b %Y, %I:%M %p")
+    except ValueError:
+        return None
+    return naive.replace(tzinfo=APP_TIMEZONE)
+
+
+def _current_week_bounds_ist(now: datetime) -> tuple[date, date]:
+    today = now.astimezone(APP_TIMEZONE).date()
+    monday = today - timedelta(days=today.weekday())
+    return monday, monday + timedelta(days=6)
+
+
+def interviewer_busy_this_week(path: Path, interviewer_name: str, now: Optional[datetime] = None) -> bool:
+    """True if the Interview Log sheet already shows a real (non-declined) commitment for
+    this interviewer sometime in the current Monday-Sunday IST week. The ONLY busy-check
+    source for the interviewer-first negotiation flow (app/interview_scheduling/
+    negotiation.py) -- deliberately a week-level heuristic read straight off the recruiter's
+    own tracker, not an exact-slot real-time Calendar conflict check the way the older
+    service.py select_interviewer flow works.
+
+    Prefers "Final Scheduled Time" (a confirmed interview actually landed on a date) and
+    falls back to "Candidate Preferred Time" (a still-pending proposal) when a row has no
+    Final Scheduled Time yet -- either way, a row only counts when its Status isn't one of
+    _NON_BUSY_STATUSES (a genuinely negative/declined outcome, where nothing was actually
+    booked for that interviewer).
+    """
+    now = now or datetime.now(APP_TIMEZONE)
+    week_start, week_end = _current_week_bounds_ist(now)
+    target = interviewer_name.strip().lower()
+
+    workbook = load_workbook(path, read_only=True, data_only=True)
+    if INTERVIEW_LOG_SHEET not in workbook.sheetnames:
+        return False
+    sheet = workbook[INTERVIEW_LOG_SHEET]
+    header_row = next(sheet.iter_rows(min_row=1, max_row=1), ())
+    header = [cell.value for cell in header_row if cell.value is not None]
+    if "Assigned Interviewer" not in header or "Status" not in header:
+        return False
+    col = {name: header.index(name) for name in header}
+    final_col = col.get("Final Scheduled Time")
+    preferred_col = col.get("Candidate Preferred Time")
+
+    for row in sheet.iter_rows(min_row=2, values_only=True):
+        if row is None or len(row) < len(header):
+            continue
+        assigned = row[col["Assigned Interviewer"]]
+        if not assigned or str(assigned).strip().lower() != target:
+            continue
+        status = str(row[col["Status"]] or "").strip().lower()
+        if status in _NON_BUSY_STATUSES:
+            continue
+        when = _parse_ist_datetime(row[final_col]) if final_col is not None else None
+        if when is None and preferred_col is not None:
+            when = _parse_ist_datetime(row[preferred_col])
+        if when is None:
+            continue
+        if week_start <= when.date() <= week_end:
+            return True
+    return False
 
 
 def read_interviewer_pool(path: Path) -> dict[str, list[str]]:
