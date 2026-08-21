@@ -53,7 +53,7 @@ def _fake_result(**overrides) -> dict:
 
 def test_describe_scored_entry_with_no_missing_skills():
     details = {"recommendation": "strong_fit", "composite_score": 82.6, "missing_skills": []}
-    assert screening_service.describe_screening_audit_entry("ai_screening_scored", details) == "Strong fit (score 83)"
+    assert screening_service.describe_screening_audit_entry("ai_screening_scored", details) == "Strong fit (Screening: 83%)"
 
 
 def test_describe_scored_entry_with_missing_skills():
@@ -62,7 +62,7 @@ def test_describe_scored_entry_with_missing_skills():
     # always was rather than inventing a severity split for data that never had one.
     details = {"recommendation": "possible_fit", "composite_score": 61.4, "missing_skills": ["Kubernetes", "AWS"]}
     text = screening_service.describe_screening_audit_entry("ai_screening_scored", details)
-    assert text == "Possible fit (score 61) -- missing Kubernetes, AWS"
+    assert text == "Possible fit (Screening: 61%) -- missing Kubernetes, AWS"
 
 
 def test_describe_scored_entry_distinguishes_required_from_preferred_gaps():
@@ -71,7 +71,7 @@ def test_describe_scored_entry_distinguishes_required_from_preferred_gaps():
         "missing_required_skills": ["Kubernetes"], "missing_preferred_skills": ["Docker"],
     }
     text = screening_service.describe_screening_audit_entry("ai_screening_scored", details)
-    assert text == "Possible fit (score 70) -- missing required: Kubernetes; missing preferred: Docker"
+    assert text == "Possible fit (Screening: 70%) -- missing required: Kubernetes; missing preferred: Docker"
 
 
 def test_describe_scored_entry_with_only_required_gaps():
@@ -80,7 +80,7 @@ def test_describe_scored_entry_with_only_required_gaps():
         "missing_required_skills": ["Kubernetes", "AWS"], "missing_preferred_skills": [],
     }
     text = screening_service.describe_screening_audit_entry("ai_screening_scored", details)
-    assert text == "Possible fit (score 70) -- missing required: Kubernetes, AWS"
+    assert text == "Possible fit (Screening: 70%) -- missing required: Kubernetes, AWS"
 
 
 def test_describe_scored_entry_with_only_preferred_gaps():
@@ -89,7 +89,7 @@ def test_describe_scored_entry_with_only_preferred_gaps():
         "missing_required_skills": [], "missing_preferred_skills": ["Docker"],
     }
     text = screening_service.describe_screening_audit_entry("ai_screening_scored", details)
-    assert text == "Strong fit (score 90) -- missing preferred: Docker"
+    assert text == "Strong fit (Screening: 90%) -- missing preferred: Docker"
 
 
 def test_describe_scored_entry_with_categorization_present_but_no_gaps():
@@ -98,17 +98,17 @@ def test_describe_scored_entry_with_categorization_present_but_no_gaps():
         "missing_required_skills": [], "missing_preferred_skills": [],
     }
     text = screening_service.describe_screening_audit_entry("ai_screening_scored", details)
-    assert text == "Strong fit (score 100)"
+    assert text == "Strong fit (Screening: 100%)"
 
 
 def test_describe_scored_entry_weak_fit_label():
     details = {"recommendation": "weak_fit", "composite_score": 22.0, "missing_skills": []}
-    assert screening_service.describe_screening_audit_entry("ai_screening_scored", details) == "Weak fit (score 22)"
+    assert screening_service.describe_screening_audit_entry("ai_screening_scored", details) == "Weak fit (Screening: 22%)"
 
 
 def test_describe_scored_entry_unknown_recommendation_falls_back_to_screened():
     details = {"recommendation": "something_new", "composite_score": 50.0, "missing_skills": []}
-    assert screening_service.describe_screening_audit_entry("ai_screening_scored", details) == "Screened (score 50)"
+    assert screening_service.describe_screening_audit_entry("ai_screening_scored", details) == "Screened (Screening: 50%)"
 
 
 def test_describe_scored_entry_missing_composite_score_omits_score_suffix():
@@ -244,7 +244,7 @@ def test_scored_application_shows_remarks_derived_from_the_real_audit_log_entry(
     # skill_match_pct = 100 - 20 (the one technical_skills_good_to_have entry, "Docker",
     # missed) = 80. Composite = (80_skills + 100_experience + 100_certificates + 90 + 90
     # -- the two AI-scored factors) / 5 = 92.
-    assert row["remarks"] == "Strong fit (score 92) -- missing preferred: Docker"
+    assert row["remarks"] == "Strong fit (Resume Match: 90% | Screening: 92%) -- missing preferred: Docker"
 
 
 def test_failed_screening_shows_remarks_even_though_application_stays_received(client, db_session, monkeypatch):
@@ -292,7 +292,7 @@ def test_remarks_reflects_the_latest_screening_entry_not_the_first(client, db_se
     # (95 * 2 AI-scored factors + 100 + 100 + 100, the deterministic experience_score/
     # skill_match_pct/certificates_score for a job with no experience range, skill
     # categories, or preferred_certifications configured) / 5 = 98.
-    assert row["remarks"] == "Strong fit (score 98)"
+    assert row["remarks"] == "Strong fit (Resume Match: 95% | Screening: 98%)"
 
 
 def test_remarks_appear_on_export_endpoint_too(client, db_session, monkeypatch):
@@ -307,16 +307,18 @@ def test_remarks_appear_on_export_endpoint_too(client, db_session, monkeypatch):
     # (80 * 2 AI-scored factors + 100 + 100 + 100, the deterministic experience_score/
     # skill_match_pct/certificates_score for a job with no experience range, skill
     # categories, or preferred_certifications configured) / 5 = 92.
-    assert response.json()[0]["remarks"] == "Strong fit (score 92)"
+    assert response.json()[0]["remarks"] == "Strong fit (Resume Match: 80% | Screening: 92%)"
 
 
 def test_missing_skills_remain_in_remarks_alongside_the_new_composite_score_field(client, db_session, monkeypatch):
-    # Regression test for the Match Score / Remarks score-mismatch fix: the List page's
-    # Screening Score column now shows composite_score (not the raw match_score), but that
-    # must not disturb Remarks' own missing-skills rendering, which is a completely separate
-    # code path (describe_screening_audit_entry). match_score and composite_score are
-    # asserted as genuinely distinct numbers here specifically so a future change that
-    # collapses them back into one field wouldn't hide a regression in either.
+    # Regression test for the Match Score / Remarks score-mismatch fix: Remarks now names
+    # both the raw resume_matcher_score ("Resume Match") and the composite score
+    # ("Screening") explicitly, rather than one bare, unlabeled "score" that could be
+    # mistaken for the other. That must not disturb Remarks' own missing-skills rendering,
+    # which is a completely separate code path (describe_screening_audit_entry). match_score
+    # and composite_score are asserted as genuinely distinct numbers here specifically so a
+    # future change that collapses them back into one field wouldn't hide a regression in
+    # either.
     monkeypatch.setattr("app.screening.service.match_resume", lambda *a, **k: _fake_result(
         match_score=70, location_score=100, recommendation="strong_fit",
     ))
@@ -334,7 +336,7 @@ def test_missing_skills_remain_in_remarks_alongside_the_new_composite_score_fiel
     # skill_match_pct = 100 - 50 (missed must-have "Kubernetes") - 20 (missed
     # good-to-have "Terraform") = 30. Composite = (30 + 100_experience + 70 + 100 +
     # 100) / 5 = 80.
-    assert row["remarks"] == "Strong fit (score 80) -- missing required: Kubernetes; missing preferred: Terraform"
+    assert row["remarks"] == "Strong fit (Resume Match: 70% | Screening: 80%) -- missing required: Kubernetes; missing preferred: Terraform"
     assert row["match_score"] == 70
     assert row["composite_score"] == 80.0
     assert row["match_score"] != row["composite_score"]
@@ -361,7 +363,7 @@ def test_no_missing_skills_still_omits_the_suffix_alongside_the_new_composite_sc
     # The candidate's own skills fully cover technical_skills_must_have -> skill_match_pct
     # 100. (100_skills + 100_experience + 100_certificates + 88 + 90 -- the two
     # AI-scored factors) / 5 = 95.6.
-    assert row["remarks"] == "Strong fit (score 96)"
+    assert row["remarks"] == "Strong fit (Resume Match: 88% | Screening: 96%)"
     assert "missing" not in row["remarks"]
     assert row["composite_score"] == 95.6
 
@@ -382,4 +384,4 @@ def test_remarks_appear_on_dashboard_recent_candidates(client, db_session, monke
         # (80 * 2 AI-scored factors + 100 + 100 + 100, the deterministic experience_score/
         # skill_match_pct/certificates_score for a job with no experience range, skill
         # categories, or preferred_certifications configured) / 5 = 92.
-        assert matching[0]["remarks"] == "Strong fit (score 92)"
+        assert matching[0]["remarks"] == "Strong fit (Resume Match: 80% | Screening: 92%)"

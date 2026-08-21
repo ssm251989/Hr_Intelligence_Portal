@@ -228,6 +228,44 @@ def test_compute_skills_score_missing_required_combines_technical_and_soft_must_
     assert set(result["missing_required"]) == {"Python", "Communication"}
 
 
+# --- compute_skills_score: candidate_certificates cross-check ---
+
+
+def test_compute_skills_score_cross_checks_certificates_for_a_skill_requirement():
+    # A platform/technology named only in a certification, not in parsed skills, should
+    # still satisfy a skill requirement naming that platform -- e.g. "Azure" evidenced by
+    # holding "Microsoft Azure Fundamentals (AZ-900)", filed under certificates.
+    result = screening_service.compute_skills_score(
+        ["Python"],
+        technical_must_have=["Azure"], technical_good_to_have=None,
+        soft_must_have=None, soft_good_to_have=None,
+        candidate_certificates=["Microsoft Azure Fundamentals (AZ-900)"],
+    )
+    assert result["missing_required"] == []
+    assert result["score"] == 100
+
+
+def test_compute_skills_score_certificates_optional_and_defaults_to_no_extra_credit():
+    # candidate_certificates is optional -- every pre-existing call site that never passes
+    # it keeps behaving exactly as before (no crash, and no accidental match from nothing).
+    result = screening_service.compute_skills_score(
+        [], technical_must_have=["Azure"], technical_good_to_have=None,
+        soft_must_have=None, soft_good_to_have=None,
+    )
+    assert result["missing_required"] == ["Azure"]
+
+
+def test_compute_skills_score_certificates_do_not_manufacture_a_match_they_do_not_evidence():
+    # A certificate that has nothing to do with the requirement must not accidentally
+    # contribute credit toward it.
+    result = screening_service.compute_skills_score(
+        [], technical_must_have=["Azure"], technical_good_to_have=None,
+        soft_must_have=None, soft_good_to_have=None,
+        candidate_certificates=["PMP"],
+    )
+    assert result["missing_required"] == ["Azure"]
+
+
 # --- compute_certificates_score: deterministic replacement for the old AI-judged certificates_score ---
 
 
@@ -274,6 +312,217 @@ def test_compute_certificates_score_matching_is_case_and_whitespace_insensitive(
     result = screening_service.compute_certificates_score(["  pmp  "], ["PMP"])
     assert result["score"] == 100
     assert result["missing"] == []
+
+
+def test_compute_certificates_score_token_overlap_matches_despite_extra_suffix_wording():
+    # Real case that motivated this change: the job names a certification without any
+    # platform-version suffix, the candidate's parsed certificate carries one -- an exact
+    # or substring comparison would call this a miss even though it's plainly the same
+    # certification.
+    result = screening_service.compute_certificates_score(
+        ["Automation Anywhere Certified Advanced RPA Professional -- A360"],
+        ["Automation Anywhere Certified Advanced RPA Professional"],
+    )
+    assert result["score"] == 100
+    assert result["missing"] == []
+
+
+# --- compute_skills_score / compute_certificates_score: token-overlap matching ---
+# (replaces the old exact-string/whole-phrase _skill_coverage -- job requirement lists are
+# routinely written as full sentences/compound phrases, not short tags matching a parsed
+# resume's skills entries verbatim; see the Arjun Reddy / Automation Anywhere Architect
+# investigation that motivated this.)
+
+
+def test_compute_skills_score_token_overlap_matches_a_compound_requirement_worded_differently():
+    # "SQL / database integration" (job) vs candidate skills "SQL Server" + "API
+    # Integration" -- no exact or substring match either way, but 2 of the requirement's 3
+    # significant tokens ("sql", "integration") are evidenced somewhere in the candidate's
+    # skills, clearing the 50% satisfied threshold.
+    result = screening_service.compute_skills_score(
+        ["SQL Server", "API Integration"],
+        technical_must_have=["SQL / database integration"], technical_good_to_have=None,
+        soft_must_have=None, soft_good_to_have=None,
+    )
+    assert result["missing_required"] == []
+    # tech_must_have coverage 2/3 (67%) * weight 50, plus the other 3 unconfigured
+    # categories' full 50-point "no requirement configured" credit -- not 100, since this
+    # test only cares whether the one configured requirement counts as matched, which
+    # missing_required (asserted above) already confirms.
+    assert result["score"] == 83
+
+
+def test_compute_skills_score_token_overlap_matches_a_compound_requirement_split_across_skills():
+    # "Automation Anywhere Control Room" (job) vs the candidate's separate "Automation
+    # Anywhere A360" and "Control Room" skills -- full token overlap even though neither
+    # single parsed skill contains the whole job phrase.
+    result = screening_service.compute_skills_score(
+        ["Automation Anywhere A360", "Control Room"],
+        technical_must_have=["Automation Anywhere Control Room"], technical_good_to_have=None,
+        soft_must_have=None, soft_good_to_have=None,
+    )
+    assert result["missing_required"] == []
+    assert result["score"] == 100
+
+
+def test_compute_skills_score_token_overlap_matches_narrative_requirement_via_shared_terms():
+    # "Exception handling and logging" (job) vs candidate's separate "Exception Handling"
+    # and "Logging" skills -- "and" is filler and gets stripped, leaving 3/3 tokens covered.
+    result = screening_service.compute_skills_score(
+        ["Exception Handling", "Logging"],
+        technical_must_have=["Exception handling and logging"], technical_good_to_have=None,
+        soft_must_have=None, soft_good_to_have=None,
+    )
+    assert result["missing_required"] == []
+    assert result["score"] == 100
+
+
+def test_compute_skills_score_genuinely_absent_skill_still_flagged_as_missing():
+    # Token overlap must not manufacture a match out of thin air -- a requirement the
+    # candidate's skills never evidence in any form still shows up as missing, at 0 credit.
+    result = screening_service.compute_skills_score(
+        ["Automation Anywhere A360", "Control Room", "SQL Server"],
+        technical_must_have=["Bot Creator / Bot Runner"], technical_good_to_have=None,
+        soft_must_have=None, soft_good_to_have=None,
+    )
+    assert result["missing_required"] == ["Bot Creator / Bot Runner"]
+    # 0% overlap on the one configured (must-have technical, weight 50) category, plus the
+    # other 3 unconfigured categories' full 50-point "no requirement configured" credit.
+    assert result["score"] == 50
+
+
+def test_compute_skills_score_generic_padding_words_stripped_so_the_real_term_alone_satisfies_it():
+    # "OCR and document processing" -- "document"/"processing" are generic padding around
+    # the one real, specific concept ("OCR") and are in _SKILL_MATCH_STOPWORDS for exactly
+    # that reason, so the requirement reduces to just {"ocr"}, which the candidate's plain
+    # "OCR" skill satisfies outright (100% overlap on what's left).
+    result = screening_service.compute_skills_score(
+        ["OCR"],
+        technical_must_have=None, technical_good_to_have=["OCR and document processing"],
+        soft_must_have=None, soft_good_to_have=None,
+    )
+    assert result["missing_preferred"] == []
+    assert result["score"] == 100
+
+
+def test_compute_skills_score_below_threshold_overlap_still_counts_as_missing_but_earns_partial_credit():
+    # "Experience with GenAI / AI / Intelligent Automation" -- none of "document"/
+    # "processing"/etc. filler is in this phrase, so it isn't reduced the way the OCR case
+    # above is. Candidate has "Web Automation" but nothing evidencing "genai"/"ai"/
+    # "intelligent" -- 1 of 4 tokens (25%) is below the 50% satisfied threshold, so it's
+    # still listed as missing, but the category's coverage is no longer the flat 0 that
+    # whole-string matching would have produced for a fully-unmatched phrase.
+    result = screening_service.compute_skills_score(
+        ["Web Automation"],
+        technical_must_have=None, technical_good_to_have=["Experience with GenAI / AI / Intelligent Automation"],
+        soft_must_have=None, soft_good_to_have=None,
+    )
+    assert result["missing_preferred"] == ["Experience with GenAI / AI / Intelligent Automation"]
+    assert 0 < result["score"] < 100
+
+
+def test_tokenize_never_treats_short_technical_terms_as_stopwords():
+    # The stopword list is a fixed set of filler words, never length-based -- real short
+    # technical acronyms must survive tokenizing even though they're as short as (or
+    # shorter than) genuine filler words like "a"/"of"/"or"/"the".
+    for term in ["AI", "OCR", "SQL", "IT", "UI", "ML"]:
+        assert screening_service._tokenize(term) == {term.lower()}
+
+
+def test_tokenize_strips_filler_words_from_a_narrative_requirement():
+    # Deliberately picks words none of _STEM_SUFFIX_RULES touch, so this test verifies only
+    # the stopword behavior in isolation -- see test_stemming.py for stemming's own cases.
+    tokens = screening_service._tokenize("Ability to work with modern cloud infrastructure")
+    assert tokens == {"work", "modern", "cloud", "infrastructure"}
+    assert "ability" not in tokens
+    assert "with" not in tokens
+    assert "to" not in tokens
+
+
+def test_tokenize_strips_the_new_generic_padding_words_from_a_compound_requirement():
+    tokens = screening_service._tokenize("Ability to interact with business and technical stakeholders")
+    assert "technical" not in tokens
+    assert "ability" not in tokens
+    assert "with" not in tokens
+    assert "and" not in tokens
+    # "business"/"stakeholders" survive filtering but do get stemmed -- see test_stemming.py.
+    assert tokens == {"interact", "busines", "stakehold"}
+
+
+def test_tokenize_strips_generic_words_padding_a_compound_platform_requirement():
+    # "solutions"/"platforms"/"teams"/"tools" (plural, generic-noun padding) are stopped;
+    # their singular forms are deliberately NOT, since those are the real, meaningful word
+    # in other genuine skills elsewhere ("RPA Solution Architecture", "Solution Discovery").
+    tokens = screening_service._tokenize("Cloud platforms such as Azure/AWS")
+    assert tokens == {"cloud", "azure", "aws"}
+    assert "platforms" not in tokens
+
+    # "automation" ends up stemmed to "automat" (the "-ion" rule) -- a side effect of
+    # stemming, not of this stopword test, asserted here only so the full expected token
+    # set is exact rather than partially checked.
+    tokens = screening_service._tokenize("Automation solutions and tools for global teams")
+    assert tokens == {"automat", "global"}
+    assert "solutions" not in tokens
+    assert "tools" not in tokens
+    assert "teams" not in tokens
+
+
+# --- item 3 false-positive check: does stripping generic padding words make an unrelated
+# skill accidentally satisfy a real, distinct compound requirement? Checked against real
+# requirement strings from the Automation Anywhere Architect job posting (see the Arjun
+# Reddy investigation this conversation is built on). ---
+
+
+def test_unrelated_skill_still_does_not_satisfy_ocr_and_document_processing():
+    # "Process mining" has nothing to do with OCR -- must not cross the threshold just
+    # because "document"/"processing" are now generic-word stopwords.
+    result = screening_service.compute_skills_score(
+        ["Process mining"],
+        technical_must_have=None, technical_good_to_have=["OCR and document processing"],
+        soft_must_have=None, soft_good_to_have=None,
+    )
+    assert result["missing_preferred"] == ["OCR and document processing"]
+
+
+def test_unrelated_skills_still_do_not_satisfy_cloud_platforms_requirement():
+    # "SAP"/"Oracle" are real enterprise platforms, but not Azure/AWS -- must not cross
+    # the threshold just because "platforms" is now a generic-word stopword.
+    result = screening_service.compute_skills_score(
+        ["SAP", "Oracle"],
+        technical_must_have=None, technical_good_to_have=["Cloud platforms such as Azure/AWS"],
+        soft_must_have=None, soft_good_to_have=None,
+    )
+    assert result["missing_preferred"] == ["Cloud platforms such as Azure/AWS"]
+
+
+def test_unrelated_automation_skill_still_leaves_iq_bot_document_automation_a_partial_miss():
+    # "Web Automation" shares only the generic word "automation" with "Experience with IQ
+    # Bot / Document Automation" -- must stay a partial, below-threshold miss, not flip to
+    # a full match, since "document" being stopped removes padding but "bot"/"iq" (the
+    # requirement's actual distinguishing content) are still completely unevidenced.
+    result = screening_service.compute_skills_score(
+        ["Web Automation"],
+        technical_must_have=None, technical_good_to_have=["Experience with IQ Bot / Document Automation"],
+        soft_must_have=None, soft_good_to_have=None,
+    )
+    assert result["missing_preferred"] == ["Experience with IQ Bot / Document Automation"]
+
+
+def test_KNOWN_LIMITATION_generic_padding_plus_stemming_can_false_positive_on_one_shared_word():
+    # Documented, not silently accepted: once a compound requirement is stripped down to a
+    # single surviving token ("Ability to lead technical teams" -> just {"lead"} once
+    # "technical"/"teams" are stopped), ANY candidate skill containing that same word in a
+    # completely unrelated sense -- "Lead Generation" (a sales/marketing skill) rather than
+    # "leadership" -- satisfies it outright. This is a real trade-off of combining
+    # aggressive stopword-stripping with a single-token-left denominator, not a bug in the
+    # comparison logic; flagged here so a future change to the stopword/stemming lists has
+    # a test that will visibly break if this risk gets worse, not one that hides it.
+    result = screening_service.compute_skills_score(
+        ["Lead Generation"],
+        technical_must_have=None, technical_good_to_have=None,
+        soft_must_have=["Ability to lead technical teams"], soft_good_to_have=None,
+    )
+    assert result["missing_required"] == []  # a false positive, tracked deliberately
 
 
 # --- run_screening: the deterministic experience_score actually feeds the composite ---

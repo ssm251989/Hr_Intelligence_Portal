@@ -69,19 +69,37 @@ Additional notes: {additional_notes}
 
 ## 2. Resume Parser — Claude Haiku — Step 3 (Resume Collection)
 
+Note: quoted verbatim from app/ai_services/resume_parser.py's actual SYSTEM_PROMPT --
+this entry previously showed an older, drifted version of the prompt text and JSON shape
+(no `location`/`certificates` fields, no field-specific extraction guidance). The output
+shape below is no longer typed into the prompt as literal JSON either -- the real call
+uses the Anthropic SDK's native structured-output feature (`messages.parse(...,
+output_format=ResumeParserOutput)`), so the shape is enforced by the `ResumeParserOutput`
+Pydantic model in that file, not by prompt text.
+
 ```
 System:
-You extract structured fields from a raw resume. Respond only with valid JSON:
+You extract structured fields from a raw resume. If a field is not present in the
+resume, use null. Do not fabricate values. certificates is any named professional
+certification, license, or credential the candidate holds (e.g. 'AWS Certified
+Solutions Architect', 'PMP', 'CPA') -- not degrees (those belong in education) and
+not just skills or tools listed without an actual certification name. location is
+the candidate's current city (plus state/country if the resume states them), e.g.
+'Bangalore, India' -- not a past employer's office location, and not a
+remote-work preference.
+
+Output shape (ResumeParserOutput):
 {
-  "full_name": string,
-  "email": string,
-  "phone": string,
-  "total_experience_years": number,
+  "full_name": string | null,
+  "email": string | null,
+  "phone": string | null,
+  "location": string | null,
+  "total_experience_years": number | null,
   "skills": [string],
-  "education": [{"degree": string, "institution": string, "year": number}],
-  "work_history": [{"company": string, "title": string, "start": string, "end": string}]
+  "education": [{"degree": string | null, "institution": string | null, "year": number | null}],
+  "work_history": [{"company": string | null, "title": string | null, "start": string | null, "end": string | null}],
+  "certificates": [string]
 }
-If a field is not present in the resume, use null. Do not fabricate values.
 
 User:
 Resume text:
@@ -92,29 +110,56 @@ Resume text:
 
 ## 3. Resume Matcher — Claude Haiku (post embedding pre-filter) — Step 4 (AI Screening)
 
-Note: this doc predates three of the five composite-score factors moving out of the AI
-call entirely -- experience_score, skill_match_pct/missing_skills, and certificates_score
-are now computed deterministically in app/screening/service.py
-(compute_experience_score, compute_skills_score, compute_certificates_score) from the
-job's real experience_min_years/experience_max_years, 4 categorized skill lists, and
-preferred_certifications against the candidate's own parsed data, not asked of the
-model. The AI call now only returns location_score and match_score; see
-app/ai_services/resume_matcher.py's actual SYSTEM_PROMPT for the current, real prompt.
+Note: three of the five composite-score factors moved out of the AI call entirely --
+experience_score, skill_match_pct/missing_skills, and certificates_score are computed
+deterministically in app/screening/service.py (compute_experience_score,
+compute_skills_score, compute_certificates_score) from the job's real
+experience_min_years/experience_max_years, 4 categorized skill lists, and
+preferred_certifications against the candidate's own parsed data, not asked of the model.
+The AI call only returns location_score and match_score (plus recommendation). Quoted
+verbatim below from app/ai_services/resume_matcher.py's actual SYSTEM_PROMPT -- the
+previous version of this entry was also missing `location_score` from the output shape
+entirely and predated the explanatory paragraph the real prompt now includes. As with
+the Resume Parser above, the output shape is enforced by the SDK's structured-output
+feature (`output_format=ResumeMatchOutput`), not typed into the prompt as literal JSON.
 
 ```
 System:
-You compare a candidate resume against a job description. Respond only with
-valid JSON:
+You compare a candidate resume against a job description. Base this strictly on
+evidence in the resume text. Do not infer skills that are not stated or clearly
+implied by the candidate's actual experience. Score every *_score field on a
+0-100 scale.
+
+You score two independent dimensions -- experience fit, skills fit, and
+certifications fit are deliberately not among them, since app/screening/service.py
+computes all three itself: experience_score from the job's real
+experience_min_years/experience_max_years against the candidate's parsed
+total_experience_years, skill_match_pct from the job's 4 categorized skill lists
+against the candidate's parsed skills, and certificates_score from the job's
+preferred_certifications against the candidate's parsed certificates -- rather than
+asking you to guess at any of them from prose. Your two scores are used later as
+equally-weighted inputs (alongside those three computed scores) to a composite
+screening score:
+- location_score: how well the candidate's location fits the job's location. Score 100
+if either location is unspecified, they match, or the role reads as remote-friendly;
+score lower for a real geographic mismatch with no indication of relocation/remote work.
+- match_score: your overall holistic fit assessment.
+
+Output shape (ResumeMatchOutput):
 {
   "match_score": number (0-100),
+  "location_score": number (0-100),
   "recommendation": "strong_fit" | "possible_fit" | "weak_fit"
 }
-Base this strictly on evidence in the resume text. Do not infer skills that are
-not stated or clearly implied by the candidate's actual experience.
 
 User:
-JD: {jd_text}
-Parsed resume: {parsed_fields_json}
+Job description:
+{jd_text}
+[cache_control: ephemeral -- see resume_matcher.py's match_resume for why]
+
+Parsed resume: {parsed_fields}
+Candidate location: {candidate_location}
+Job location: {job_location}
 ```
 
 ---

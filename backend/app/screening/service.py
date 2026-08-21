@@ -13,6 +13,7 @@ threshold (app/models/screening_settings.py). Used by:
     parsed before being linked to a job (manual upload, local import).
 """
 
+import re
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -75,8 +76,17 @@ def describe_screening_audit_entry(action: str, details: dict) -> str:
         return f"AI screening failed: {details.get('error') or 'unknown error'}"
 
     recommendation = _RECOMMENDATION_LABELS.get(details.get("recommendation"), "Screened")
+    # Named explicitly, and never collapsed into one bare "score" -- a single unlabeled
+    # number here is exactly what let Resume Match and the composite Screening Score get
+    # confused for each other before (see frontend/src/utils/screeningScore.ts).
+    resume_match = details.get("resume_matcher_score")
     composite = details.get("composite_score")
-    score_text = f" (score {round(composite)})" if composite is not None else ""
+    scores = []
+    if resume_match is not None:
+        scores.append(f"Resume Match: {round(resume_match)}%")
+    if composite is not None:
+        scores.append(f"Screening: {round(composite)}%")
+    score_text = f" ({' | '.join(scores)})" if scores else ""
 
     missing_required = details.get("missing_required_skills")
     missing_preferred = details.get("missing_preferred_skills")
@@ -174,19 +184,147 @@ def compute_experience_score(
     return EXPERIENCE_SCORE_NO_REQUIREMENT
 
 
+# Filler words common in JD-style requirement bullets ("Ability to interact with business
+# and technical stakeholders", "8+ years of overall IT experience") that carry no
+# skill-identifying signal of their own -- stripped before comparing token sets so a
+# requirement's *meaningful* words drive the match, not its connective/qualifier language.
+# Deliberately NOT length-based (no "drop tokens shorter than N characters"): that would
+# silently treat real short technical terms -- "AI", "OCR", "SQL", "IT", "UI" -- as filler
+# too, which is exactly the kind of token a requirement most needs credit for.
+#
+# document/processing/platforms/solutions/tools/teams/technical are here for the same
+# reason but a narrower one: they're generic nouns that pad out an otherwise single-concept
+# compound requirement ("OCR and document processing", "Cloud platforms such as
+# Azure/AWS", "Ability to lead technical teams") without being the concept itself, so
+# leaving them in the denominator was penalizing a real, specific match (e.g. "OCR") for
+# not *also* repeating generic surrounding words no resume would naturally state verbatim.
+# Deliberately singular/plural-specific, not stemmed equivalents of these: "solutions" and
+# "platforms" are filler, but "solution" and "platform" are left alone since they're exactly
+# the meaningful word in other real skills here ("RPA Solution Architecture", "Solution
+# Discovery") -- stopwording those too would strip real signal, not just padding. Same
+# reasoning for "process" (kept -- "Process mining" is a specific technique, not filler)
+# vs. "processing" (dropped -- only ever appears here as padding after a real noun).
+_SKILL_MATCH_STOPWORDS = {
+    "a", "an", "the", "and", "or", "with", "of", "to", "for", "in", "on", "at", "by", "is",
+    "are", "be", "as", "such", "other", "overall", "across", "including", "include",
+    "includes", "using", "use", "used", "ability", "abilities", "able", "strong", "strongly",
+    "excellent", "good", "great", "solid", "proven", "demonstrated", "experience",
+    "experienced", "skill", "skills", "knowledge", "understanding", "familiarity",
+    "proficiency", "years", "year", "yrs",
+    "document", "processing", "platforms", "solutions", "tools", "teams", "technical",
+}
+
+_TOKEN_SPLIT_RE = re.compile(r"[^a-z0-9]+")
+
+# A small, fixed set of common English derivational suffixes, checked in this exact order
+# against the token as it stands after each prior rule -- so a word can cascade through
+# more than one rule in the same pass ("leadership" -> strip "ship" -> "leader" -> strip
+# "er" -> "lead"). NOT a real stemmer (no vowel/consonant-doubling rules, no dictionary) --
+# deliberately lightweight, so it only unifies the common, low-risk cases this suffix list
+# actually covers (e.g. "developer"/"develop", "solutions"/"solution") and leaves anything
+# outside that list (e.g. "architecture" vs "architect", which differ by "-ture" -- not one
+# of these suffixes) unstemmed rather than guessed at.
+# ("ers" before "er", "ions" before "ion": the longer suffix is tried first so a plural
+# ("developers", "solutions") reduces to the same stem as its singular ("developer",
+# "solution") in one pass, rather than the "er"/"ion" rule firing first and leaving a
+# trailing "s" behind for no later rule to clean up.)
+_STEM_SUFFIX_RULES = [
+    ("ship", ""), ("ing", ""), ("ers", ""), ("er", ""), ("ions", ""), ("ion", ""),
+    ("ies", "y"), ("ed", ""), ("s", ""),
+]
+# Never strip a suffix if doing so would leave less than this many characters -- the same
+# "protect short technical terms" guarantee _SKILL_MATCH_STOPWORDS gives short acronyms
+# extends to stemming too, since none of "AI"/"OCR"/"SQL"/"IT"/"UI" are anywhere near long
+# enough to have a suffix removed and still clear this floor.
+_STEM_MIN_RESULT_LENGTH = 4
+
+
+def _stem(word: str) -> str:
+    """One pass through _STEM_SUFFIX_RULES, applying each rule in order to whatever the
+    word has become so far -- e.g. "leadership" clears the "ship" rule (-> "leader") then
+    the "er" rule (-> "lead") in that same pass. A rule only fires if the result would still
+    be at least _STEM_MIN_RESULT_LENGTH characters, so short words/acronyms are never
+    touched regardless of what they happen to end in."""
+    for suffix, replacement in _STEM_SUFFIX_RULES:
+        if word.endswith(suffix) and len(word) - len(suffix) + len(replacement) >= _STEM_MIN_RESULT_LENGTH:
+            word = word[: -len(suffix)] + replacement
+    return word
+
+
+def _tokenize(text: str) -> set[str]:
+    """Lowercase, split on anything that isn't a letter/digit (whitespace, slashes,
+    hyphens, punctuation), drop filler words, then stem what's left -- e.g. "SQL /
+    database integration" -> {"sql", "database", "integration"} (none of these end in a
+    stemmed suffix, so stemming is a no-op here), "Ability to lead technical teams" ->
+    {"lead"} (stopwords strip "ability"/"to"/"technical"/"teams", leaving just "lead"),
+    "Technical Leadership" -> {"lead"} too (stopwords strip "technical", stemming reduces
+    "leadership" -> "lead"). Stopword-filtering happens on the raw (unstemmed) word, since
+    _SKILL_MATCH_STOPWORDS is written in surface-word form."""
+    words = _TOKEN_SPLIT_RE.split(text.lower())
+    return {_stem(word) for word in words if word and word not in _SKILL_MATCH_STOPWORDS}
+
+
+def _tokenize_all(items: Optional[list[str]]) -> set[str]:
+    """Union of _tokenize's output across every item -- e.g. a candidate's separate
+    parsed skills "SQL Server" and "API Integration" contribute {"sql", "server"} and
+    {"api", "integration"} to one combined pool, so a job requirement's tokens can be
+    satisfied by evidence spread across several of the candidate's own skill entries."""
+    tokens: set[str] = set()
+    for item in items or []:
+        if item and item.strip():
+            tokens |= _tokenize(item)
+    return tokens
+
+
+# A requirement counts as "satisfied" (excluded from the missing-skills list) once at
+# least half of its significant tokens turn up somewhere in the candidate's tokenized
+# skills -- e.g. "SQL / database integration" against a candidate whose skills include
+# "SQL Server" and "API Integration" (2 of 3 tokens: "sql", "integration") clears it, while
+# "Bot Creator / Bot Runner" against a resume that never mentions bots (0 of 3) does not.
+# Below the threshold the requirement still earns partial credit toward the category's
+# coverage fraction (see _skill_coverage) -- only the missing-list categorization used by
+# Remarks is all-or-nothing. 50% (a majority of a requirement's own significant words) is
+# the threshold rather than "any single token" specifically so a 3-4 concept compound
+# phrase can't be called satisfied off one incidental word alone.
+SKILL_MATCH_SATISFIED_THRESHOLD = 0.5
+
+
 def _skill_coverage(
-    candidate_skills_normalized: set[str], required_skills: Optional[list[str]]
+    candidate_skill_tokens: set[str], required_skills: Optional[list[str]]
 ) -> tuple[float, list[str]]:
     """(coverage fraction 0-1, the subset of `required_skills` the candidate is missing)
-    for one category. An empty/absent category has nothing to cover -- full coverage
-    (1.0) and no missing skills, same "absence of a requirement is not a penalty"
-    convention as location_score/certificates_score/experience_score."""
+    for one category. Coverage is token-overlap based, not exact-string or substring --
+    job requirement lists are routinely written as full sentences and compound phrases
+    ("Automation Anywhere Control Room", "Ability to interact with business and technical
+    stakeholders") rather than short tags matching a parsed resume's skills entries
+    verbatim, so comparing whole strings (however forgivingly) misses most real evidence.
+    Each requirement earns partial credit for partial token overlap, summed into the
+    returned coverage fraction, but only counts as matched (excluded from `missing`) at or
+    above SKILL_MATCH_SATISFIED_THRESHOLD -- see that constant for the reasoning.
+
+    An empty/absent category has nothing to cover -- full coverage (1.0) and no missing
+    skills, same "absence of a requirement is not a penalty" convention as
+    location_score/certificates_score/experience_score. A requirement whose text is
+    entirely filler words once tokenized (no real content to check for) is likewise
+    treated as satisfied on its own, rather than unmatchable by construction."""
     required = [skill for skill in (required_skills or []) if skill and skill.strip()]
     if not required:
         return 1.0, []
-    missing = [skill for skill in required if skill.strip().lower() not in candidate_skills_normalized]
-    matched = len(required) - len(missing)
-    return matched / len(required), missing
+
+    missing = []
+    total_overlap = 0.0
+    for skill in required:
+        requirement_tokens = _tokenize(skill)
+        overlap = (
+            1.0
+            if not requirement_tokens
+            else len(requirement_tokens & candidate_skill_tokens) / len(requirement_tokens)
+        )
+        total_overlap += overlap
+        if overlap < SKILL_MATCH_SATISFIED_THRESHOLD:
+            missing.append(skill)
+
+    return total_overlap / len(required), missing
 
 
 def compute_skills_score(
@@ -195,12 +333,22 @@ def compute_skills_score(
     technical_good_to_have: Optional[list[str]],
     soft_must_have: Optional[list[str]],
     soft_good_to_have: Optional[list[str]],
+    candidate_certificates: Optional[list[str]] = None,
 ) -> dict:
     """Deterministic replacement for what used to be an AI-judged skill_match_pct -- a
     SKILLS_SCORE_WEIGHTS-weighted coverage across the job's 4 categorized skill lists
     (see app/models/job_role.py), rather than a holistic AI guess from JD prose. Matching
-    is case/whitespace-insensitive, same convention as app/screening/suitability.py's
-    _keyword_overlap_score.
+    is token-overlap based (see _skill_coverage/_tokenize) -- case/punctuation/word-order
+    insensitive, and forgiving of a job requirement bundling several concepts into one
+    phrase or a candidate's resume splitting them across several parsed skills.
+
+    candidate_certificates (optional) is folded into the same token pool as
+    candidate_skills, not compared separately -- a platform/technology requirement (e.g.
+    "Azure") can be satisfied by a certification name that names it ("Microsoft Azure
+    Fundamentals (AZ-900)") even though parsed_fields files it under certificates, not
+    skills. Certificates get no separate weighting here; compute_certificates_score
+    against the job's own preferred_certifications list is still the only place
+    certificate coverage is scored in its own right.
 
     Returns {"score": int, "missing_required": [str], "missing_preferred": [str]} --
     missing_required is every unmatched must-have skill (technical or soft),
@@ -208,12 +356,12 @@ def compute_skills_score(
     (Part C, see describe_screening_audit_entry) can tell a recruiter apart-severity gaps
     rather than one flat list.
     """
-    candidate_normalized = {skill.strip().lower() for skill in (candidate_skills or []) if skill and skill.strip()}
+    candidate_tokens = _tokenize_all(candidate_skills) | _tokenize_all(candidate_certificates)
 
-    tech_must_coverage, tech_must_missing = _skill_coverage(candidate_normalized, technical_must_have)
-    tech_good_coverage, tech_good_missing = _skill_coverage(candidate_normalized, technical_good_to_have)
-    soft_must_coverage, soft_must_missing = _skill_coverage(candidate_normalized, soft_must_have)
-    soft_good_coverage, soft_good_missing = _skill_coverage(candidate_normalized, soft_good_to_have)
+    tech_must_coverage, tech_must_missing = _skill_coverage(candidate_tokens, technical_must_have)
+    tech_good_coverage, tech_good_missing = _skill_coverage(candidate_tokens, technical_good_to_have)
+    soft_must_coverage, soft_must_missing = _skill_coverage(candidate_tokens, soft_must_have)
+    soft_good_coverage, soft_good_missing = _skill_coverage(candidate_tokens, soft_good_to_have)
 
     score = (
         tech_must_coverage * SKILLS_SCORE_WEIGHTS["technical_must_have"]
@@ -234,24 +382,25 @@ def compute_certificates_score(
 ) -> dict:
     """Deterministic replacement for what used to be an AI-judged certificates_score --
     coverage of the job's preferred_certifications by the candidate's own parsed
-    certificates (app/ai_services/resume_parser.py), reusing the exact same
-    case/whitespace-insensitive matching as compute_skills_score's _skill_coverage.
-    preferred_certifications is a single flat list -- every entry is already "preferred,"
-    not required, so unlike skills there's no must-have/good-to-have weighting here, just
-    the plain coverage fraction scaled to 0-100: full score when the job names no
-    certifications at all (absence of a requirement is not a penalty, same convention as
-    location_score/experience_score/skill_match_pct), otherwise however much of the list
-    the candidate's own certificates cover.
+    certificates (app/ai_services/resume_parser.py), reusing the exact same token-overlap
+    matching as compute_skills_score's _skill_coverage -- e.g. a job wanting "Automation
+    Anywhere Certified Advanced RPA Professional" is satisfied by a candidate's "Automation
+    Anywhere Certified Advanced RPA Professional -- A360" without the trailing suffix
+    breaking an exact-string comparison. preferred_certifications is a single flat list --
+    every entry is already "preferred," not required, so unlike skills there's no
+    must-have/good-to-have weighting here, just the plain coverage fraction scaled to
+    0-100: full score when the job names no certifications at all (absence of a
+    requirement is not a penalty, same convention as location_score/experience_score/
+    skill_match_pct), otherwise however much of the list the candidate's own certificates
+    cover.
 
     Returns {"score": int, "missing": [str]} -- missing is every preferred certification
     the candidate doesn't hold, logged on the audit_log entry for the same transparency
     compute_skills_score's missing_required/missing_preferred give, even though it isn't
     (yet) surfaced in Remarks text the way skill gaps are.
     """
-    candidate_normalized = {
-        cert.strip().lower() for cert in (candidate_certificates or []) if cert and cert.strip()
-    }
-    coverage, missing = _skill_coverage(candidate_normalized, preferred_certifications)
+    candidate_tokens = _tokenize_all(candidate_certificates)
+    coverage, missing = _skill_coverage(candidate_tokens, preferred_certifications)
     return {"score": round(coverage * 100), "missing": missing}
 
 
@@ -326,14 +475,15 @@ def run_screening(db: Session, application: Application, job: JobRole, candidate
     result["experience_score"] = compute_experience_score(candidate_years, job_min_years, job_max_years)
 
     candidate_skills = (candidate.parsed_fields or {}).get("skills")
+    candidate_certificates = (candidate.parsed_fields or {}).get("certificates")
     skills_result = compute_skills_score(
         candidate_skills, job.technical_skills_must_have, job.technical_skills_good_to_have,
         job.soft_skills_must_have, job.soft_skills_good_to_have,
+        candidate_certificates=candidate_certificates,
     )
     result["skill_match_pct"] = skills_result["score"]
     result["missing_skills"] = skills_result["missing_required"] + skills_result["missing_preferred"]
 
-    candidate_certificates = (candidate.parsed_fields or {}).get("certificates")
     certificates_result = compute_certificates_score(candidate_certificates, job.preferred_certifications)
     result["certificates_score"] = certificates_result["score"]
 

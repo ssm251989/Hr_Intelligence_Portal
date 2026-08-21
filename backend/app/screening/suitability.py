@@ -50,6 +50,7 @@ def pre_filter_published_jobs(db: Session, candidate: Candidate, top_n: int = PR
     of the scarce top_n slots (ties are common; letting a can-never-be-scored job win a
     tie would silently starve out real candidates)."""
     candidate_skills = (candidate.parsed_fields or {}).get("skills") or []
+    candidate_certificates = (candidate.parsed_fields or {}).get("certificates") or []
     published_jobs = (
         db.query(JobRole)
         .filter(JobRole.status == "published", JobRole.jd_text.isnot(None))
@@ -60,6 +61,7 @@ def pre_filter_published_jobs(db: Session, candidate: Candidate, top_n: int = PR
         key=lambda job: compute_skills_score(
             candidate_skills, job.technical_skills_must_have, job.technical_skills_good_to_have,
             job.soft_skills_must_have, job.soft_skills_good_to_have,
+            candidate_certificates=candidate_certificates,
         )["score"],
         reverse=True,
     )
@@ -102,6 +104,7 @@ def attempt_auto_suggest_suitable_job(db: Session, candidate: Candidate, actor: 
         result["skill_match_pct"] = compute_skills_score(
             (candidate.parsed_fields or {}).get("skills"), job.technical_skills_must_have,
             job.technical_skills_good_to_have, job.soft_skills_must_have, job.soft_skills_good_to_have,
+            candidate_certificates=(candidate.parsed_fields or {}).get("certificates"),
         )["score"]
         result["certificates_score"] = compute_certificates_score(
             (candidate.parsed_fields or {}).get("certificates"), job.preferred_certifications,
