@@ -21,6 +21,7 @@ import Typography from "@mui/material/Typography";
 
 import { extractErrorMessage, jobsApi, reportsApi } from "../api/client";
 import type { AuditLogPage, ApplicationTimelineResponse, JobRoleRead, JobSummaryResponse, PipelineResponse } from "../api/types";
+import RefreshButton from "../components/RefreshButton";
 
 const AUDIT_PAGE_SIZE = 20;
 
@@ -378,19 +379,45 @@ export default function ReportsPage() {
   const [tab, setTab] = useState(0);
   const [jobs, setJobs] = useState<JobRoleRead[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // `refreshing` tracks only this page's own jobs fetch (always runs, always resolves) --
+  // not any of the 4 tab views' own fetches below, two of which (Job Summary before a job
+  // is picked, Timeline before an ID is entered) never auto-fetch at all, so gating the
+  // button on them could leave it disabled forever. Each tab already shows its own
+  // CircularProgress while its own fetch is in flight, unaffected by this.
+  const [refreshing, setRefreshing] = useState(false);
+  // Bumped on Refresh and used as each tab view's `key` -- remounting resets that view's
+  // own internal filter state (job selection, audit filters, timeline application id) back
+  // to its defaults and re-runs whatever fetch it does on mount, without needing to lift
+  // any of those 4 views' state up into this page.
+  const [resetKey, setResetKey] = useState(0);
 
-  useEffect(() => {
+  const loadJobs = () =>
     jobsApi
       .list()
       .then(setJobs)
       .catch((err) => setError(extractErrorMessage(err, "Failed to load jobs")));
+
+  useEffect(() => {
+    loadJobs();
   }, []);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    setTab(0);
+    setResetKey((k) => k + 1);
+    try {
+      await loadJobs();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   return (
     <Box>
-      <Typography variant="h4" mb={3}>
-        Reports & Status
-      </Typography>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={3}>
+        <Typography variant="h4">Reports & Status</Typography>
+        <RefreshButton loading={refreshing} onRefresh={handleRefresh} />
+      </Stack>
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
@@ -406,10 +433,10 @@ export default function ReportsPage() {
           <Tab label="Timeline" />
         </Tabs>
         <CardContent>
-          {tab === 0 && <PipelineView jobs={jobs} />}
-          {tab === 1 && <JobSummaryView jobs={jobs} />}
-          {tab === 2 && <AuditTrailView />}
-          {tab === 3 && <TimelineView />}
+          {tab === 0 && <PipelineView key={resetKey} jobs={jobs} />}
+          {tab === 1 && <JobSummaryView key={resetKey} jobs={jobs} />}
+          {tab === 2 && <AuditTrailView key={resetKey} />}
+          {tab === 3 && <TimelineView key={resetKey} />}
         </CardContent>
       </Card>
     </Box>

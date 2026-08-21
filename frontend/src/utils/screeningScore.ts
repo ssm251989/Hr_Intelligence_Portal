@@ -23,3 +23,23 @@ export function screeningScoreDisplay(row: CandidateApplicationRow): { value: nu
   }
   return { value: null, tooltip: "" };
 }
+
+// Candidates List's primary score column -- deliberately the OTHER score from
+// screeningScoreDisplay above: the raw Resume Matcher match_score, not Part A's composite.
+// A job's required/preferred skill lists can legitimately contain things a resume match
+// alone doesn't evidence (see app/screening/service.py's compute_skills_score), so a
+// composite score and a resume-match score for the same candidate can differ a lot -- the
+// tooltip always names which one this is, and the other, so the two are never confused for
+// each other the way an unlabeled single "Score" column let them be before.
+export function resumeMatchScoreDisplay(row: CandidateApplicationRow): { value: number | null; tooltip: string } {
+  if (row.match_score == null) {
+    return { value: null, tooltip: "" };
+  }
+  return {
+    value: row.match_score,
+    tooltip:
+      row.composite_score != null
+        ? `Resume Match score (raw AI resume-to-JD match). Screening score (composite, incl. skills/experience/location/certificates): ${Math.round(row.composite_score)}%`
+        : "Resume Match score (raw AI resume-to-JD match) -- this application hasn't been screened yet",
+  };
+}

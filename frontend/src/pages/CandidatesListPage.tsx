@@ -37,13 +37,14 @@ import CandidateActionsMenu from "../components/CandidateActionsMenu";
 import CandidateAvatar from "../components/CandidateAvatar";
 import CandidateFiltersPanel, { EMPTY_CANDIDATE_FILTERS, type CandidateFilters } from "../components/CandidateFiltersPanel";
 import EditCandidateContactDialog from "../components/EditCandidateContactDialog";
+import RefreshButton from "../components/RefreshButton";
 import SourceIcon from "../components/SourceIcon";
 import UploadCandidateDialog from "../components/UploadCandidateDialog";
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
 import { downloadCsv } from "../utils/csv";
 import { downloadResume } from "../utils/resume";
-import { screeningScoreDisplay } from "../utils/screeningScore";
+import { resumeMatchScoreDisplay } from "../utils/screeningScore";
 
 const ROWS_PER_PAGE_OPTIONS = [10, 20, 30, 40, 50];
 const DEFAULT_PAGE_SIZE = 10;
@@ -79,6 +80,9 @@ export default function CandidatesListPage() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  // Forces loadPage to re-run on Refresh even when every filter/search/page value already
+  // happens to be at its default (in which case none of the other deps below would change).
+  const [refreshKey, setRefreshKey] = useState(0);
   const anyFilterActive = Boolean(search) || Object.values(filters).some(Boolean);
 
   // Manual single-candidate upload + link-to-job -- the only existing real functionality
@@ -134,7 +138,16 @@ export default function CandidatesListPage() {
   useEffect(() => {
     loadPage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, pageSize, search, filters]);
+  }, [page, pageSize, search, filters, refreshKey]);
+
+  const handleRefresh = () => {
+    setFilters(EMPTY_CANDIDATE_FILTERS);
+    setSearchInput("");
+    setSearch("");
+    setPage(1);
+    setPageSize(DEFAULT_PAGE_SIZE);
+    setRefreshKey((k) => k + 1);
+  };
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const pageStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -169,8 +182,9 @@ export default function CandidatesListPage() {
           row.source,
           row.applied_on,
           row.experience_years,
-          // Same fallback as the on-screen column (see screeningScoreFor below): composite
-          // score when this application has one, else the pre-Part-A raw match score.
+          // Composite screening score when this application has one, else the pre-Part-A
+          // raw match score -- kept as its own named CSV column alongside "Resume Match"
+          // below so the export never has to collapse the two into one ambiguous number.
           row.composite_score ?? row.match_score,
           row.match_score,
           row.location,
@@ -259,6 +273,7 @@ export default function CandidatesListPage() {
           <Button variant="outlined" startIcon={<DownloadOutlinedIcon />} onClick={handleExportCsv} disabled={total === 0}>
             {selectedIds.size > 0 ? `Export (${selectedIds.size} selected)` : "Export"}
           </Button>
+          <RefreshButton loading={loading} onRefresh={handleRefresh} />
         </Stack>
       </Stack>
 
@@ -284,7 +299,7 @@ export default function CandidatesListPage() {
                 <TableCell>Applied On</TableCell>
                 <TableCell>Exp</TableCell>
                 <TableCell>Location</TableCell>
-                <TableCell>Screening Score</TableCell>
+                <TableCell>Resume Match</TableCell>
                 <TableCell>Resume</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell>Remarks</TableCell>
@@ -329,7 +344,7 @@ export default function CandidatesListPage() {
                   <TableCell>Applied On</TableCell>
                   <TableCell>Exp</TableCell>
                   <TableCell>Location</TableCell>
-                  <TableCell>Screening Score</TableCell>
+                  <TableCell>Resume Match</TableCell>
                   <TableCell>Resume</TableCell>
                   <TableCell>Status</TableCell>
                   <TableCell>Remarks</TableCell>
@@ -375,7 +390,7 @@ export default function CandidatesListPage() {
                     <TableCell>{row.location || "—"}</TableCell>
                     <TableCell>
                       {(() => {
-                        const { value, tooltip } = screeningScoreDisplay(row);
+                        const { value, tooltip } = resumeMatchScoreDisplay(row);
                         if (value == null) return "—";
                         return (
                           <Tooltip title={tooltip}>

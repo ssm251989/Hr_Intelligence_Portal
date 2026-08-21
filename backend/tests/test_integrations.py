@@ -645,6 +645,135 @@ def test_hr_inbox_settings_update_omitted_password_leaves_existing_one_unchanged
     assert decrypt(row.smtp_password) == "first-password"
 
 
+def test_hr_inbox_validate_requires_admin_role(client, make_auth_headers):
+    headers = make_auth_headers(role="recruiter", email="non-admin-validate@example.com")
+    response = client.post(
+        "/hr-inbox/settings/validate",
+        json={
+            "smtp_host": "smtp.example.com", "smtp_port": 587, "smtp_username": "hr@example.com",
+            "smtp_password": "pw", "imap_host": "imap.example.com", "imap_port": 993,
+        },
+        headers=headers,
+    )
+    assert response.status_code == 403
+
+
+def test_hr_inbox_validate_with_correct_credentials_reports_both_ok_and_does_not_persist(client, db_session, monkeypatch):
+    _reset_hr_integration(db_session)
+    monkeypatch.setattr("app.hr_inbox.router.send_hr_email", lambda *a, **k: None)
+    monkeypatch.setattr("app.hr_inbox.router.test_imap_connection", lambda *a, **k: None)
+
+    response = client.post(
+        "/hr-inbox/settings/validate",
+        json={
+            "smtp_host": "smtp.example.com", "smtp_port": 587, "smtp_username": "hr@example.com",
+            "smtp_password": "correct-password", "imap_host": "imap.example.com", "imap_port": 993,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"smtp_ok": True, "smtp_error": None, "imap_ok": True, "imap_error": None}
+
+    from app.models.hr_integration import HrIntegration
+
+    row = db_session.get(HrIntegration, 1)
+    assert row.smtp_host is None
+    assert row.smtp_password is None
+
+
+def test_hr_inbox_validate_with_incorrect_credentials_reports_the_specific_errors_and_does_not_persist(client, db_session, monkeypatch):
+    from app.integrations.hr_email import SmtpError
+    from app.integrations.imap_poll import ImapError
+
+    _reset_hr_integration(db_session)
+    monkeypatch.setattr(
+        "app.hr_inbox.router.send_hr_email",
+        lambda *a, **k: (_ for _ in ()).throw(SmtpError("Authentication failed")),
+    )
+    monkeypatch.setattr(
+        "app.hr_inbox.router.test_imap_connection",
+        lambda *a, **k: (_ for _ in ()).throw(ImapError("IMAP login failed")),
+    )
+
+    response = client.post(
+        "/hr-inbox/settings/validate",
+        json={
+            "smtp_host": "smtp.example.com", "smtp_port": 587, "smtp_username": "hr@example.com",
+            "smtp_password": "wrong-password", "imap_host": "imap.example.com", "imap_port": 993,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["smtp_ok"] is False
+    assert "Authentication failed" in body["smtp_error"]
+    assert body["imap_ok"] is False
+    assert "IMAP login failed" in body["imap_error"]
+
+    from app.models.hr_integration import HrIntegration
+
+    row = db_session.get(HrIntegration, 1)
+    assert row.smtp_host is None
+
+
+def test_hr_inbox_validate_blank_password_falls_back_to_the_stored_password(client, db_session, monkeypatch):
+    _reset_hr_integration(db_session)
+    client.put(
+        "/hr-inbox/settings",
+        json={
+            "smtp_host": "smtp.example.com", "smtp_username": "hr@example.com",
+            "smtp_password": "existing-password", "imap_host": "imap.example.com",
+        },
+    )
+
+    captured = {}
+
+    def fake_send_hr_email(probe, **kwargs):
+        captured["password"] = decrypt(probe.smtp_password)
+
+    monkeypatch.setattr("app.hr_inbox.router.send_hr_email", fake_send_hr_email)
+    monkeypatch.setattr("app.hr_inbox.router.test_imap_connection", lambda *a, **k: None)
+
+    response = client.post(
+        "/hr-inbox/settings/validate",
+        json={
+            # smtp_password omitted -- editing without retyping a secret that already works.
+            "smtp_host": "smtp.example.com", "smtp_port": 587, "smtp_username": "hr@example.com",
+            "from_address": "hr2@example.com",  # the field actually being changed
+            "imap_host": "imap.example.com", "imap_port": 993,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"smtp_ok": True, "smtp_error": None, "imap_ok": True, "imap_error": None}
+    assert captured["password"] == "existing-password"
+
+    # Still never persisted by validate itself -- from_address on the real row is still
+    # whatever the earlier PUT left it as (never set), proving this call never wrote.
+    from app.models.hr_integration import HrIntegration
+
+    row = db_session.get(HrIntegration, 1)
+    assert row.from_address is None
+
+
+def test_hr_inbox_validate_blank_password_with_none_stored_returns_a_clear_error(client, db_session):
+    _reset_hr_integration(db_session)
+
+    response = client.post(
+        "/hr-inbox/settings/validate",
+        json={
+            "smtp_host": "smtp.example.com", "smtp_port": 587, "smtp_username": "hr@example.com",
+            "imap_host": "imap.example.com", "imap_port": 993,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["smtp_ok"] is False
+    assert "password is required" in body["smtp_error"].lower()
+    assert body["imap_ok"] is False
+
+
 def test_hr_inbox_send_test_email_requires_smtp_configured(client, db_session):
     _reset_hr_integration(db_session)
 

@@ -20,6 +20,8 @@ import type {
   HrInboxListPage,
   HrIntegrationRead,
   HrIntegrationUpdate,
+  HrMailboxValidateRequest,
+  HrMailboxValidateResult,
   IntegrationStatus,
   InterviewCreate,
   InterviewFeedbackUpdate,
@@ -241,6 +243,8 @@ export interface HrInboxListParams {
 export const hrInboxApi = {
   getSettings: () => get<HrIntegrationRead>("/hr-inbox/settings"),
   updateSettings: (payload: HrIntegrationUpdate) => put<HrIntegrationRead>("/hr-inbox/settings", payload),
+  validateSettings: (payload: HrMailboxValidateRequest) =>
+    post<HrMailboxValidateResult>("/hr-inbox/settings/validate", payload),
   sendTestEmail: (to: string) => post<SendTestEmailResult>("/hr-inbox/settings/send-test-email", { to }),
   testImapConnection: () => post<TestImapConnectionResult>("/hr-inbox/settings/test-imap-connection"),
   list: (params: HrInboxListParams = {}) => {

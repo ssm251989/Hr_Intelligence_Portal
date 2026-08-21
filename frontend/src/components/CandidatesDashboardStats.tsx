@@ -44,7 +44,15 @@ const MAGENTA = "#e87ba4";
 // refreshSignal is optional -- the Dashboard now lives on its own route (/candidates/dashboard),
 // so navigating to it after an import on the separate Import page already remounts this
 // component and refetches; nothing external needs to force a re-fetch anymore.
-export default function CandidatesDashboardStats({ refreshSignal = 0 }: { refreshSignal?: number }) {
+// onLoadingChange is likewise optional -- purely so the page's own RefreshButton can show
+// an accurate in-flight spinner for this fetch; nothing here changes because of it.
+export default function CandidatesDashboardStats({
+  refreshSignal = 0,
+  onLoadingChange,
+}: {
+  refreshSignal?: number;
+  onLoadingChange?: (loading: boolean) => void;
+}) {
   const [stats, setStats] = useState<CandidatesDashboardStatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -53,12 +61,16 @@ export default function CandidatesDashboardStats({ refreshSignal = 0 }: { refres
 
   useEffect(() => {
     setLoading(true);
+    onLoadingChange?.(true);
     setError(null);
     reportsApi
       .candidatesDashboardStats(compareMonth === LAST_MONTH_SENTINEL ? undefined : compareMonth)
       .then(setStats)
       .catch((err) => setError(extractErrorMessage(err, "Failed to load candidates dashboard")))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        onLoadingChange?.(false);
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshSignal, compareMonth]);
 

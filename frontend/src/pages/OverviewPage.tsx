@@ -11,6 +11,7 @@ import { Link as RouterLink } from "react-router-dom";
 
 import { candidatesApi, extractErrorMessage, jobsApi, reportsApi } from "../api/client";
 import type { CandidateRead, JobRoleRead, PipelineResponse } from "../api/types";
+import RefreshButton from "../components/RefreshButton";
 import StatCard from "../components/StatCard";
 import StatusChip, { statusColor } from "../components/StatusChip";
 import { JobSummaryView } from "./ReportsPage";
@@ -59,10 +60,10 @@ export default function OverviewPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadOverview = () => {
     setLoading(true);
     setError(null);
-    Promise.all([jobsApi.list(), candidatesApi.list(), reportsApi.pipeline()])
+    return Promise.all([jobsApi.list(), candidatesApi.list(), reportsApi.pipeline()])
       .then(([jobsData, candidatesData, pipelineData]) => {
         setJobs(jobsData);
         setCandidates(candidatesData);
@@ -70,15 +71,21 @@ export default function OverviewPage() {
       })
       .catch((err) => setError(extractErrorMessage(err, "Failed to load overview data")))
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadOverview();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const activeJobsCount = jobs.filter((job) => job.status === "published").length;
 
   return (
     <Box>
-      <Typography variant="h4" mb={3}>
-        Overview
-      </Typography>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={3}>
+        <Typography variant="h4">Overview</Typography>
+        <RefreshButton loading={loading} onRefresh={loadOverview} />
+      </Stack>
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>

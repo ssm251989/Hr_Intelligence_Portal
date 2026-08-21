@@ -34,6 +34,7 @@ import { candidatesApi, extractErrorMessage, jobsApi, screeningApi } from "../ap
 import { isTerminalApplicationStatus, type CandidateApplicationRow, type JobRoleRead } from "../api/types";
 import CandidateAvatar from "../components/CandidateAvatar";
 import CandidateFiltersPanel, { EMPTY_CANDIDATE_FILTERS, type CandidateFilters } from "../components/CandidateFiltersPanel";
+import RefreshButton from "../components/RefreshButton";
 import SourceIcon from "../components/SourceIcon";
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
@@ -140,6 +141,9 @@ export default function ScreeningListPage() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  // Forces loadPage to re-run on Refresh even when every filter/search/page value already
+  // happens to be at its default (in which case none of the other deps below would change).
+  const [refreshKey, setRefreshKey] = useState(0);
   const anyFilterActive = Boolean(search) || Object.values(filters).some(Boolean);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -190,7 +194,16 @@ export default function ScreeningListPage() {
   useEffect(() => {
     loadPage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, pageSize, search, filters]);
+  }, [page, pageSize, search, filters, refreshKey]);
+
+  const handleRefresh = () => {
+    setFilters(EMPTY_CANDIDATE_FILTERS);
+    setSearchInput("");
+    setSearch("");
+    setPage(1);
+    setPageSize(DEFAULT_PAGE_SIZE);
+    setRefreshKey((k) => k + 1);
+  };
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const pageStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -305,6 +318,7 @@ export default function ScreeningListPage() {
           <Button variant="outlined" startIcon={<DownloadOutlinedIcon />} onClick={handleExportCsv} disabled={total === 0}>
             {selectedIds.size > 0 ? `Export (${selectedIds.size} selected)` : "Export"}
           </Button>
+          <RefreshButton loading={loading} onRefresh={handleRefresh} />
         </Stack>
       </Stack>
 

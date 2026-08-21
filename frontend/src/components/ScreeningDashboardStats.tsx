@@ -39,7 +39,15 @@ const AQUA = "#1baf7a";
 const YELLOW = "#eda100";
 const MAGENTA = "#e87ba4";
 
-export default function ScreeningDashboardStats({ refreshSignal = 0 }: { refreshSignal?: number }) {
+// onLoadingChange is optional -- purely so the page's own RefreshButton can show an
+// accurate in-flight spinner for this fetch; nothing here changes because of it.
+export default function ScreeningDashboardStats({
+  refreshSignal = 0,
+  onLoadingChange,
+}: {
+  refreshSignal?: number;
+  onLoadingChange?: (loading: boolean) => void;
+}) {
   const [stats, setStats] = useState<ScreeningDashboardStatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -47,12 +55,16 @@ export default function ScreeningDashboardStats({ refreshSignal = 0 }: { refresh
 
   useEffect(() => {
     setLoading(true);
+    onLoadingChange?.(true);
     setError(null);
     reportsApi
       .screeningDashboardStats(compareMonth === LAST_MONTH_SENTINEL ? undefined : compareMonth)
       .then(setStats)
       .catch((err) => setError(extractErrorMessage(err, "Failed to load screening dashboard")))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        onLoadingChange?.(false);
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshSignal, compareMonth]);
 

@@ -50,6 +50,7 @@ import {
 } from "../api/types";
 import CandidateAvatar from "../components/CandidateAvatar";
 import CandidateFiltersPanel, { EMPTY_CANDIDATE_FILTERS, type CandidateFilters } from "../components/CandidateFiltersPanel";
+import RefreshButton from "../components/RefreshButton";
 import ShortlistStatusPanel, { REASON_OPTIONS } from "../components/ShortlistStatusPanel";
 import SourceIcon from "../components/SourceIcon";
 import { useAuth } from "../auth/AuthContext";
@@ -145,6 +146,9 @@ export default function ShortlistingListPage() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  // Forces loadPage to re-run on Refresh even when every filter/search/page value already
+  // happens to be at its default (in which case none of the other deps below would change).
+  const [refreshKey, setRefreshKey] = useState(0);
   const anyFilterActive = Boolean(search) || Object.values(filters).some(Boolean);
   // A Map (not just a Set of ids) -- a row can only ever be checked while it's actually
   // rendered on the page the recruiter is looking at, so keeping the full row alongside its
@@ -207,7 +211,16 @@ export default function ShortlistingListPage() {
   useEffect(() => {
     loadPage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, pageSize, search, filters]);
+  }, [page, pageSize, search, filters, refreshKey]);
+
+  const handleRefresh = () => {
+    setFilters(EMPTY_CANDIDATE_FILTERS);
+    setSearchInput("");
+    setSearch("");
+    setPage(1);
+    setPageSize(DEFAULT_PAGE_SIZE);
+    setRefreshKey((k) => k + 1);
+  };
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const pageStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -341,6 +354,7 @@ export default function ShortlistingListPage() {
           <Button variant="outlined" startIcon={<DownloadOutlinedIcon />} onClick={handleExportCsv} disabled={total === 0}>
             {selectedRows.size > 0 ? `Export (${selectedRows.size} selected)` : "Export"}
           </Button>
+          <RefreshButton loading={loading} onRefresh={handleRefresh} />
         </Stack>
       </Stack>
 

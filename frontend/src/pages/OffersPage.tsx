@@ -18,6 +18,7 @@ import type { ApplicationRead, CandidateRead, JobRoleRead, OfferGenerateRequest,
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
 import ConfirmDialog from "../components/ConfirmDialog";
+import RefreshButton from "../components/RefreshButton";
 import StatusChip from "../components/StatusChip";
 
 const RELEVANT_STATUSES = ["bgv_cleared", "offer_sent", "onboarding_started", "onboarding_completed"];
@@ -242,24 +243,46 @@ export default function OffersPage() {
   const [docusignConnected, setDocusignConnected] = useState<boolean | null>(null);
   const [candidatesLoadFailed, setCandidatesLoadFailed] = useState(false);
   const [docusignStatusLoadFailed, setDocusignStatusLoadFailed] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    jobsApi
+  const loadInitial = () => {
+    const jobsPromise = jobsApi
       .list()
       .then(setJobs)
       .catch((err) => setError(extractErrorMessage(err, "Failed to load jobs")));
-    candidatesApi
+    const candidatesPromise = candidatesApi
       .list()
       .then((data) => setCandidates(Object.fromEntries(data.map((c) => [c.id, c]))))
       .catch(() => setCandidatesLoadFailed(true));
     // Tells the generate-offer form whether the caller (whoever ends up generating the
     // offer) has DocuSign connected. A failure here must be visible -- otherwise the
     // "mark signed manually" guidance can silently show the wrong thing.
-    integrationsApi
+    const docusignPromise = integrationsApi
       .docusignStatus()
       .then((status) => setDocusignConnected(status.connected))
       .catch(() => setDocusignStatusLoadFailed(true));
+    return Promise.all([jobsPromise, candidatesPromise, docusignPromise]);
+  };
+
+  useEffect(() => {
+    loadInitial();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // No filters/search/pagination on this page to reset (its only real "filter" is which
+  // job is selected, deliberately left alone -- clearing it would drop the recruiter out
+  // of whatever job they were actively reviewing) -- Refresh just re-fetches the job
+  // dropdown/candidate names/DocuSign status plus the currently selected job's own data,
+  // if any.
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await loadInitial();
+      if (selectedJobId) await loadJobData(selectedJobId);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const loadJobData = async (jobId: string) => {
     setLoading(true);
@@ -335,9 +358,10 @@ export default function OffersPage() {
 
   return (
     <Box>
-      <Typography variant="h4" mb={3}>
-        Offers & Onboarding
-      </Typography>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={3}>
+        <Typography variant="h4">Offers & Onboarding</Typography>
+        <RefreshButton loading={refreshing} onRefresh={handleRefresh} />
+      </Stack>
 
       <Card variant="outlined" sx={{ mb: 3 }}>
         <CardContent>

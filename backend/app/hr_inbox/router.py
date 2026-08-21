@@ -1,9 +1,12 @@
+from types import SimpleNamespace
 from typing import Optional
 
+from cryptography.fernet import InvalidToken
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_roles
+from app.core.crypto import decrypt, encrypt
 from app.core.database import get_db
 from app.hr_inbox.service import filtered_hr_inbox_query, row_to_item
 from app.integrations.hr_email import encrypted_smtp_password, get_hr_integration, is_smtp_configured, send_hr_email, SmtpError
@@ -15,6 +18,8 @@ from app.schemas.hr_integration import (
     HrIntegrationUpdate,
     HrInboundEmailRead,
     HrInboxListPage,
+    HrMailboxValidateRequest,
+    HrMailboxValidateResult,
     SendTestEmailRequest,
     SendTestEmailResult,
     TestImapConnectionResult,
@@ -61,6 +66,65 @@ def update_hr_inbox_settings(
     db.commit()
     db.refresh(hr_integration)
     return _to_read(hr_integration)
+
+
+@router.post("/hr-inbox/settings/validate", response_model=HrMailboxValidateResult)
+def validate_hr_mailbox_settings(
+    payload: HrMailboxValidateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin")),
+):
+    """Tests a submitted SMTP+IMAP credential set for real -- a test email send and an
+    IMAP login -- WITHOUT ever writing it to the hr_integrations row. Used by the Settings
+    page's Connect/Edit dialog to validate before it ever calls PUT /hr-inbox/settings, so
+    a failed attempt can never overwrite (and thus lose) a previously-working saved
+    password -- the exact risk a save-then-verify-then-revert flow couldn't fully avoid.
+    """
+    password = payload.smtp_password
+    if not password:
+        existing = get_hr_integration(db)
+        if not existing.smtp_password:
+            no_password_error = "A password is required (none is currently stored for this mailbox)"
+            return HrMailboxValidateResult(
+                smtp_ok=False, smtp_error=no_password_error, imap_ok=False, imap_error=no_password_error,
+            )
+        try:
+            password = decrypt(existing.smtp_password)
+        except InvalidToken:
+            decrypt_error = "Stored SMTP password could not be decrypted"
+            return HrMailboxValidateResult(
+                smtp_ok=False, smtp_error=decrypt_error, imap_ok=False, imap_error=decrypt_error,
+            )
+
+    # A throwaway, never-persisted stand-in for the HrIntegration row -- send_hr_email/
+    # test_imap_connection only ever read attributes off it (duck-typed, same pattern as
+    # confirmation.create_confirmed_calendar_event elsewhere in this app), so this never
+    # touches the database. Re-encrypted only because those functions decrypt whatever
+    # they're handed -- never persisted, so the fact that it's encrypted at all here is
+    # incidental plumbing, not a security boundary.
+    probe = SimpleNamespace(
+        smtp_host=payload.smtp_host, smtp_port=payload.smtp_port, use_tls=payload.use_tls,
+        smtp_username=payload.smtp_username, smtp_password=encrypt(password),
+        from_address=payload.from_address, hr_module_email=payload.hr_module_email,
+        imap_host=payload.imap_host, imap_port=payload.imap_port, use_ssl=payload.use_ssl,
+    )
+
+    smtp_ok, smtp_error = True, None
+    try:
+        send_hr_email(
+            probe, to=(payload.from_address or payload.smtp_username), subject="HR mailbox validation",
+            body="This is a validation email confirming the shared HR mailbox's SMTP settings work.",
+        )
+    except SmtpError as exc:
+        smtp_ok, smtp_error = False, str(exc)
+
+    imap_ok, imap_error = True, None
+    try:
+        test_imap_connection(probe)
+    except ImapError as exc:
+        imap_ok, imap_error = False, str(exc)
+
+    return HrMailboxValidateResult(smtp_ok=smtp_ok, smtp_error=smtp_error, imap_ok=imap_ok, imap_error=imap_error)
 
 
 @router.post("/hr-inbox/settings/send-test-email", response_model=SendTestEmailResult)

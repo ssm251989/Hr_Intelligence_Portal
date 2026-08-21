@@ -3,42 +3,36 @@ import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
-import Checkbox from "@mui/material/Checkbox";
+import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
-import Divider from "@mui/material/Divider";
-import FormControlLabel from "@mui/material/FormControlLabel";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 import { extractErrorMessage, hrInboxApi } from "../api/client";
-import type { HrIntegrationRead, HrIntegrationUpdate } from "../api/types";
+import type { HrIntegrationRead } from "../api/types";
+import ConfirmDialog from "./ConfirmDialog";
+import HrMailboxConnectDialog from "./HrMailboxConnectDialog";
 
-// The single shared, org-level HR mailbox every automated HR email sends from --
-// interview scheduling emails, candidate messages, and new-application notifications --
-// across every recruiter, admin-only. Plain SMTP/IMAP credentials rather than a Google
-// OAuth connection (universal across providers), replacing the earlier "Connect CTDHR
-// Account" OAuth card entirely. This is separate from the "Google Calendar" card above,
-// which still creates each recruiter's own interview Calendar events.
+// The single shared, org-level HR mailbox every automated HR email sends from and the
+// incoming-mail poll reads from -- interview scheduling emails, candidate messages, and
+// new-application notifications, across every recruiter, admin-only. Plain SMTP/IMAP
+// credentials rather than a Google OAuth connection (universal across providers).
+//
+// Same Connect/Connected/Disconnect visual pattern as the personal Google/DocuSign/
+// LinkedIn IntegrationCard elsewhere on this page -- a status Chip plus a single action
+// button when not connected -- except "Connected" here is only ever reached by actually
+// validating the credentials (a real test send + IMAP login, see
+// HrMailboxConnectDialog), not merely by having saved something that looks filled in.
 export default function HrMailboxSettingsCard() {
   const [settings, setSettings] = useState<HrIntegrationRead | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [smtpHost, setSmtpHost] = useState("");
-  const [smtpPort, setSmtpPort] = useState("");
-  const [useTls, setUseTls] = useState(true);
-  const [smtpUsername, setSmtpUsername] = useState("");
-  const [smtpPassword, setSmtpPassword] = useState("");
-  const [fromAddress, setFromAddress] = useState("");
-  const [hrModuleEmail, setHrModuleEmail] = useState("");
-  const [imapHost, setImapHost] = useState("");
-  const [imapPort, setImapPort] = useState("");
-  const [useSsl, setUseSsl] = useState(true);
-
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [disconnectOpen, setDisconnectOpen] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+  const [disconnectError, setDisconnectError] = useState<string | null>(null);
 
   const [testEmailTo, setTestEmailTo] = useState("");
   const [sendingTestEmail, setSendingTestEmail] = useState(false);
@@ -47,57 +41,35 @@ export default function HrMailboxSettingsCard() {
   const [testingImap, setTestingImap] = useState(false);
   const [imapTestResult, setImapTestResult] = useState<{ ok: boolean; detail: string } | null>(null);
 
-  const applySettings = (loaded: HrIntegrationRead) => {
-    setSettings(loaded);
-    setSmtpHost(loaded.smtp_host ?? "");
-    setSmtpPort(loaded.smtp_port != null ? String(loaded.smtp_port) : "");
-    setUseTls(loaded.use_tls ?? true);
-    setSmtpUsername(loaded.smtp_username ?? "");
-    setFromAddress(loaded.from_address ?? "");
-    setHrModuleEmail(loaded.hr_module_email ?? "");
-    setImapHost(loaded.imap_host ?? "");
-    setImapPort(loaded.imap_port != null ? String(loaded.imap_port) : "");
-    setUseSsl(loaded.use_ssl ?? true);
-  };
-
   useEffect(() => {
     hrInboxApi
       .getSettings()
-      .then(applySettings)
+      .then(setSettings)
       .catch((err) => setLoadError(extractErrorMessage(err, "Failed to load the HR mailbox settings")))
       .finally(() => setLoading(false));
   }, []);
 
-  const handleSave = async () => {
-    setSaving(true);
-    setSaveError(null);
-    setSaveSuccess(false);
+  // Both sides configured is the only way this ever becomes true post-connect (the dialog
+  // validates and saves both together, or reverts both) -- so it doubles correctly as
+  // "was actually validated", not just "something is filled in".
+  const connected = Boolean(settings?.smtp_configured && settings?.imap_configured);
+
+  const handleDisconnect = async () => {
+    setDisconnecting(true);
+    setDisconnectError(null);
     try {
-      const payload: HrIntegrationUpdate = {
-        smtp_host: smtpHost.trim() || null,
-        smtp_port: smtpPort.trim() ? Number(smtpPort) : null,
-        use_tls: useTls,
-        smtp_username: smtpUsername.trim() || null,
-        from_address: fromAddress.trim() || null,
-        hr_module_email: hrModuleEmail.trim() || null,
-        imap_host: imapHost.trim() || null,
-        imap_port: imapPort.trim() ? Number(imapPort) : null,
-        use_ssl: useSsl,
-      };
-      // Blank means "leave the currently-stored password alone" -- never send an empty
-      // string, which the backend would otherwise have to special-case as "no change"
-      // vs. "clear it" (see app.integrations.hr_email.encrypted_smtp_password).
-      if (smtpPassword.trim()) {
-        payload.smtp_password = smtpPassword.trim();
-      }
-      const updated = await hrInboxApi.updateSettings(payload);
-      applySettings(updated);
-      setSmtpPassword("");
-      setSaveSuccess(true);
+      const updated = await hrInboxApi.updateSettings({
+        smtp_host: null, smtp_port: null, use_tls: null, smtp_username: null,
+        from_address: null, hr_module_email: null, imap_host: null, imap_port: null, use_ssl: null,
+      });
+      setSettings(updated);
+      setDisconnectOpen(false);
+      setTestEmailResult(null);
+      setImapTestResult(null);
     } catch (err) {
-      setSaveError(extractErrorMessage(err, "Failed to save the HR mailbox settings"));
+      setDisconnectError(extractErrorMessage(err, "Failed to disconnect the HR mailbox"));
     } finally {
-      setSaving(false);
+      setDisconnecting(false);
     }
   };
 
@@ -138,11 +110,11 @@ export default function HrMailboxSettingsCard() {
           HR Mailbox (Shared Email Account)
         </Typography>
         <Typography variant="body2" color="text.secondary" mb={2}>
-          The single shared, org-level mailbox every automated HR email sends from -- interview scheduling emails,
-          candidate messages, and new-application notifications -- across every recruiter, admin-only. Plain
-          SMTP/IMAP credentials work with any email provider (Gmail, Outlook, Yahoo, etc.), no Google OAuth
-          connection required. This is separate from the Google Calendar card above, which still creates each
-          recruiter's own interview Calendar events.
+          The single shared, org-level mailbox every automated HR email sends from and the incoming-mail poll
+          reads from -- interview scheduling emails, candidate messages, new-application notifications, and every
+          reply back -- across every recruiter, admin-only. Plain SMTP/IMAP credentials work with any email
+          provider (Gmail, Outlook, Yahoo, etc.), no Google OAuth connection required. This is separate from the
+          Google Calendar card above, which still creates each recruiter's own interview Calendar events.
         </Typography>
 
         {loadError && <Alert severity="error" sx={{ mb: 2 }}>{loadError}</Alert>}
@@ -151,90 +123,49 @@ export default function HrMailboxSettingsCard() {
           <CircularProgress size={24} />
         ) : (
           <Stack spacing={2}>
-            <Typography variant="subtitle2">Outgoing mail (SMTP)</Typography>
-            <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
-              <TextField
-                label="SMTP host" size="small" value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)}
-                sx={{ minWidth: 220, flexGrow: 1 }}
-              />
-              <TextField
-                label="SMTP port" size="small" type="number" value={smtpPort}
-                onChange={(e) => setSmtpPort(e.target.value)} sx={{ minWidth: 120 }}
-              />
-              <FormControlLabel
-                control={<Checkbox checked={useTls} onChange={(e) => setUseTls(e.target.checked)} />}
-                label="Use TLS"
-              />
-            </Stack>
-            <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
-              <TextField
-                label="Username" size="small" value={smtpUsername} onChange={(e) => setSmtpUsername(e.target.value)}
-                sx={{ minWidth: 220, flexGrow: 1 }}
-              />
-              <TextField
-                label="Password" size="small" type="password" value={smtpPassword}
-                placeholder={settings?.smtp_configured ? "Leave blank to keep the current password" : ""}
-                onChange={(e) => setSmtpPassword(e.target.value)} sx={{ minWidth: 220, flexGrow: 1 }}
-              />
-            </Stack>
-            <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
-              <TextField
-                label="From address" size="small" value={fromAddress} onChange={(e) => setFromAddress(e.target.value)}
-                sx={{ minWidth: 220, flexGrow: 1 }}
-              />
-              <TextField
-                label="HR module email (Reply-To / BCC)" size="small" value={hrModuleEmail}
-                onChange={(e) => setHrModuleEmail(e.target.value)} sx={{ minWidth: 260, flexGrow: 1 }}
-                helperText="Optional -- added as Reply-To and BCC on every outgoing HR email when set."
-              />
-            </Stack>
-
-            <Divider />
-
-            <Typography variant="subtitle2">Incoming mail (IMAP) -- checked every 30 minutes</Typography>
-            <Typography variant="body2" color="text.secondary">
-              Reuses the same username/password above -- it's the same mailbox account.
-            </Typography>
-            <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
-              <TextField
-                label="IMAP host" size="small" value={imapHost} onChange={(e) => setImapHost(e.target.value)}
-                sx={{ minWidth: 220, flexGrow: 1 }}
-              />
-              <TextField
-                label="IMAP port" size="small" type="number" value={imapPort}
-                onChange={(e) => setImapPort(e.target.value)} sx={{ minWidth: 120 }}
-              />
-              <FormControlLabel
-                control={<Checkbox checked={useSsl} onChange={(e) => setUseSsl(e.target.checked)} />}
-                label="Use SSL"
-              />
-            </Stack>
-
-            {saveError && <Alert severity="error" onClose={() => setSaveError(null)}>{saveError}</Alert>}
-            {saveSuccess && <Alert severity="success" onClose={() => setSaveSuccess(false)}>Settings saved.</Alert>}
-
-            <Stack direction="row" spacing={2} alignItems="center">
-              <Button variant="contained" onClick={handleSave} disabled={saving}>
-                {saving ? "Saving..." : "Save"}
-              </Button>
-            </Stack>
-
-            <Divider />
-
             <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
-              <TextField
-                label="Send test email to" size="small" value={testEmailTo}
-                onChange={(e) => setTestEmailTo(e.target.value)} sx={{ minWidth: 240 }}
-              />
-              <Button
-                variant="outlined" onClick={handleSendTestEmail} disabled={sendingTestEmail || !testEmailTo.trim()}
-              >
-                {sendingTestEmail ? "Sending..." : "Send test email"}
-              </Button>
-              <Button variant="outlined" onClick={handleTestImapConnection} disabled={testingImap}>
-                {testingImap ? "Testing..." : "Test IMAP connection"}
-              </Button>
+              <Chip label={connected ? "Connected" : "Not connected"} color={connected ? "success" : "default"} size="small" />
+              {connected && settings?.from_address && (
+                <Typography variant="body2" color="text.secondary">
+                  {settings.from_address}
+                </Typography>
+              )}
+              {!connected ? (
+                <Button size="small" variant="contained" onClick={() => setDialogOpen(true)}>
+                  Connect
+                </Button>
+              ) : (
+                <>
+                  <Button size="small" variant="outlined" onClick={() => setDialogOpen(true)}>
+                    Edit
+                  </Button>
+                  <Button size="small" color="error" onClick={() => setDisconnectOpen(true)}>
+                    Disconnect
+                  </Button>
+                </>
+              )}
             </Stack>
+
+            {disconnectError && (
+              <Alert severity="error" onClose={() => setDisconnectError(null)}>
+                {disconnectError}
+              </Alert>
+            )}
+
+            {connected && (
+              <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
+                <TextField
+                  label="Send test email to" size="small" value={testEmailTo}
+                  onChange={(e) => setTestEmailTo(e.target.value)} sx={{ minWidth: 240 }}
+                />
+                <Button variant="outlined" onClick={handleSendTestEmail} disabled={sendingTestEmail || !testEmailTo.trim()}>
+                  {sendingTestEmail ? "Sending..." : "Send test email"}
+                </Button>
+                <Button variant="outlined" onClick={handleTestImapConnection} disabled={testingImap}>
+                  {testingImap ? "Testing..." : "Test IMAP connection"}
+                </Button>
+              </Stack>
+            )}
             {testEmailResult && (
               <Alert severity={testEmailResult.ok ? "success" : "error"} onClose={() => setTestEmailResult(null)}>
                 {testEmailResult.detail}
@@ -248,6 +179,27 @@ export default function HrMailboxSettingsCard() {
           </Stack>
         )}
       </CardContent>
+
+      <HrMailboxConnectDialog
+        open={dialogOpen}
+        mode={connected ? "edit" : "connect"}
+        initial={settings}
+        onClose={() => setDialogOpen(false)}
+        onConnected={(updated) => {
+          setSettings(updated);
+          setDialogOpen(false);
+        }}
+      />
+
+      <ConfirmDialog
+        open={disconnectOpen}
+        title="Disconnect HR mailbox?"
+        message="This clears the stored SMTP/IMAP credentials. Automated HR emails and the incoming-mail poll will stop working until it's reconnected."
+        confirmLabel="Disconnect"
+        confirming={disconnecting}
+        onConfirm={handleDisconnect}
+        onCancel={() => setDisconnectOpen(false)}
+      />
     </Card>
   );
 }

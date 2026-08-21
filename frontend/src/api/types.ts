@@ -468,6 +468,31 @@ export interface HrIntegrationUpdate {
   use_ssl?: boolean | null;
 }
 
+// Body for POST /hr-inbox/settings/validate -- tests a submitted credential set for real
+// (a test email send + an IMAP login) without persisting it. smtp_password omitted means
+// "use the currently-stored password" (same leave-blank convention as
+// HrIntegrationUpdate.smtp_password), so editing an already-connected mailbox can
+// re-validate the fields that changed without needing to retype a working secret.
+export interface HrMailboxValidateRequest {
+  smtp_host: string;
+  smtp_port: number;
+  use_tls?: boolean;
+  smtp_username: string;
+  smtp_password?: string;
+  from_address?: string | null;
+  hr_module_email?: string | null;
+  imap_host: string;
+  imap_port: number;
+  use_ssl?: boolean;
+}
+
+export interface HrMailboxValidateResult {
+  smtp_ok: boolean;
+  smtp_error?: string | null;
+  imap_ok: boolean;
+  imap_error?: string | null;
+}
+
 export interface SendTestEmailResult {
   sent: boolean;
   detail?: string | null;

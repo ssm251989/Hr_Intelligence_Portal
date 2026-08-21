@@ -49,6 +49,7 @@ import JobsDashboardStats from "../components/JobsDashboardStats";
 import JobTypeChip from "../components/JobTypeChip";
 import QuickActionsPanel from "../components/QuickActionsPanel";
 import RecentActivityFeed from "../components/RecentActivityFeed";
+import RefreshButton from "../components/RefreshButton";
 import StatusChip from "../components/StatusChip";
 import TopPerformingJobs from "../components/TopPerformingJobs";
 import { downloadCsv } from "../utils/csv";
@@ -342,6 +343,19 @@ export default function JobsPage() {
     setDashboardRefreshSignal((s) => s + 1);
   };
 
+  // Resets every filter/search/pagination control back to its default, then re-fetches
+  // both the table (loadJobs) and the sidebar dashboard panels (dashboardRefreshSignal) --
+  // the same two triggers handleJobPublished above already uses independently.
+  const handleRefresh = () => {
+    setStatusTab("all");
+    setSearchQuery("");
+    setFilters(EMPTY_JOB_FILTERS);
+    setPage(1);
+    setPageSize(DEFAULT_PAGE_SIZE);
+    loadJobs();
+    setDashboardRefreshSignal((s) => s + 1);
+  };
+
   const handleJobDeleted = (jobId: string) => {
     setJobs((prev) => prev.filter((j) => j.id !== jobId));
     setSelectedIds((prev) => {
@@ -404,6 +418,7 @@ export default function JobsPage() {
               Create Job
             </Button>
           )}
+          <RefreshButton loading={loading} onRefresh={handleRefresh} />
         </Stack>
       </Stack>
 

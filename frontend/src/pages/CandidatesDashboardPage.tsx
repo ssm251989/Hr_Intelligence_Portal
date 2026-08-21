@@ -8,6 +8,7 @@ import Typography from "@mui/material/Typography";
 import { Link as RouterLink } from "react-router-dom";
 
 import CandidatesDashboardStats from "../components/CandidatesDashboardStats";
+import RefreshButton from "../components/RefreshButton";
 import ScreeningThresholdPanel from "../components/ScreeningThresholdPanel";
 import UploadCandidateDialog from "../components/UploadCandidateDialog";
 import { useAuth } from "../auth/AuthContext";
@@ -17,9 +18,11 @@ export default function CandidatesDashboardPage() {
   const { can } = useAuth();
   const canWrite = can(ROLE_MATRIX.candidatesWrite);
   const [addOpen, setAddOpen] = useState(false);
-  // Bumped whenever the "Add Candidate" dialog links a new candidate to a job, so the
-  // stats below (which own their own data fetch) refetch without a full page reload.
+  // Bumped whenever the "Add Candidate" dialog links a new candidate to a job, or the
+  // Refresh button is clicked, so the stats below (which own their own data fetch) refetch
+  // without a full page reload.
   const [refreshSignal, setRefreshSignal] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
 
   return (
     <Box>
@@ -30,7 +33,7 @@ export default function CandidatesDashboardPage() {
             Overview of all candidates and data
           </Typography>
         </Box>
-        <Stack direction="row" spacing={2}>
+        <Stack direction="row" spacing={2} alignItems="center">
           <Button variant="outlined" startIcon={<UploadFileOutlinedIcon />} component={RouterLink} to="/candidates/import">
             Import Candidates
           </Button>
@@ -39,12 +42,13 @@ export default function CandidatesDashboardPage() {
               Add Candidate
             </Button>
           )}
+          <RefreshButton loading={refreshing} onRefresh={() => setRefreshSignal((s) => s + 1)} />
         </Stack>
       </Stack>
 
       <ScreeningThresholdPanel />
 
-      <CandidatesDashboardStats refreshSignal={refreshSignal} />
+      <CandidatesDashboardStats refreshSignal={refreshSignal} onLoadingChange={setRefreshing} />
 
       <UploadCandidateDialog
         open={addOpen}

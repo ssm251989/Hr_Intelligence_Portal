@@ -44,6 +44,33 @@ class HrIntegrationUpdate(BaseModel):
     use_ssl: Optional[bool] = None
 
 
+class HrMailboxValidateRequest(BaseModel):
+    """Body for POST /hr-inbox/settings/validate -- the full field set, taken directly from
+    the submitted form, NOT read off the stored hr_integrations row. The one deliberate
+    exception is smtp_password: blank/omitted means "use the currently-stored password",
+    the same "leave blank to keep it" convention as HrIntegrationUpdate.smtp_password,
+    needed so editing an already-connected mailbox (e.g. just changing from_address) can
+    re-validate without forcing the admin to retype a secret that already works."""
+
+    smtp_host: str
+    smtp_port: int
+    use_tls: bool = True
+    smtp_username: str
+    smtp_password: Optional[str] = None
+    from_address: Optional[str] = None
+    hr_module_email: Optional[str] = None
+    imap_host: str
+    imap_port: int
+    use_ssl: bool = True
+
+
+class HrMailboxValidateResult(BaseModel):
+    smtp_ok: bool
+    smtp_error: Optional[str] = None
+    imap_ok: bool
+    imap_error: Optional[str] = None
+
+
 class SendTestEmailRequest(BaseModel):
     to: str
 

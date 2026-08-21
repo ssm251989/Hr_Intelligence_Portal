@@ -18,6 +18,7 @@ import { BGV_DOC_TYPES } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
 import ConfirmDialog from "../components/ConfirmDialog";
+import RefreshButton from "../components/RefreshButton";
 import StatusChip from "../components/StatusChip";
 
 const RELEVANT_STATUSES = ["salary_approved", "bgv_requested", "bgv_pending", "bgv_cleared", "bgv_rejected"];
@@ -179,17 +180,38 @@ export default function BgvPage() {
   const [error, setError] = useState<string | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
   const [candidatesLoadFailed, setCandidatesLoadFailed] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    jobsApi
+  const loadInitial = () => {
+    const jobsPromise = jobsApi
       .list()
       .then(setJobs)
       .catch((err) => setError(extractErrorMessage(err, "Failed to load jobs")));
-    candidatesApi
+    const candidatesPromise = candidatesApi
       .list()
       .then((data) => setCandidates(Object.fromEntries(data.map((c) => [c.id, c]))))
       .catch(() => setCandidatesLoadFailed(true));
+    return Promise.all([jobsPromise, candidatesPromise]);
+  };
+
+  useEffect(() => {
+    loadInitial();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // No filters/search/pagination on this page to reset (its only real "filter" is which
+  // job is selected, deliberately left alone -- clearing it would drop the recruiter out
+  // of whatever job they were actively reviewing) -- Refresh just re-fetches the job
+  // dropdown/candidate names plus the currently selected job's own data, if any.
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await loadInitial();
+      if (selectedJobId) await loadJobData(selectedJobId);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const loadJobData = async (jobId: string) => {
     setLoading(true);
@@ -281,9 +303,10 @@ export default function BgvPage() {
 
   return (
     <Box>
-      <Typography variant="h4" mb={3}>
-        Background Verification
-      </Typography>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={3}>
+        <Typography variant="h4">Background Verification</Typography>
+        <RefreshButton loading={refreshing} onRefresh={handleRefresh} />
+      </Stack>
 
       <Card variant="outlined" sx={{ mb: 3 }}>
         <CardContent>

@@ -34,6 +34,7 @@ import InterviewFeedbackDialog from "../components/InterviewFeedbackDialog";
 import InterviewFiltersPanel, { EMPTY_INTERVIEW_FILTERS, type InterviewFilters } from "../components/InterviewFiltersPanel";
 import { InterviewStatusChip, SchedulingMethodChip } from "../components/InterviewChips";
 import InterviewPrepQuestionsDialog from "../components/InterviewPrepQuestionsDialog";
+import RefreshButton from "../components/RefreshButton";
 import ScheduleInterviewDialog from "../components/ScheduleInterviewDialog";
 
 const ROWS_PER_PAGE_OPTIONS = [10, 20, 30, 40, 50];
@@ -117,6 +118,9 @@ export default function InterviewListPage() {
   const [filters, setFilters] = useState<InterviewFilters>(EMPTY_INTERVIEW_FILTERS);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  // Forces loadPage to re-run on Refresh even when every filter/page value already
+  // happens to be at its default (in which case none of the other deps below would change).
+  const [refreshKey, setRefreshKey] = useState(0);
   const anyFilterActive = Object.values(filters).some(Boolean);
 
   const [scheduleOpen, setScheduleOpen] = useState(false);
@@ -157,7 +161,14 @@ export default function InterviewListPage() {
   useEffect(() => {
     loadPage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, pageSize, filters]);
+  }, [page, pageSize, filters, refreshKey]);
+
+  const handleRefresh = () => {
+    setFilters(EMPTY_INTERVIEW_FILTERS);
+    setPage(1);
+    setPageSize(DEFAULT_PAGE_SIZE);
+    setRefreshKey((k) => k + 1);
+  };
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const pageStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -179,11 +190,14 @@ export default function InterviewListPage() {
             {total} interview{total === 1 ? "" : "s"}
           </Typography>
         </Box>
-        {canWrite && (
-          <Button variant="contained" startIcon={<AddOutlinedIcon />} onClick={() => setScheduleOpen(true)}>
-            Schedule Interview
-          </Button>
-        )}
+        <Stack direction="row" spacing={2} alignItems="center">
+          {canWrite && (
+            <Button variant="contained" startIcon={<AddOutlinedIcon />} onClick={() => setScheduleOpen(true)}>
+              Schedule Interview
+            </Button>
+          )}
+          <RefreshButton loading={loading} onRefresh={handleRefresh} />
+        </Stack>
       </Stack>
 
       <Box mb={3}>
