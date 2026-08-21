@@ -101,6 +101,57 @@ def test_describe_scored_entry_with_categorization_present_but_no_gaps():
     assert text == "Strong fit (Screening: 100%)"
 
 
+# --- describe_screening_audit_entry: soft skills get their own Remarks bucket, display-only
+# -- missing_required_skills/missing_preferred_skills here are technical-only (see
+# compute_skills_score's missing_required_technical/missing_preferred_technical); soft gaps
+# render as a separate "Soft skills to verify in interview" segment after the required/
+# preferred lines, never mixed into them. ---
+
+
+def test_describe_scored_entry_soft_skills_render_in_their_own_bucket_after_required_and_preferred():
+    details = {
+        "recommendation": "possible_fit", "composite_score": 70.0,
+        "missing_required_skills": ["Kubernetes"], "missing_preferred_skills": ["Docker"],
+        "missing_soft_skills": ["Communication", "Leadership"],
+    }
+    text = screening_service.describe_screening_audit_entry("ai_screening_scored", details)
+    assert text == (
+        "Possible fit (Screening: 70%) -- missing required: Kubernetes; missing preferred: Docker; "
+        "Soft skills to verify in interview: Communication, Leadership"
+    )
+
+
+def test_describe_scored_entry_soft_skills_bucket_appears_even_with_no_technical_gaps():
+    details = {
+        "recommendation": "strong_fit", "composite_score": 90.0,
+        "missing_required_skills": [], "missing_preferred_skills": [],
+        "missing_soft_skills": ["Empathy"],
+    }
+    text = screening_service.describe_screening_audit_entry("ai_screening_scored", details)
+    assert text == "Strong fit (Screening: 90%) -- Soft skills to verify in interview: Empathy"
+
+
+def test_describe_scored_entry_no_soft_skills_key_omits_the_bucket():
+    # A historical entry from before the soft-skills split existed -- missing_soft_skills
+    # was never recorded, so it must not render as an empty/phantom bucket.
+    details = {
+        "recommendation": "strong_fit", "composite_score": 90.0,
+        "missing_required_skills": [], "missing_preferred_skills": [],
+    }
+    text = screening_service.describe_screening_audit_entry("ai_screening_scored", details)
+    assert text == "Strong fit (Screening: 90%)"
+    assert "Soft skills" not in text
+
+
+def test_describe_scored_entry_empty_soft_skills_list_omits_the_bucket():
+    details = {
+        "recommendation": "strong_fit", "composite_score": 90.0,
+        "missing_required_skills": [], "missing_preferred_skills": [], "missing_soft_skills": [],
+    }
+    text = screening_service.describe_screening_audit_entry("ai_screening_scored", details)
+    assert text == "Strong fit (Screening: 90%)"
+
+
 def test_describe_scored_entry_weak_fit_label():
     details = {"recommendation": "weak_fit", "composite_score": 22.0, "missing_skills": []}
     assert screening_service.describe_screening_audit_entry("ai_screening_scored", details) == "Weak fit (Screening: 22%)"
@@ -366,6 +417,44 @@ def test_no_missing_skills_still_omits_the_suffix_alongside_the_new_composite_sc
     assert row["remarks"] == "Strong fit (Resume Match: 88% | Screening: 96%)"
     assert "missing" not in row["remarks"]
     assert row["composite_score"] == 95.6
+
+
+def test_remarks_excludes_years_of_experience_phrasing_and_separates_soft_skills(client, db_session, monkeypatch):
+    # Both fixes together, through the real run_screening path: a bare years-of-experience
+    # requirement (already covered by experience_min_years/experience_max_years) must not
+    # also show up as a missing "skill," and a missing soft skill must land in its own
+    # bucket, not mixed into missing required/preferred.
+    monkeypatch.setattr("app.screening.service.match_resume", lambda *a, **k: _fake_result(
+        match_score=90, location_score=90, recommendation="strong_fit",
+    ))
+    job = _make_job(
+        db_session,
+        technical_skills_must_have=["8+ years of overall IT experience", "Kubernetes"],
+        soft_skills_must_have=["Communication"],
+        experience_min_years=8, experience_max_years=12,
+    )
+    candidate = _make_candidate(
+        db_session,
+        parsed_fields={"skills": [], "total_experience_years": 8},
+        email=f"remarks-{uuid.uuid4().hex[:8]}@example.com",
+    )
+    application = _make_application(db_session, job, candidate)
+
+    screening_service.run_screening(db_session, application, job, candidate, "system")
+
+    response = client.get("/candidates/applications", params={"search": candidate.email, "page_size": 50})
+    row = response.json()["items"][0]
+    assert "years of overall IT experience" not in row["remarks"]
+    # skill_match_pct: tech_must_have coverage 0/1 (Kubernetes missing; the experience-years
+    # bullet is excluded entirely, not counted) * 50, + tech_good_to_have unconfigured full
+    # 20, + soft_must_have coverage 0/1 (Communication missing) * 20, + soft_good_to_have
+    # unconfigured full 10 = 30. Candidate's years (8) sit exactly at the job's floor -> full
+    # 100 experience_score. Composite = (30 + 100_experience + 90_location + 100_certificates
+    # + 90_match) / 5 = 82.
+    assert row["remarks"] == (
+        "Strong fit (Resume Match: 90% | Screening: 82%) -- missing required: Kubernetes; "
+        "Soft skills to verify in interview: Communication"
+    )
 
 
 def test_remarks_appear_on_dashboard_recent_candidates(client, db_session, monkeypatch):

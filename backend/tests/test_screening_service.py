@@ -228,6 +228,44 @@ def test_compute_skills_score_missing_required_combines_technical_and_soft_must_
     assert set(result["missing_required"]) == {"Python", "Communication"}
 
 
+# --- compute_skills_score: technical/soft breakdown for Remarks (Part C) display grouping --
+# missing_required/missing_preferred stay the flat, backward-compatible union (still what
+# feeds Application.missing_skills and every score/threshold decision); the _technical
+# suffix and missing_soft keys below are purely for Remarks to group soft skills into
+# their own "Soft skills to verify in interview" line instead of mixing them into the
+# required/preferred technical-gap lines.
+
+
+def test_compute_skills_score_missing_required_technical_excludes_soft_must_have():
+    result = screening_service.compute_skills_score(
+        [], technical_must_have=["Python"], technical_good_to_have=None,
+        soft_must_have=["Communication"], soft_good_to_have=None,
+    )
+    assert result["missing_required_technical"] == ["Python"]
+    assert result["missing_soft"] == ["Communication"]
+
+
+def test_compute_skills_score_missing_preferred_technical_excludes_soft_good_to_have():
+    result = screening_service.compute_skills_score(
+        [], technical_must_have=None, technical_good_to_have=["Kubernetes"],
+        soft_must_have=None, soft_good_to_have=["Empathy"],
+    )
+    assert result["missing_preferred_technical"] == ["Kubernetes"]
+    assert result["missing_soft"] == ["Empathy"]
+
+
+def test_compute_skills_score_missing_soft_combines_must_and_good_to_have_without_severity():
+    # missing_soft doesn't distinguish severity the way missing_required/missing_preferred
+    # do -- Remarks renders it as one flat "Soft skills to verify in interview" line.
+    result = screening_service.compute_skills_score(
+        [], technical_must_have=None, technical_good_to_have=None,
+        soft_must_have=["Leadership"], soft_good_to_have=["Empathy"],
+    )
+    assert set(result["missing_soft"]) == {"Leadership", "Empathy"}
+    assert result["missing_required_technical"] == []
+    assert result["missing_preferred_technical"] == []
+
+
 # --- compute_skills_score: candidate_certificates cross-check ---
 
 
@@ -525,6 +563,70 @@ def test_KNOWN_LIMITATION_generic_padding_plus_stemming_can_false_positive_on_on
     assert result["missing_required"] == []  # a false positive, tracked deliberately
 
 
+# --- compute_skills_score: bare years-of-experience requirement bullets are excluded --
+# entirely, not token-matched -- since compute_experience_score already scores that exact
+# gap against experience_min_years/experience_max_years/total_experience_years. Real
+# strings from the Automation Anywhere Architect job posting (the Arjun Reddy
+# investigation): "8+ years of overall IT experience" and "5+ years of strong RPA
+# experience", both filed under technical_skills_must_have.
+
+
+def test_compute_skills_score_excludes_bare_years_of_experience_requirement():
+    result = screening_service.compute_skills_score(
+        [], technical_must_have=["8+ years of overall IT experience"], technical_good_to_have=None,
+        soft_must_have=None, soft_good_to_have=None,
+    )
+    # Excluded entirely -- not just satisfied, but dropped from the category before
+    # coverage is computed -- so a candidate with an empty skills list still scores full
+    # marks on a job whose only must-have technical requirement is this phrase.
+    assert result["missing_required"] == []
+    assert result["missing_required_technical"] == []
+    assert result["score"] == 100
+
+
+def test_compute_skills_score_excludes_years_of_experience_requirement_with_other_content():
+    # "5+ years of strong RPA experience" is still years-of-experience phrasing by the same
+    # generic pattern, even though it also names a technology ("RPA") -- excluded
+    # wholesale like the plainer "8+ years..." bullet, not partially credited.
+    result = screening_service.compute_skills_score(
+        [], technical_must_have=["5+ years of strong RPA experience", "Python"], technical_good_to_have=None,
+        soft_must_have=None, soft_good_to_have=None,
+    )
+    assert result["missing_required"] == ["Python"]
+
+
+def test_compute_skills_score_years_of_experience_exclusion_is_generic_not_hardcoded():
+    # A job-specific phrasing that was never hardcoded anywhere -- confirms detection is by
+    # pattern (digits + year/years/yrs with "experience" nearby), not a fixed string list.
+    result = screening_service.compute_skills_score(
+        [], technical_must_have=["10+ yrs of enterprise architecture experience"], technical_good_to_have=None,
+        soft_must_have=None, soft_good_to_have=None,
+    )
+    assert result["missing_required"] == []
+    assert result["score"] == 100
+
+
+def test_compute_skills_score_does_not_exclude_a_requirement_that_merely_contains_digits():
+    # A requirement with digits but no year/experience phrasing at all (e.g. a version
+    # number) must still be evaluated normally, not swept up by an overly broad pattern.
+    result = screening_service.compute_skills_score(
+        [], technical_must_have=["Automation Anywhere A360"], technical_good_to_have=None,
+        soft_must_have=None, soft_good_to_have=None,
+    )
+    assert result["missing_required"] == ["Automation Anywhere A360"]
+
+
+def test_compute_skills_score_does_not_exclude_years_phrasing_without_the_word_experience():
+    # Digits + "years" alone, with no "experience" anywhere nearby, isn't the
+    # already-tracked experience_min_years/max_years phrasing -- must still be evaluated,
+    # not silently dropped.
+    result = screening_service.compute_skills_score(
+        ["Warranty"], technical_must_have=["5 years warranty"], technical_good_to_have=None,
+        soft_must_have=None, soft_good_to_have=None,
+    )
+    assert result["missing_required"] == []  # evaluated normally -- 1 of 2 tokens ("warranty") matches, clearing 50%
+
+
 # --- run_screening: the deterministic experience_score actually feeds the composite ---
 
 
@@ -618,9 +720,14 @@ def test_run_screening_uses_real_skill_categories_against_candidate_skills(db_se
     )
     # Both must-have categories matched (50 + 20), both good-to-have categories missed
     # (0 + 0) -> skill_match_pct = 70. Composite = (100_experience + 70_skills + 100*3) / 5.
+    # missing_required_skills/missing_preferred_skills are technical-only now (Remarks
+    # display split, see describe_screening_audit_entry) -- "Empathy" (soft_good_to_have)
+    # moves to missing_soft_skills instead, but still counts toward skills_score/
+    # composite_score exactly the same either way.
     assert audit_entry.details["skills_score"] == 70
     assert set(audit_entry.details["missing_required_skills"]) == set()
-    assert set(audit_entry.details["missing_preferred_skills"]) == {"Kubernetes", "Empathy"}
+    assert set(audit_entry.details["missing_preferred_skills"]) == {"Kubernetes"}
+    assert set(audit_entry.details["missing_soft_skills"]) == {"Empathy"}
     assert float(result.composite_score) == 94.0
 
 
@@ -644,6 +751,7 @@ def test_run_screening_missing_required_skills_recorded_distinctly_from_preferre
     )
     assert set(audit_entry.details["missing_required_skills"]) == {"Python", "SQL"}
     assert audit_entry.details["missing_preferred_skills"] == ["Docker"]
+    assert audit_entry.details["missing_soft_skills"] == []  # job configures no soft skills at all
     # missing_skills (the flat, backward-compatible union stored on Application) still
     # carries both severities together.
     assert set(audit_entry.details["missing_skills"]) == {"Python", "SQL", "Docker"}

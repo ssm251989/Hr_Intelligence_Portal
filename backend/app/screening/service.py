@@ -100,11 +100,22 @@ def describe_screening_audit_entry(action: str, details: dict) -> str:
             return f"{recommendation}{score_text} -- missing {', '.join(missing_skills)}"
         return f"{recommendation}{score_text}"
 
+    # missing_required_skills/missing_preferred_skills are technical-only (and, before
+    # this categorization existed at all, whatever missing_skills held) -- a job's soft
+    # skills are display-grouped separately below, not because they're missing from
+    # scoring (skill_match_pct/composite_score still weigh them exactly as before, see
+    # compute_skills_score), but because a resume simply not stating a soft skill in so
+    # many words isn't the same kind of gap as a genuinely absent technical requirement,
+    # and interview conversation -- not a hard skills line -- is how it actually gets
+    # verified.
     gaps = []
     if missing_required:
         gaps.append(f"missing required: {', '.join(missing_required)}")
     if missing_preferred:
         gaps.append(f"missing preferred: {', '.join(missing_preferred)}")
+    missing_soft = details.get("missing_soft_skills")
+    if missing_soft:
+        gaps.append(f"Soft skills to verify in interview: {', '.join(missing_soft)}")
     if gaps:
         return f"{recommendation}{score_text} -- {'; '.join(gaps)}"
     return f"{recommendation}{score_text}"
@@ -276,6 +287,32 @@ def _tokenize_all(items: Optional[list[str]]) -> set[str]:
     return tokens
 
 
+# Requirement bullets sometimes state a bare years-of-experience qualifier inline (e.g.
+# "8+ years of overall IT experience", "5+ years of strong RPA experience") rather than as
+# a genuinely separate skill. That's already captured, precisely, by
+# experience_min_years/experience_max_years against the candidate's own
+# total_experience_years (see compute_experience_score) -- token-matching it a second time
+# here would only ever flag it as a missing "skill" (these phrases tokenize down to
+# near-nothing after stopwording: mostly a bare number and a short qualifier word), doubly
+# penalizing the exact same gap compute_experience_score already scores, or double-crediting
+# it, neither of which reflects the job's own actual skill list. Detected generically by
+# pattern -- digits immediately before year(s)/yrs, with "experience" nearby in the same
+# bullet -- rather than hardcoded to either real string above, so it also excludes any other
+# job's own equivalent phrasing.
+_EXPERIENCE_YEARS_PHRASE_RE = re.compile(
+    r"\d+\+?\s*(?:years?|yrs)\b[\s\w]{0,30}\bexperience\b"
+    r"|\bexperience\b[\s\w]{0,30}\d+\+?\s*(?:years?|yrs)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_experience_years_requirement(requirement: str) -> bool:
+    """True for a requirement bullet that's just years-of-experience phrasing (see
+    _EXPERIENCE_YEARS_PHRASE_RE above) -- already covered by compute_experience_score, so
+    _skill_coverage excludes it entirely rather than token-matching it a second time."""
+    return bool(_EXPERIENCE_YEARS_PHRASE_RE.search(requirement))
+
+
 # A requirement counts as "satisfied" (excluded from the missing-skills list) once at
 # least half of its significant tokens turn up somewhere in the candidate's tokenized
 # skills -- e.g. "SQL / database integration" against a candidate whose skills include
@@ -306,8 +343,14 @@ def _skill_coverage(
     skills, same "absence of a requirement is not a penalty" convention as
     location_score/certificates_score/experience_score. A requirement whose text is
     entirely filler words once tokenized (no real content to check for) is likewise
-    treated as satisfied on its own, rather than unmatchable by construction."""
-    required = [skill for skill in (required_skills or []) if skill and skill.strip()]
+    treated as satisfied on its own, rather than unmatchable by construction. A bare
+    years-of-experience requirement (see _is_experience_years_requirement) is dropped
+    before coverage is even computed -- not just excluded from `missing` -- since
+    compute_experience_score already scores that exact gap elsewhere."""
+    required = [
+        skill for skill in (required_skills or [])
+        if skill and skill.strip() and not _is_experience_years_requirement(skill)
+    ]
     if not required:
         return 1.0, []
 
@@ -350,11 +393,19 @@ def compute_skills_score(
     against the job's own preferred_certifications list is still the only place
     certificate coverage is scored in its own right.
 
-    Returns {"score": int, "missing_required": [str], "missing_preferred": [str]} --
-    missing_required is every unmatched must-have skill (technical or soft),
-    missing_preferred is every unmatched good-to-have skill, kept separate so Remarks
-    (Part C, see describe_screening_audit_entry) can tell a recruiter apart-severity gaps
-    rather than one flat list.
+    Returns {"score": int, "missing_required": [str], "missing_preferred": [str],
+    "missing_required_technical": [str], "missing_preferred_technical": [str],
+    "missing_soft": [str]} -- missing_required/missing_preferred are the flat,
+    backward-compatible union across technical and soft (still what feeds
+    Application.missing_skills and every score/threshold decision -- this categorization
+    is purely a Remarks *display* concern, see describe_screening_audit_entry, and never
+    changes skill_match_pct/composite_score). missing_required_technical/
+    missing_preferred_technical are the technical-only subset of those same two lists, and
+    missing_soft is every unmatched soft skill (must-have or good-to-have, not
+    distinguished by severity) -- Remarks renders technical gaps as today's "missing
+    required"/"missing preferred" lines and soft gaps as their own separate
+    "Soft skills to verify in interview" line, since a soft skill's absence from a resume
+    isn't the kind of hard gap those two lines were written to convey.
     """
     candidate_tokens = _tokenize_all(candidate_skills) | _tokenize_all(candidate_certificates)
 
@@ -374,6 +425,9 @@ def compute_skills_score(
         "score": round(score),
         "missing_required": tech_must_missing + soft_must_missing,
         "missing_preferred": tech_good_missing + soft_good_missing,
+        "missing_required_technical": tech_must_missing,
+        "missing_preferred_technical": tech_good_missing,
+        "missing_soft": soft_must_missing + soft_good_missing,
     }
 
 
@@ -512,8 +566,9 @@ def run_screening(db: Session, application: Application, job: JobRole, candidate
             "resume_matcher_score": result["match_score"],
             "composite_score": score,
             "missing_skills": result["missing_skills"],
-            "missing_required_skills": skills_result["missing_required"],
-            "missing_preferred_skills": skills_result["missing_preferred"],
+            "missing_required_skills": skills_result["missing_required_technical"],
+            "missing_preferred_skills": skills_result["missing_preferred_technical"],
+            "missing_soft_skills": skills_result["missing_soft"],
             "missing_preferred_certifications": certificates_result["missing"],
             "recommendation": result["recommendation"],
             "threshold_min": min_score,
