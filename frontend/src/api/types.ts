@@ -996,6 +996,15 @@ export interface InterviewSchedulingSettingsSaveResult extends InterviewScheduli
   interviewer_pool_rows_added: number;
 }
 
+// Result of POST .../retry-negotiation -- outcome mirrors attempt_auto_negotiate_interview_
+// slots' own return value ("started", or null on a fresh skip); invalidated_stale_tokens is
+// how many leftover NegotiationToken rows were cleaned up automatically before retrying.
+export interface RetryNegotiationResponse {
+  outcome: string | null;
+  invalidated_stale_tokens: number;
+  reason: string | null;
+}
+
 // ---- local-folder auto-import settings (Part G redesign) ----
 
 // Both paths are null until a recruiter saves them via the Import wizard's Local Import

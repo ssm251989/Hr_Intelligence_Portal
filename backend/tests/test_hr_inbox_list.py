@@ -47,6 +47,13 @@ def test_hr_inbox_list_allows_recruiter(client, db_session, make_auth_headers):
 
 
 def test_hr_inbox_list_returns_matched_and_unmatched_rows(client, db_session):
+    # The `db_session` fixture rolls back its own transaction, but TestClient(app)
+    # runs the app's real lifespan, whose scheduler polls the live shared mailbox
+    # through a separate SessionLocal() and permanently commits real rows into this
+    # same table (see app/local_import/scheduler.py). So this table can never be
+    # assumed empty or exactly-N-rows -- scope every query to a tag unique to this
+    # test via `search`, which matches subject/from_address (app/hr_inbox/service.py).
+    tag = uuid.uuid4().hex
     job = JobRole(title="Backend Engineer")
     db_session.add(job)
     db_session.commit()
@@ -61,12 +68,12 @@ def test_hr_inbox_list_returns_matched_and_unmatched_rows(client, db_session):
     db_session.refresh(application)
 
     matched = _make_email(
-        db_session, from_address="jane@example.com",
+        db_session, from_address="jane@example.com", subject=f"Following up {tag}",
         matched_candidate_id=candidate.id, matched_application_id=application.id,
     )
-    unmatched = _make_email(db_session, from_address="stranger@example.com")
+    unmatched = _make_email(db_session, from_address="stranger@example.com", subject=f"Following up {tag}")
 
-    response = client.get("/hr-inbox/list")
+    response = client.get("/hr-inbox/list", params={"search": tag})
 
     assert response.status_code == 200
     body = response.json()
@@ -78,6 +85,7 @@ def test_hr_inbox_list_returns_matched_and_unmatched_rows(client, db_session):
 
 
 def test_hr_inbox_list_filters_by_matched(client, db_session):
+    tag = uuid.uuid4().hex
     job = JobRole(title="Filter Job")
     db_session.add(job)
     db_session.commit()
@@ -87,11 +95,14 @@ def test_hr_inbox_list_filters_by_matched(client, db_session):
     db_session.commit()
     db_session.refresh(candidate)
 
-    matched = _make_email(db_session, from_address="matched@example.com", matched_candidate_id=candidate.id)
-    unmatched = _make_email(db_session, from_address="unmatched@example.com")
+    matched = _make_email(
+        db_session, from_address="matched@example.com", subject=f"Following up {tag}",
+        matched_candidate_id=candidate.id,
+    )
+    unmatched = _make_email(db_session, from_address="unmatched@example.com", subject=f"Following up {tag}")
 
-    only_matched = client.get("/hr-inbox/list", params={"matched": "true"}).json()
-    only_unmatched = client.get("/hr-inbox/list", params={"matched": "false"}).json()
+    only_matched = client.get("/hr-inbox/list", params={"matched": "true", "search": tag}).json()
+    only_unmatched = client.get("/hr-inbox/list", params={"matched": "false", "search": tag}).json()
 
     assert {item["id"] for item in only_matched["items"]} == {str(matched.id)}
     assert {item["id"] for item in only_unmatched["items"]} == {str(unmatched.id)}
@@ -107,11 +118,12 @@ def test_hr_inbox_list_filters_by_search(client, db_session):
 
 
 def test_hr_inbox_list_paginates(client, db_session):
+    tag = uuid.uuid4().hex
     for _ in range(3):
-        _make_email(db_session)
+        _make_email(db_session, subject=f"Following up {tag}")
 
-    page_1 = client.get("/hr-inbox/list", params={"page": 1, "page_size": 2}).json()
-    page_2 = client.get("/hr-inbox/list", params={"page": 2, "page_size": 2}).json()
+    page_1 = client.get("/hr-inbox/list", params={"page": 1, "page_size": 2, "search": tag}).json()
+    page_2 = client.get("/hr-inbox/list", params={"page": 2, "page_size": 2, "search": tag}).json()
 
     assert page_1["total"] == 3
     assert len(page_1["items"]) == 2
@@ -130,11 +142,12 @@ def test_hr_inbox_export_denies_interviewer_role(client, make_auth_headers):
 
 
 def test_hr_inbox_export_allows_hiring_manager_and_returns_every_matching_row(client, db_session, make_auth_headers):
+    tag = uuid.uuid4().hex
     for _ in range(3):
-        _make_email(db_session)
+        _make_email(db_session, subject=f"Following up {tag}")
     headers = make_auth_headers(role="hiring_manager", email="hiring-manager-export@example.com")
 
-    response = client.get("/hr-inbox/export", headers=headers)
+    response = client.get("/hr-inbox/export", params={"search": tag}, headers=headers)
 
     assert response.status_code == 200
     assert len(response.json()) == 3

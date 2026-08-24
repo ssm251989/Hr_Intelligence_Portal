@@ -20,4 +20,10 @@ class AuditLog(Base):
     action = Column(String(100))
     actor = Column(String(50))
     details = Column(JSONB)
-    created_at = Column(DateTime(timezone=True), server_default=text("now()"))
+    # clock_timestamp() (not now()/CURRENT_TIMESTAMP, which is frozen for an entire
+    # transaction) -- see alembic/versions/05d5c042ecb1_audit_log_created_at_clock_
+    # timestamp.py for why: logic that compares two audit_log rows' relative order (e.g.
+    # app.interview_scheduling.negotiation._is_flagged_for_manual_scheduling) needs each
+    # row's real wall-clock insert time, even when several are logged within one request's
+    # single transaction.
+    created_at = Column(DateTime(timezone=True), server_default=text("clock_timestamp()"))

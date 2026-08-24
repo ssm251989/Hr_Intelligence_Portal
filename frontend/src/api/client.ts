@@ -62,6 +62,7 @@ import type {
   InterviewSchedulingSettings,
   InterviewSchedulingSettingsSaveResult,
   InterviewSchedulingSettingsUpdate,
+  RetryNegotiationResponse,
   ShortlistDecisionRequest,
   ShortlistFeedbackSuggestionResponse,
   ShortlistingDashboardStatsResponse,
@@ -418,6 +419,12 @@ export const interviewSchedulingApi = {
   // columns -- see backend app/interview_scheduling/router.py update_settings.
   updateSettings: (payload: InterviewSchedulingSettingsUpdate) =>
     put<InterviewSchedulingSettingsSaveResult>("/interview-scheduling/settings", payload),
+  // Manual escape hatch for an application stuck at Shortlisted after
+  // attempt_auto_negotiate_interview_slots failed (e.g. a send error) -- bypasses
+  // shortlisting's own terminal-SHORTLISTED rule entirely since this isn't a status change,
+  // see backend app/interview_scheduling/router.py retry_negotiation_endpoint.
+  retryNegotiation: (applicationId: UUID) =>
+    post<RetryNegotiationResponse>(`/interview-scheduling/applications/${applicationId}/retry-negotiation`),
 };
 
 // ---- shortlisting (redesign) ----

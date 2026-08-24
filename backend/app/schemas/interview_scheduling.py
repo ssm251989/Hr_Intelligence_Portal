@@ -47,3 +47,19 @@ class ProposeInterviewSlotsResponse(BaseModel):
 
     slots_offered: int
     expires_at: Optional[datetime] = None
+
+
+class RetryNegotiationResponse(BaseModel):
+    """Result of POST .../retry-negotiation. outcome mirrors attempt_auto_negotiate_
+    interview_slots' own return value ("started" once a fresh interviewer offer went out,
+    null on a fresh skip -- e.g. the mailbox issue that caused the original failure still
+    isn't fixed). invalidated_stale_tokens is how many leftover NegotiationToken rows this
+    call cleaned up before retrying, for the same visibility a recruiter previously only
+    got by asking someone to check the database by hand. reason is the actual server-side
+    cause whenever outcome is null (e.g. "HR mailbox's SMTP settings are not configured"),
+    null whenever outcome is "started" -- lets the frontend show the real reason instead of
+    generic fallback copy."""
+
+    outcome: Optional[str] = None
+    invalidated_stale_tokens: int
+    reason: Optional[str] = None

@@ -27,7 +27,7 @@ import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 
-import { applicationsApi, candidatesApi, extractErrorMessage, integrationsApi } from "../api/client";
+import { applicationsApi, candidatesApi, extractErrorMessage, integrationsApi, interviewSchedulingApi } from "../api/client";
 import { SHORTLIST_STATUS_LABELS, shortlistStatusOf, type AuditLogRead, type CandidateApplicationDetail } from "../api/types";
 import CandidateAvatar from "../components/CandidateAvatar";
 import ShortlistStatusPanel from "../components/ShortlistStatusPanel";
@@ -46,6 +46,26 @@ const SHORTLISTING_TIMELINE_ACTIONS = new Set([
   "shortlist_status_updated",
   "hr_shortlisting_decision",
   "ai_shortlist_feedback_suggested",
+  "interview_negotiation_skipped",
+  "interview_negotiation_interviewer_batch_started",
+  "interview_negotiation_candidate_round_started",
+  "interview_negotiation_confirmed",
+  "interview_negotiation_manual_scheduling_required",
+  "interview_negotiation_retry_triggered",
+  "interview_negotiation_stale_tokens_invalidated",
+]);
+
+// The subset of the above that actually represents "what's the current state of this
+// application's negotiation" (latest-one-wins) -- mirrors backend app/interview_scheduling/
+// negotiation.py's own NEGOTIATION_STATUS_ACTIONS. Used only to decide whether "Retry
+// Scheduling" should show; retry_triggered/stale_tokens_invalidated are excluded because
+// they're always immediately followed by a real outcome action from this same set.
+const NEGOTIATION_STATUS_ACTIONS = new Set([
+  "interview_negotiation_skipped",
+  "interview_negotiation_interviewer_batch_started",
+  "interview_negotiation_candidate_round_started",
+  "interview_negotiation_confirmed",
+  "interview_negotiation_manual_scheduling_required",
 ]);
 
 function TabPanel({ active, children }: { active: boolean; children: ReactNode }) {
@@ -92,6 +112,10 @@ export default function CandidateDetailPage() {
 
   const [timeline, setTimeline] = useState<AuditLogRead[] | null>(null);
   const [timelineError, setTimelineError] = useState<string | null>(null);
+
+  const [retryingNegotiation, setRetryingNegotiation] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
+  const [retryNotice, setRetryNotice] = useState<string | null>(null);
 
   const [parsing, setParsing] = useState(false);
   const [resumeDownloading, setResumeDownloading] = useState(false);
@@ -195,6 +219,27 @@ export default function CandidateDetailPage() {
       setError(extractErrorMessage(err, "Failed to parse resume"));
     } finally {
       setParsing(false);
+    }
+  };
+
+  const handleRetryNegotiation = async () => {
+    setRetryingNegotiation(true);
+    setRetryError(null);
+    setRetryNotice(null);
+    try {
+      const result = await interviewSchedulingApi.retryNegotiation(application.id);
+      setRetryNotice(
+        result.outcome === "started"
+          ? "A new interviewer offer has been sent."
+          : result.reason
+            ? `Retry did not start a new negotiation: ${result.reason}`
+            : "Retry did not start a new negotiation -- check the timeline below or the Interview Log tracker for why.",
+      );
+      load();
+    } catch (err) {
+      setRetryError(extractErrorMessage(err, "Failed to retry interview scheduling"));
+    } finally {
+      setRetryingNegotiation(false);
     }
   };
 
@@ -473,6 +518,16 @@ export default function CandidateDetailPage() {
               };
               const shortlistTimeline = applicationEvents.filter((event) => SHORTLISTING_TIMELINE_ACTIONS.has(event.action ?? ""));
               const currentShortlistStatus = shortlistStatusOf(application.status);
+              // Client-side mirror of backend check_retry_eligibility's first, coarsest
+              // condition plus "the last attempt actually failed" -- the backend is still
+              // the real authority (also checks for an existing Interview row and a batch
+              // genuinely mid-flight), surfaced via its own 409 detail text if this ever
+              // shows in a state the backend then rejects.
+              const latestNegotiationEvent = applicationEvents
+                .filter((event) => NEGOTIATION_STATUS_ACTIONS.has(event.action ?? ""))
+                .at(-1);
+              const negotiationRetryEligible =
+                currentShortlistStatus === "shortlisted" && latestNegotiationEvent?.action === "interview_negotiation_skipped";
 
               return (
                 <Grid container spacing={3}>
@@ -568,6 +623,35 @@ export default function CandidateDetailPage() {
                         <Alert severity="info">You don't have permission to update the shortlist status.</Alert>
                       )}
                     </Box>
+
+                    {negotiationRetryEligible && canWrite && (
+                      <Box sx={{ mb: 3 }}>
+                        <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                          Interview Scheduling
+                        </Typography>
+                        <Alert severity="warning" sx={{ mb: 1 }}>
+                          The last automatic scheduling attempt for this application failed to send.
+                        </Alert>
+                        {retryError && (
+                          <Alert severity="error" sx={{ mb: 1 }}>
+                            {retryError}
+                          </Alert>
+                        )}
+                        {retryNotice && (
+                          <Alert severity="info" sx={{ mb: 1 }}>
+                            {retryNotice}
+                          </Alert>
+                        )}
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          disabled={retryingNegotiation}
+                          onClick={handleRetryNegotiation}
+                        >
+                          {retryingNegotiation ? "Retrying…" : "Retry Scheduling"}
+                        </Button>
+                      </Box>
+                    )}
 
                     <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                       Shortlisting Timeline

@@ -9,6 +9,7 @@ from app.candidates.hold import assert_application_not_on_hold
 from app.core.database import get_db
 from app.integrations.hr_email import get_hr_integration, is_smtp_configured, SmtpError
 from app.interview_scheduling.confirmation import propose_interview_slots
+from app.interview_scheduling.negotiation import check_retry_eligibility, retry_negotiation
 from app.interview_scheduling.storage import get_interview_scheduling_settings
 from app.interview_scheduling.tracker import ensure_tracker_file, sync_interviewer_pool_job_titles
 from app.models.application import Application
@@ -20,6 +21,7 @@ from app.schemas.interview_scheduling import (
     InterviewSchedulingSettingsSaveResult,
     InterviewSchedulingSettingsUpdate,
     ProposeInterviewSlotsResponse,
+    RetryNegotiationResponse,
     TrackerValidationResult,
 )
 
@@ -122,3 +124,30 @@ def propose_slots(
         )
 
     return ProposeInterviewSlotsResponse(slots_offered=result["slots_offered"], expires_at=result["expires_at"])
+
+
+@router.post("/applications/{application_id}/retry-negotiation", response_model=RetryNegotiationResponse)
+def retry_negotiation_endpoint(
+    application_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("recruiter", "hiring_manager", "admin")),
+):
+    """Manual escape hatch for an application stuck at Shortlisted ('hr_selected') after
+    attempt_auto_negotiate_interview_slots failed (e.g. a send error) -- deliberately NOT a
+    status change, so this bypasses app.shortlisting.service.update_shortlist_status's
+    terminal-SHORTLISTED rule entirely rather than asking a recruiter to re-decide a
+    shortlisting call that was never actually reversed. Replaces the one-off manual
+    NegotiationToken cleanup this exact stuck-application failure mode used to require by
+    hand (see app.interview_scheduling.negotiation.check_retry_eligibility/
+    retry_negotiation for the eligibility rules and cleanup this now does automatically).
+    """
+    application = db.get(Application, application_id)
+    if not application:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    ineligible_reason = check_retry_eligibility(db, application)
+    if ineligible_reason:
+        raise HTTPException(status_code=409, detail=ineligible_reason)
+
+    outcome, invalidated_count, reason = retry_negotiation(db, application, current_user)
+    return RetryNegotiationResponse(outcome=outcome, invalidated_stale_tokens=invalidated_count, reason=reason)

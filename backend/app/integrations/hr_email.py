@@ -7,6 +7,7 @@ recruiter/interviewer's own personal Google OAuth UserIntegration.
 """
 
 import smtplib
+from dataclasses import dataclass
 from email.message import EmailMessage
 from typing import Optional
 
@@ -26,6 +27,21 @@ class SmtpError(Exception):
     """Raised for any reason send_hr_email couldn't actually deliver -- an undecryptable
     stored password, a connection/auth failure, or the SMTP server rejecting the message.
     Callers catch this exactly the way they used to catch (GmailError, InvalidToken)."""
+
+
+@dataclass
+class EmailAttachment:
+    """One file to attach to an outgoing HR email -- e.g. the .ics calendar invite the
+    pick-2-of-3 negotiation mechanic's confirmation step generates (see
+    app/integrations/ics.py, app/interview_scheduling/negotiation.py _finalize).
+    `content` is attached as-is (bytes, not re-encoded through a str content manager) so a
+    format with meaningful exact bytes -- like .ics's required CRLF line endings -- survives
+    unchanged."""
+
+    filename: str
+    content: bytes
+    maintype: str
+    subtype: str
 
 
 def get_hr_integration(db: Session) -> HrIntegration:
@@ -52,7 +68,10 @@ def is_smtp_configured(hr_integration: HrIntegration) -> bool:
     return bool(hr_integration.smtp_host and hr_integration.smtp_username and hr_integration.smtp_password)
 
 
-def send_hr_email(hr_integration: HrIntegration, *, to: str, subject: str, body: str) -> None:
+def send_hr_email(
+    hr_integration: HrIntegration, *, to: str, subject: str, body: str,
+    attachment: Optional[EmailAttachment] = None,
+) -> None:
     """Sends one email via the shared HR mailbox's SMTP credentials. `hr_module_email`,
     when configured, is added as both Reply-To and BCC on every send (a no-op, neither
     header added, when left blank) -- otherwise this is a plain, provider-agnostic SMTP
@@ -77,6 +96,11 @@ def send_hr_email(hr_integration: HrIntegration, *, to: str, subject: str, body:
         message["Bcc"] = hr_integration.hr_module_email
         recipients.append(hr_integration.hr_module_email)
     message.set_content(body)
+    if attachment is not None:
+        message.add_attachment(
+            attachment.content, maintype=attachment.maintype, subtype=attachment.subtype,
+            filename=attachment.filename,
+        )
 
     try:
         with smtplib.SMTP(hr_integration.smtp_host, hr_integration.smtp_port, timeout=SMTP_TIMEOUT_SECONDS) as server:

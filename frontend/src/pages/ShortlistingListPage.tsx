@@ -51,6 +51,7 @@ import {
 import CandidateAvatar from "../components/CandidateAvatar";
 import CandidateFiltersPanel, { EMPTY_CANDIDATE_FILTERS, type CandidateFilters } from "../components/CandidateFiltersPanel";
 import RefreshButton from "../components/RefreshButton";
+import RetryNegotiationMenuItem, { isRetryNegotiationEligible } from "../components/RetryNegotiationMenuItem";
 import ShortlistStatusPanel, { REASON_OPTIONS } from "../components/ShortlistStatusPanel";
 import SourceIcon from "../components/SourceIcon";
 import { useAuth } from "../auth/AuthContext";
@@ -87,13 +88,18 @@ function ShortlistingActionsMenu({
   canDecide,
   onView,
   onUpdateStatus,
+  onRetryDone,
+  onRetryError,
 }: {
   row: CandidateApplicationRow;
   canDecide: boolean;
   onView: (applicationId: string) => void;
   onUpdateStatus: (row: CandidateApplicationRow) => void;
+  onRetryDone: () => void;
+  onRetryError: (message: string) => void;
 }) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+  const showRetry = canDecide && isRetryNegotiationEligible(row);
 
   return (
     <>
@@ -119,6 +125,14 @@ function ShortlistingActionsMenu({
           >
             Update Status
           </MenuItem>
+        )}
+        {showRetry && (
+          <RetryNegotiationMenuItem
+            row={row}
+            onClose={() => setAnchorEl(null)}
+            onDone={onRetryDone}
+            onError={onRetryError}
+          />
         )}
       </Menu>
     </>
@@ -553,6 +567,8 @@ export default function ShortlistingListPage() {
                         canDecide={canDecide}
                         onView={(applicationId) => navigate(`/candidates/${applicationId}`)}
                         onUpdateStatus={setStatusPanelRow}
+                        onRetryDone={loadPage}
+                        onRetryError={setError}
                       />
                     </TableCell>
                   </TableRow>

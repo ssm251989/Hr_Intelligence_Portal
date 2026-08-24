@@ -35,6 +35,7 @@ import { isTerminalApplicationStatus, type CandidateApplicationRow, type JobRole
 import CandidateAvatar from "../components/CandidateAvatar";
 import CandidateFiltersPanel, { EMPTY_CANDIDATE_FILTERS, type CandidateFilters } from "../components/CandidateFiltersPanel";
 import RefreshButton from "../components/RefreshButton";
+import RetryNegotiationMenuItem, { isRetryNegotiationEligible } from "../components/RetryNegotiationMenuItem";
 import SourceIcon from "../components/SourceIcon";
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
@@ -65,6 +66,8 @@ function ScreeningActionsMenu({
   onView,
   onScreen,
   onRank,
+  onRetryDone,
+  onRetryError,
 }: {
   row: CandidateApplicationRow;
   canDecide: boolean;
@@ -72,11 +75,18 @@ function ScreeningActionsMenu({
   onView: (applicationId: string) => void;
   onScreen: (applicationId: string) => void;
   onRank: (applicationId: string) => void;
+  onRetryDone: () => void;
+  onRetryError: (message: string) => void;
 }) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const pending = actionId === row.application_id;
   const canScreen = canDecide && row.status === "received";
   const canRank = canDecide && row.match_score != null;
+  // Screening List's own applications query has no default status restriction (see
+  // listParams below), so a row already Shortlisted -- and possibly stuck there after a
+  // failed auto-negotiation -- can legitimately show up here too, not only on Shortlisting
+  // List. Same shared eligibility/handler/copy as that page's own row action.
+  const showRetry = canDecide && isRetryNegotiationEligible(row);
 
   return (
     <>
@@ -114,6 +124,14 @@ function ScreeningActionsMenu({
           >
             {pending ? "Ranking..." : row.ranking_score != null ? "Re-rank" : "Rank"}
           </MenuItem>
+        )}
+        {showRetry && (
+          <RetryNegotiationMenuItem
+            row={row}
+            onClose={() => setAnchorEl(null)}
+            onDone={onRetryDone}
+            onError={onRetryError}
+          />
         )}
       </Menu>
     </>
@@ -464,6 +482,8 @@ export default function ScreeningListPage() {
                         onView={(applicationId) => navigate(`/candidates/${applicationId}`)}
                         onScreen={handleScreen}
                         onRank={handleRank}
+                        onRetryDone={loadPage}
+                        onRetryError={setError}
                       />
                     </TableCell>
                   </TableRow>

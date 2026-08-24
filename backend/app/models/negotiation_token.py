@@ -1,39 +1,42 @@
-from sqlalchemy import Boolean, CheckConstraint, Column, Date, DateTime, ForeignKey, Integer, Text, text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import CheckConstraint, Column, Date, DateTime, ForeignKey, Integer, Text, text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from app.core.database import Base
 
 
 class NegotiationToken(Base):
-    """One link in the interviewer-first scheduling negotiation (app/interview_scheduling/
-    negotiation.py) -- the flow auto-triggered when an application's status becomes
-    Shortlisted. Unlike InterviewConfirmationToken (one link = one immediate, final,
-    single-use action), a BATCH of these lets its owner click more than one "slot" link to
-    mark several options available before a "done" link actually commits them, or a
-    "not_available" link declines the whole batch.
+    """One recipient's session in the interviewer-first, double-blind pick-2-of-3
+    scheduling negotiation (app/interview_scheduling/negotiation.py) -- the flow
+    auto-triggered when an application's status becomes Shortlisted. One row per
+    (application, role, interviewer_user_id, round_day): the 3 canned times for that
+    round_day (see negotiation.py _slot_times_for_day) are shown as checkboxes on the
+    linked page, and the recipient must pick exactly 2 (or decline) in one submission --
+    unlike InterviewConfirmationToken's single immediate click-is-final link, but also
+    unlike this table's own original shape (one row per clickable link: 3 slot-marking
+    rows + a separate not_available/done row each), replaced because pick-2-of-3 is one
+    combined submission, not a sequence of individual marks.
 
-    Used for both sides of the negotiation, distinguished by `role`: "interviewer" batches
-    (one per candidate interviewer the pool is walked to, for one offered day) and
-    "candidate" batches (one per application, offering exactly the slots the interviewer
-    just confirmed). `interviewer_user_id` is always the relevant interviewer either way --
-    who the batch is waiting on for role="interviewer", or who to invite to the calendar
-    event once role="candidate" resolves.
+    Used for both sides of the negotiation, distinguished by `role`: "interviewer" (one per
+    candidate interviewer the pool is walked to, for one offered day) and "candidate" (one
+    per application, offering the SAME 3 canned times independently -- blind to which 2 the
+    interviewer picked). `interviewer_user_id` is always the relevant interviewer either
+    way -- who this row is waiting on for role="interviewer", or who to invite to the
+    calendar event once role="candidate" resolves.
 
-    A "batch" is every row sharing (application_id, role, interviewer_user_id, round_day)
-    that isn't yet invalidated -- there is only ever one live batch per (application, role,
-    interviewer) at a time; a new one only starts once the previous one resolves (declined,
-    or superseded on the one retry day).
+    There is only ever one live (not yet invalidated) row per (application, role,
+    interviewer, round_day) at a time; a new one only starts once the previous one resolves
+    (declined, re-prompted after a no-overlap defensive case, or superseded on the one
+    retry day).
 
     duration_minutes/tracker_path are snapshotted the same way InterviewConfirmationToken
-    already does -- a click days later, or the eventual calendar event, must reflect what
-    was actually offered and which tracker file to update, not whatever
+    already does -- a submission days later, or the eventual calendar event, must reflect
+    what was actually offered and which tracker file to update, not whatever
     interview_scheduling_settings has since changed to.
     """
 
     __tablename__ = "negotiation_tokens"
     __table_args__ = (
         CheckConstraint("role IN ('interviewer','candidate')", name="negotiation_tokens_role_check"),
-        CheckConstraint("kind IN ('slot','not_available','done')", name="negotiation_tokens_kind_check"),
     )
 
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
@@ -41,20 +44,22 @@ class NegotiationToken(Base):
     role = Column(Text, nullable=False)
     interviewer_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     # The recruiter/hiring manager who triggered this negotiation (whose Google account
-    # sends every outbound email in it) -- snapshotted so a click resolved asynchronously,
-    # possibly days later, still knows whose account to send the *next* step's email from
-    # without needing that person to be the one clicking.
+    # sends every outbound email in it) -- snapshotted so a submission resolved
+    # asynchronously, possibly days later, still knows whose account to send the *next*
+    # step's email from without needing that person to be the one submitting.
     actor_email = Column(Text, nullable=False)
     candidate_name = Column(Text)
     job_title = Column(Text)
     interviewer_name = Column(Text)
     round_day = Column(Date, nullable=False)
-    kind = Column(Text, nullable=False)
-    slot_time = Column(DateTime(timezone=True), nullable=True)
     duration_minutes = Column(Integer, server_default=text("60"))
     tracker_path = Column(Text)
     token = Column(Text, nullable=False, unique=True)
-    marked_available = Column(Boolean, nullable=False, server_default=text("false"))
+    # Populated on a valid (exactly-2) submission -- a JSON list of the 2 chosen slots' ISO
+    # timestamps. NULL while pending; also NULL after a decline (distinguished from
+    # "pending" by responded_at being set) -- see this table's own docstring above for the
+    # three states this column + responded_at together represent.
+    selected_slots = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=text("now()"))
     expires_at = Column(DateTime(timezone=True), nullable=False)
     responded_at = Column(DateTime(timezone=True), nullable=True)
