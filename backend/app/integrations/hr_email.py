@@ -70,12 +70,19 @@ def is_smtp_configured(hr_integration: HrIntegration) -> bool:
 
 def send_hr_email(
     hr_integration: HrIntegration, *, to: str, subject: str, body: str,
-    attachment: Optional[EmailAttachment] = None,
+    html_body: Optional[str] = None, attachment: Optional[EmailAttachment] = None,
 ) -> None:
     """Sends one email via the shared HR mailbox's SMTP credentials. `hr_module_email`,
     when configured, is added as both Reply-To and BCC on every send (a no-op, neither
     header added, when left blank) -- otherwise this is a plain, provider-agnostic SMTP
     send (STARTTLS when use_tls is set, exactly the fields configured in Settings).
+
+    `body` is always sent as the plain-text part -- required even when `html_body` is
+    given, since it's also what every plain-text-only recipient (and every mail client
+    that fails to render the HTML part) actually sees. `html_body`, when given, is added
+    via add_alternative (not set_content) -- the standard multipart/alternative shape,
+    where a client picks whichever of the two parts it prefers/supports; it never replaces
+    the plain-text part outright.
 
     Raises SmtpError for any reason the send didn't happen -- an undecryptable stored
     password, or any smtplib/connection failure -- so every caller can handle both cases
@@ -96,6 +103,8 @@ def send_hr_email(
         message["Bcc"] = hr_integration.hr_module_email
         recipients.append(hr_integration.hr_module_email)
     message.set_content(body)
+    if html_body is not None:
+        message.add_alternative(html_body, subtype="html")
     if attachment is not None:
         message.add_attachment(
             attachment.content, maintype=attachment.maintype, subtype=attachment.subtype,

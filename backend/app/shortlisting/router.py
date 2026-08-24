@@ -20,7 +20,7 @@ from app.candidates.router import (
     row_to_item,
 )
 from app.core.database import get_db
-from app.interview_scheduling.negotiation import attempt_auto_negotiate_interview_slots
+from app.interview_scheduling.negotiation import attempt_auto_negotiate_interview_slots, clear_manual_scheduling_flag
 from app.models.application import Application
 from app.models.candidate import Candidate
 from app.models.job_role import JobRole
@@ -94,6 +94,7 @@ def make_shortlist_decision(
         },
     )
     if new_status == "hr_selected":
+        clear_manual_scheduling_flag(db, application, current_user.email)
         attempt_auto_negotiate_interview_slots(db, application, current_user)
     return application
 
@@ -247,6 +248,7 @@ def update_shortlist_status_endpoint(
         db, application, payload.target_status, current_user.email, reason=payload.reason, feedback=payload.feedback
     )
     if payload.target_status == SHORTLISTED:
+        clear_manual_scheduling_flag(db, updated, current_user.email)
         attempt_auto_negotiate_interview_slots(db, updated, current_user)
     return updated
 
@@ -282,6 +284,7 @@ def bulk_shortlist_decision(
             skipped.append(ShortlistBulkDecisionSkipped(application_id=application_id, reason=str(exc.detail)))
             continue
         if payload.target_status == SHORTLISTED:
+            clear_manual_scheduling_flag(db, updated, current_user.email)
             attempt_auto_negotiate_interview_slots(db, updated, current_user)
         succeeded.append(application_id)
     return ShortlistBulkDecisionResult(succeeded=succeeded, skipped=skipped)

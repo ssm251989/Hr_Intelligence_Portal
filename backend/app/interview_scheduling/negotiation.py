@@ -13,9 +13,11 @@ tracker, app/interview_scheduling/tracker.py):
      already busy this week (the Interview Log sheet is the ONLY busy-check source here --
      no real-time Calendar call, unlike the older select_interviewer flow).
   3. The first non-busy interviewer who also has an email in the Mails sheet and resolves
-     to exactly one registered, Google-connected User gets emailed ONE link to a page
-     offering 3 canned times for "tomorrow" (10AM/3PM/6PM) -- pick EXACTLY 2, or decline
-     ("None of these work for me").
+     to exactly one registered User gets emailed ONE link (via the shared HR mailbox, never
+     a personal Gmail/Google connection -- hradmin65@gmail.com is the single account of
+     record for every interview-scheduling email this mechanic sends) to a page offering 3
+     canned times for "tomorrow" (10AM/3PM/6PM) -- pick EXACTLY 2, or decline ("None of
+     these work for me").
   4. A decline (or, defensively, anything else the submission handler treats as one) moves
      on to the next interviewer in the pool, for the SAME day.
   5. Once the whole pool is exhausted for a day, retry it once more for the day after --
@@ -50,6 +52,7 @@ a live token, a scheduled Interview, or an already-logged manual-scheduling flag
 import secrets
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
+from html import escape
 from pathlib import Path
 from typing import Optional
 
@@ -60,7 +63,7 @@ from app.core.config import settings
 from app.integrations.google_calendar import APP_TIMEZONE, DEFAULT_INTERVIEW_DURATION_MINUTES, format_ist_datetime
 from app.integrations.hr_email import EmailAttachment, get_hr_integration, is_smtp_configured, send_hr_email, SmtpError
 from app.integrations.ics import build_interview_ics
-from app.interview_scheduling.service import _find_interviewer_user, _google_integration
+from app.interview_scheduling.service import _find_interviewer_user
 from app.interview_scheduling.storage import get_interview_scheduling_settings
 from app.interview_scheduling.tracker import (
     append_interview_log_row,
@@ -210,6 +213,51 @@ def _is_flagged_for_manual_scheduling(db: Session, application: Application) -> 
     return latest is not None and latest.action == _MANUAL_ACTION
 
 
+def clear_manual_scheduling_flag(db: Session, application: Application, actor_email: str) -> None:
+    """Logs the one audit entry that supersedes any earlier interview_negotiation_manual_
+    scheduling_required flag for this application -- see _is_flagged_for_manual_scheduling,
+    which reads the MOST RECENT of {flag, this}, never "was it ever flagged."
+
+    Call this before ANY attempt_auto_negotiate_interview_slots call that's meant to start
+    a genuinely new negotiation cycle -- both retry_negotiation's own manual retry below
+    AND a fresh Shortlisted transition (see app/shortlisting/router.py's three call sites).
+    Before this was added to the shortlisting flow too, a flag left over from an earlier,
+    unrelated shortlisting cycle for the same application silently blocked the next
+    genuinely fresh one -- no interviewer ever contacted, no error surfaced anywhere,
+    since attempt_auto_negotiate_interview_slots' own "never block the action that
+    triggered it" contract means a skip here is deliberately silent by design (the exact
+    incident this fixes, see Kranthi Kumar's real one).
+
+    Idempotent to call even when nothing is currently flagged -- always logged
+    unconditionally, cheaper than reading first and harmless when there was nothing to
+    clear (same reasoning retry_negotiation's own stale-token cleanup already uses).
+    """
+    log_action(db, "application", application.id, _MANUAL_SCHEDULING_CLEARED_ACTION, actor_email, {})
+
+
+_MANUAL_STAGE_RESET_TO_SCREENING_ACTION = "manual_stage_reset_to_screening"
+
+
+def reset_application_to_screening(db: Session, application: Application, actor_email: str, reason: str) -> None:
+    """The manual support action for moving an application back from Shortlisted
+    ('hr_selected') to Screening ('screened') -- e.g. a shortlist decision made in error, or
+    (as originally done for Kranthi Kumar/Kishore Reddy/Arjun Reddy) to give a fresh
+    shortlisting decision a clean slate. Also clears any manual-scheduling-required flag
+    left over from the cycle being reversed -- the exact thing the first two ad hoc uses of
+    this action (run as one-off scripts, before this function existed) didn't do, which is
+    part of why a flag from that earlier cycle went on to silently block the next real,
+    fresh Shortlisted transition (see clear_manual_scheduling_flag's own docstring)."""
+    previous_status = application.status
+    application.status = "screened"
+    db.add(application)
+    clear_manual_scheduling_flag(db, application, actor_email)
+    log_action(
+        db, "application", application.id, _MANUAL_STAGE_RESET_TO_SCREENING_ACTION, actor_email,
+        {"previous_status": previous_status, "new_status": "screened", "reason": reason},
+    )
+    db.commit()
+
+
 def _has_live_negotiation_or_scheduled_interview(db: Session, application: Application, now: Optional[datetime] = None) -> Optional[str]:
     """Returns the reason attempt_auto_negotiate_interview_slots must not start a second,
     overlapping negotiation for this application, or None if clear: a live (not yet
@@ -281,6 +329,92 @@ def _build_candidate_email_body(candidate_name: Optional[str], job_title: str, p
         f"{REQUIRED_PICKS} of the 3 time options that work best for you:\n\n{picker_url}\n\n"
         f"This link expires in {TOKEN_EXPIRY_DAYS} days. Thanks!"
     )
+
+
+# --- HTML counterparts of the two plain-text builders above -- same audience-specific
+# copy, sent as the multipart/alternative HTML part (see hr_email.send_hr_email's
+# html_body param) so the email itself matches the branded look the negotiation page
+# already has (negotiation_router.py's own navy-to-blue CTD Techs shell/button styling),
+# rather than landing on a fully-branded page from a plain-text email. Deliberately plain
+# table/inline-style HTML, not the page's own <style> block -- most email clients (Outlook
+# desktop above all) never render a <head><style> block or CSS gradients, so every visual
+# choice here has to survive as inline styles with a solid bgcolor fallback. ---
+
+_EMAIL_FONT_FAMILY = "-apple-system, Segoe UI, Roboto, Arial, sans-serif"
+
+
+def _negotiation_email_html(heading_html: str, body_copy_html: str, picker_url: str) -> str:
+    """The shared shell both _build_interviewer_email_html/_build_candidate_email_html fill
+    in -- header band, heading + body copy, CTA button, footer -- so the two audiences can
+    never visually drift apart. `heading_html`/`body_copy_html` are assumed already
+    HTML-escaped by the caller (candidate/job-title/date interpolation happens there, right
+    next to the plain-text version that needs the exact same escaping discipline)."""
+    picker_url_attr = escape(picker_url, quote=True)
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interview Scheduling</title>
+</head>
+<body style="margin:0; padding:0; background-color:#eef1f6;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#eef1f6;">
+<tr><td align="center" style="padding:32px 16px;">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px; width:100%; background-color:#ffffff; border-radius:12px;">
+<tr>
+<td bgcolor="#1d5fd6" style="background-color:#1d5fd6; background-image:linear-gradient(120deg, #0b1f4d, #1d5fd6); border-radius:12px 12px 0 0; padding:22px 32px;">
+<table role="presentation" cellpadding="0" cellspacing="0"><tr>
+<td bgcolor="#5b7cff" style="width:30px; height:30px; border-radius:8px; background-color:#5b7cff; background-image:linear-gradient(135deg, #4f9dff, #7b5cff); font-size:0; line-height:0;">&nbsp;</td>
+<td style="padding-left:10px; font-family:{_EMAIL_FONT_FAMILY}; font-size:15px; font-weight:700; letter-spacing:0.04em; color:#f5f8ff;">CTD TECHS</td>
+</tr></table>
+</td>
+</tr>
+<tr>
+<td style="padding:32px;">
+<h1 style="margin:0 0 12px; font-family:{_EMAIL_FONT_FAMILY}; font-size:22px; font-weight:800; color:#0b1f4d;">{heading_html}</h1>
+<p style="margin:0 0 26px; font-family:{_EMAIL_FONT_FAMILY}; font-size:15px; line-height:1.6; color:#3a4257;">{body_copy_html}</p>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr>
+<td bgcolor="#1d5fd6" style="border-radius:10px; background-color:#1d5fd6;">
+<a href="{picker_url_attr}" target="_blank" style="display:inline-block; padding:13px 26px; font-family:{_EMAIL_FONT_FAMILY}; font-size:14px; font-weight:700; color:#ffffff; text-decoration:none; border-radius:10px;">Choose Your Available Slots</a>
+</td>
+</tr></table>
+<p style="margin:22px 0 0; font-family:{_EMAIL_FONT_FAMILY}; font-size:12px; line-height:1.5; color:#8a93a6;">Or copy and paste this link into your browser:<br>
+<a href="{picker_url_attr}" style="color:#1d5fd6; word-break:break-all;">{picker_url_attr}</a></p>
+</td>
+</tr>
+<tr>
+<td style="padding:16px 32px; background-color:#f6f8fc; border-top:1px solid #e6eaf3; border-radius:0 0 12px 12px; font-family:{_EMAIL_FONT_FAMILY}; font-size:13px; color:#5b6478;">
+This link expires in {TOKEN_EXPIRY_DAYS} days.<br>
+Need help? Reply to this email or contact your recruiter.
+</td>
+</tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>"""
+
+
+def _build_interviewer_email_html(candidate_name: Optional[str], job_title: str, round_day: date, picker_url: str) -> str:
+    name_html = escape(candidate_name or "a candidate")
+    job_html = escape(job_title)
+    date_html = escape(round_day.strftime("%d %b %Y"))
+    body_copy_html = (
+        f"We'd like you to interview <strong style=\"color:#1d5fd6;\">{name_html}</strong> for the "
+        f"{job_html} role, on {date_html}. Please pick exactly {REQUIRED_PICKS} of the 3 time options "
+        f"that work for you."
+    )
+    return _negotiation_email_html("Hi,", body_copy_html, picker_url)
+
+
+def _build_candidate_email_html(candidate_name: Optional[str], job_title: str, picker_url: str) -> str:
+    name_html = escape(candidate_name or "there")
+    job_html = escape(job_title)
+    body_copy_html = (
+        f"We'd like to schedule your interview for the <strong style=\"color:#1d5fd6;\">{job_html}</strong> "
+        f"position. Please pick exactly {REQUIRED_PICKS} of the 3 time options that work best for you."
+    )
+    return _negotiation_email_html(f"Hi {name_html},", body_copy_html, picker_url)
 
 
 def _token_url(token: str) -> str:
@@ -390,9 +524,18 @@ def _advance_interviewer_round(
     attempted for this exact (application, round_day) pair (see _already_attempted_names --
     derived from audit_log, not a separate counter, so this is safely re-callable any number
     of times as interviewers respond asynchronously), busy this week, missing a Mails-sheet
-    email, or not resolving to a registered Google-connected User. Starts a negotiation row
-    for and emails the first interviewer who clears every check, returning "started";
-    returns "exhausted" once the whole pool has been walked with nobody clearing them all.
+    email, or not resolving to exactly one registered User. Starts a negotiation row for and
+    emails the first interviewer who clears every check, returning "started"; returns
+    "exhausted" once the whole pool has been walked with nobody clearing them all.
+
+    Deliberately does NOT require the interviewer to have their own personal Google
+    connection (unlike the older service.py select_interviewer flow, which still needs one
+    per interviewer to run its own real-time Calendar availability check) -- the shared HR
+    mailbox (hradmin65@gmail.com) is this app's single account of record for every email
+    this mechanic sends, interviewer and candidate alike, and availability here is decided
+    entirely by tracker.interviewer_busy_this_week's own Excel-log heuristic, which reads
+    nothing from any personal calendar. An interviewer needs only a registered User
+    account to be reachable -- never a Google connection of their own.
     """
     pool = eligible_interviewers_for_job(Path(tracker_path), job.title)
 
@@ -412,9 +555,6 @@ def _advance_interviewer_round(
         if interviewer_user is None:
             _log_attempt(db, application, actor_user.email, name, round_day, "not_a_registered_user")
             continue
-        if _google_integration(db, interviewer_user) is None:
-            _log_attempt(db, application, actor_user.email, name, round_day, "interviewer_google_not_connected")
-            continue
 
         row = _create_negotiation_row(
             db, application=application, role="interviewer", interviewer_user_id=interviewer_user.id,
@@ -425,6 +565,7 @@ def _advance_interviewer_round(
             send_hr_email(
                 hr_integration, to=email, subject=f"Interview scheduling for {job.title}",
                 body=_build_interviewer_email_body(candidate.full_name, job.title, round_day, _token_url(row.token)),
+                html_body=_build_interviewer_email_html(candidate.full_name, job.title, round_day, _token_url(row.token)),
             )
         except SmtpError:
             # The row is already committed live (see _create_negotiation_row) -- a failed
@@ -615,7 +756,7 @@ def retry_negotiation(db: Session, application: Application, actor_user: User) -
             {"invalidated_count": len(stale)},
         )
     log_action(db, "application", application.id, _RETRY_TRIGGERED_ACTION, actor_user.email, {})
-    log_action(db, "application", application.id, _MANUAL_SCHEDULING_CLEARED_ACTION, actor_user.email, {})
+    clear_manual_scheduling_flag(db, application, actor_user.email)
     outcome, reason = attempt_auto_negotiate_interview_slots(db, application, actor_user)
     return outcome, len(stale), reason
 
@@ -691,6 +832,7 @@ def _start_candidate_round(db: Session, application: Application, interviewer_ro
         send_hr_email(
             hr_integration, to=candidate.email, subject=f"Interview scheduling for {job.title}",
             body=_build_candidate_email_body(candidate.full_name, job.title, _token_url(row.token)),
+            html_body=_build_candidate_email_html(candidate.full_name, job.title, _token_url(row.token)),
         )
     except SmtpError as exc:
         # Same reasoning as _advance_interviewer_round's own SmtpError handling -- a failed
@@ -770,6 +912,7 @@ def _reprompt_candidate(db: Session, application: Application, candidate_row: Ne
         send_hr_email(
             hr_integration, to=candidate.email, subject=f"Interview scheduling for {job.title}",
             body=_build_candidate_email_body(candidate.full_name, job.title, _token_url(new_row.token)),
+            html_body=_build_candidate_email_html(candidate.full_name, job.title, _token_url(new_row.token)),
         )
     except SmtpError as exc:
         _invalidate_batch(db, [new_row])

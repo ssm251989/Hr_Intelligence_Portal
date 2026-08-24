@@ -82,6 +82,46 @@ def test_send_hr_email_attaches_the_ics_file_with_correct_mime_structure(monkeyp
     assert message.get_body(preferencelist=("plain",)).get_content().strip() == "A calendar invite is attached."
 
 
+def test_send_hr_email_with_html_body_sends_multipart_alternative_with_both_parts(monkeypatch):
+    sent = _install_fake_smtp(monkeypatch)
+    html = "<html><body><h1>Hi</h1><p>Choose a slot.</p></body></html>"
+
+    send_hr_email(
+        _hr_integration(), to="candidate@example.com", subject="Interview scheduling for Backend Engineer",
+        body="Plain-text fallback body.", html_body=html,
+    )
+
+    assert len(sent) == 1
+    message, _ = sent[0]
+    assert message.get_body(preferencelist=("plain",)).get_content().strip() == "Plain-text fallback body."
+    assert message.get_body(preferencelist=("html",)).get_content().strip() == html
+    # Explicitly preferring plain must still resolve to the plain part, not the html one --
+    # proves this is a real multipart/alternative, not html replacing the plain body.
+    assert message.get_content_type() == "multipart/alternative"
+
+
+def test_send_hr_email_html_body_and_attachment_together(monkeypatch):
+    """The negotiation confirmation email (html_body) and the .ics attachment
+    (EmailAttachment) are independent features that must compose -- a future combined
+    send (a branded HTML confirmation with the .ics still attached) must not silently
+    drop either part."""
+    sent = _install_fake_smtp(monkeypatch)
+    ics_bytes = b"BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n"
+    attachment = EmailAttachment(filename="interview.ics", content=ics_bytes, maintype="text", subtype="calendar")
+
+    send_hr_email(
+        _hr_integration(), to="candidate@example.com", subject="Interview confirmed",
+        body="plain", html_body="<p>html</p>", attachment=attachment,
+    )
+
+    message, _ = sent[0]
+    assert message.get_body(preferencelist=("plain",)).get_content().strip() == "plain"
+    assert message.get_body(preferencelist=("html",)).get_content().strip() == "<p>html</p>"
+    attachments = list(message.iter_attachments())
+    assert len(attachments) == 1
+    assert attachments[0].get_payload(decode=True) == ics_bytes
+
+
 def test_send_hr_email_attachment_bytes_survive_exactly_including_crlf(monkeypatch):
     """.ics is RFC 5545 -- its CRLF line endings must round-trip byte-for-byte, not get
     silently normalized to bare LF the way passing the content as `str` would (the text

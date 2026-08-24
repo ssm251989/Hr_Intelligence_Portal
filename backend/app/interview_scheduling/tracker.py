@@ -132,25 +132,38 @@ def read_mail_directory(path: Path) -> dict[str, str]:
     reach that person. Empty dict if the sheet or its expected columns aren't present --
     same "nothing configured yet, not an error" convention as read_interviewer_pool."""
     workbook = load_workbook(path, read_only=True, data_only=True)
-    if MAILS_SHEET not in workbook.sheetnames:
-        return {}
-    sheet = workbook[MAILS_SHEET]
-    header_row = next(sheet.iter_rows(min_row=1, max_row=1), ())
-    header = [cell.value for cell in header_row]
-    if "Name" not in header or "Mail Id" not in header:
-        return {}
-    name_col = header.index("Name")
-    mail_col = header.index("Mail Id")
+    try:
+        if MAILS_SHEET not in workbook.sheetnames:
+            return {}
+        sheet = workbook[MAILS_SHEET]
+        header_row = next(sheet.iter_rows(min_row=1, max_row=1), ())
+        header = [cell.value for cell in header_row]
+        if "Name" not in header or "Mail Id" not in header:
+            return {}
+        name_col = header.index("Name")
+        mail_col = header.index("Mail Id")
 
-    directory: dict[str, str] = {}
-    for row in sheet.iter_rows(min_row=2, values_only=True):
-        if row is None or len(row) <= max(name_col, mail_col):
-            continue
-        name, mail = row[name_col], row[mail_col]
-        if not name or not mail:
-            continue
-        directory[str(name).strip().lower()] = str(mail).strip()
-    return directory
+        directory: dict[str, str] = {}
+        for row in sheet.iter_rows(min_row=2, values_only=True):
+            if row is None or len(row) <= max(name_col, mail_col):
+                continue
+            name, mail = row[name_col], row[mail_col]
+            if not name or not mail:
+                continue
+            directory[str(name).strip().lower()] = str(mail).strip()
+        return directory
+    finally:
+        # read_only=True keeps a live handle on the underlying zip archive for lazy
+        # iteration -- unlike the normal (non-read-only) load below, which reads
+        # everything into memory up front and releases the OS file handle immediately.
+        # Without this close(), the handle only goes away whenever CPython's cyclic GC
+        # (not simple refcounting, since openpyxl's internal objects hold reference
+        # cycles) gets around to collecting it -- an indeterminate delay during which
+        # this file is genuinely locked at the OS level (confirmed: even a plain
+        # os.rename() on it fails with WinError 32 until this runs). That's the real
+        # cause of the "sharing violation opening this file in Excel" report -- the
+        # tracker is meant to be human-editable at any time.
+        workbook.close()
 
 
 def email_for_interviewer(path: Path, interviewer_name: str) -> Optional[str]:
@@ -202,34 +215,39 @@ def interviewer_busy_this_week(path: Path, interviewer_name: str, now: Optional[
     target = interviewer_name.strip().lower()
 
     workbook = load_workbook(path, read_only=True, data_only=True)
-    if INTERVIEW_LOG_SHEET not in workbook.sheetnames:
-        return False
-    sheet = workbook[INTERVIEW_LOG_SHEET]
-    header_row = next(sheet.iter_rows(min_row=1, max_row=1), ())
-    header = [cell.value for cell in header_row if cell.value is not None]
-    if "Assigned Interviewer" not in header or "Status" not in header:
-        return False
-    col = {name: header.index(name) for name in header}
-    final_col = col.get("Final Scheduled Time")
-    preferred_col = col.get("Candidate Preferred Time")
+    try:
+        if INTERVIEW_LOG_SHEET not in workbook.sheetnames:
+            return False
+        sheet = workbook[INTERVIEW_LOG_SHEET]
+        header_row = next(sheet.iter_rows(min_row=1, max_row=1), ())
+        header = [cell.value for cell in header_row if cell.value is not None]
+        if "Assigned Interviewer" not in header or "Status" not in header:
+            return False
+        col = {name: header.index(name) for name in header}
+        final_col = col.get("Final Scheduled Time")
+        preferred_col = col.get("Candidate Preferred Time")
 
-    for row in sheet.iter_rows(min_row=2, values_only=True):
-        if row is None or len(row) < len(header):
-            continue
-        assigned = row[col["Assigned Interviewer"]]
-        if not assigned or str(assigned).strip().lower() != target:
-            continue
-        status = str(row[col["Status"]] or "").strip().lower()
-        if status in _NON_BUSY_STATUSES:
-            continue
-        when = _parse_ist_datetime(row[final_col]) if final_col is not None else None
-        if when is None and preferred_col is not None:
-            when = _parse_ist_datetime(row[preferred_col])
-        if when is None:
-            continue
-        if week_start <= when.date() <= week_end:
-            return True
-    return False
+        for row in sheet.iter_rows(min_row=2, values_only=True):
+            if row is None or len(row) < len(header):
+                continue
+            assigned = row[col["Assigned Interviewer"]]
+            if not assigned or str(assigned).strip().lower() != target:
+                continue
+            status = str(row[col["Status"]] or "").strip().lower()
+            if status in _NON_BUSY_STATUSES:
+                continue
+            when = _parse_ist_datetime(row[final_col]) if final_col is not None else None
+            if when is None and preferred_col is not None:
+                when = _parse_ist_datetime(row[preferred_col])
+            if when is None:
+                continue
+            if week_start <= when.date() <= week_end:
+                return True
+        return False
+    finally:
+        # See read_mail_directory's own comment on why read_only mode needs an explicit
+        # close() rather than relying on GC.
+        workbook.close()
 
 
 def read_interviewer_pool(path: Path) -> dict[str, list[str]]:
@@ -238,27 +256,32 @@ def read_interviewer_pool(path: Path) -> dict[str, list[str]]:
     expected columns aren't present -- callers treat that as "nothing configured yet", not
     an error."""
     workbook = load_workbook(path, read_only=True, data_only=True)
-    if INTERVIEWER_POOL_SHEET not in workbook.sheetnames:
-        return {}
-    sheet = workbook[INTERVIEWER_POOL_SHEET]
-    header_row = next(sheet.iter_rows(min_row=1, max_row=1), ())
-    header = [cell.value for cell in header_row]
-    if "Job Title" not in header or "Eligible Interviewers" not in header:
-        return {}
-    job_col = header.index("Job Title")
-    interviewers_col = header.index("Eligible Interviewers")
+    try:
+        if INTERVIEWER_POOL_SHEET not in workbook.sheetnames:
+            return {}
+        sheet = workbook[INTERVIEWER_POOL_SHEET]
+        header_row = next(sheet.iter_rows(min_row=1, max_row=1), ())
+        header = [cell.value for cell in header_row]
+        if "Job Title" not in header or "Eligible Interviewers" not in header:
+            return {}
+        job_col = header.index("Job Title")
+        interviewers_col = header.index("Eligible Interviewers")
 
-    pool: dict[str, list[str]] = {}
-    for row in sheet.iter_rows(min_row=2, values_only=True):
-        if row is None or len(row) <= max(job_col, interviewers_col):
-            continue
-        job_title = row[job_col]
-        if not job_title:
-            continue
-        interviewers_raw = row[interviewers_col] or ""
-        names = [name.strip() for name in str(interviewers_raw).split(",") if name.strip()]
-        pool[str(job_title).strip()] = names
-    return pool
+        pool: dict[str, list[str]] = {}
+        for row in sheet.iter_rows(min_row=2, values_only=True):
+            if row is None or len(row) <= max(job_col, interviewers_col):
+                continue
+            job_title = row[job_col]
+            if not job_title:
+                continue
+            interviewers_raw = row[interviewers_col] or ""
+            names = [name.strip() for name in str(interviewers_raw).split(",") if name.strip()]
+            pool[str(job_title).strip()] = names
+        return pool
+    finally:
+        # See read_mail_directory's own comment on why read_only mode needs an explicit
+        # close() rather than relying on GC.
+        workbook.close()
 
 
 def eligible_interviewers_for_job(path: Path, job_title: str) -> list[str]:

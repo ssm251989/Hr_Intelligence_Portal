@@ -15,7 +15,7 @@ same real pool row (comma-separated, preserving order) rather than replacing it.
 
 import shutil
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -185,8 +185,11 @@ def _capture_emails(monkeypatch) -> list:
     sent = []
     monkeypatch.setattr(
         neg, "send_hr_email",
-        lambda hr_integration, *, to, subject, body, attachment=None: sent.append(
-            {"identity": hr_integration.smtp_username, "to": to, "subject": subject, "body": body, "attachment": attachment}
+        lambda hr_integration, *, to, subject, body, html_body=None, attachment=None: sent.append(
+            {
+                "identity": hr_integration.smtp_username, "to": to, "subject": subject, "body": body,
+                "html_body": html_body, "attachment": attachment,
+            }
         ),
     )
     return sent
@@ -268,6 +271,54 @@ def test_walks_past_a_busy_interviewer_to_the_next_in_the_pool(db_session, tmp_p
     outcomes_by_name = {entry.details["interviewer"]: entry.details["outcome"] for entry in busy_attempt}
     assert outcomes_by_name[REAL_POOL_INTERVIEWER] == "busy_this_week"
     assert outcomes_by_name[other_name] == "offer_sent"
+
+
+def test_interviewer_with_no_personal_google_connection_still_receives_an_offer(db_session, tmp_path, monkeypatch):
+    """The real, currently-blocked scenario: an interviewer (like Suresh A) who is a
+    registered User and not busy per the Excel tracker, but has never connected a personal
+    Google account. hradmin65@gmail.com (the shared HR mailbox) is the single account of
+    record for every interview-scheduling email this mechanic sends -- no interviewer
+    should ever need their own Google connection to be reachable. Deliberately does NOT
+    call _connect_google for this interviewer."""
+    tracker_path = _real_tracker_copy(tmp_path)
+    name = f"Interviewer {uuid.uuid4().hex[:8]}"
+    email = f"{uuid.uuid4().hex[:8]}@example.com"
+    _extend_pool_with(tracker_path, [name])
+    _add_mail_entry(tracker_path, name, email)
+    _configure_tracker(db_session, tracker_path)
+
+    # The real "Kishore" pool row (this fixture's own base data, already a registered User
+    # in this shared dev DB) always walks first -- mark them busy so the walk actually
+    # reaches this test's own interviewer, same pattern as
+    # test_walks_past_a_busy_interviewer_to_the_next_in_the_pool above.
+    _mark_busy_this_week(tracker_path, REAL_POOL_INTERVIEWER, datetime.now(timezone.utc))
+
+    user = _make_user(db_session, name)  # no _connect_google call -- the point of this test
+    assert db_session.query(UserIntegration).filter(UserIntegration.user_id == user.id).first() is None
+
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application(db_session, job, candidate)
+    recruiter = _make_user(db_session, "Recruiter", role="recruiter")
+    _connect_hr_smtp(db_session, smtp_username="hr-shared-token")
+
+    sent = _capture_emails(monkeypatch)
+    outcome, reason = neg.attempt_auto_negotiate_interview_slots(db_session, application, recruiter)
+
+    assert outcome == "started"
+    assert reason is None
+    assert len(sent) == 1
+    assert sent[0]["to"] == email
+    assert sent[0]["identity"] == "hr-shared-token"  # sent via the shared HR mailbox, not any personal Google/Gmail account
+
+    attempts = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.entity_id == application.id, AuditLog.action == "interview_negotiation_interviewer_attempt")
+        .all()
+    )
+    outcomes_by_name = {entry.details["interviewer"]: entry.details["outcome"] for entry in attempts}
+    assert outcomes_by_name[REAL_POOL_INTERVIEWER] == "busy_this_week"
+    assert outcomes_by_name[name] == "offer_sent"
 
 
 # --- exactly-2-of-3 validation ---
@@ -723,6 +774,101 @@ def test_second_consecutive_no_overlap_flags_manual_scheduling_instead_of_loopin
     assert _candidate_row(db_session, application).id == reprompted_row.id
 
 
+# --- branded HTML negotiation offer emails -- send_hr_email's html_body param, matching
+# the negotiation landing page's own CTD Techs shell (negotiation_router.py), not a plain-
+# text email that then jumps to a fully branded page. ---
+
+
+def test_interviewer_email_html_interpolates_candidate_job_and_date_with_a_cta_link():
+    html = neg._build_interviewer_email_html(
+        "Jane Doe", "Backend Engineer", date(2026, 8, 26), "https://ctdhr.example.com/interview-negotiation/tok123",
+    )
+
+    assert "Jane Doe" in html
+    assert "Backend Engineer" in html
+    assert "26 Aug 2026" in html
+    assert 'href="https://ctdhr.example.com/interview-negotiation/tok123"' in html
+    assert "Choose Your Available Slots" in html
+    assert "CTD TECHS" in html
+    assert "expires in 5 days" in html
+    assert html.strip().lower().startswith("<!doctype html>")
+
+
+def test_candidate_email_html_interpolates_job_with_a_cta_link():
+    html = neg._build_candidate_email_html(
+        "Jane Doe", "Backend Engineer", "https://ctdhr.example.com/interview-negotiation/tok456",
+    )
+
+    assert "Hi Jane Doe," in html
+    assert "Backend Engineer" in html
+    assert 'href="https://ctdhr.example.com/interview-negotiation/tok456"' in html
+    assert "Choose Your Available Slots" in html
+    assert "CTD TECHS" in html
+    assert "expires in 5 days" in html
+
+
+def test_negotiation_email_html_escapes_candidate_name_and_job_title():
+    html = neg._build_interviewer_email_html(
+        "<script>alert(1)</script>", "R&D <Lead>", date(2026, 8, 26), "https://example.com/x",
+    )
+
+    assert "<script>alert(1)</script>" not in html
+    assert "&lt;script&gt;" in html
+    assert "R&amp;D" in html
+    assert "&lt;Lead&gt;" in html
+
+
+def test_interviewer_offer_email_is_sent_with_a_populated_html_body(db_session, tmp_path, monkeypatch):
+    tracker_path = _real_tracker_copy(tmp_path)
+    _configure_tracker(db_session, tracker_path)
+    _real_pool_interviewer(db_session)
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session, name="Jane Doe")
+    application = _make_application(db_session, job, candidate)
+    recruiter = _make_user(db_session, "Recruiter", role="recruiter")
+    _connect_hr_smtp(db_session)
+    sent = _capture_emails(monkeypatch)
+
+    outcome, _reason = neg.attempt_auto_negotiate_interview_slots(db_session, application, recruiter)
+
+    assert outcome == "started"
+    assert len(sent) == 1
+    email = sent[0]
+    assert email["subject"] == f"Interview scheduling for {job.title}"
+    assert email["html_body"] is not None
+    assert "Jane Doe" in email["html_body"]
+    assert job.title in email["html_body"]
+    assert "Choose Your Available Slots" in email["html_body"]
+    # The plain-text version must still be sent too -- html_body is an addition, not a
+    # replacement.
+    assert email["body"] and "<html" not in email["body"]
+
+
+def test_candidate_offer_email_is_sent_with_a_populated_html_body(db_session, tmp_path, monkeypatch):
+    tracker_path = _real_tracker_copy(tmp_path)
+    _configure_tracker(db_session, tracker_path)
+    _real_pool_interviewer(db_session)
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session, name="Jane Doe")
+    application = _make_application(db_session, job, candidate)
+    recruiter = _make_user(db_session, "Recruiter", role="recruiter")
+    _connect_hr_smtp(db_session)
+    sent = _capture_emails(monkeypatch)
+
+    neg.attempt_auto_negotiate_interview_slots(db_session, application, recruiter)
+    interviewer_row = _interviewer_row(db_session, application)
+    picks = _slot_isos(interviewer_row.round_day)[:2]
+    neg.submit_negotiation_response(db_session, interviewer_row.token, action="submit", selected_isos=picks)
+
+    candidate_email = sent[-1]
+    assert candidate_email["subject"] == f"Interview scheduling for {job.title}"
+    assert candidate_email["html_body"] is not None
+    assert "Jane Doe" in candidate_email["html_body"]
+    assert job.title in candidate_email["html_body"]
+    assert "Choose Your Available Slots" in candidate_email["html_body"]
+    assert candidate_email["body"] and "<html" not in candidate_email["body"]
+
+
 # --- shared HR mailbox: same sender regardless of actor, graceful skip when absent ---
 
 
@@ -1128,6 +1274,82 @@ def test_shortlist_status_transition_to_shortlisted_triggers_the_negotiation(cli
     assert response.status_code == 200
     assert response.json()["status"] == "hr_selected"
     assert len(sent) == 1
+
+
+def test_fresh_shortlist_transition_clears_a_leftover_manual_scheduling_flag_and_still_negotiates(
+    client, db_session, tmp_path, monkeypatch, make_auth_headers
+):
+    """The real Kranthi Kumar incident: an application flagged manual-scheduling-required
+    during an EARLIER shortlisting cycle, moved back to Screening, then shortlisted again
+    fresh -- a genuinely new decision, unrelated to the old flag. Before this fix,
+    attempt_auto_negotiate_interview_slots' own guard saw the stale flag and silently
+    skipped, with no interviewer ever contacted and no error surfaced anywhere."""
+    tracker_path = _real_tracker_copy(tmp_path)
+    _configure_tracker(db_session, tracker_path)
+    _real_pool_interviewer(db_session)
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application(db_session, job, candidate, status="screened")
+    email = f"recruiter-{uuid.uuid4().hex[:8]}@example.com"
+    headers = make_auth_headers(role="recruiter", email=email)
+    _connect_hr_smtp(db_session)
+
+    # A flag left over from an earlier, unrelated shortlisting cycle -- logged directly,
+    # not walked through a real pool exhaustion, since only the flag's presence matters.
+    db_session.add(AuditLog(
+        entity_type="application", entity_id=application.id,
+        action="interview_negotiation_manual_scheduling_required", actor=email,
+        details={"job_title": job.title, "candidate_name": candidate.full_name},
+    ))
+    db_session.commit()
+    assert neg._is_flagged_for_manual_scheduling(db_session, application) is True
+
+    sent = _capture_emails(monkeypatch)
+    response = client.post(f"/applications/{application.id}/shortlist-status", json={"target_status": "shortlisted"}, headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "hr_selected"
+    # The interviewer was actually contacted this time -- not silently skipped.
+    assert len(sent) == 1
+
+    cleared = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.entity_id == application.id, AuditLog.action == "interview_negotiation_manual_scheduling_cleared")
+        .first()
+    )
+    assert cleared is not None
+    assert neg._is_flagged_for_manual_scheduling(db_session, application) is False
+
+
+def test_reset_application_to_screening_clears_a_manual_scheduling_flag(db_session, tmp_path):
+    tracker_path = _real_tracker_copy(tmp_path)
+    _configure_tracker(db_session, tracker_path)
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application(db_session, job, candidate, status="hr_selected")
+
+    db_session.add(AuditLog(
+        entity_type="application", entity_id=application.id,
+        action="interview_negotiation_manual_scheduling_required", actor="kg@ctdtechs.com",
+        details={"job_title": job.title, "candidate_name": candidate.full_name},
+    ))
+    db_session.commit()
+    assert neg._is_flagged_for_manual_scheduling(db_session, application) is True
+
+    neg.reset_application_to_screening(db_session, application, "aisub2@ctdtechs.ai", "test reset")
+
+    db_session.refresh(application)
+    assert application.status == "screened"
+    assert neg._is_flagged_for_manual_scheduling(db_session, application) is False
+
+    reset_logged = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.entity_id == application.id, AuditLog.action == "manual_stage_reset_to_screening")
+        .first()
+    )
+    assert reset_logged is not None
+    assert reset_logged.details["previous_status"] == "hr_selected"
+    assert reset_logged.details["new_status"] == "screened"
 
 
 # --- POST .../retry-negotiation: the manual escape hatch for an application stuck at
