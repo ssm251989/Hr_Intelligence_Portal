@@ -44,8 +44,27 @@ REAL_POOL_INTERVIEWER = "Kishore"
 
 
 def _real_tracker_copy(tmp_path) -> Path:
+    """Copies the real interview_tracker_sample.xlsx, then trims its Interviewer Pool row
+    for REAL_POOL_JOB_TITLE down to just REAL_POOL_INTERVIEWER. The checked-in file's own
+    pool row actually lists two more names (Suresh A, Jagadeesh) from real usage -- harmless
+    to this suite's "one real interviewer" invariant (see module docstring) back when a pool
+    interviewer had to resolve to a registered User to be reachable, since neither has one
+    and both were silently skipped. Now that reachability is decided purely by the Mails
+    sheet + interviewer_busy_this_week (see app/interview_scheduling/negotiation.py's own
+    docstring), both resolve to a real Mails-sheet email and would otherwise silently
+    intercept offers these tests expect to reach a busy-Kishore fallback or a test-added
+    interviewer instead. Trimmed here, on the per-test copy only -- the checked-in file
+    itself is never touched -- so every test's own _extend_pool_with call still appends
+    cleanly on top of a single-name baseline."""
     dest = tmp_path / "interview_tracker_sample.xlsx"
     shutil.copy(REAL_TRACKER_PATH, dest)
+    workbook = load_workbook(dest)
+    sheet = workbook[INTERVIEWER_POOL_SHEET]
+    for row in sheet.iter_rows(min_row=2):
+        if row[0].value and str(row[0].value).strip().lower() == REAL_POOL_JOB_TITLE.lower():
+            row[1].value = REAL_POOL_INTERVIEWER
+            break
+    workbook.save(dest)
     return dest
 
 
@@ -319,6 +338,142 @@ def test_interviewer_with_no_personal_google_connection_still_receives_an_offer(
     outcomes_by_name = {entry.details["interviewer"]: entry.details["outcome"] for entry in attempts}
     assert outcomes_by_name[REAL_POOL_INTERVIEWER] == "busy_this_week"
     assert outcomes_by_name[name] == "offer_sent"
+
+
+def test_pool_interviewer_with_no_user_account_at_all_still_receives_an_offer(db_session, tmp_path, monkeypatch):
+    """The normal case now, not an edge case: a pool interviewer (like Suresh A or
+    Jagadeesh in the real tracker) who has an email on file in the Mails sheet but has
+    NEVER been registered as a User in this system at all. Reachability is decided purely
+    by the Mails sheet + interviewer_busy_this_week -- no User row is looked up or required
+    anywhere in this flow any more."""
+    tracker_path = _real_tracker_copy(tmp_path)
+    name = f"Interviewer {uuid.uuid4().hex[:8]}"
+    email = f"{uuid.uuid4().hex[:8]}@example.com"
+    _extend_pool_with(tracker_path, [name])
+    _add_mail_entry(tracker_path, name, email)
+    _configure_tracker(db_session, tracker_path)
+
+    # Kishore (the real pool row's own entry) always walks first -- mark busy so the walk
+    # reaches this test's own, deliberately unregistered interviewer.
+    _mark_busy_this_week(tracker_path, REAL_POOL_INTERVIEWER, datetime.now(timezone.utc))
+    assert db_session.query(User).filter(User.full_name == name).first() is None
+
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application(db_session, job, candidate)
+    recruiter = _make_user(db_session, "Recruiter", role="recruiter")
+    _connect_hr_smtp(db_session, smtp_username="hr-shared-token")
+
+    sent = _capture_emails(monkeypatch)
+    outcome, reason = neg.attempt_auto_negotiate_interview_slots(db_session, application, recruiter)
+
+    assert outcome == "started"
+    assert reason is None
+    assert len(sent) == 1
+    assert sent[0]["to"] == email
+    assert sent[0]["identity"] == "hr-shared-token"
+
+    row = _interviewer_row(db_session, application)
+    assert row.interviewer_name == name
+    assert row.interviewer_email == email
+    assert row.interviewer_user_id is None
+
+    attempts = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.entity_id == application.id, AuditLog.action == "interview_negotiation_interviewer_attempt")
+        .all()
+    )
+    outcomes_by_name = {entry.details["interviewer"]: entry.details["outcome"] for entry in attempts}
+    assert outcomes_by_name[REAL_POOL_INTERVIEWER] == "busy_this_week"
+    assert outcomes_by_name[name] == "offer_sent"
+    # Never logged any more -- there is no "is this a registered User" check left in this
+    # flow to produce this outcome.
+    assert "not_a_registered_user" not in outcomes_by_name.values()
+
+
+def test_pool_interviewer_with_no_mail_entry_is_skipped_as_no_email_on_file(db_session, tmp_path, monkeypatch):
+    """A pool name with no row in the Mails sheet at all is skipped for the specific,
+    correct reason "no_email_on_file" -- not "not_a_registered_user" (that outcome no
+    longer exists), since there is no User-account check left to fail here at all."""
+    tracker_path = _real_tracker_copy(tmp_path)
+    unreachable_name = f"Ghost Interviewer {uuid.uuid4().hex[:8]}"
+    reachable_name = f"Interviewer {uuid.uuid4().hex[:8]}"
+    reachable_email = f"{uuid.uuid4().hex[:8]}@example.com"
+    # unreachable_name is added to the pool but deliberately given NO Mails-sheet entry.
+    _extend_pool_with(tracker_path, [unreachable_name, reachable_name])
+    _add_mail_entry(tracker_path, reachable_name, reachable_email)
+    _configure_tracker(db_session, tracker_path)
+
+    _mark_busy_this_week(tracker_path, REAL_POOL_INTERVIEWER, datetime.now(timezone.utc))
+
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application(db_session, job, candidate)
+    recruiter = _make_user(db_session, "Recruiter", role="recruiter")
+    _connect_hr_smtp(db_session)
+
+    sent = _capture_emails(monkeypatch)
+    outcome, _reason = neg.attempt_auto_negotiate_interview_slots(db_session, application, recruiter)
+
+    assert outcome == "started"
+    assert len(sent) == 1
+    assert sent[0]["to"] == reachable_email
+
+    attempts = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.entity_id == application.id, AuditLog.action == "interview_negotiation_interviewer_attempt")
+        .all()
+    )
+    outcomes_by_name = {entry.details["interviewer"]: entry.details["outcome"] for entry in attempts}
+    assert outcomes_by_name[REAL_POOL_INTERVIEWER] == "busy_this_week"
+    assert outcomes_by_name[unreachable_name] == "no_email_on_file"
+    assert outcomes_by_name[reachable_name] == "offer_sent"
+
+
+def test_confirmed_interview_for_a_no_user_account_interviewer_gets_plaintext_fields_and_confirmation_email(
+    db_session, tmp_path, monkeypatch
+):
+    """End-to-end through _finalize for an interviewer who was never a registered User:
+    the confirmation email must still reach them (via the Mails-sheet address carried on
+    the NegotiationToken, not a User lookup), and the resulting Interview row must carry
+    their plain-text name/email directly -- interviewer_id stays NULL, but List/Dashboard/
+    reports must still be able to show who it was (see Interview's own docstring)."""
+    tracker_path = _real_tracker_copy(tmp_path)
+    name = f"Interviewer {uuid.uuid4().hex[:8]}"
+    email = f"{uuid.uuid4().hex[:8]}@example.com"
+    _extend_pool_with(tracker_path, [name])
+    _add_mail_entry(tracker_path, name, email)
+    _configure_tracker(db_session, tracker_path)
+    _mark_busy_this_week(tracker_path, REAL_POOL_INTERVIEWER, datetime.now(timezone.utc))
+    assert db_session.query(User).filter(User.full_name == name).first() is None
+
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application(db_session, job, candidate)
+    recruiter = _make_user(db_session, "Recruiter", role="recruiter")
+    _connect_hr_smtp(db_session, smtp_username="hr-shared-token")
+    sent = _capture_emails(monkeypatch)
+    _forbid_calendar_event(monkeypatch)
+
+    neg.attempt_auto_negotiate_interview_slots(db_session, application, recruiter)
+    interviewer_row = _interviewer_row(db_session, application)
+    picks = _slot_isos(interviewer_row.round_day)[:2]
+
+    neg.submit_negotiation_response(db_session, interviewer_row.token, action="submit", selected_isos=picks)
+    candidate_row = _candidate_row(db_session, application)
+    result = neg.submit_negotiation_response(db_session, candidate_row.token, action="submit", selected_isos=picks)
+
+    assert result.status == "confirmed"
+
+    interview = db_session.query(Interview).filter(Interview.application_id == application.id).first()
+    assert interview is not None
+    assert interview.interviewer_id is None
+    assert interview.interviewer_name == name
+    assert interview.interviewer_email == email
+
+    confirmation_emails = sent[2:]
+    assert len(confirmation_emails) == 2
+    assert {e["to"] for e in confirmation_emails} == {email, candidate.email}
 
 
 # --- exactly-2-of-3 validation ---

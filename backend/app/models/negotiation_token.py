@@ -51,6 +51,11 @@ class NegotiationToken(Base):
     candidate_name = Column(Text)
     job_title = Column(Text)
     interviewer_name = Column(Text)
+    # The Interviewer Pool sheet's Mails-tab address for interviewer_name, captured at
+    # offer-send time (see tracker.email_for_interviewer) and carried forward through the
+    # candidate round -- this, not a User row, is what _finalize sends the final .ics
+    # confirmation to, since a pool interviewer is never required to have a User account.
+    interviewer_email = Column(Text)
     round_day = Column(Date, nullable=False)
     duration_minutes = Column(Integer, server_default=text("60"))
     tracker_path = Column(Text)

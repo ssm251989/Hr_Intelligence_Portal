@@ -190,6 +190,36 @@ def test_interviews_dashboard_stats_interviewer_workload_and_unassigned(client, 
     assert after_workload.get("Unassigned", 0) - before_unassigned == 1
 
 
+def test_interviews_dashboard_stats_interviewer_workload_groups_plaintext_interviewer(client, db_session):
+    """An interview scheduled through the interviewer-first negotiation flow for a pool
+    interviewer with no User account (interviewer_id NULL) must be grouped under that
+    interviewer's own plain-text name -- never dumped into "Unassigned" just because
+    there's no User row to join against (see Interview's own docstring)."""
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+
+    before = client.get("/reports/interviews-dashboard-stats").json()
+    before_workload = _labeled_map(before["interviewer_workload"])
+    before_unassigned = before_workload.get("Unassigned", 0)
+
+    for _ in range(2):
+        interview = Interview(
+            application_id=_make_application(db_session, job, candidate).id,
+            interviewer_id=None,
+            interviewer_name="zzPlaintextInterviewer",
+            interviewer_email="zzplaintext@example.com",
+            scheduled_at=datetime.now(timezone.utc),
+        )
+        db_session.add(interview)
+    db_session.commit()
+
+    after = client.get("/reports/interviews-dashboard-stats").json()
+    after_workload = _labeled_map(after["interviewer_workload"])
+
+    assert after_workload.get("zzPlaintextInterviewer", 0) == 2
+    assert after_workload.get("Unassigned", 0) == before_unassigned
+
+
 # --- scheduling_method_breakdown (auto vs manual) ---
 
 

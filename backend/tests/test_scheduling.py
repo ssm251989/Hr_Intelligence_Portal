@@ -458,6 +458,33 @@ def test_list_all_interviews_filters_by_interviewer(client, db_session):
     assert str(interview_b.id) not in ids
 
 
+def test_list_all_interviews_shows_plaintext_interviewer_name_when_no_user_account(client, db_session):
+    """An interview scheduled through the interviewer-first negotiation flow for a pool
+    interviewer with no User account has interviewer_id NULL -- the List page must fall
+    back to the plain-text interviewer_name captured at scheduling time (see Interview's
+    own docstring) rather than showing a blank name."""
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application(db_session, job, candidate, status="interview_scheduled")
+    interview = Interview(
+        application_id=application.id,
+        interviewer_id=None,
+        interviewer_name="Suresh A",
+        interviewer_email="si@ctdtechs.com",
+        scheduled_at=datetime.now(timezone.utc),
+        scheduling_method="auto",
+    )
+    db_session.add(interview)
+    db_session.commit()
+
+    response = client.get("/interviews", params={"job_role_id": str(job.id)})
+
+    assert response.status_code == 200
+    row = next(item for item in response.json()["items"] if item["interview_id"] == str(interview.id))
+    assert row["interviewer_id"] is None
+    assert row["interviewer_name"] == "Suresh A"
+
+
 def test_list_all_interviews_filters_by_status(client, db_session):
     job = _make_job(db_session)
     candidate = _make_candidate(db_session)

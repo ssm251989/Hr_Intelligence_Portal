@@ -114,7 +114,13 @@ def interview_row_to_item(
         job_role_id=application.job_role_id,
         job_title=job_title,
         interviewer_id=interview.interviewer_id,
-        interviewer_name=(interviewer.full_name or interviewer.email) if interviewer else None,
+        # Falls back to the plain-text name captured at scheduling time (see Interview's
+        # own docstring) whenever there's no User row to join against -- the
+        # interviewer-first negotiation flow (app/interview_scheduling/negotiation.py) never
+        # requires its pool interviewers to be registered Users, so interviewer_id is
+        # routinely NULL for interviews it schedules, and this must never read as
+        # "unassigned" when we actually know exactly who it was.
+        interviewer_name=(interviewer.full_name or interviewer.email) if interviewer else interview.interviewer_name,
         scheduled_at=interview.scheduled_at,
         scheduling_method=interview.scheduling_method,
         status=computed_status,

@@ -544,22 +544,44 @@ def interview_outcome_breakdown(db: Session) -> list[tuple[str, int]]:
 
 
 def interviewer_workload(db: Session, limit: Optional[int] = 10) -> list[tuple[str, int]]:
-    """Count of interviews per interviewer, sorted descending -- an interviewer with no
-    User account left (shouldn't happen, but interviewer_id is a nullable FK) never
-    silently vanishes: every interview always counts somewhere, including an "Unassigned"
-    bucket for interviewer_id IS NULL."""
+    """Count of interviews per interviewer, sorted descending -- every interview always
+    counts somewhere. An interview scheduled through a User account joins on that account's
+    name/email as before; one scheduled through the interviewer-first negotiation flow for a
+    pool interviewer with no User account (interviewer_id IS NULL, routine now that flow
+    never requires one -- see Interview's own docstring) groups instead on the plain-text
+    interviewer_name/interviewer_email captured at scheduling time, so a real, named
+    interviewer is never lumped into "Unassigned" just for lacking a login. Only an
+    interview with neither a User row nor any plain-text name/email on file (shouldn't
+    happen, but interviewer_id/interviewer_name/interviewer_email are all nullable) falls
+    into that catch-all bucket."""
     rows = (
         db.query(User.id, User.full_name, User.email, func.count(Interview.id))
         .join(Interview, Interview.interviewer_id == User.id)
         .group_by(User.id, User.full_name, User.email)
         .all()
     )
-    counts = [(full_name or email, count) for _user_id, full_name, email, count in rows]
-    unassigned = db.query(func.count(Interview.id)).filter(Interview.interviewer_id.is_(None)).scalar() or 0
-    if unassigned:
-        counts.append(("Unassigned", unassigned))
-    counts.sort(key=lambda row: row[1], reverse=True)
-    return counts[:limit] if limit else counts
+    counts: dict[str, int] = {}
+    for _user_id, full_name, email, count in rows:
+        counts[full_name or email] = counts.get(full_name or email, 0) + count
+
+    unassigned_rows = (
+        db.query(Interview.interviewer_name, Interview.interviewer_email, func.count(Interview.id))
+        .filter(Interview.interviewer_id.is_(None))
+        .group_by(Interview.interviewer_name, Interview.interviewer_email)
+        .all()
+    )
+    unassigned_total = 0
+    for name, email, count in unassigned_rows:
+        label = name or email
+        if label:
+            counts[label] = counts.get(label, 0) + count
+        else:
+            unassigned_total += count
+    if unassigned_total:
+        counts["Unassigned"] = counts.get("Unassigned", 0) + unassigned_total
+
+    ordered = sorted(counts.items(), key=lambda row: row[1], reverse=True)
+    return ordered[:limit] if limit else ordered
 
 
 INTERVIEW_SCHEDULING_METHODS = ("manual", "auto")

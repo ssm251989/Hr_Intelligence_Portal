@@ -12,12 +12,15 @@ tracker, app/interview_scheduling/tracker.py):
   2. Walk that list in order. Skip anyone tracker.interviewer_busy_this_week() says is
      already busy this week (the Interview Log sheet is the ONLY busy-check source here --
      no real-time Calendar call, unlike the older select_interviewer flow).
-  3. The first non-busy interviewer who also has an email in the Mails sheet and resolves
-     to exactly one registered User gets emailed ONE link (via the shared HR mailbox, never
-     a personal Gmail/Google connection -- hradmin65@gmail.com is the single account of
-     record for every interview-scheduling email this mechanic sends) to a page offering 3
-     canned times for "tomorrow" (10AM/3PM/6PM) -- pick EXACTLY 2, or decline ("None of
-     these work for me").
+  3. The first non-busy interviewer who also has an email in the Mails sheet gets emailed
+     ONE link (via the shared HR mailbox, never a personal Gmail/Google connection --
+     hradmin65@gmail.com is the single account of record for every interview-scheduling
+     email this mechanic sends) to a page offering 3 canned times for "tomorrow"
+     (10AM/3PM/6PM) -- pick EXACTLY 2, or decline ("None of these work for me"). There is no
+     requirement that the name resolve to a registered User account -- the Mails sheet
+     address is the only thing that makes someone reachable here (unlike the older
+     select_interviewer flow, which needs a User + connected Google Calendar to run its own
+     real-time availability check).
   4. A decline (or, defensively, anything else the submission handler treats as one) moves
      on to the next interviewer in the pool, for the SAME day.
   5. Once the whole pool is exhausted for a day, retry it once more for the day after --
@@ -63,7 +66,6 @@ from app.core.config import settings
 from app.integrations.google_calendar import APP_TIMEZONE, DEFAULT_INTERVIEW_DURATION_MINUTES, format_ist_datetime
 from app.integrations.hr_email import EmailAttachment, get_hr_integration, is_smtp_configured, send_hr_email, SmtpError
 from app.integrations.ics import build_interview_ics
-from app.interview_scheduling.service import _find_interviewer_user
 from app.interview_scheduling.storage import get_interview_scheduling_settings
 from app.interview_scheduling.tracker import (
     append_interview_log_row,
@@ -431,6 +433,7 @@ def _create_negotiation_row(
     candidate_name: Optional[str],
     job_title: Optional[str],
     interviewer_name: Optional[str],
+    interviewer_email: Optional[str] = None,
     round_day: date,
     tracker_path: str,
     now: Optional[datetime] = None,
@@ -439,7 +442,7 @@ def _create_negotiation_row(
     row = NegotiationToken(
         application_id=application.id, role=role, interviewer_user_id=interviewer_user_id,
         actor_email=actor_email, candidate_name=candidate_name, job_title=job_title,
-        interviewer_name=interviewer_name, round_day=round_day,
+        interviewer_name=interviewer_name, interviewer_email=interviewer_email, round_day=round_day,
         tracker_path=str(tracker_path), token=secrets.token_urlsafe(32),
         # Explicit Python wall-clock time, not the column's server_default=now() -- Postgres
         # now() is pinned to the enclosing transaction's start time, so two rows created
@@ -523,19 +526,19 @@ def _advance_interviewer_round(
     """Walks the job's Interviewer Pool, in order, for `round_day`, skipping anyone already
     attempted for this exact (application, round_day) pair (see _already_attempted_names --
     derived from audit_log, not a separate counter, so this is safely re-callable any number
-    of times as interviewers respond asynchronously), busy this week, missing a Mails-sheet
-    email, or not resolving to exactly one registered User. Starts a negotiation row for and
-    emails the first interviewer who clears every check, returning "started"; returns
-    "exhausted" once the whole pool has been walked with nobody clearing them all.
+    of times as interviewers respond asynchronously), busy this week, or missing a
+    Mails-sheet email. Starts a negotiation row for and emails the first interviewer who
+    clears every check, returning "started"; returns "exhausted" once the whole pool has
+    been walked with nobody clearing them all.
 
-    Deliberately does NOT require the interviewer to have their own personal Google
-    connection (unlike the older service.py select_interviewer flow, which still needs one
-    per interviewer to run its own real-time Calendar availability check) -- the shared HR
-    mailbox (hradmin65@gmail.com) is this app's single account of record for every email
-    this mechanic sends, interviewer and candidate alike, and availability here is decided
-    entirely by tracker.interviewer_busy_this_week's own Excel-log heuristic, which reads
-    nothing from any personal calendar. An interviewer needs only a registered User
-    account to be reachable -- never a Google connection of their own.
+    Deliberately does NOT require the interviewer to have a registered User account, or
+    their own personal Google connection (unlike the older service.py select_interviewer
+    flow, which needs both to run its own real-time Calendar availability check) -- the
+    shared HR mailbox (hradmin65@gmail.com) is this app's single account of record for
+    every email this mechanic sends, interviewer and candidate alike, and availability here
+    is decided entirely by tracker.interviewer_busy_this_week's own Excel-log heuristic,
+    which reads nothing from any personal calendar or User row. An interviewer's Mails-sheet
+    address is the only thing that makes them reachable.
     """
     pool = eligible_interviewers_for_job(Path(tracker_path), job.title)
 
@@ -551,15 +554,11 @@ def _advance_interviewer_round(
         if not email:
             _log_attempt(db, application, actor_user.email, name, round_day, "no_email_on_file")
             continue
-        interviewer_user = _find_interviewer_user(db, name)
-        if interviewer_user is None:
-            _log_attempt(db, application, actor_user.email, name, round_day, "not_a_registered_user")
-            continue
 
         row = _create_negotiation_row(
-            db, application=application, role="interviewer", interviewer_user_id=interviewer_user.id,
-            actor_email=actor_user.email, candidate_name=candidate.full_name, job_title=job.title,
-            interviewer_name=name, round_day=round_day, tracker_path=tracker_path,
+            db, application=application, role="interviewer", interviewer_user_id=None,
+            interviewer_email=email, actor_email=actor_user.email, candidate_name=candidate.full_name,
+            job_title=job.title, interviewer_name=name, round_day=round_day, tracker_path=tracker_path,
         )
         try:
             send_hr_email(
@@ -825,6 +824,7 @@ def _start_candidate_round(db: Session, application: Application, interviewer_ro
 
     row = _create_negotiation_row(
         db, application=application, role="candidate", interviewer_user_id=interviewer_row.interviewer_user_id,
+        interviewer_email=interviewer_row.interviewer_email,
         actor_email=interviewer_row.actor_email, candidate_name=candidate.full_name, job_title=job.title,
         interviewer_name=interviewer_row.interviewer_name, round_day=interviewer_row.round_day, tracker_path=tracker_path,
     )
@@ -905,6 +905,7 @@ def _reprompt_candidate(db: Session, application: Application, candidate_row: Ne
 
     new_row = _create_negotiation_row(
         db, application=application, role="candidate", interviewer_user_id=candidate_row.interviewer_user_id,
+        interviewer_email=candidate_row.interviewer_email,
         actor_email=candidate_row.actor_email, candidate_name=candidate_row.candidate_name, job_title=candidate_row.job_title,
         interviewer_name=candidate_row.interviewer_name, round_day=candidate_row.round_day, tracker_path=tracker_path,
     )
@@ -975,7 +976,14 @@ def _finalize(db: Session, application: Application, candidate_row: NegotiationT
 
     interview = Interview(
         application_id=application.id,
+        # interviewer_user_id is never resolved by this flow any more (see
+        # _advance_interviewer_round), so this is always None here -- interviewer_name/
+        # interviewer_email below are what List/Dashboard/reports actually display, set
+        # unconditionally rather than only as a NULL-interviewer_id fallback (see
+        # Interview's own docstring).
         interviewer_id=candidate_row.interviewer_user_id,
+        interviewer_name=candidate_row.interviewer_name,
+        interviewer_email=candidate_row.interviewer_email,
         scheduled_at=chosen_time,
         scheduling_method="auto",
     )
@@ -984,7 +992,7 @@ def _finalize(db: Session, application: Application, candidate_row: NegotiationT
     db.refresh(interview)
 
     candidate = db.get(Candidate, application.candidate_id)
-    interviewer = db.get(User, candidate_row.interviewer_user_id) if candidate_row.interviewer_user_id else None
+    interviewer_email = candidate_row.interviewer_email
     duration_minutes = candidate_row.duration_minutes or DEFAULT_INTERVIEW_DURATION_MINUTES
     job_title = candidate_row.job_title or ""
     candidate_name = candidate.full_name if candidate else candidate_row.candidate_name
@@ -992,16 +1000,16 @@ def _finalize(db: Session, application: Application, candidate_row: NegotiationT
     interviewer_sent = False
     candidate_sent = False
     hr_integration = get_hr_integration(db)
-    if is_smtp_configured(hr_integration) and candidate is not None and candidate.email and interviewer is not None and interviewer.email:
+    if is_smtp_configured(hr_integration) and candidate is not None and candidate.email and interviewer_email:
         ics_bytes = build_interview_ics(
             start=chosen_time, duration_minutes=duration_minutes,
             summary=f"Interview: {candidate_name or 'Candidate'} — {job_title}",
             organizer_email=hr_integration.from_address or hr_integration.smtp_username,
-            attendee_emails=[interviewer.email, candidate.email],
+            attendee_emails=[interviewer_email, candidate.email],
             description=f"Interview confirmed for application {application.id}.",
         )
         body = _build_confirmation_email_body(candidate_name, job_title, candidate_row.interviewer_name, chosen_time, duration_minutes)
-        interviewer_sent = _send_confirmation_email(hr_integration, to=interviewer.email, job_title=job_title, body=body, ics_bytes=ics_bytes)
+        interviewer_sent = _send_confirmation_email(hr_integration, to=interviewer_email, job_title=job_title, body=body, ics_bytes=ics_bytes)
         candidate_sent = _send_confirmation_email(hr_integration, to=candidate.email, job_title=job_title, body=body, ics_bytes=ics_bytes)
 
     log_action(
