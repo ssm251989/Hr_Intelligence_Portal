@@ -2,6 +2,7 @@ from app.models.application import Application
 from app.models.audit_log import AuditLog
 from app.models.bgv_document import BgvDocument
 from app.models.candidate import Candidate
+from app.models.connection import Connection, ConnectionAttempt, ConnectionOAuthToken, ConnectionRoute
 from app.models.hr_inbound_email import HrInboundEmail
 from app.models.hr_integration import HrIntegration
 from app.models.interview import Interview
@@ -30,6 +31,10 @@ __all__ = [
     "AuditLog",
     "BgvDocument",
     "Candidate",
+    "Connection",
+    "ConnectionAttempt",
+    "ConnectionOAuthToken",
+    "ConnectionRoute",
     "HrInboundEmail",
     "HrIntegration",
     "Interview",

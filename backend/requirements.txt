@@ -21,3 +21,4 @@ apscheduler
 openpyxl
 icalendar
 celery
+json-logic-qubit

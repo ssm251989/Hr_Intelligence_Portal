@@ -16,6 +16,7 @@ import { ROLE_MATRIX } from "../auth/roles";
 import HrMailboxSettingsCard from "../components/HrMailboxSettingsCard";
 import InterviewTrackerSettingsCard from "../components/InterviewTrackerSettingsCard";
 import PlatformSettingsPanel from "../components/PlatformSettingsPanel";
+import ConnectionsPanel from "../components/ConnectionsPanel";
 
 function IntegrationCard({
   title,
@@ -148,6 +149,7 @@ export default function SettingsPage() {
           connect={integrationsApi.connectLinkedin}
         />
         <InterviewTrackerSettingsCard />
+        {canManagePlatformSettings && <ConnectionsPanel />}
         {canManagePlatformSettings && <PlatformSettingsPanel />}
       </Stack>
     </Box>

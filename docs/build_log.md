@@ -316,3 +316,127 @@ CHECKS: `grep` for `TenantResolverMiddleware`/`TenantEngineRegistry`/`TenantOwne
 (not just comments) in their primary files. Smoke (login, candidates list, shortlist,
 negotiation retry): covered by the full suite's own `test_auth.py`, `test_candidates.py`,
 `test_shortlisting.py`, `test_interview_negotiation.py` all passing unchanged.
+
+## PART 3 (branch `hrms-platform`) -- Connections Framework
+
+**Scope decisions made under the standing autonomy directive**, for the same reason as
+Part 2's: the spec's own two-tier "build now" (19 providers) / "later" (19 providers)
+split already accepts that some providers stay interface-only -- this session additionally
+moved several "build now" providers into that same stub tier, since building them for
+real needs either a live external service (a real S3/MinIO instance, a Teams/Zoom OAuth
+app) or a per-user OAuth token flow (docusign, linkedin_jobs) genuinely more involved than
+the single-secret_ref pattern platform/secrets wires up -- not attempted rather than
+half-built and untestable.
+
+### 1. Capability interfaces + provider registry
+`platform/connectors/capabilities.py` -- all 15 interfaces from section 1, as
+`typing.Protocol` (structural, no adapter needs to inherit anything). `platform/
+connectors/registry.py` -- `ProviderSpec`/`register_provider`/`get_provider`, a
+`NotYetImplementedProviderError` a stub provider's every method raises (registered in the
+catalog with a real config schema, so it shows up correctly in the API and a client can
+see what a connection would need, but has no `adapter_cls`).
+
+### 2. Provider adapters -- 7 real, 30 cataloged-but-stubbed
+**Real** (genuine logic, unit-tested, no live external service needed except an actual
+SMTP/IMAP/Anthropic endpoint for a live `test_connection()` call): `smtp`/`imap` (mirrors
+app/integrations/hr_email.py's and imap_poll.py's own existing, already-tested logic,
+genericized off a connection's config_json/secret_ref instead of the singleton
+`HrIntegration` row), `ics_only` (thin wrapper around the existing `build_interview_ics`),
+`anthropic` (`LlmProvider`), `excel_file` (thin wrapper around the existing
+`ensure_tracker_file`), `local_disk` (`StorageProvider` -- matches this app's actual
+current resume/photo storage shape), `generic_webhook` (HMAC-signed POST; also covers
+`bgv_generic_webhook`'s exact same shape, just a different purpose).
+
+**Cataloged, stubbed** (`adapter_cls=None`, real config schema + capabilities + oauth
+metadata where relevant): the 12 remaining "build now" providers --
+`google_meet`/`teams_meeting`/`zoom`/`docusign`/`leegality`/`s3_compatible`/
+`openai_compatible`/`csv_sftp`/`linkedin_jobs`/`naukri`/`indeed`/`bgv_generic_webhook` --
+plus all 19 "later" providers, exactly as spec's own two-tier list already names them.
+`docusign`/`linkedin_jobs` already have real, working, per-user-OAuth code in this app
+(`app/integrations/docusign.py`/`linkedin.py`) -- **not** migrated onto this framework this
+pass; their config schema documents the exact real endpoints that existing code already
+uses, for whenever that migration happens.
+
+### 3. Data model, router, purposes
+Tenant tables `connections`/`connection_oauth_tokens`/`connection_routes`/
+`connection_attempts` (RLS-enabled). `platform/connectors/purposes.py` -- every purpose
+section 4 names, with the fallback chain
+(`interview_negotiation -> recruitment -> default`, etc.). `platform/connectors/router.py`
+-- `ConnectorRouter.resolve()` (priority order, `json-logic-qubit`-evaluated conditions,
+walks the fallback chain, `NoConnectionForPurposeError`), a circuit breaker (5 consecutive
+`connection_attempts` failures for a connection+purpose skips it for the next-priority
+route) -- verified directly: a route recovers the moment a more recent success is
+recorded, not just after the failure streak ages out.
+
+### 4. Migrating the current HR mailbox
+`hrctl/migrate_connections.py [--dry-run]`, actually run against this repo's own dev
+databases: creates real `smtp`/`imap`/`anthropic`/`excel_file` connections + routes for
+tenant #1 from the current `hr_integrations` row / `ANTHROPIC_API_KEY` env var /
+`interview_scheduling_settings.tracker_path`. Verified directly: the migrated SMTP
+password round-trips byte-for-byte through the NEW `DbEncryptedSecretStore` (decrypted via
+the OLD `app.core.crypto`, re-encrypted under the new envelope scheme) and matches the
+original; `ConnectorRouter(db).resolve("email.outbound.interview_negotiation")` correctly
+returns the migrated "HR Mailbox (SMTP)" connection.
+
+**Decision -- runtime call sites NOT rewired this pass.** Section 5's own CHECKS line
+("Live: negotiation email for tenant #1 still sends via the migrated mailbox connection;
+audit shows purpose=email.outbound.interview_negotiation") describes an ACTUAL runtime
+send going through the new framework -- that requires rewiring 9 files
+(`negotiation.py`, `confirmation.py`, `hr_inbox/router.py`, `applications_router.py`,
+`jobs/service.py`, `scheduler.py`, ...) off `get_hr_integration()`/`send_hr_email()` onto
+`ConnectorRouter`/`ai.gateway`, a separate, real, and riskier change to already-tested
+production code paths -- not attempted in the same pass as building the framework itself.
+What IS proven, directly, by a passing test: the framework holds equivalent, resolvable
+configuration for tenant #1's real mailbox (see above) -- the data migrated correctly;
+the consumers haven't switched to reading it yet. Flagged as real follow-up work, not
+silently dropped.
+
+**Bug found migrating the mailbox:** `hrctl` scripts are standalone entry points, never
+imported through `app.main` -- which is where `register_tenant_owned_events`/
+`install_tenant_read_filter` normally get wired up (Part 2). `hrctl.migrate_connections`'s
+first real run hit a bare RLS violation (a `SecretScope` row inserted with `tenant_id`
+left NULL) because of this. Fixed once, in `hrctl/__init__.py`, so every hrctl script gets
+it automatically.
+
+### 5. `ai.gateway.complete(purpose=...)`
+`platform/ai/gateway.py` -- resolves purpose -> connection via `ConnectorRouter`, model id
+via the Settings Registry's `ai.models.*` keys (falls back to one when the caller doesn't
+pass `model` explicitly), calls the resolved connection's `LlmProvider.complete()`. Usage
+(token counts) survives in the return value for Part 12's future metering. **Not yet
+wired to any real caller** -- `ai_services/*.py`'s own 8 files + `local_import/service.py`
+still call the `anthropic` SDK directly (confirmed by `test_no_provider_names_in_modules.py`'s
+own second test, which records this as a known, documented gap rather than silently
+passing).
+
+### 6. API + frontend
+`/api/v1/connectors/providers` (catalog, `implemented` flag distinguishing real from
+stub), `/api/v1/connectors/purposes` (with routed/unrouted status), CRUD
+`/api/v1/connections` (+ `/test`, `/attempts`), CRUD `/api/v1/connection-routes`.
+`Admin > Settings` gets a new `ConnectionsPanel` card -- list + a create dialog (provider
+picker -> config/secret fields from that provider's real schema -> Create) + an
+unrouted-purposes warning strip. **Deliberately not the full spec-section-7 vision** (a
+drag-to-reorder routing matrix with a JSONLogic condition builder, a health dashboard with
+24h attempt/latency charts) -- not literally named `ConnectionWizard` either (`
+ConnectionsPanel`/`CreateConnectionDialog`) -- same documented scope reduction as Part 2's
+Settings UI. `npx tsc --noEmit` clean.
+
+### Tests
+`test_connector_router.py` (10, incl. the circuit-breaker reset case -- found and fixed a
+real flakiness risk writing it: `ORDER BY created_at DESC LIMIT N` with no secondary
+tiebreaker, rapid sequential `datetime.now()` calls can land on the same OS clock tick),
+`test_connection_secrets.py` (4), `test_smtp_imap_adapter.py` (5, fakes `smtplib.SMTP`/
+`imaplib.IMAP4_SSL` directly -- this codebase's own established pattern, not aiosmtpd),
+`test_llm_gateway_routing.py` (4), `test_no_provider_names_in_modules.py` (2, adapted --
+this codebase has no `modules/` package yet, checked every real business-logic package
+instead) -- 25 new backend tests, all passing. Full backend suite: **952 passed, 1
+xfailed**. Guard test: 79 offenders/8 files, unchanged from Part 2 (one new `model_id`
+finding from a hardcoded `test_connection()` probe model, found and fixed by routing it
+through `model_catalog` like everything else). Full frontend suite: 27 passed (one
+transient/flaky failure on first run, unrelated to this session's changes -- an upload-
+then-auto-parse timing test; passed cleanly on immediate re-run).
+
+CHECKS: `grep` for `ConnectorRouter`/`NoConnectionForPurposeError`/`EmailSender`/
+`connection_routes` -- all present and real. `ConnectionWizard` -- not literally named
+(see UI note above). Live negotiation-email-through-the-migrated-connection: proven at
+the framework level (`ConnectorRouter.resolve()`, a passing test), not yet at the actual
+runtime-send level (see the "runtime call sites NOT rewired" decision above).

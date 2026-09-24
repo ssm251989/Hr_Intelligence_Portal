@@ -31,6 +31,11 @@ from app.platform.tenancy.mixins import install_tenant_read_filter, register_ten
 from app.platform.settings.bootstrap_definitions import register_all as register_settings_definitions
 from app.platform.settings.router import router as settings_router
 from app.platform.secrets.router import router as secrets_router
+from app.platform.connectors.api_router import (
+    connections_router,
+    router as connectors_router,
+    routes_router as connection_routes_router,
+)
 
 register_tenant_owned_events(tenant_data_base)
 install_tenant_read_filter()
@@ -86,6 +91,9 @@ app.include_router(interview_negotiation_router)
 app.include_router(hr_inbox_router)
 app.include_router(settings_router)
 app.include_router(secrets_router)
+app.include_router(connectors_router)
+app.include_router(connections_router)
+app.include_router(connection_routes_router)
 
 
 @app.get("/health")

@@ -272,6 +272,44 @@ export const platformSettingsApi = {
   history: (key: string) => get<SettingHistoryEntry[]>(`/api/v1/settings/${key}/history`),
 };
 
+// ---- Connections framework (Part 3) ----
+
+export interface ProviderCatalogEntry {
+  code: string;
+  capabilities: string[];
+  config_schema: Record<string, unknown>;
+  secret_fields: string[];
+  oauth: Record<string, unknown> | null;
+  implemented: boolean;
+}
+
+export interface ConnectionRow {
+  id: UUID;
+  name: string;
+  provider_code: string;
+  capability: string[];
+  config_json: Record<string, unknown>;
+  status: string;
+  last_tested_at: string | null;
+  last_test_result: { success: boolean; error?: string | null } | null;
+  health_status: string | null;
+}
+
+export interface PurposeStatus {
+  purpose: string;
+  routed: boolean;
+}
+
+export const connectorsApi = {
+  providers: () => get<ProviderCatalogEntry[]>("/api/v1/connectors/providers"),
+  purposes: () => get<PurposeStatus[]>("/api/v1/connectors/purposes"),
+  connections: () => get<ConnectionRow[]>("/api/v1/connections"),
+  createConnection: (payload: { name: string; provider_code: string; config: Record<string, unknown>; secrets: Record<string, string> }) =>
+    post<ConnectionRow>("/api/v1/connections", payload),
+  testConnection: (id: UUID) => post<{ success: boolean; error?: string | null }>(`/api/v1/connections/${id}/test`),
+  deleteConnection: (id: UUID) => del<void>(`/api/v1/connections/${id}`),
+};
+
 export const integrationsApi = {
   connectGoogle: () => get<GoogleAuthUrl>("/integrations/google/connect"),
   googleStatus: (userId?: UUID) =>
