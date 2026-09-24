@@ -1,0 +1,12 @@
+# Hardcode guard allow-list (docs/HRMS_COMPLETE_SPEC.txt, Part 1, Step 3).
+#
+# One entry per line: path:line_regex # reason
+#   - path is relative to the repo root, forward-slashed (matches
+#     backend/tests/test_no_hardcoded_tenant_values.py's own Finding.path).
+#   - line_regex is matched against the exact offending source line.
+#   - Every entry needs a real reason -- this file is reviewed at the end of Part 4, when
+#     the guard test flips from xfail(strict=True) to a hard pass.
+#
+# Blank lines and lines starting with # are ignored.
+
+frontend/src/components/InterviewTrackerSettingsCard.tsx:placeholder="e\.g\. /srv # UI placeholder example text shown in an empty text field, not a real configured path or a value the app ever reads/writes -- purely illustrates the expected format for the admin.

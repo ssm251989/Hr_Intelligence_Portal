@@ -466,6 +466,24 @@ def test_jobs_dashboard_stats_top_jobs_ranked_by_application_count(client, db_se
     assert len(body["top_jobs"]) <= 5
 
 
+def test_jobs_dashboard_stats_top_jobs_tiebreak_is_stable(client, db_session):
+    """Two jobs tied on application_count (here, both zero) must always come back in the
+    same order -- oldest job created_at first, then id -- rather than whatever order an
+    unordered-tiebreak query happens to return this time (see router.py's top_job_rows
+    query, which adds JobRole.created_at/id as secondary sort keys for exactly this)."""
+    older = _make_job(db_session, title="QaZzTieOlder", created_at=_NOW - timedelta(days=2))
+    newer = _make_job(db_session, title="QaZzTieNewer", created_at=_NOW - timedelta(days=1))
+
+    body = client.get("/reports/jobs-dashboard-stats").json()
+    tied_ids = [str(older.id), str(newer.id)]
+    ordered_tied = [row["job_id"] for row in body["top_jobs"] if row["job_id"] in tied_ids]
+
+    # Both may not make the top-5 alongside other real/ambient jobs -- what must hold,
+    # whenever both do appear, is that the older one is never ranked after the newer one.
+    if len(ordered_tied) == 2:
+        assert ordered_tied == [str(older.id), str(newer.id)]
+
+
 # --- /reports/jobs-dashboard-stats: monthly series + comparison-month trend ---
 
 _TREND_FIELDS = [
@@ -1057,14 +1075,17 @@ def test_candidates_dashboard_stats_data_sources_local_import_connected_only_aft
 def test_candidates_top_skills_no_limit_param_returns_every_skill(client, db_session):
     # No `limit` query param at all -- the dedicated endpoint's default is "everything"
     # (unlike the dashboard card, which always requests limit=5 explicitly). This is what
-    # backs "View all skills."
-    for _ in range(15):
-        _make_candidate(db_session, parsed_fields={"skills": ["QaZzTopSkillsNoLimitParam"]})
+    # backs "View all skills." Self-contained: creates its own 6 distinct skills and asserts
+    # every one of them comes back, rather than a single repeated skill plus `len(body) > 5`,
+    # which only passed by relying on this shared dev DB already having enough OTHER ambient
+    # skills to push the response past 5 rows.
+    for i in range(6):
+        _make_candidate(db_session, parsed_fields={"skills": [f"QaZzTopSkillsNoLimitParam{i}"]})
 
     body = client.get("/reports/candidates-top-skills").json()
-    assert len(body) > 5
     labels = {row["label"] for row in body}
-    assert "QaZzTopSkillsNoLimitParam" in labels
+    for i in range(6):
+        assert f"QaZzTopSkillsNoLimitParam{i}" in labels
 
 
 def test_candidates_top_skills_unlimited_returns_more_than_five(client, db_session):

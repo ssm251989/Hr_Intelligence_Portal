@@ -73,6 +73,7 @@ from app.interview_scheduling.tracker import (
     email_for_interviewer,
     interviewer_busy_this_week,
     sync_interviewer_pool_job_titles,
+    TrackerFileLockedError,
 )
 from app.models.application import Application
 from app.models.audit_log import AuditLog
@@ -116,6 +117,33 @@ _STALE_TOKENS_INVALIDATED_ACTION = "interview_negotiation_stale_tokens_invalidat
 # ELIGIBLE. Deliberately excluded from NEGOTIATION_STATUS_ACTIONS below, same reasoning as
 # _RETRY_TRIGGERED_ACTION -- always immediately followed by a real outcome action.
 _MANUAL_SCHEDULING_CLEARED_ACTION = "interview_negotiation_manual_scheduling_cleared"
+# Logged instead of the usual tracker write whenever a bookkeeping-only Interview Log
+# append (_flag_for_manual_scheduling / _flag_send_failed) hits TrackerFileLockedError -- the
+# real outcome (manual scheduling required / send failed) is still recorded by log_action in
+# the same function, so this is purely "the Excel copy of that didn't happen too" for a
+# recruiter reconciling the tracker against the audit log.
+_TRACKER_LOG_WRITE_FAILED_ACTION = "interview_negotiation_tracker_log_write_failed"
+
+
+# The one substring every tracker.TrackerFileLockedError message starts with (see its own
+# definition) -- retry_negotiation below uses this to recognize that specific skip reason
+# among attempt_auto_negotiate_interview_slots' many other plain-string ones (which must all
+# stay ordinary 200-with-reason responses, not a distinct HTTP status) and re-raise it as
+# TrackerLockedNegotiationError instead, so POST .../retry-negotiation's caller (the router)
+# can map JUST this one to a 409 {code: "TRACKER_LOCKED"} the frontend shows a specific
+# "close Excel and retry" snackbar for.
+_TRACKER_LOCKED_REASON_MARKER = "Tracker file is open in Excel"
+
+
+class TrackerLockedNegotiationError(Exception):
+    """Raised when the negotiation flow could not write its own Interview Log row because
+    the tracker file is locked (see tracker.TrackerFileLockedError) AT A POINT WHERE THAT
+    ROW WAS THE ONLY RECORD an email had actually gone out -- unlike the bookkeeping-only
+    call sites above (which just log _TRACKER_LOG_WRITE_FAILED_ACTION and move on), here the
+    negotiation row created for that send is invalidated first (see _invalidate_batch) so no
+    live token is ever left representing an offer whose tracker bookkeeping silently failed,
+    mirroring exactly how a SmtpError send failure is already handled. A retry (POST
+    .../retry-negotiation) starts a fresh round once the file is closed."""
 
 # Every "what happened to this application's negotiation" action, latest-one-wins -- the
 # single signal app.candidates.router row_to_item exposes as negotiation_status (so a
@@ -494,10 +522,17 @@ def _find_current_row(
 
 
 def _flag_for_manual_scheduling(db: Session, application: Application, tracker_path: str, candidate: Candidate, job: JobRole, actor_email: str) -> None:
-    append_interview_log_row(
-        Path(tracker_path),
-        {"Candidate": candidate.full_name or "", "Job Title": job.title, "Status": "Manual Scheduling Required"},
-    )
+    try:
+        append_interview_log_row(
+            Path(tracker_path),
+            {"Candidate": candidate.full_name or "", "Job Title": job.title, "Status": "Manual Scheduling Required"},
+        )
+    except TrackerFileLockedError:
+        # Bookkeeping-only write (see _TRACKER_LOG_WRITE_FAILED_ACTION's own comment) -- the
+        # actual manual-scheduling flag below is what _is_flagged_for_manual_scheduling
+        # reads, so it's recorded either way; a locked file just means the tracker's own
+        # copy needs a recruiter to reconcile it once they've closed Excel.
+        log_action(db, "application", application.id, _TRACKER_LOG_WRITE_FAILED_ACTION, actor_email, {"job_title": job.title})
     log_action(
         db, "application", application.id, _MANUAL_ACTION, actor_email,
         {"job_title": job.title, "candidate_name": candidate.full_name},
@@ -513,10 +548,15 @@ def _flag_send_failed(db: Session, application: Application, tracker_path: str, 
     glance. Before this, a send failure was visible only in audit_log's
     interview_negotiation_skipped entry (see _skip), invisible from the tracker a
     recruiter actually works out of day to day."""
-    append_interview_log_row(
-        Path(tracker_path),
-        {"Candidate": candidate.full_name or "", "Job Title": job.title, "Status": "Send Failed - Retry Needed"},
-    )
+    try:
+        append_interview_log_row(
+            Path(tracker_path),
+            {"Candidate": candidate.full_name or "", "Job Title": job.title, "Status": "Send Failed - Retry Needed"},
+        )
+    except TrackerFileLockedError:
+        # See _flag_for_manual_scheduling's own comment -- bookkeeping-only, already skipped
+        # via _skip by every caller of this function.
+        log_action(db, "application", application.id, _TRACKER_LOG_WRITE_FAILED_ACTION, "system", {"job_title": job.title})
 
 
 def _advance_interviewer_round(
@@ -573,14 +613,22 @@ def _advance_interviewer_round(
             # audit log) still runs exactly as before.
             _invalidate_batch(db, [row])
             raise
-        append_interview_log_row(
-            Path(tracker_path),
-            {
-                "Candidate": candidate.full_name or "", "Job Title": job.title, "Assigned Interviewer": name,
-                "Slots Offered": ", ".join(_format_slot(t) for t in _slot_times_for_day(round_day)),
-                "Status": "Awaiting Interviewer Response",
-            },
-        )
+        try:
+            append_interview_log_row(
+                Path(tracker_path),
+                {
+                    "Candidate": candidate.full_name or "", "Job Title": job.title, "Assigned Interviewer": name,
+                    "Slots Offered": ", ".join(_format_slot(t) for t in _slot_times_for_day(round_day)),
+                    "Status": "Awaiting Interviewer Response",
+                },
+            )
+        except TrackerFileLockedError as exc:
+            # See TrackerLockedNegotiationError's own docstring -- the interviewer's send
+            # already succeeded, but with no Interview Log row recorded for it, the row must
+            # not survive as a live token either (same "no orphan tokens" reasoning as the
+            # SmtpError branch above).
+            _invalidate_batch(db, [row])
+            raise TrackerLockedNegotiationError(str(exc)) from exc
         _log_attempt(db, application, actor_user.email, name, round_day, "offer_sent")
         log_action(
             db, "application", application.id, _BATCH_STARTED_ACTION, actor_user.email,
@@ -643,14 +691,21 @@ def attempt_auto_negotiate_interview_slots(db: Session, application: Application
     # Interview Scheduling has no scheduler of its own to keep the Interviewer Pool sheet's
     # Job Title column in sync -- this is the one recurring moment it's actually read from
     # for this flow, same reasoning as the older propose_interview_slots.
-    sync_interviewer_pool_job_titles(db, Path(tracker_path))
+    try:
+        sync_interviewer_pool_job_titles(db, Path(tracker_path))
+    except TrackerFileLockedError as exc:
+        # Nothing committed yet at this point -- a clean skip, same as every other
+        # missing-prerequisite reason above (see docstring: never raises).
+        reason = str(exc)
+        _skip(db, application, actor_user.email, reason)
+        return None, reason
 
     now = datetime.now(timezone.utc)
     round_day = _tomorrow_ist(now)
 
     try:
         outcome = _advance_interviewer_round(db, application, candidate, job, tracker_path, round_day, actor_user, hr_integration)
-    except SmtpError as exc:
+    except (SmtpError, TrackerLockedNegotiationError) as exc:
         reason = str(exc) or "Could not send the interviewer negotiation email"
         _skip(db, application, actor_user.email, reason)
         _flag_send_failed(db, application, tracker_path, candidate, job)
@@ -663,7 +718,7 @@ def attempt_auto_negotiate_interview_slots(db: Session, application: Application
     retry_day = round_day + timedelta(days=1)
     try:
         outcome = _advance_interviewer_round(db, application, candidate, job, tracker_path, retry_day, actor_user, hr_integration)
-    except SmtpError as exc:
+    except (SmtpError, TrackerLockedNegotiationError) as exc:
         reason = str(exc) or "Could not send the interviewer negotiation email"
         _skip(db, application, actor_user.email, reason)
         _flag_send_failed(db, application, tracker_path, candidate, job)
@@ -745,6 +800,12 @@ def retry_negotiation(db: Session, application: Application, actor_user: User) -
     rows were cleaned up first (0 most of the time, now that _invalidate_batch runs inline
     on every send failure -- non-zero only for a token that predates that fix, or some other
     reason it was left live without resolving).
+
+    Raises TrackerLockedNegotiationError -- instead of returning its reason as plain text
+    like every other skip -- when the underlying cause was specifically the tracker file
+    being locked (see _TRACKER_LOCKED_REASON_MARKER): the router maps that one to a distinct
+    HTTP 409 the frontend shows a specific snackbar for, since "close Excel and retry" is
+    actionable in a way no other skip reason here is.
     """
     now = datetime.now(timezone.utc)
     stale = _live_tokens(db, application, now)
@@ -757,6 +818,8 @@ def retry_negotiation(db: Session, application: Application, actor_user: User) -
     log_action(db, "application", application.id, _RETRY_TRIGGERED_ACTION, actor_user.email, {})
     clear_manual_scheduling_flag(db, application, actor_user.email)
     outcome, reason = attempt_auto_negotiate_interview_slots(db, application, actor_user)
+    if reason and reason.startswith(_TRACKER_LOCKED_REASON_MARKER):
+        raise TrackerLockedNegotiationError(reason)
     return outcome, len(stale), reason
 
 
@@ -786,7 +849,7 @@ def advance_after_interviewer_batch_resolved(db: Session, application: Applicati
 
     try:
         outcome = _advance_interviewer_round(db, application, candidate, job, tracker_path, batch_round_day, actor_user, hr_integration)
-    except SmtpError:
+    except (SmtpError, TrackerLockedNegotiationError):
         return
     if outcome == "started":
         return
@@ -799,7 +862,7 @@ def advance_after_interviewer_batch_resolved(db: Session, application: Applicati
     retry_day = batch_round_day + timedelta(days=1)
     try:
         outcome = _advance_interviewer_round(db, application, candidate, job, tracker_path, retry_day, actor_user, hr_integration)
-    except SmtpError:
+    except (SmtpError, TrackerLockedNegotiationError):
         return
     if outcome == "started":
         return
@@ -843,14 +906,22 @@ def _start_candidate_round(db: Session, application: Application, interviewer_ro
         _skip(db, application, interviewer_row.actor_email, str(exc) or "Could not send the candidate negotiation email")
         return
 
-    append_interview_log_row(
-        Path(tracker_path),
-        {
-            "Candidate": candidate.full_name or "", "Job Title": job.title,
-            "Assigned Interviewer": interviewer_row.interviewer_name or "",
-            "Status": "Awaiting Candidate Response",
-        },
-    )
+    try:
+        append_interview_log_row(
+            Path(tracker_path),
+            {
+                "Candidate": candidate.full_name or "", "Job Title": job.title,
+                "Assigned Interviewer": interviewer_row.interviewer_name or "",
+                "Status": "Awaiting Candidate Response",
+            },
+        )
+    except TrackerFileLockedError as exc:
+        # Same "no orphan tokens" reasoning as _advance_interviewer_round's own
+        # TrackerFileLockedError handling -- the candidate's send already succeeded, but
+        # with no Interview Log row for it, this row must not survive as a live token.
+        _invalidate_batch(db, [row])
+        _skip(db, application, interviewer_row.actor_email, str(exc))
+        return
     log_action(
         db, "application", application.id, _CANDIDATE_ROUND_STARTED_ACTION, interviewer_row.actor_email,
         {"interviewer": interviewer_row.interviewer_name},
@@ -1030,17 +1101,29 @@ def _finalize(db: Session, application: Application, candidate_row: NegotiationT
 
     if tracker_path:
         job = db.get(JobRole, application.job_role_id)
-        append_interview_log_row(
-            Path(tracker_path),
-            {
-                "Candidate": candidate.full_name if candidate else "", "Job Title": job.title if job else "",
-                "Assigned Interviewer": candidate_row.interviewer_name or "",
-                "Final Scheduled Time": _format_slot(chosen_time),
-                "Candidate Selected Slot": _format_slot(chosen_time),
-                "Interviewer Confirmed": "Yes", "Candidate Confirmed": "Yes",
-                "Status": "Confirmed",
-            },
-        )
+        try:
+            append_interview_log_row(
+                Path(tracker_path),
+                {
+                    "Candidate": candidate.full_name if candidate else "", "Job Title": job.title if job else "",
+                    "Assigned Interviewer": candidate_row.interviewer_name or "",
+                    "Final Scheduled Time": _format_slot(chosen_time),
+                    "Candidate Selected Slot": _format_slot(chosen_time),
+                    "Interviewer Confirmed": "Yes", "Candidate Confirmed": "Yes",
+                    "Status": "Confirmed",
+                },
+            )
+        except TrackerFileLockedError:
+            # Unlike every earlier append_interview_log_row call site in this module, the
+            # interview is ALREADY committed as scheduled and both parties already emailed
+            # their .ics confirmation by this point -- nothing here can or should be rolled
+            # back over a locked Excel file. Logged for a recruiter to reconcile the tracker
+            # by hand once they've closed it; the candidate/interviewer-facing outcome below
+            # is unaffected.
+            log_action(
+                db, "application", application.id, _TRACKER_LOG_WRITE_FAILED_ACTION, "candidate",
+                {"interview_id": str(interview.id)},
+            )
 
     return NegotiationPageState(status="confirmed", row=candidate_row, scheduled_at=chosen_time)
 

@@ -46,6 +46,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { reportsApi } from "../api/client";
 import type { RecentActivityItem } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
+import { ORG_DISPLAY_NAME, ORG_LOGO_MARK } from "../bootstrap/defaults";
 import ConfirmDialog from "../components/ConfirmDialog";
 import RecentActivityFeed from "../components/RecentActivityFeed";
 import { useThemeMode } from "../theme/ThemeModeContext";
@@ -247,11 +248,11 @@ export default function AppLayout() {
                 flexShrink: 0,
               }}
             >
-              CTD
+              {ORG_LOGO_MARK}
             </Box>
             <Box sx={{ display: { xs: "none", sm: "block" } }}>
               <Typography variant="subtitle1" fontWeight={700} lineHeight={1.1}>
-                CTD Techs
+                {ORG_DISPLAY_NAME}
               </Typography>
               <Typography variant="caption" color="text.secondary" lineHeight={1}>
                 HR Automation

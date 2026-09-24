@@ -120,6 +120,20 @@ export function extractErrorMessage(err: unknown, fallback: string): string {
   return fallback;
 }
 
+/**
+ * True for the one HTTPException detail shape a hand-raised backend error uses to signal a
+ * specific, actionable failure code rather than free text -- currently only
+ * {code: "TRACKER_LOCKED", message} from POST .../retry-negotiation (see
+ * app/interview_scheduling/router.py), so a caller can show a fixed, specific message
+ * instead of whatever string extractErrorMessage would otherwise surface.
+ */
+export function hasErrorCode(err: unknown, code: string): boolean {
+  if (!(err instanceof ApiError) || !err.detail || typeof err.detail !== "object") {
+    return false;
+  }
+  return (err.detail as { code?: unknown }).code === code;
+}
+
 let authToken: string | null = null;
 let onUnauthorized: (() => void) | null = null;
 

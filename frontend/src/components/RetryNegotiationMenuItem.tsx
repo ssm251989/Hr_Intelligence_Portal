@@ -1,7 +1,7 @@
 import { useState } from "react";
 import MenuItem from "@mui/material/MenuItem";
 
-import { extractErrorMessage, interviewSchedulingApi } from "../api/client";
+import { extractErrorMessage, hasErrorCode, interviewSchedulingApi } from "../api/client";
 import { shortlistStatusOf, type CandidateApplicationRow } from "../api/types";
 
 // Shared by every List page that can show a Shortlisted ('hr_selected') row -- Shortlisting
@@ -49,7 +49,11 @@ export default function RetryNegotiationMenuItem({
       }
       onDone();
     } catch (err) {
-      onError(extractErrorMessage(err, "Failed to retry interview scheduling"));
+      if (hasErrorCode(err, "TRACKER_LOCKED")) {
+        onError("Tracker file is open in Excel -- close it and retry.");
+      } else {
+        onError(extractErrorMessage(err, "Failed to retry interview scheduling"));
+      }
     } finally {
       setRetrying(false);
     }

@@ -11,6 +11,8 @@ vi.mock("../api/client", () => ({
     retryNegotiation: (...args: unknown[]) => retryNegotiationMock(...args),
   },
   extractErrorMessage: (_err: unknown, fallback: string) => fallback,
+  hasErrorCode: (err: unknown, code: string) =>
+    Boolean(err && typeof err === "object" && "code" in err && (err as { code: unknown }).code === code),
 }));
 
 // This component is the ONE shared implementation Shortlisting List's row action and
@@ -95,5 +97,15 @@ describe("RetryNegotiationMenuItem", () => {
     fireEvent.click(screen.getByText("Retry Scheduling"));
 
     await waitFor(() => expect(onError).toHaveBeenCalledWith("Failed to retry interview scheduling"));
+  });
+
+  it("shows the tracker-locked snackbar text for a TRACKER_LOCKED error, not extractErrorMessage's fallback", async () => {
+    retryNegotiationMock.mockRejectedValue({ code: "TRACKER_LOCKED", message: "Tracker file is open in Excel -- close it and retry. (simulated)" });
+    const onError = vi.fn();
+
+    render(<RetryNegotiationMenuItem row={makeRow()} onClose={vi.fn()} onDone={vi.fn()} onError={onError} />);
+    fireEvent.click(screen.getByText("Retry Scheduling"));
+
+    await waitFor(() => expect(onError).toHaveBeenCalledWith("Tracker file is open in Excel -- close it and retry."));
   });
 });

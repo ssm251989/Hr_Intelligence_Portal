@@ -22,6 +22,7 @@ are the interviewer-first negotiation flow's own columns/sheet -- negotiation.py
 reads them; the older select_interviewer/confirmation.py flow above never touches them.
 """
 
+import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
@@ -32,6 +33,44 @@ from sqlalchemy.orm import Session
 from app.integrations.google_calendar import APP_TIMEZONE
 from app.local_import.job_folders import FOLDER_SYNC_STATUSES
 from app.models.job_role import JobRole
+
+# Part 1 pending-fix baseline (docs/HRMS_COMPLETE_SPEC.txt): moves into the Settings
+# Registry as recruitment.tracker.save_retry.attempts / .backoff_seconds once Part 2 exists.
+_SAVE_RETRY_ATTEMPTS = 5
+_SAVE_RETRY_BACKOFF_SECONDS = 0.5
+
+
+class TrackerFileLockedError(Exception):
+    """The tracker workbook could not be saved -- it's open for editing elsewhere (Excel
+    holds an OS-level write lock on Windows while a file is open in it) and stayed locked
+    through every retry. Callers must surface this as a clear, retryable "close the file"
+    message, never a raw 500."""
+
+
+def _save_with_retry(
+    workbook: Workbook,
+    path: Path,
+    attempts: int = _SAVE_RETRY_ATTEMPTS,
+    backoff_s: float = _SAVE_RETRY_BACKOFF_SECONDS,
+) -> None:
+    """Every write path in this module goes through this instead of calling
+    workbook.save(path) directly, retrying on PermissionError (the recruiter has the
+    tracker open in Excel) up to `attempts` times with a `backoff_s` pause between tries
+    before giving up with TrackerFileLockedError -- a transient "I had it open for a second"
+    now resolves itself instead of failing the caller's whole action outright."""
+    last_error: Optional[PermissionError] = None
+    for attempt in range(attempts):
+        try:
+            workbook.save(path)
+            return
+        except PermissionError as exc:
+            last_error = exc
+            if attempt < attempts - 1:
+                time.sleep(backoff_s)
+    raise TrackerFileLockedError(
+        f"Tracker file is open in Excel -- close it and retry. ({path})"
+    ) from last_error
+
 
 INTERVIEWER_POOL_SHEET = "Interviewer Pool"
 INTERVIEWER_POOL_COLUMNS = ["Job Title", "Eligible Interviewers"]
@@ -80,7 +119,7 @@ def ensure_tracker_file(path: Path) -> dict:
             sheet = workbook.create_sheet(sheet_name)
             sheet.append(columns)
         workbook.remove(default_sheet)
-        workbook.save(path)
+        _save_with_retry(workbook, path)
         return {
             "created": True,
             "sheets_added": [name for name, _ in _SHEET_SPECS],
@@ -117,7 +156,7 @@ def ensure_tracker_file(path: Path) -> dict:
             columns_added[sheet_name] = missing
 
     if sheets_added or columns_added:
-        workbook.save(path)
+        _save_with_retry(workbook, path)
 
     return {"created": False, "sheets_added": sheets_added, "columns_added": columns_added}
 
@@ -252,9 +291,14 @@ def interviewer_busy_this_week(path: Path, interviewer_name: str, now: Optional[
 
 def read_interviewer_pool(path: Path) -> dict[str, list[str]]:
     """Job title -> the list of eligible interviewer names configured for it (parsed from
-    the comma-separated "Eligible Interviewers" column). Empty dict if the sheet or its
-    expected columns aren't present -- callers treat that as "nothing configured yet", not
-    an error."""
+    the comma-separated "Eligible Interviewers" column) -- whitespace around each name is
+    stripped, empty entries (a trailing comma, a wholly blank cell) are dropped, and a name
+    repeated in the same cell (case/whitespace-insensitive) is kept only once, at its FIRST
+    position, so a recruiter accidentally listing someone twice doesn't double their odds of
+    being picked or double-count them in interviewer-load reporting. A ";" is NOT a
+    recognized separator (only "," is, per the column's own header) -- a cell like "A;B" is
+    one literal interviewer name, not two. Empty dict if the sheet or its expected columns
+    aren't present -- callers treat that as "nothing configured yet", not an error."""
     workbook = load_workbook(path, read_only=True, data_only=True)
     try:
         if INTERVIEWER_POOL_SHEET not in workbook.sheetnames:
@@ -275,7 +319,17 @@ def read_interviewer_pool(path: Path) -> dict[str, list[str]]:
             if not job_title:
                 continue
             interviewers_raw = row[interviewers_col] or ""
-            names = [name.strip() for name in str(interviewers_raw).split(",") if name.strip()]
+            names: list[str] = []
+            seen: set[str] = set()
+            for raw_name in str(interviewers_raw).split(","):
+                name = raw_name.strip()
+                if not name:
+                    continue
+                key = name.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                names.append(name)
             pool[str(job_title).strip()] = names
         return pool
     finally:
@@ -328,7 +382,7 @@ def sync_interviewer_pool_job_titles(db: Session, path: Path) -> dict:
     header = [cell.value for cell in header_row if cell.value is not None]
     for title in titles_to_add:
         sheet.append([title if col == "Job Title" else "" for col in header])
-    workbook.save(path)
+    _save_with_retry(workbook, path)
     return {"jobs_considered": len(jobs), "rows_added": len(titles_to_add)}
 
 
@@ -345,7 +399,7 @@ def append_interview_log_row(path: Path, values: dict[str, Optional[str]]) -> No
         sheet.append(INTERVIEW_LOG_COLUMNS)
         header = list(INTERVIEW_LOG_COLUMNS)
     sheet.append([values.get(column, "") or "" for column in header])
-    workbook.save(path)
+    _save_with_retry(workbook, path)
 
 
 def update_interview_log_row(
@@ -390,5 +444,5 @@ def update_interview_log_row(
     for column_name, value in updates.items():
         if column_name in col_index:
             target_row[col_index[column_name]].value = value
-    workbook.save(path)
+    _save_with_retry(workbook, path)
     return True

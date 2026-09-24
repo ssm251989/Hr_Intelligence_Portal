@@ -1672,6 +1672,39 @@ def test_retry_negotiation_endpoint_surfaces_reason_on_a_skip(client, db_session
     assert body["reason"] == "HR mailbox's SMTP settings are not configured -- cannot send negotiation emails"
 
 
+def test_retry_negotiation_endpoint_returns_409_tracker_locked_when_the_file_is_open(
+    client, db_session, tmp_path, make_auth_headers, monkeypatch
+):
+    """Part 1 pending fix (docs/HRMS_COMPLETE_SPEC.txt): a locked tracker file surfaces as a
+    distinct 409 {code: "TRACKER_LOCKED"}, not a generic 200-with-reason or a raw 500 --
+    see app.interview_scheduling.negotiation.TrackerLockedNegotiationError and
+    router.py's retry_negotiation_endpoint. sync_interviewer_pool_job_titles is the first
+    tracker write attempt_auto_negotiate_interview_slots makes, so raising
+    TrackerFileLockedError there is the simplest way to simulate the file being open in
+    Excel at the moment a recruiter clicks Retry Scheduling."""
+    from app.interview_scheduling.tracker import TrackerFileLockedError
+
+    tracker_path = _real_tracker_copy(tmp_path)
+    _configure_tracker(db_session, tracker_path)
+    _real_pool_interviewer(db_session)
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application(db_session, job, candidate)
+    headers = make_auth_headers(role="recruiter")
+    _connect_hr_smtp(db_session)
+
+    def _raise_locked(*_args, **_kwargs):
+        raise TrackerFileLockedError("Tracker file is open in Excel -- close it and retry. (simulated)")
+
+    monkeypatch.setattr(neg, "sync_interviewer_pool_job_titles", _raise_locked)
+    response = client.post(f"/interview-scheduling/applications/{application.id}/retry-negotiation", headers=headers)
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["code"] == "TRACKER_LOCKED"
+    assert "Tracker file is open in Excel" in detail["message"]
+
+
 def test_retry_negotiation_rejected_when_a_token_was_just_created(db_session, tmp_path):
     tracker_path = _real_tracker_copy(tmp_path)
     _configure_tracker(db_session, tracker_path)

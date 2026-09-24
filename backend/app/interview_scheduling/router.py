@@ -9,7 +9,7 @@ from app.candidates.hold import assert_application_not_on_hold
 from app.core.database import get_db
 from app.integrations.hr_email import get_hr_integration, is_smtp_configured, SmtpError
 from app.interview_scheduling.confirmation import propose_interview_slots
-from app.interview_scheduling.negotiation import check_retry_eligibility, retry_negotiation
+from app.interview_scheduling.negotiation import check_retry_eligibility, retry_negotiation, TrackerLockedNegotiationError
 from app.interview_scheduling.storage import get_interview_scheduling_settings
 from app.interview_scheduling.tracker import ensure_tracker_file, sync_interviewer_pool_job_titles
 from app.models.application import Application
@@ -149,5 +149,10 @@ def retry_negotiation_endpoint(
     if ineligible_reason:
         raise HTTPException(status_code=409, detail=ineligible_reason)
 
-    outcome, invalidated_count, reason = retry_negotiation(db, application, current_user)
+    try:
+        outcome, invalidated_count, reason = retry_negotiation(db, application, current_user)
+    except TrackerLockedNegotiationError as exc:
+        raise HTTPException(
+            status_code=409, detail={"code": "TRACKER_LOCKED", "message": str(exc)},
+        ) from exc
     return RetryNegotiationResponse(outcome=outcome, invalidated_stale_tokens=invalidated_count, reason=reason)

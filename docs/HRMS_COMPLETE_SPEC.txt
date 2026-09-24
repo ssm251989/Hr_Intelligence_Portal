@@ -1,0 +1,1558 @@
+=====================================================================
+HR AUTOMATION -> MULTI-CLIENT, FULLY CONFIGURABLE HRMS
+COMPLETE BUILD SPECIFICATION - ONE DOCUMENT, ONE BUILD
+Repo: hr-automation (FastAPI + PostgreSQL + SQLAlchemy + Alembic +
+React/TS/Vite/MUI).  Spec date: 2026-09-24.  Scope: everything except
+payroll and attendance/leave. Client decisions: section K (they WIN
+over anything else in this document).
+=====================================================================
+
+INSTRUCTIONS TO CLAUDE CODE (read fully before writing any code)
+----------------------------------------------------------------
+This is ONE build. Do not wait for me between parts. Work through
+PART 1 to PART 14 top to bottom, because later parts use earlier ones.
+1. First reply: `git log --oneline -3` and `git status` literal
+   output, then the list of every PART heading in this document and
+   the new tables/classes you will create, so I can confirm the whole
+   document arrived.
+2. Create a branch `hrms-platform` and build there, not on main.
+3. Commit + push after each PART (message "part-N: <title>"). Before
+   each commit: grep for that part's "Checks" symbols and run that
+   part's tests; quote the literal output in the commit summary.
+4. Testing: while working, run only the relevant test files. Run the FULL
+   suite once at the end of each PART and once at the very end.
+5. Keep a running log `docs/build_log.md`: part, commit hash, tests
+   passed, anything deferred and why.
+6. Never delete data. The tenant #1 migration runs --dry-run first,
+   saves its report in docs/, then runs for real.
+7. The current 13 modules must keep working at every commit. See
+   the parity checklist in Part 1.
+8. At the end: merge to main only after the full suite is green, the
+   hardcode guard test passes, and the parity checklist is 100%.
+
+---------------------------------------------------------------------
+A. THE NON-NEGOTIABLE RULE: ZERO CLIENT-SPECIFIC STATIC VALUES
+---------------------------------------------------------------------
+Nothing that differs between clients may live in code, .env of the app
+image, seed SQL, or frontend constants. That includes:
+  - company names ("CTD Techs"), domains, logos, colours (#0b1f4d, #1d5fd6)
+  - email addresses (hradmin65@gmail.com, si@ctdtechs.com, ...)
+  - SMTP/IMAP hosts, OAuth client IDs, API keys (Anthropic, etc.)
+  - file paths (interview_tracker_sample.xlsx), sheet names, column names
+  - hiring stages, the "13 steps", scoring weights, thresholds (e.g. 75.0)
+  - negotiation mechanics (3 slots, pick 2, day+1 retry)
+  - offer CTC components, salary bands, policy limits, SLAs
+  - email and in-app message wording, subjects, HTML layouts
+  - approval chains, SLAs, notification recipients
+  - timezone, currency, date format, language, financial year start
+
+All of the above become TENANT DATA managed through:
+  - Settings Registry           (Part 2)
+  - Connections & Routing       (Part 3)
+  - Communication Templates     (Part 4)
+  - Workflow Definitions        (Part 5)
+  - Metadata / Custom Fields    (Part 6)
+  - Module masters (stages, rejection reasons, document types, etc.)
+
+ENFORCEMENT: Part 1 adds `tests/test_no_hardcoded_tenant_values.py`
+(a "hardcode guard") that scans backend/app and frontend/src for
+forbidden literals (email regex outside tests/fixtures, known client
+names/domains, hex colours inside email builders, absolute file paths,
+"gmail.com", "ctdtechs") and FAILS CI if found. An allow-list file
+`hardcode_allowlist.txt` exists for genuine exceptions, each with a
+reason comment. This test must stay green in every part.
+
+What IS allowed in code: platform defaults that are generic and
+overridable (e.g. default page size 25, default locale "en-IN" as a
+*setting default*), and definitions (the schema of a setting, not its
+tenant value).
+
+---------------------------------------------------------------------
+B. DEPLOYMENT & TENANCY MODEL (one codebase, two deployment shapes)
+---------------------------------------------------------------------
+DECISION: every client gets MODE 1 (its own installation). MODE 2 is
+kept in the code (TENANCY_MODE=multi) but is NOT deployed at launch.
+Same Docker image supports:
+
+  MODE 1 - DEDICATED ("client's own environment")
+    TENANCY_MODE=single
+    One stack per client on AWS (India region), own Postgres (RDS),
+    own Redis, own S3 bucket, own subdomain and/or own custom domain.
+    Control plane still exists but holds exactly one tenant row.
+
+  MODE 2 - SHARED SaaS (many clients, one stack)
+    TENANCY_MODE=multi
+    Control-plane DB + one Postgres DATABASE PER TENANT (default
+    isolation) or shared DB with tenant_id + Row-Level Security
+    (for small/trial tenants). Isolation chosen per tenant.
+
+  A tenant can be MOVED from shared -> dedicated with the
+  `hrctl tenant export/import` tooling (Part 13).
+
+Every tenant-owned table carries `tenant_id UUID NOT NULL` even in
+DB-per-tenant mode (enables RLS mode, safe export/import, and
+defence-in-depth). Postgres RLS policies are created on every tenant
+table: `USING (tenant_id = current_setting('app.tenant_id')::uuid)`.
+
+Tenant resolution order (middleware `TenantResolverMiddleware`):
+  1. Custom domain / subdomain (Host header) -> control_plane.tenant_domains
+  2. `X-Tenant-Slug` header (for API/mobile clients, only if enabled)
+  3. In single mode: the only tenant.
+  JWT carries `tid`; request is rejected (403) if JWT tid != resolved tenant.
+
+Tenant context propagates to: DB session (per-tenant engine cache +
+`SET app.tenant_id`), Redis key prefix `t:{tenant_id}:`, object storage
+prefix `tenants/{tenant_id}/`, Celery task headers, logs (structlog
+field), metrics labels, outbound webhooks.
+
+---------------------------------------------------------------------
+C. TARGET STACK (additions to the current stack)
+---------------------------------------------------------------------
+Keep: FastAPI, SQLAlchemy 2.x, Alembic, PostgreSQL 16, React+TS+Vite+MUI,
+recharts, Leaflet, Anthropic API.
+Add:
+  - Redis 7                : cache, settings invalidation pub/sub, locks, rate limits
+  - Celery (Redis broker)  : background jobs, schedules (celery beat -> per-tenant)
+  - Object storage         : S3-compatible (MinIO locally) via StorageProvider
+  - cryptography (Fernet / AES-GCM envelope encryption) + optional
+    KMS/Vault backends for secrets (SecretStore interface)
+  - Jinja2 SandboxedEnvironment : templates
+  - json-logic-qubit (or equivalent)  : safe condition/expression evaluation
+  - simpleeval or a tiny custom AST evaluator : offer CTC / policy formulas
+  - React Flow             : visual workflow builder
+  - @rjsf/mui (react-jsonschema-form) : auto-rendered settings/connector forms
+  - i18next                : UI localisation
+  - pgvector               : policy-document RAG for HR Copilot
+  - OpenTelemetry + structlog : tracing/logging
+  - Docker Compose (dev) + Helm chart (prod)
+
+---------------------------------------------------------------------
+D. LAYERED CONFIGURATION RESOLUTION (used everywhere)
+---------------------------------------------------------------------
+value = first non-null of:
+   user  ->  position  ->  department  ->  location  ->  business_unit
+   ->  legal_entity  ->  tenant  ->  plan default  ->  platform default
+A setting definition declares which scopes it allows.
+API: `settings.get("recruitment.negotiation.slots_offered", ctx)`.
+
+---------------------------------------------------------------------
+E. BACKEND PACKAGE LAYOUT (target)
+---------------------------------------------------------------------
+backend/app/
+  platform/            # cross-cutting, module-agnostic
+    tenancy/           # control plane models, resolver, engine cache, RLS
+    settings/          # registry, resolver, API
+    secrets/           # SecretStore (db-encrypted | vault | aws-kms | azure-kv)
+    connectors/        # capability interfaces, provider adapters, routing, health
+    comms/             # templates, rules, dispatcher, inbound router, logs
+    workflow/          # definitions, engine, approvals, timers, expression eval
+    metadata/          # custom fields, forms, picklists, masters
+    iam/               # users, SSO, roles, permissions, scopes, field security
+    audit/             # immutable audit log, data-change history
+    files/             # storage, virus-scan hook, signed URLs
+    events/            # domain events + transactional outbox + webhooks out
+    jobs/              # celery app, tenant-aware task base
+    ai/                # LLM gateway, prompt registry, HITL, usage metering
+    i18n/ billing/ featureflags/ privacy/
+  modules/
+    core_hr/ recruitment/ onboarding/ performance/ compensation/
+    helpdesk/ assets/ separation/ analytics/ copilot/
+Each module: models.py, schemas.py, service.py, router.py,
+events.py (events it emits), settings.py (setting definitions it owns),
+permissions.py (permission codes), templates/ (DEFAULT template seeds,
+generic wording, no client data), tests/.
+
+Modules talk to each other ONLY via service interfaces or domain
+events - never by importing each other's models directly.
+
+---------------------------------------------------------------------
+F. MODULE ENABLEMENT
+---------------------------------------------------------------------
+control_plane.tenant_modules(tenant_id, module_code, enabled, plan_limit_json)
+Routers of disabled modules return 404; frontend hides menus via
+GET /api/me/bootstrap (returns enabled modules, permissions, branding,
+---------------------------------------------------------------------
+G. BUILD ORDER (inside this single build)
+---------------------------------------------------------------------
+PART 1   Audit of hardcoded values, pending fixes, guard test
+PART 2   Multi-client foundation, settings registry, secrets
+PART 3   Connections (SMTP/IMAP mail, meetings, e-sign, BGV, AI, storage)
+PART 4   Communication engine (templates, rules, sending, inbound)
+PART 5   Login + 2-step verification, roles & permissions, workflow
+PART 6   Custom fields, forms, masters, branding, languages
+PART 7   Core HR
+PART 8   Recruitment (all current hiring modules, made configurable)
+PART 9   Pre-boarding & onboarding
+PART 10  Performance, goals, compensation planning, succession
+PART 11  Helpdesk, assets, separation / exit
+PART 12  Analytics, report builder, HR Copilot & AI agents
+PART 13  Deployment (AWS, one installation per client), security, privacy
+PART 14  UX standards (apply to every screen in every part)
+(Not built: payroll, attendance/leave, engagement, expense, learning -
+see sections J and K.)
+
+registers, EVENTS, TESTS, ACCEPTANCE / RECEIPT CHECK.
+
+---------------------------------------------------------------------
+H. CROSS-CUTTING STANDARDS (apply in every part)
+---------------------------------------------------------------------
+- IDs: UUIDv7. Timestamps: timestamptz UTC; display in resolved tz.
+- Effective dating for HR facts: effective_from / effective_to.
+- Soft delete (deleted_at) for business records; hard delete only via
+  privacy erasure workflow (dry-run report first - existing discipline).
+- Every mutation writes audit_log (who, tenant, entity, before/after
+  diff, request_id, ip). Audit is append-only (no UPDATE/DELETE grants).
+- Idempotency-Key header supported on all POSTs that create records.
+- Transactional outbox for every domain event (no lost emails:
+  the orphaned-token class of bug is prevented structurally).
+- All external calls go through connectors with timeout, retry with
+  backoff, circuit breaker, and a delivery/attempt log row.
+- PII fields (PAN, Aadhaar, bank a/c, passport, salary, health) are
+  encrypted at column level and masked in API unless permission
+  `<module>.<entity>.view_sensitive` is held.
+- Pagination, filtering, sorting: one shared query-spec contract.
+- Every list page keeps the existing RefreshButton behaviour.
+- Human-in-the-loop at every real hiring/people decision (unchanged).
+- API versioned under /api/v1. OpenAPI published per tenant with only
+  enabled modules.
+
+---------------------------------------------------------------------
+I. DEFAULT ASSUMPTIONS (override by replying before Part 2)
+---------------------------------------------------------------------
+1. Isolation: separate installation per client (section K).
+2. PAYROLL IS OUT OF SCOPE (user decision 2026-09-23). No salary
+   processing, payslips, tax, PF/ESI/PT, bank payouts or F&F money
+   calculation. Only an optional generic export (section J). Country
+   specifics that remain (holidays, notice periods, ID documents) are
+   plug-ins so UAE/US/UK etc. can be added later without core changes.
+3. Mobile: responsive PWA first; native apps later (same API).
+4. Excel interview tracker is REPLACED by an internal Interviewer
+   Availability module; Excel stays as an optional import/export
+   connector (this removes the file-lock bug class permanently).
+5. The CTD Techs data becomes simply "tenant #1" created by a migration
+   script, with its current mailbox/branding moved into its settings.
+
+---------------------------------------------------------------------
+J. SCOPE: EVERYTHING EXCEPT PAYROLL
+---------------------------------------------------------------------
+IN SCOPE: the 13 built modules - Overview, Jobs, Candidates,
+Screening, Shortlisting, Interviews, HR Inbox, Salary (hiring salary
+validation vs job band, NOT payroll), BGV, Offers, Reports, Settings,
+Careers portal (see Part 1 Step 0) PLUS all new modules in
+Parts 2-14.
+OUT OF SCOPE (also): attendance, shifts, timesheets, leave, holidays
+as a module; engagement surveys/recognition; expense & travel;
+learning/LMS.
+OUT OF SCOPE: payroll processing of any kind - salary runs, payslips,
+income tax/TDS, PF/ESI/PT/LWF, Form 16/24Q, bank salary files,
+accounting journals, loans, F&F money calculation.
+ALLOWED near payroll (non-payroll, keep):
+  - Offer CTC breakup display in offer letters (recruitment).
+  - Compensation records/letters and compensation PLANNING (Part 10).
+  - CSV export of joiners, leavers and exit summaries for the
+    client's external payroll/finance team (no payroll connector).
+Claude Code must not create a `payroll` module, tables or menus, nor attendance/
+leave, engagement, expense or learning modules.
+
+---------------------------------------------------------------------
+K. CLIENT DECISIONS (from the HRMS Decision Sheet, 2026-09-24)
+   These WIN over anything else in this document.
+---------------------------------------------------------------------
+HOSTING & CLIENT SETUP
+ A1  One separate installation per client (TENANCY_MODE=single).
+ A2  AWS first; stay cloud-portable (plain Postgres, S3-compatible
+     storage, containers) so a client can later demand another host.
+ A3  Data stored in India only (default ap-south-1; setting per install).
+ A4  Both: our subdomain (client.<platform-domain>, platform domain is
+     a deployment setting) AND the client's own custom domain.
+ A5  Our team runs `hrctl` to create the installation; the client's
+     admin finishes in the Setup Wizard (Part 14 section 1).
+ M3  Pricing = per active employee per month. Because every client is
+     a separate installation, each install sends a daily signed usage
+     heartbeat (active employees, active users, enabled modules,
+     version) to OUR central Platform Console; the console holds each
+     client's licence (modules, employee cap, expiry). The install keeps
+     working read-only for a grace period if the console is unreachable.
+     Invoicing/payment collection itself is out of scope - export usage.
+
+BRANDING & LANGUAGE
+ B1  Client brands: logo, colours, login page, career site, email
+     design, letter templates.
+ B2  Launch languages: English, Hindi, Tamil.
+
+LOGIN & ACCESS
+ C1  Email + password only at launch (SSO later).
+ C2  2-step verification mandatory for every user.
+ C3  Who sees salary (candidate expected/approved salary, offer CTC,
+     employee compensation) is configured per client via field security.
+
+EMAILS & MESSAGES
+ D1  Channels at launch: email + in-app notifications only.
+ D2  Each client connects its OWN mailbox (no shared platform mailbox
+     for client mail; a platform mailbox is used only for our own
+     system mails such as the first-admin invite).
+ D3  SMTP/IMAP only - with OAuth2 (XOAUTH2) as well as password/app-
+     password login.
+ D4  Client HR admin edits all templates (versioned, preview, test-send).
+ D5  Candidate replies are read and routed automatically (HR Inbox).
+
+HIRING
+ E1  Approval before a job opens, configurable approvers.
+ E2  Post to: own career site, LinkedIn, Naukri, Indeed, internal job
+     posting, employee referral, recruitment agencies (agency portal:
+     agency users submit candidates to assigned jobs only).
+ E3  Clients add/remove/rename/reorder hiring stages.
+ E4  Candidate intake: resume upload, career site, local folder import
+     (today), email inbox (resumes sent to a configured mailbox are
+     parsed into applications), bulk Excel.
+ F1  AI MAY AUTO-SHORTLIST above a per-job threshold (never auto-
+     reject). Guard-rails (all settings): feature off by default per
+     job; recruiter notified; every auto-shortlist is audited with the
+     score breakdown; an undo window (default 4 business hours)
+     before the candidate is contacted/scheduling starts; bias report
+     per job. Offer, BGV and hiring decisions stay human.
+ F2  Scoring weights set by the client per job.
+ F3  Blind screening optional per client.
+ F4  Assessments: built-in tests AND external providers.
+ G1  Scheduling mode chosen per job: (a) today's automatic slot
+     negotiation, (b) candidate self-booking from interviewer free
+     slots, (c) HR schedules manually.
+ G2  Interviewer availability kept inside the system.
+ G3  Meeting links: Microsoft Teams, Google Meet, Zoom (client connects
+     its own account; .ics always attached; 'in person' also allowed).
+ G4  Scorecard mandatory by a deadline, with reminders/escalation.
+ H1  Expected salary vs band; approval only if above band.
+ H2  BGV: document upload + HR verification AND external vendors.
+ H3  BGV runs after offer, before joining.
+ H4  Offer approval multi-level, configurable.
+ H5  Offer acceptance by e-sign (DocuSign, Leegality).
+
+ONBOARDING & PEOPLE
+ I1  Pre-joining portal: yes.
+ I2  Onboarding checklist per joiner for IT/Admin/Manager: yes.
+ I3  Employee profile edits need HR approval.
+ I4  Existing employees loaded with the Excel import wizard.
+ J*  Attendance, shifts, leave, holidays: OUT OF SCOPE.
+
+PERFORMANCE & OTHER MODULES
+ K1  Review cycles configurable.  K2  OKRs and KPIs, client chooses.
+ K3  Extra modules at launch: Helpdesk tickets and Assets only
+     (engagement, recognition, expense, learning not built).
+ K4  Full exit: resignation, clearance, exit interview, letters.
+
+REPORTS, AI & PRIVACY
+ L1  Fixed reports AND drag-and-drop report builder.
+ L2  HR assistant chatbot at launch (in-app widget).
+ L3  AI keys: platform key (usage metered and billed) OR client's own
+     key - per installation setting.
+ L4  Rejected-candidate retention decided per client (setting +
+     scheduled purge with dry-run report).
+ L5  Mobile = installable web app (PWA); no native apps.
+
+ROLLOUT
+ M1  CTD Techs goes live first as the pilot installation.
+ M2  After recruitment: Onboarding -> Core HR -> Performance (the
+     sheet said Attendance third, but attendance is out of scope, so
+     Performance takes that slot - confirm with the owner).
+
+
+=====================================================================
+PART 1 - HARDCODE AUDIT, PENDING FIXES, GUARD TEST
+=====================================================================
+
+GOAL
+----
+Know exactly what is client-specific today, close the open bugs from
+the last session, and install the guard that stops new hardcoding.
+No behaviour change for the current tenant #1 data in this part.
+
+STEP 0 - EXISTING-MODULE PARITY CHECKLIST (read-only, do first)
+----------------------------------------------------------------
+The 13 existing modules (confirmed from AppLayout.tsx MODULES, App.tsx
+routes and backend/app/main.py routers on 2026-09-23):
+  1  Overview        /                 reports/stats (overview)
+  2  Jobs            /jobs             jobs/, ai_services/jd_generator,
+                                       integrations/linkedin (posting links)
+  3  Candidates      /candidates/*     candidates/ (router, applications_router,
+                     (dashboard, list,  pipeline_actions, hold, photo/gender/
+                      import, detail)   resume extraction), local_import/
+                                       (folder scan + scheduler), ai_services/
+                                       resume_parser
+  4  Screening       /screening/*      screening/ (service, suitability,
+                                       settings_router), ai_services/
+                                       resume_matcher, candidate_ranker
+  5  Shortlisting    /shortlisting/*   shortlisting/, ai_services/
+                                       shortlist_feedback_generator
+  6  Interviews      /interviews/*     scheduling/, interview_scheduling/
+                                       (negotiation, confirmation, .ics,
+                                       tracker, confirm/negotiation routers),
+                                       ai_services/interview_question_generator
+  7  HR Inbox        /hr-inbox         hr_inbox/, integrations/imap_poll
+  8  Salary          /salary           salary/ (expected salary vs job band,
+                                       validate/confirm/approve - a HIRING
+                                       step, NOT payroll: keep it)
+  9  BGV             /bgv              bgv/, ai_services/document_validator
+  10 Offers          /offers           offers/, ai_services/
+                                       offer_letter_generator,
+                                       integrations/docusign
+  11 Reports         /reports          reports/ (router, stats)
+  12 Settings        /settings         integrations/ (router, hr_email,
+                                       google_calendar), HR mailbox cards,
+                                       tracker settings, screening thresholds,
+                                       users/, auth/ (login, register, roles)
+  13 Careers portal  /careers/*        public/ (public job list, apply)
+Cross-cutting today: audit/, core/ (config, crypto, security), models/.
+Verify this list against the code; if anything is missing, add it.
+Produce `docs/module_parity_checklist.md`:
+  # | module | backend routers/services | frontend pages | tests |
+  target PART in this spec | status (kept / refactored / replaced).
+Every one of the 13 must map to a PART; none may be dropped. This
+checklist is re-verified at the end of Parts 4, 8 and 10.
+Save it in docs/ and continue.
+
+STEP 1 - READ-ONLY HARDCODE INVENTORY (no edits yet)
+----------------------------------------------------
+Run and quote literal output (counts + file:line) for each:
+  grep -rnE "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,}" backend/app frontend/src
+  grep -rniE "ctd|ctdtechs|hradmin|gmail\.com" backend/app frontend/src
+  grep -rnE "#[0-9a-fA-F]{6}" backend/app
+  grep -rnE "\.xlsx|C:\\\\|/Users/|Documents" backend/app
+  grep -rnE "smtp\.|imap\.|:587|:993|:465" backend/app
+  grep -rnE "claude-(3|haiku|sonnet|opus)" backend/app
+  grep -rnE "(threshold|weight|score)\s*=\s*[0-9]" backend/app
+  grep -rnE "Asia/|timezone\(|tzinfo" backend/app
+  grep -rn "os.getenv\|os.environ\|settings\." backend/app/core
+Produce `docs/hardcode_inventory.md`: table of
+  file | line | literal | category (identity/branding/connection/
+  business-rule/wording/path/model) | target home (setting key,
+  connection purpose, template key, master table).
+Save it in docs/ and continue.
+
+STEP 2 - CLOSE PENDING BUGS (from project state doc)
+----------------------------------------------------
+2a. Tracker file lock (still unbuilt - confirm via grep first):
+  - backend/app/.../tracker.py: `_save_with_retry(workbook, path,
+    attempts=<setting>, backoff_s=<setting>)` catching PermissionError.
+  - `class TrackerFileLockedError(Exception)` raised after attempts.
+  - negotiation.py: catch -> `TrackerLockedNegotiationError`; the
+    negotiation transaction must roll back cleanly (no orphan tokens).
+  - router: map to HTTP 409 {code:"TRACKER_LOCKED", message}.
+  - frontend RetryNegotiationMenuItem.tsx: show snackbar
+    "Tracker file is open in Excel - close it and retry."
+  - tests: tests/test_tracker.py add lock-simulation tests (monkeypatch
+    save to raise PermissionError N times, then succeed / always fail).
+  NOTE: Part 8 retires the Excel tracker as the system of record;
+  this fix protects the interim.
+2b. Interviewer pool comma parsing: tests for "A,B", "A, B", " A ,B ",
+  "A;B", trailing comma, empty cells, duplicate names -> dedup, order
+  preserved. Fix `read_interviewer_pool` only if a test fails.
+2c. test_candidates_top_skills_no_limit_param_returns_every_skill:
+  make self-contained (create its own >5 distinct skills; no ambient DB).
+2d. test_jobs_dashboard_stats_top_jobs_ranked_by_application_count:
+  add stable secondary sort (job created_at, then id) in the query
+  AND assert it in the test.
+2e. Investigate + fix the TS error in CandidateDetailPage.tsx
+  (`npx tsc --noEmit` literal output before/after).
+2f. Ask me about Sample/Automation_Anywhere_Architect_Resume.docx
+  (do not commit or delete it).
+
+STEP 3 - HARDCODE GUARD TEST
+----------------------------
+- backend/tests/test_no_hardcoded_tenant_values.py
+  * walks backend/app/**/*.py and frontend/src/**/*.{ts,tsx}
+  * patterns: email addresses, "gmail.com", "ctdtechs", "CTD Techs",
+    absolute Windows/Unix user paths, ".xlsx" literals, hex colours in
+    any file under */comms/* or email builders, model IDs
+    ("claude-" literals) outside platform/ai/model_catalog.py
+  * reads `hardcode_allowlist.txt` (format: path:line_regex # reason)
+  * failure message lists every offending file:line
+- Initially the test is marked xfail(strict=True) with reason
+  "baseline"; Part 2-04 remove the offenders; Part 4 end
+  flips it to a hard pass. Record the baseline offender count.
+
+STEP 4 - FRONTEND CONSTANTS SWEEP
+---------------------------------
+Move every client-looking constant in frontend/src (brand name, colours,
+logo path, support email, stage names) into `src/bootstrap/defaults.ts`
+tagged `// TENANT-CONFIG: replaced by /api/me/bootstrap in Part 6`.
+
+CHECKS (before this part's commit)
+--------------------------
+- `grep -rn "_save_with_retry\|TrackerFileLockedError\|TrackerLockedNegotiationError" backend/app` -> hits
+- `ls docs/hardcode_inventory.md backend/tests/test_no_hardcoded_tenant_values.py hardcode_allowlist.txt`
+- Relevant tests green; full suite once; `npx tsc --noEmit` clean.
+- Commit: "part-1: hardcode inventory, tracker lock fix, guard test"
+
+
+=====================================================================
+PART 2 - TENANCY FOUNDATION, SETTINGS REGISTRY, SECRETS
+=====================================================================
+
+GOAL
+----
+Every request, job and query runs inside a tenant context. Every
+tunable value comes from the Settings Registry. Every credential lives
+in a SecretStore, never in plain columns or app .env.
+
+1. CONTROL PLANE (separate DB: CONTROL_PLANE_DATABASE_URL)
+----------------------------------------------------------
+tables (platform/tenancy/models_cp.py):
+  tenants(id, slug UNIQUE, display_name, status[provisioning|active|
+          suspended|archived], isolation[dedicated_db|shared_rls],
+          db_dsn_secret_ref, region, data_residency, plan_id,
+          created_at, suspended_reason)
+  tenant_domains(id, tenant_id, host UNIQUE, is_primary, verified_at,
+          tls_status)
+  plans(id, code, name, module_codes[], limits_json)
+  tenant_modules(tenant_id, module_code, enabled, limits_json)
+  feature_flags(key, description, default_bool)
+  tenant_feature_flags(tenant_id, key, value_bool)
+  platform_admins(id, email, mfa_secret_ref)   # super-admin console only
+  tenant_provisioning_jobs(id, tenant_id, step, status, log)
+
+2. TENANT RESOLUTION & DB ROUTING
+---------------------------------
+- platform/tenancy/context.py: `TenantContext` (contextvar) with
+  tenant_id, slug, isolation, locale, tz.
+- platform/tenancy/middleware.py: `TenantResolverMiddleware` (rules in
+  section B above). Unknown host -> 404 page, suspended -> 423.
+- platform/tenancy/engines.py: `TenantEngineRegistry` LRU cache of
+  SQLAlchemy engines keyed by tenant_id (pool_size from setting
+  `platform.db.pool_size`), DSN pulled from SecretStore.
+- `get_db()` dependency yields a session bound to the tenant engine and
+  executes `SET LOCAL app.tenant_id = :tid` per transaction.
+- SQLAlchemy base mixin `TenantOwned` adds tenant_id column + index +
+  automatic filter (with_loader_criteria) + auto-populate on insert.
+- Alembic: two script trees - `migrations/control_plane` and
+  `migrations/tenant`. `hrctl migrate --all-tenants` loops tenants,
+  runs in parallel with a concurrency cap, records version per tenant.
+  RLS policies created by a helper `enable_rls(table)` in every tenant
+  migration that creates a table.
+- Celery: `TenantTask` base class requires `tenant_id` header; sets
+  context before run; celery beat schedules are stored per tenant
+  (`scheduled_jobs` table) and fanned out by a single beat dispatcher.
+
+3. MIGRATE EXISTING DATA TO "TENANT #1"
+---------------------------------------
+- Alembic tenant migration: add tenant_id to ALL existing tables,
+  backfill with the tenant #1 id, NOT NULL, indexes, RLS.
+- Script `hrctl tenant bootstrap-existing --slug <slug> --name "<name>"`
+  creates tenant #1 in control plane pointing at the current DB.
+  (slug/name passed as args - NOT hardcoded.)
+- Dry-run flag prints row counts per table before writing.
+
+4. SETTINGS REGISTRY
+--------------------
+- platform/settings/registry.py:
+    @dataclass SettingDef(key, type[str|int|decimal|bool|enum|json|
+      duration|time|color|email|url|secret_ref|connection_ref|
+      template_ref|master_ref], default, json_schema, scopes_allowed,
+      module, group, label_i18n_key, help_i18n_key, sensitive,
+      requires_restart=False, validators)
+    `register(SettingDef)`; each module registers in its settings.py.
+- tenant tables:
+    setting_values(id, tenant_id, key, scope_type[tenant|legal_entity|
+      business_unit|location|department|position|user], scope_id NULL,
+      value_json, version, updated_by, updated_at)
+    setting_value_history(...) append-only
+- platform/settings/resolver.py: `SettingsService.get(key, ctx)`,
+  `get_many(prefix, ctx)`, `set(key, value, scope, actor)` with schema
+  validation; Redis cache + pub/sub invalidation `t:{tid}:settings`.
+- API:
+    GET  /api/v1/settings/definitions?module=
+    GET  /api/v1/settings?prefix=&scope_type=&scope_id=
+    PUT  /api/v1/settings/{key}   (permission platform.settings.manage)
+    GET  /api/v1/settings/{key}/history
+    POST /api/v1/settings/export | /import  (JSON bundle, secrets excluded)
+- "Configuration packs": exportable JSON of all settings+masters+
+  templates+workflows so a new client can start from a template tenant
+  (e.g. "IT services 200 employees India").
+
+5. SECRETS
+----------
+- platform/secrets/store.py: interface SecretStore.put/get/rotate/delete
+  implementations: DbEncryptedSecretStore (AES-GCM envelope, per-tenant
+  data key wrapped by MASTER_KEY from env/KMS), VaultSecretStore,
+  AwsSecretsManagerStore, AzureKeyVaultStore. Chosen by deployment env
+  SECRET_BACKEND (this is infra config, not tenant data - allowed).
+- tenant table: secrets(id, tenant_id, ref UNIQUE, backend, ciphertext,
+  key_version, created_by, rotated_at). API never returns plaintext;
+  only "set / rotate / test".
+
+6. SETTINGS TO REGISTER NOW (move current literals here)
+--------------------------------------------------------
+  org.display_name, org.legal_name, org.timezone, org.locale,
+  org.currency, org.date_format, org.week_start, org.fiscal_year_start
+  recruitment.screening.weights.{skills,experience,education,...}
+  recruitment.screening.composite_formula (json expression)
+  recruitment.screening.auto_shortlist_threshold
+  recruitment.negotiation.slots_offered (default 3)
+  recruitment.negotiation.slots_to_pick (default 2)
+  recruitment.negotiation.retry_day_offset (default 1)
+  recruitment.negotiation.max_retry_days
+  recruitment.negotiation.busy_source enum[internal|excel|calendar]
+  recruitment.tracker.excel.path / sheet names / column map (json)
+  recruitment.tracker.save_retry.attempts / backoff_seconds
+  ai.models.scoring / ai.models.judgment (connection_ref + model id)
+  (every item from docs/hardcode_inventory.md gets a key here)
+
+7. UI
+-----
+Admin > Settings: left tree by module/group, forms auto-rendered from
+json_schema via @rjsf/mui, scope switcher (Tenant / Entity / Location /
+Department), "inherited from X" badges, history drawer, diff, revert.
+
+TESTS
+-----
+test_tenant_resolution.py (host, header, jwt mismatch 403, suspended 423)
+test_tenant_isolation.py  (two tenants, same ids -> no cross reads;
+  RLS blocks raw SQL without app.tenant_id)
+test_settings_resolver.py (scope precedence, validation, cache invalidation)
+test_secret_store.py      (roundtrip, rotation, no plaintext in API)
+test_celery_tenant_context.py
+
+CHECKS (before this part's commit)
+--------------------------
+grep: TenantResolverMiddleware, TenantEngineRegistry, TenantOwned,
+      SettingDef, SettingsService, DbEncryptedSecretStore, TenantTask
+Current app works unchanged for tenant #1 (smoke: login, candidates
+list, shortlist, negotiation retry). Guard-test offender count reduced.
+
+
+=====================================================================
+PART 3 - CONNECTIONS FRAMEWORK (every external system configurable)
+=====================================================================
+
+GOAL
+----
+Every mail box, calendar, SMS gateway, AI model, storage bucket, job
+board, e-sign, BGV vendor, biometric device, external payroll system
+and SSO provider is a tenant-managed CONNECTION with encrypted
+credentials, a "Test connection" button, health monitoring, and
+PURPOSE-BASED ROUTING. Code never names a provider or address.
+
+1. CAPABILITY INTERFACES (platform/connectors/capabilities.py)
+-------------------------------------------------------------
+  EmailSender.send(msg: OutboundEmail) -> ProviderResult
+  EmailReceiver.poll(since) -> list[InboundEmail] | webhook handler
+  CalendarProvider.free_busy / create_event / update / cancel
+  IcsOnlyCalendar (no external account: generates .ics - current behaviour)
+  SmsSender / WhatsAppSender / ChatNotifier - interfaces only (later)
+  StorageProvider.put/get/signed_url/delete
+  LlmProvider.complete / embed  (usage metered per tenant)
+  ESignProvider.create_envelope / status / download
+  BgvProvider.initiate / status / report
+  JobBoardPublisher.publish / unpublish / fetch_applicants
+  BiometricSource.pull_punches (device API or CSV drop)
+  IdentityProvider (SAML2 / OIDC) - interface only; SSO is later
+  HrisSync (import from another HRMS / Excel / CSV)
+  WebhookTarget (generic outbound, HMAC signed)
+  VideoMeeting.create_meeting (Zoom / Teams / Google Meet / none)
+
+2. PROVIDER ADAPTERS (platform/connectors/providers/*)
+------------------------------------------------------
+Build now: smtp, imap (both with password/app-password AND OAuth2
+  XOAUTH2 login - Microsoft 365 is retiring basic auth for SMTP AUTH,
+  and Google Workspace admins often disable it), ics_only,
+  google_meet, teams_meeting, zoom, docusign, leegality, s3_compatible,
+  local_disk (dev only), anthropic, openai_compatible (for tenants who
+  bring another model), excel_file (tracker import/export), csv_sftp,
+  generic_webhook, linkedin_jobs, naukri, indeed, bgv_generic_webhook.
+  Job boards: LinkedIn/Naukri/Indeed posting APIs are partner-gated;
+  each client connects its OWN employer account. Fallback that always
+  works: public XML job feed from the career site + one-click
+  'copy posting' + tracked apply links (source attribution).
+Later (interface + config schema + "not yet implemented" test only):
+  microsoft_graph_mail, gmail_api, amazon_ses, sendgrid, twilio_sms,
+  msg91, meta_whatsapp_cloud, slack, teams_chat, google_calendar,
+  microsoft_calendar, digio, authbridge, idfy (specific BGV vendors -
+  bgv_generic_webhook covers them at launch), saml_generic,
+  oidc_generic, okta, azure_ad, google_workspace_directory.
+Each adapter declares:
+  PROVIDER_CODE, CAPABILITIES, config_schema (JSON Schema -> auto form),
+  secret_fields, oauth (optional: auth_url, token_url, scopes),
+  test_connection(), health_check(), rate_limit defaults.
+
+3. DATA MODEL (tenant DB)
+-------------------------
+connections(id, tenant_id, name, provider_code, capability[],
+  config_json, secret_ref, status[draft|active|error|disabled],
+  last_tested_at, last_test_result, last_health_at, health_status,
+  owner_user_id, created_by)
+connection_oauth_tokens(connection_id, access_secret_ref,
+  refresh_secret_ref, expires_at, scopes)  # per tenant's OWN OAuth app
+  (OAuth client id/secret are ALSO a connection config - each client
+   can register its own Google/Microsoft app; a platform app is optional)
+connection_routes(id, tenant_id, purpose, connection_id, priority,
+  condition_jsonlogic NULL, from_identity_json NULL, enabled)
+connection_attempts(id, tenant_id, connection_id, purpose, operation,
+  request_meta, status, latency_ms, error, created_at)   # partitioned
+
+4. PURPOSES (registry, extensible by modules)
+---------------------------------------------
+  email.outbound.default
+  email.outbound.recruitment        email.outbound.interview_negotiation
+  email.outbound.onboarding         email.outbound.hr_letters
+  email.outbound.system (password reset, OTP)
+  email.inbound.negotiation_replies email.inbound.candidate_applications
+  calendar.interviews               meeting.interviews
+  chat.hr_alerts  storage.documents  storage.exports
+  llm.resume_extraction  llm.scoring  llm.judgment  llm.copilot
+  llm.embeddings  esign.offer_letters  bgv.default  jobboard.*
+  meeting.google_meet  meeting.teams  meeting.zoom
+Resolution: `ConnectorRouter.resolve(purpose, ctx)` -> highest priority
+enabled route whose condition passes (e.g. legal_entity == X uses X's
+mailbox); fallback purpose chain: email.outbound.recruitment ->
+email.outbound.default. Circuit-breaker: on N consecutive failures try
+next priority route; raise `NoConnectionForPurposeError` if none -
+surfaced in UI as a configuration issue, never a 500.
+
+5. MIGRATE CURRENT HR MAILBOX
+-----------------------------
+- The current SMTP/IMAP "Shared HR Mailbox" becomes connections of
+  provider smtp + imap for tenant #1, routed to email.outbound.default,
+  email.outbound.interview_negotiation, email.inbound.negotiation_replies.
+- Existing validate-before-save Connect UX is generalised into the
+  ConnectionWizard (below). Old HR-Mailbox table migrated then dropped.
+- Anthropic key becomes connection provider=anthropic; model IDs in
+  settings ai.models.*; code calls `ai.gateway.complete(purpose=...)`.
+- Excel tracker path becomes connection provider=excel_file.
+
+6. API
+------
+GET  /api/v1/connectors/providers           (catalog + config schemas)
+CRUD /api/v1/connections
+POST /api/v1/connections/{id}/test          (runs test_connection, never saves on fail when ?validate_only)
+POST /api/v1/connections/{id}/oauth/start | GET .../oauth/callback
+CRUD /api/v1/connection-routes
+GET  /api/v1/connections/{id}/attempts
+GET  /api/v1/connectors/purposes            (with "unrouted" warnings)
+
+7. UI - Admin > Integrations
+----------------------------
+- Catalog grid (logo, capability chips, status).
+- ConnectionWizard: choose provider -> auto form (rjsf) -> secrets
+  fields masked -> Test -> Save (validate-before-save preserved).
+- Routing matrix: rows = purposes, columns = priority 1..n, drag to
+  reorder, condition builder (JSONLogic UI), red badge on unrouted
+  purposes that an enabled module needs.
+- Health dashboard: last 24h attempts, error rate, latency, token
+  expiry warnings; alert rule -> comms (Part 4).
+
+TESTS
+-----
+test_connector_router.py (priority, conditions, fallback chain, breaker)
+test_connection_secrets.py (secrets never in responses/logs)
+test_smtp_imap_adapter.py (aiosmtpd / fake IMAP)
+test_llm_gateway_routing.py (purpose->connection->model; usage metered)
+test_no_provider_names_in_modules.py (modules/* must not import providers/*)
+
+CHECKS (before this part's commit)
+--------------------------
+grep: ConnectorRouter, NoConnectionForPurposeError, EmailSender,
+      ConnectionWizard, connection_routes
+Live: negotiation email for tenant #1 still sends via the migrated
+mailbox connection; audit shows purpose=email.outbound.interview_negotiation.
+
+
+=====================================================================
+PART 4 - COMMUNICATION ENGINE (all mails & messages configurable)
+=====================================================================
+
+GOAL
+----
+No email or in-app message wording, subject, layout, sender, recipient
+list or timing is in code. Modules emit EVENTS; tenant-defined
+NOTIFICATION RULES pick templates, channels, recipients and routes.
+
+1. DATA MODEL
+-------------
+brand_themes(id, tenant_id, name, logo_file_id, primary_color,
+  secondary_color, gradient_from, gradient_to, font_family,
+  email_footer_html, legal_disclaimer, social_links_json, is_default,
+  legal_entity_id NULL)
+message_layouts(id, tenant_id, channel, name, html_shell, text_shell,
+  theme_id)   # shell uses {{ theme.* }} tokens; table-based, Outlook-safe
+message_templates(id, tenant_id, key, channel[email|in_app
+  (sms|whatsapp|chat|push reserved for later)], locale, version, status[draft|published|archived],
+  subject_tpl, html_tpl, text_tpl, sms_tpl, whatsapp_provider_template
+  _name, variables_schema_json, layout_id, attachments_spec_json,
+  published_by, published_at)
+notification_rules(id, tenant_id, name, event_type, condition_jsonlogic,
+  recipients_json, channels[], template_key, delay_spec, quiet_hours
+  _respect, digest_mode[none|hourly|daily], priority, enabled)
+  recipients_json examples:
+    {"relation":"candidate"}, {"relation":"application.interviewers"},
+    {"relation":"employee.manager","levels":1}, {"role":"HRBP",
+     "scope":"employee.location"}, {"users":[...]}, {"emails_setting":
+     "recruitment.cc_list"}, {"expression": <jsonlogic>}
+notification_preferences(user_id | candidate_id, channel, event_group,
+  opted_in, quiet_hours)
+outbound_messages(id, tenant_id, rule_id, template_id+version, channel,
+  purpose, connection_id, to, cc, bcc, subject, body_ref, status
+  [queued|sending|sent|delivered|bounced|failed|suppressed], attempts,
+  provider_message_id, thread_key, related_entity, error, sent_at)
+inbound_messages(id, tenant_id, connection_id, from, to, subject,
+  message_id, in_reply_to, references, thread_key, body_ref,
+  attachments, routed_handler, routed_entity, status, received_at)
+suppression_list(tenant_id, address, reason[bounce|unsubscribe|
+  complaint], created_at)
+
+2. RENDERING
+------------
+- Jinja2 SandboxedEnvironment, StrictUndefined; variables validated
+  against variables_schema_json at publish time and at send time.
+- Built-in filters: date/time in recipient tz, currency, i18n `t()`,
+  `button(url,label)` producing bulletproof table buttons.
+- Every template renders HTML + plain text (text auto-derived if
+  empty). HTML escaped by default (keep existing escaping tests).
+- Attachments spec: generated docs (offer letter PDF, HR letters PDF),
+  .ics from CalendarService, stored files.
+
+3. DISPATCH PIPELINE
+--------------------
+DomainEvent (outbox) -> NotificationRuleMatcher -> RecipientResolver
+-> PreferenceFilter/Suppression -> Renderer -> ConnectorRouter
+(purpose from rule or template) -> Celery send task with retry/backoff
+-> outbound_messages status updates -> delivery webhooks/bounces.
+Direct sends (e.g. OTP) use `comms.send(template_key, to, ctx,
+purpose)` which still goes through the same log.
+
+4. INBOUND ROUTING
+------------------
+- Poll (IMAP IDLE where supported, else interval polling).
+- Threading: reply-to plus-addressing `<local>+<thread_key>@domain`
+  when the mailbox supports it, else Message-ID/References headers.
+- InboundRouter maps thread_key -> handler registered by modules
+  (e.g. recruitment.negotiation_reply). Unmatched -> HR inbox queue UI.
+
+5. MIGRATE CURRENT EMAILS (remove from code)
+--------------------------------------------
+Seed as DEFAULT, generic, editable templates (no client name - use
+{{ org.display_name }}):
+  recruitment.negotiation.interviewer_offer
+  recruitment.negotiation.candidate_offer
+  recruitment.negotiation.candidate_reprompt
+  recruitment.interview.confirmation (with .ics attachment)
+  recruitment.application.received / rejected / shortlisted
+  recruitment.offer.released
+  system.password_reset / system.otp / system.welcome
+Delete `_negotiation_email_html`, `_build_interviewer_email_html`,
+`_build_candidate_email_html` after parity tests pass (render old vs
+new for the same fixture and compare text content).
+The navy->blue gradient moves into tenant #1's brand_theme.
+
+6. API & UI
+-----------
+API: CRUD templates (+ /preview with sample data, /test-send, /publish,
+/versions, /diff), CRUD rules, GET outbound/inbound logs, resend,
+suppression management, preferences (self-service).
+UI: Admin > Communications
+  - Template editor: split view (code/visual blocks) + live preview
+    (desktop/mobile/dark), variable picker from schema, locale tabs,
+    versions & diff, test-send to me.
+  - Rules: "When <event> and <condition> send <template> via
+    <channels> to <recipients> after <delay>".
+  - Message log with filters, per-message timeline, resend.
+  - Brand themes editor with live email preview.
+Candidate/employee: unsubscribe/preferences page (tenant-branded).
+
+TESTS
+-----
+test_template_render_parity.py, test_rule_matching.py,
+test_recipient_resolver.py, test_quiet_hours_digest.py,
+test_inbound_threading.py, test_suppression.py,
+test_no_hardcoded_tenant_values.py -> FLIP from xfail to hard pass.
+
+CHECKS (before this part's commit)
+--------------------------
+grep: NotificationRuleMatcher, RecipientResolver, InboundRouter,
+      message_templates, brand_themes
+grep -rn "_negotiation_email_html" backend/app  -> NO hits
+Guard test passes with zero offenders (or allow-listed with reasons).
+
+
+=====================================================================
+PART 5 - IAM (LOGIN + 2FA, RBAC + SCOPES, FIELD SECURITY) + WORKFLOW ENGINE
+=====================================================================
+
+5A - IDENTITY & ACCESS
+--------------------------
+1. Authentication (per-tenant configurable, setting iam.auth.*)
+   - Email + password ONLY at launch (policy: length, complexity,
+     expiry, history, lockout - all settings).
+   - 2-step verification REQUIRED FOR EVERYONE (employees, HR,
+     interviewers, admins): authenticator app (TOTP) or email OTP via
+     the client's mailbox; recovery codes; admin reset with audit;
+     'remember this device' days = setting.
+   - SSO (SAML/OIDC: Azure AD, Google, Okta) - LATER, interface only.
+   - Candidates and pre-hires use magic links (+ email OTP), not 2FA apps.
+   - Magic-link login for candidates / pre-hires (portal).
+   - Sessions: JWT access (short) + rotating refresh; device list;
+     revoke; IP allow-list per tenant (setting).
+2. Authorization
+   permissions registry: code "<module>.<resource>.<action>" declared in
+     each module's permissions.py (view, create, edit, delete, approve,
+     export, view_sensitive, configure).
+   roles(id, tenant_id, name, description, is_system, permissions[])
+     system role templates seeded: Super Admin, HR Admin, HRBP,
+     Recruiter, Hiring Manager, Interviewer, Helpdesk Agent,
+     Manager, Employee, Candidate, Auditor (tenant can clone/edit).
+   role_assignments(user_id, role_id, scope_type[all|legal_entity|
+     business_unit|location|department|cost_center|reportees_direct|
+     reportees_all|self|custom], scope_ids[], condition_jsonlogic,
+     valid_from, valid_to)
+   field_security(tenant_id, entity, field, role_id,
+     access[hidden|masked|read|write])
+   `authz.require(permission, resource=obj)` evaluates permission +
+   scope + ABAC condition; list queries get a SQL filter from
+   `authz.scope_filter(model, permission)` (never filter in Python).
+   Delegation: user_delegations(from_user, to_user, permissions|all,
+   from, to) for cover while someone is away.
+3. Users vs people: `users` (login identity) link to `employees`,
+   `candidates`, or external `contacts` (agency, BGV vendor). Fixes
+   the "interviewer must be a registered User" issue generically:
+   interviewers are employees (or external contacts) - no manual User
+   creation needed (Suresh A case solved by data, not code).
+4. UI: Admin > Access: roles matrix (module x action), scope editor,
+   "view as user" (impersonation, audited, requires permission),
+   access review report (who can see salary / Aadhaar).
+
+5B - WORKFLOW & APPROVAL ENGINE
+-----------------------------------
+1. Definitions (versioned, per tenant)
+   workflow_definitions(id, tenant_id, key, name, module, version,
+     status[draft|published|retired], trigger_json, graph_json,
+     created_by, published_at)
+   trigger types: event (any domain event), field_change(entity, field,
+     from/to), schedule(cron, tenant tz), date_relative(entity.date
+     +/- N days e.g. probation_end - 15d), manual(button on entity),
+     api/webhook, form_submit.
+   node types:
+     condition (JSONLogic), switch (multi-branch),
+     approval {approvers: resolver list, mode sequential|parallel|any|
+       quorum N, sla, reminders, escalation to resolver, allow
+       delegate, allow send-back, comments required on reject},
+     task {assignee resolver, form_id, due},
+     action {set_field, create_record, send_notification(template),
+       call_connector(purpose, op), webhook, generate_document,
+       run_ai(prompt_key) -> REQUIRES human review node after it},
+     wait {duration | until date | until event}, parallel/join,
+     sub_workflow, end.
+   approver resolvers: user, role-in-scope, manager(level n),
+     department_head, hrbp_of(employee), position_holder, expression,
+     skip-if-same-as-requester, auto-approve rule.
+2. Runtime
+   workflow_instances(id, tenant_id, definition_id+version, entity_type,
+     entity_id, status, context_json, started_by, started_at, ended_at)
+   workflow_steps(id, instance_id, node_id, status, assignee, due_at,
+     acted_by, action, comment, payload, started_at, ended_at)
+   - Engine runs on Celery; each node transition is one DB transaction
+     + outbox events (no half-done state).
+   - Timers via `workflow_timers` table polled by beat (idempotent).
+   - Running instances keep their version; new ones use latest.
+   - Admin can reassign, skip (audited), retry failed action nodes.
+3. Unified Inbox: GET /api/v1/inbox - all pending approvals/tasks
+   across modules; approve/reject from email via signed
+   one-time action links (reuse NegotiationToken pattern generically as
+   `action_tokens`).
+4. Visual builder (React Flow): drag nodes, property panels with
+   rjsf forms, validation (unreachable nodes, missing approvers),
+   simulate with a sample record (dry-run shows path + who approves).
+5. Seed default workflows (generic, editable): job requisition
+   approval, offer approval, BGV decision, asset request,
+   onboarding checklist, probation confirmation, transfer/promotion,
+   resignation & clearance, profile change approval.
+
+TESTS
+-----
+test_authz_scopes.py, test_field_security_masking.py, test_mfa_required.py
+(every role blocked until 2FA enrolled), test_workflow_engine.py (sequential,
+parallel, quorum, escalation timer, send-back, versioning),
+test_action_tokens.py, test_workflow_simulation.py
+
+CHECKS (before this part's commit)
+--------------------------
+grep: authz.require, scope_filter, field_security, WorkflowEngine,
+      workflow_definitions, action_tokens, /api/v1/inbox
+
+
+=====================================================================
+PART 6 - METADATA (CUSTOM FIELDS, FORMS, MASTERS), BRANDING, I18N
+=====================================================================
+
+GOAL
+----
+Each client can add its own fields, forms, dropdown values, labels,
+look & feel and language - without a code change or deployment.
+
+1. CUSTOM FIELDS
+   custom_field_defs(id, tenant_id, entity[employee|candidate|job|
+     application|requisition|asset|ticket|separation|...],
+     code, label_i18n, type[text|longtext|number|decimal|date|datetime|
+     bool|picklist|multipicklist|user|employee|file|email|phone|url|
+     currency|formula|lookup(master)], validation_json, default,
+     required_condition_jsonlogic, visible_condition_jsonlogic,
+     section, order, sensitive, searchable, reportable, is_active)
+   Storage: `custom_fields JSONB` column on every extensible entity +
+   GIN index; searchable ones get generated expression indexes on demand.
+   Validation server-side from defs (pydantic model built dynamically).
+   Field-level security from Part 5 applies to custom fields too.
+
+2. FORMS & LAYOUTS
+   form_layouts(id, tenant_id, entity, context[create|edit|view|
+     portal|mobile], sections_json (fields incl. standard + custom,
+     columns, conditional visibility), role_ids NULL)
+   forms(id, tenant_id, key, name, schema_json, ui_schema_json)
+     - free-standing forms used by workflows/tasks/exit interviews/onboarding.
+   Frontend <DynamicForm entity= context= /> renders any layout.
+   Form builder UI (drag & drop).
+
+3. MASTERS / PICKLISTS (replace every enum that is business-specific)
+   master_types(code, name, hierarchical bool, attributes_schema)
+   master_values(id, tenant_id, type_code, code, label_i18n, parent_id,
+     attributes_json, sort, is_active, effective_from/to)
+   Seeded generic master types: designation, grade, band, employment_
+   type, worker_type, job_family, skill, skill_category, education_
+   level, institution, source_of_hire, rejection_reason, exit_reason,
+   document_type, asset_category, ticket_category,
+   relationship, blood_group, language, industry, notice_period,
+   currency, country/state/city (reference, platform-wide).
+
+4. NUMBERING SEQUENCES
+   sequences(tenant_id, key e.g. employee_code | offer_no | ticket_no,
+     pattern "{ENTITY}-{YYYY}-{SEQ:5}", scope(legal_entity|location),
+     reset[never|yearly|fy], current)
+
+5. BRANDING / WHITE-LABEL
+   Uses brand_themes (Part 4) + tenant_domains:
+   - /api/me/bootstrap and public /api/v1/public/branding?host=
+     return logo, favicon, colours, product name, login background,
+     support contact, legal links -> MUI theme created at runtime.
+   - Remove src/bootstrap/defaults.ts client values (Part 1 tags).
+   - Login page, candidate portal, career site, emails, PDFs all themed.
+   - Custom CSS slot (sanitised) for enterprise tenants (feature flag).
+
+6. I18N & LOCALISATION
+   - Backend: all user-facing strings via i18n keys; bundles in
+     platform/i18n/locales/*.json + tenant overrides table
+     i18n_overrides(tenant_id, locale, key, value) so a client can
+     rename "Employee" to "Associate", "Requisition" to "MRF", etc.
+   - Frontend: i18next, lazy bundles. Launch languages: English, Hindi,
+     Tamil (UI, emails, letters, career site). RTL not needed at launch.
+   - Locale, timezone, currency, number/date formats from layered
+     settings (user > location > tenant).
+   - Multi-currency amounts stored as (amount, currency) with FX table.
+
+7. BOOTSTRAP ENDPOINT
+   GET /api/me/bootstrap -> {tenant, branding, locale, tz, modules
+   enabled, permissions, feature_flags, nav (built from modules +
+   permissions + tenant menu overrides), custom labels}.
+   The frontend must not render any menu/label not returned here.
+
+TESTS
+-----
+test_custom_fields_validation.py, test_custom_field_security.py,
+test_masters_effective_dating.py, test_sequences_concurrency.py,
+test_branding_bootstrap.py, test_i18n_overrides.py,
+frontend: DynamicForm.test.tsx, theme-from-bootstrap.test.tsx
+
+CHECKS (before this part's commit)
+--------------------------
+grep: custom_field_defs, DynamicForm, master_values, sequences,
+      /api/me/bootstrap, i18n_overrides
+Two test tenants with different logos/colours/labels render different
+UIs from the same build.
+
+
+=====================================================================
+PART 7 - CORE HR (system of record for people & organisation)
+=====================================================================
+
+1. ORGANISATION MODEL (all effective-dated, all tenant data)
+   legal_entities(id, name, registration ids json (country-specific:
+     company registration ids - via custom fields
+     schema per country), address, logo override, currency, fiscal year)
+   business_units, departments (tree), sub_departments,
+   locations(id, legal_entity_id, address, geo lat/lng, geofence
+     timezone, state, work_week, business_calendar (working days
+     and holidays used ONLY for SLA timers - not a leave module))
+   cost_centers
+   positions(id, code, title (designation master), department,
+     location, grade, reports_to_position_id, headcount_budget,
+     status[vacant|filled|frozen], is_critical)  -> position management
+   org_chart API: by position or by manager, lazy tree, search,
+     export PNG/PDF; Leaflet map of locations & headcount.
+
+2. EMPLOYEE MASTER
+   employees(id, employee_code (sequence), user_id, status[pre_hire|
+     active|on_notice|inactive|terminated|rehire_eligible],
+     worker_type[employee|contractor|intern|consultant|gig],
+     personal (name parts, preferred name, pronouns, DOB, gender,
+     marital status, nationality, blood group), contact, addresses,
+     emergency contacts, family/dependents, education, prior employment,
+     skills (+ proficiency, source: self|manager|AI-inferred),
+     certifications, languages, identity docs (encrypted: PAN, Aadhaar
+     (masked last 4), passport, visa, driving licence), bank accounts
+     (encrypted, verification status), custom_fields)
+   employment_records (effective-dated job info): legal_entity, BU,
+     department, location, position, designation, grade, manager,
+     functional manager, HRBP, cost center, employment type, probation
+     end, confirmation date, notice period (from master), work mode
+     [onsite|hybrid|remote].
+   Every change = a lifecycle event (below) - no silent edits of job info.
+
+3. LIFECYCLE EVENTS (each driven by a workflow from Part 5)
+   hire, probation extension, confirmation, transfer (location/dept/
+   entity), promotion, demotion, redesignation, manager change,
+   compensation change (record + letter only; no pay processing), secondment, sabbatical,
+   suspension, resignation, termination, retirement, death, rehire,
+   contract renewal. Mass changes via upload with preview + approval.
+   Future-dated changes applied by scheduler on effective date.
+
+4. DOCUMENTS & LETTERS
+   employee_documents(id, employee_id, type (master), file_id, issued/
+     expiry dates, verified_by, visibility[employee|hr|manager])
+   Expiry alerts (visa, certifications) via notification rules.
+   letter_templates: DOCX/HTML with merge fields (same Jinja sandbox),
+   generated to PDF, optional e-sign (connection esign.*), letter
+   register + digital verification QR/URL.
+   Letters seeded generic: offer, appointment, confirmation, increment,
+   promotion, transfer, experience, relieving, address proof, NOC.
+
+5. SELF-SERVICE (ESS/MSS)
+   - Employee: profile with change requests (approval workflow per
+     field group configurable), documents, letters on demand, org chart,
+     directory (privacy settings), inbox.
+   - Manager: team view, pending approvals, team calendar, initiate
+     lifecycle events, headcount vs budget.
+   - People directory & "who's who" with skills search.
+
+6. DATA IMPORT / MIGRATION TOOLKIT
+   Import wizard for every entity: upload CSV/XLSX -> column mapping
+   (saved templates) -> validation preview (row errors) -> dry run ->
+   commit (background job) -> rollback batch. Needed for onboarding
+   each new client quickly.
+
+7. EVENTS emitted: employee.created, employee.updated,
+   employment.changed, employee.status_changed, document.expiring ...
+
+TESTS: effective-dating queries (as-of date), lifecycle workflows,
+  position vacancy logic, masking of PII, import dry-run/rollback,
+  org chart cycles prevention.
+
+CHECKS (before this part's commit)
+grep: legal_entities, positions, employment_records, LifecycleService,
+      letter_templates, ImportWizard
+
+
+=====================================================================
+PART 8 - RECRUITMENT ON THE PLATFORM (refactor + advanced features)
+=====================================================================
+
+GOAL
+----
+Keep everything that works (AI screening, double-blind slot
+negotiation, .ics confirmation, shared-mailbox model, HITL decisions,
+RefreshButton) but make every step, number and message tenant-
+configured, and add what leading ATSs offer.
+
+1. CONFIGURABLE HIRING PIPELINE (replaces fixed 13-step lifecycle)
+   pipeline_templates(id, tenant_id, name, is_default)
+   pipeline_stages(id, template_id, code, name_i18n, order, category
+     [applied|screening|assessment|interview|offer|preboarding|hired|
+     rejected|withdrawn], sla_days, entry_workflow_key, exit_workflow
+     _key, required_fields[], auto_actions_json, candidate_visible_name)
+   Seed a default template that reproduces today's 13 steps exactly.
+   Clients can add, remove, rename and reorder stages (decision E3).
+   A job picks a template; per-job overrides allowed.
+   Kanban + list views generated from stages.
+
+2. REQUISITIONS & JOBS
+   job_requisitions (position-linked or new headcount, budget, reason
+     [new|replacement], approval workflow), job templates / JD library
+   (AI JD generator with bias-language checker -> human edits),
+   job postings: internal job posting (IJP), career site, referral,
+   agencies, job boards via connections (jobboard.*), social share.
+   Hiring team per job: recruiter(s), hiring manager, interviewer pools
+   (employees or external contacts - no User creation needed).
+
+3. CAREER SITE & CANDIDATE PORTAL (tenant-branded, per domain)
+   Public jobs list/search/filters, apply with resume parse autofill,
+   custom application forms (Part 6), knockout questions, consent
+   capture (DPDP), status tracking, self-scheduling, document upload,
+   offer view & e-sign, withdraw. SEO + Google Jobs structured data.
+
+4. SCREENING (existing engine, now configurable)
+   - Weights, composite formula, thresholds, must-have skills,
+     auto-actions per stage from settings/job overrides.
+   - Model per purpose via LLM gateway (llm.resume_extraction,
+     llm.scoring, llm.judgment). Prompt texts in a prompt registry
+     (versioned, tenant-overridable) - not in code.
+   - Explainability panel: why this score (evidence snippets).
+   - Bias guardrails: optional anonymised screening (hide name/photo/
+     gender/age/college), adverse-impact report per stage.
+   - Duplicate detection & candidate merge; talent pool re-matching
+     (pgvector semantic search across past applicants).
+   Keep the closed skills-score accuracy work unchanged in behaviour.
+
+5. ASSESSMENTS
+   Built-in question banks (MCQ, coding link, written, video), or
+   connections to external assessment vendors (generic webhook
+   adapter). Scores flow into the scorecard.
+
+6. INTERVIEW SCHEDULING (negotiation generalised)
+   - interviewer_availability(employee_id, weekly_pattern, exceptions,
+     max_interviews_per_day/week, skills/levels they can assess)
+     REPLACES Excel `interviewer_busy_this_week` as system of record.
+     busy_source setting: internal | calendar (free/busy via
+     calendar.interviews connection) | excel (legacy import) - or
+     combined.
+   - Negotiation mechanics from settings: slots_offered, slots_to_pick,
+     double_blind on/off, retry_day_offset, max_retry_days, pool walk
+     order [round_robin|least_loaded|priority|random], panel size,
+     round definitions per job (tech1, tech2, HR, managerial).
+   - Meeting link via meeting.interviews connection (or none) + .ics.
+   - Reschedule / cancel / no-show flows; interviewer reminders.
+   - Scorecards: configurable competencies + rating scales per round,
+     mandatory feedback SLA with escalation; AI interview-notes summary
+     (HITL).
+   - Keep `clear_manual_scheduling_flag`, `reset_application_to_
+     screening`, retry eligibility function - now reading settings.
+
+7. OFFERS
+   Offer templates (letter_templates), CTC breakup builder (tenant-
+   defined offer components + formulas, per grade/location - display
+   only, NOT payroll), approval workflow with budget/band
+   checks, e-sign, offer expiry & reminders, counter-offer tracking,
+   joining-date confirmation, offer acceptance -> creates pre-hire
+   employee (onboarding Part 9).
+
+8. RECRUITMENT ANALYTICS
+   Funnel conversion per stage/source, time-to-hire, time-in-stage,
+   SLA breaches, source ROI, interviewer load & feedback latency,
+   offer-acceptance rate, diversity funnel (if tenant enables).
+
+9. MIGRATION NOTES
+   - Old stage enums -> pipeline_stages codes (data migration).
+   - Excel tracker import job: one-time import of pools + busy data
+     into interviewer_availability; then busy_source=internal.
+   - Remove all references flagged in docs/hardcode_inventory.md.
+
+10. PARITY GATE
+   Before commit, walk docs/module_parity_checklist.md: each of the 13
+   existing modules must show "working on the platform" with a live
+   check on tenant #1, and nothing configurable left in code.
+
+TESTS: pipeline template parity (13-step default), negotiation with
+  non-default settings (e.g. 4 slots pick 1), internal availability,
+  calendar busy-source (mock), portal apply flow, anonymised screening,
+  offer approval with band breach.
+
+CHECKS (before this part's commit)
+grep: pipeline_stages, interviewer_availability, prompt_registry,
+      busy_source, CareerSite
+Live E2E on tenant #1 with a fresh candidate: apply -> screen ->
+shortlist -> negotiation -> .ics confirmation, all messages from
+published templates.
+
+
+=====================================================================
+PART 9 - PRE-BOARDING & ONBOARDING
+=====================================================================
+
+1. PRE-BOARDING PORTAL (offer accepted -> joining day)
+   - Magic-link portal, tenant branded, mobile-first.
+   - Configurable onboarding forms (Part 6) per entity/location/
+     worker type: personal, family, education, prior employment, bank,
+     nominations/declaration forms (tenant-defined), policy sign-offs.
+   - Document collection checklist (master document_type) with
+     upload, OCR/AI extraction (llm.resume_extraction purpose) to
+     prefill + HR verification queue.
+   - Welcome content: videos, policies (acknowledgement tracking),
+     team intro, buddy, first-week agenda.
+   - Joining-date change / no-show / offer-revoke flows.
+
+2. BACKGROUND VERIFICATION
+   bgv_cases(candidate/employee, package (master: identity, address,
+     education, employment, criminal, credit, drug), vendor connection,
+     status per check, report file, discrepancy, decision (HITL))
+   Consent capture before initiation. Webhook status updates.
+
+3. ONBOARDING PLANS (workflow-driven)
+   onboarding_plan_templates -> tasks with owner resolvers (HR, IT,
+   Admin, Manager, Buddy, Finance, New Hire), due relative to DOJ
+   (-7d, day 1, +30d), dependencies, forms, approvals.
+   Provisioning actions via connections: create email account
+   (later: directory connectors) - at launch these are checklist tasks, asset
+   allocation (Part 11), access card request, joiner CSV export for payroll/finance.
+   30/60/90-day check-in forms (manager + new hire).
+
+4. CONVERSION
+   On DOJ + "joined" confirmation: pre_hire -> active employee,
+   employee_code generated, user account + role Employee, policies
+   assigned by rules (onboarding plan, letters, roles by entity/
+   location/grade - assignment_rules table, JSONLogic).
+
+5. DASHBOARD
+   Upcoming joiners, readiness % per joiner, overdue tasks by owner,
+   BGV status, document pending, offer-to-join drop-off.
+
+TESTS: portal auth, plan generation relative dates, assignment rules,
+  BGV webhook, conversion idempotency.
+CHECKS (before this part's commit)
+grep: onboarding_plan_templates, bgv_cases, assignment_rules,
+      PreboardingPortal
+
+
+=====================================================================
+PART 10 - PERFORMANCE, GOALS/OKR, 360, COMPENSATION, SUCCESSION
+=====================================================================
+
+A. GOALS & OKRs
+   Goal library, cascading (company -> dept -> team -> individual),
+   alignment tree, weightage rules, KPIs with measurable targets,
+   check-ins (progress %, confidence, comments), auto-progress from
+   integrations (e.g. Jira/CRM via connection webhook).
+B. CONTINUOUS PERFORMANCE
+   1:1 meeting notes & agendas, continuous feedback (private/public),
+   praise, manager nudges.
+C. REVIEW CYCLES (all configurable per cycle)
+   cycle templates: annual/half-yearly/quarterly/probation/project-end;
+   eligibility rules; stages (self, manager, peer/360 nomination &
+   approval, skip-level, reviewer), sections (goals, competencies,
+   values, open questions), rating scales (master, numeric/label),
+   weightage formula, anonymity rules, deadlines & reminders via comms.
+   AI assist: draft review summary from goals/feedback/1:1s (HITL,
+   bias-language check), never auto-submits.
+D. CALIBRATION
+   Bell-curve/distribution guidelines (configurable, soft/hard),
+   9-box grid (performance x potential), drag-to-adjust with audit,
+   normalisation reports.
+E. COMPENSATION PLANNING
+   Merit matrix (rating x compa-ratio -> % range), budget pools per
+   dept, bonus/variable pay rules, promotion cases, manager worksheet,
+   approvals, letters (Part 7) and effective-dated compensation record (optional export).
+   Salary bands per grade/location with compa-ratio analytics.
+F. TALENT & SUCCESSION
+   Talent profiles (skills, aspirations, mobility), critical positions,
+   successor slates with readiness, flight-risk (AI signal + manager
+   input, HITL), career paths, internal gig/project marketplace (IJP).
+
+TESTS: cycle eligibility, weightage calc, anonymity enforcement,
+  calibration audit, merit matrix, successor readiness.
+CHECKS (before this part's commit)
+grep: goals, review_cycles, calibration, merit_matrix, succession_slates
+
+
+=====================================================================
+PART 11 - HELPDESK, ASSETS, SEPARATION / EXIT
+=====================================================================
+
+A. HR HELPDESK
+   tickets(category/subcategory masters, priority, SLA policy per
+   category (configurable response/resolution, business hours by
+   location calendar), assignment rules (round-robin/skill/queue),
+   escalation workflow, CSAT). Channels: portal, email-to-ticket
+   (email.inbound.helpdesk purpose), in-app. Knowledge base with
+   HR Copilot deflection (Part 12). Confidential categories (POSH /
+   grievance / whistle-blower) with restricted visibility.
+
+B. ASSETS
+   Asset register (category master, serial, purchase, warranty,
+   vendor, location), allocation/return with acknowledgement,
+   requests via workflow, maintenance log, depreciation (optional),
+   onboarding/exit hooks (auto-allocate / clearance recovery).
+
+C. SEPARATION / OFFBOARDING
+   - Resignation (employee-initiated) & termination (HR-initiated)
+     workflows; notice period from master + policy for buyout/waiver;
+     retention discussion step; LWD approval.
+   - Clearance checklist per department (IT, Admin, Finance, Manager,
+     HR) with owner resolvers; asset recovery; access revocation via
+     connections (directory disable) - later; manual checklist item at launch.
+   - Exit interview (configurable form + optional AI summary, HITL).
+   - Exit summary (LWD, notice served/short, asset recovery,
+     clearance status) exportable as CSV for the client's finance/
+     payroll team; relieving & experience letters.
+   - Alumni & rehire eligibility flag, knowledge-transfer tasks.
+   - Absconding flow (HR-initiated) with legal notice templates.
+
+TESTS: SLA timers with business hours, asset clearance blocking
+  relieving letter, separation
+  workflow end-to-end.
+CHECKS (before this part's commit)
+grep: tickets, sla_policies, assets, separations, clearance_items
+
+
+=====================================================================
+PART 12 - ANALYTICS, REPORT BUILDER, HR COPILOT & AI AGENTS (HITL)
+=====================================================================
+
+A. ANALYTICS
+   1. Semantic layer: curated datasets per module (headcount,
+      attrition, hiring funnel, onboarding, performance, helpdesk,
+      assets, exits) with dimensions/measures, permission-
+      scoped automatically via authz.scope_filter and field security.
+   2. Report builder (drag & drop): pick dataset -> columns (incl.
+      custom fields) -> filters -> group/pivot -> chart; save, share
+      with roles, schedule delivery (comms template + email),
+      export XLSX/CSV/PDF. As-of-date reporting for effective-dated data.
+   3. Role dashboards (configurable widgets): CHRO, HRBP, Recruiter,
+      Manager, Employee. Keep existing recharts/Leaflet pages;
+      migrate them to widgets.
+   4. Metrics: headcount & movement, attrition (voluntary/regretted),
+      tenure, span of control, diversity (opt-in), time-to-hire, cost-
+      per-hire, offer acceptance, BGV turnaround, onboarding readiness,
+      ticket SLA, asset allocation, goal completion.
+   5. Predictive (clearly labelled as estimates, HITL): attrition risk,
+      time-to-fill forecast, headcount plan vs actual.
+   6. Read-replica / materialised views refreshed per tenant; BI export
+      connector (warehouse push to BigQuery/Snowflake/Postgres).
+
+B. HR COPILOT (employee & HR assistant)
+   - RAG over the tenant's OWN policies/handbooks/FAQs (pgvector,
+     per-tenant index; documents uploaded by HR; citations always shown).
+   - Personal data answers via tools with the caller's permissions
+     only ("my interview schedule", "my assets", "status of my ticket",
+     "who approves my profile change") - tool calls go through normal service layer + authz.
+   - Actions via chat create DRAFTS (raise ticket, request asset, request
+     letter) that the user confirms - never silent submission.
+   - AT LAUNCH (decision L2), channel: web widget in the app + PWA.
+     Slack/Teams/WhatsApp later. Answers in English, Hindi, Tamil.
+   - Handover to helpdesk ticket when unsure/low confidence.
+C. AI AGENTS (background, always human-in-the-loop)
+   Recruiter agent (sourcing shortlist suggestions, JD drafts,
+   interview-kit generation), onboarding agent (chases missing docs),
+   helpdesk triage agent (suggests category/answer), policy checker.
+   Each agent output lands in the Unified Inbox as a suggestion to
+   approve/edit/reject.
+D. AI GOVERNANCE (per tenant settings)
+   - Enable/disable AI per module & feature; choose model/connection
+     per purpose (including tenant's own key / private endpoint).
+   - Prompt registry (versioned, tenant overrides) with evaluation
+     fixtures; PII redaction before sending (configurable fields).
+   - Usage metering & budgets per tenant (tokens, cost) + alerts.
+   - AI decision log: input refs, model, prompt version, output,
+     human reviewer, final decision - for audit and bias review.
+
+TESTS: dataset scoping (manager sees only reportees), scheduled report
+  delivery, RAG citations required, copilot tool authz, AI disabled
+  -> features hidden, budget cutoff.
+CHECKS (before this part's commit)
+grep: datasets, ReportBuilder, CopilotService, prompt_registry,
+      ai_decision_log, usage_budget
+
+
+=====================================================================
+PART 13 - DEVOPS, PROVISIONING, DEPLOYMENT SHAPES, SECURITY, PRIVACY
+=====================================================================
+
+A. PACKAGING
+   - Dockerfiles: api, worker (celery), beat, frontend (static, nginx).
+   - docker-compose.yml (dev): postgres, redis, minio, mailpit (fake
+     SMTP/IMAP for dev), api, worker, beat, frontend.
+   - Helm chart `charts/hrms`: values for TENANCY_MODE, replicas,
+     HPA, ingress with wildcard + custom domains (cert-manager),
+     external Postgres/Redis/S3, SECRET_BACKEND.
+   - Terraform module for AWS FIRST (one module run = one client
+     installation): VPC, ECS Fargate (api/worker/beat), RDS Postgres,
+     ElastiCache Redis, S3, CloudFront for frontend, ACM certs, Route53
+     for our subdomains, Secrets Manager, CloudWatch; default region
+     ap-south-1 (Mumbai), DR option ap-south-2 (Hyderabad) - India only.
+     Keep everything cloud-portable (S3-compatible storage, plain
+     Postgres, containers) so Azure/GCP/on-prem modules can be added
+     when a client asks.
+   - Environments per client: dev / uat / prod - config promoted via
+     configuration packs (Part 2 export/import), never re-typed.
+
+B. TENANT PROVISIONING (`hrctl` CLI + Super-Admin console)
+   hrctl tenant create --slug --name --plan --isolation --region
+     -> create DB (or schema), run migrations, seed platform defaults,
+        optional config pack, create first admin (invite email via
+        platform system mailbox connection), register domain.
+   hrctl tenant suspend|resume|archive|delete (dry-run report first,
+     explicit --confirm <slug>)
+   hrctl tenant export|import (move a client between installations)
+   hrctl migrate --all-tenants [--parallel N]
+   hrctl config-pack export|import
+   Super-Admin console (separate app/route, MFA mandatory): tenants,
+   plans, modules, usage, health, impersonation (audited, time-boxed,
+   tenant-visible log).
+
+C. RELIABILITY & OBSERVABILITY
+   - Per-tenant backups (pg_dump per DB, PITR where available),
+     restore drill script, retention setting.
+   - OpenTelemetry traces, structlog JSON logs with tenant_id,
+     Prometheus metrics (per tenant labels, bounded), Sentry.
+   - Health endpoints: /healthz, /readyz, per-tenant connection health.
+   - Rate limiting per tenant/user; job queues per priority;
+     noisy-tenant protection (worker concurrency caps).
+   - Zero-downtime migrations (expand/contract), feature flags for rollout.
+
+D. SECURITY
+   OWASP ASVS L2 baseline, dependency scanning (pip-audit, npm audit),
+   SAST (bandit, semgrep), secrets scanning in CI (gitleaks) - replaces
+   manual "check for secrets before staging", container scanning,
+   CSP/HSTS headers, file upload AV scan hook (ClamAV), encryption at
+   rest (DB/storage) + column encryption for PII, key rotation,
+   audit export, pen-test checklist. Path to ISO 27001 / SOC 2 controls.
+
+E. PRIVACY (India DPDP Act 2023 + DPDP Rules 2025, GDPR-ready)
+   - Consent & notice management (candidates: consent at apply;
+     employees: notices per purpose), consent ledger.
+   - Data principal requests: access, correction, erasure, grievance -
+     workflow with SLA; erasure = anonymise/pseudonymise with legal-
+     hold & statutory-retention exceptions (employment records).
+   - Retention policies per data category (settings) with scheduled
+     purge job (dry-run report + approval, matching existing discipline).
+   - Breach register & notification workflow templates.
+   - Data residency: tenant region pins DB/storage location.
+   - Processor list (connections) shown in privacy notice automatically.
+
+F. CI/CD
+   GitHub Actions: lint (ruff, eslint), type-check (mypy, tsc), unit
+   tests by changed module, full suite on main, guard test, migrations
+   check on a 2-tenant fixture, build images, deploy to staging, smoke
+   tests per deployment shape (single & multi).
+
+CHECKS (before this part's commit)
+- `docker compose up` brings up full stack with 2 demo tenants on
+  different subdomains with different branding/settings/mailboxes.
+- `helm template charts/hrms` renders for both modes.
+- `hrctl tenant create` end-to-end on a fresh DB.
+
+
+=====================================================================
+PART 14 - UX STANDARDS (apply to every screen built from this spec)
+=====================================================================
+Goal: an admin at a new client can configure the product without us,
+and an employee can use it without training.
+
+1. Setup Wizard per tenant (first login): company -> entities &
+   locations -> branding -> connect mailbox (test) -> import employees
+   -> pick modules -> pick config pack -> invite admins. Progress
+   checklist stays on the admin home until 100%.
+2. "Configuration health" page: lists unrouted connection purposes,
+   unpublished templates required by enabled rules, workflows without
+   approvers, users without 2FA, expiring OAuth tokens.
+3. Navigation from /api/me/bootstrap only; global search (Ctrl/Cmd+K)
+   across people, candidates, jobs, requests, settings, reports.
+4. Unified Inbox for every approval/task; approve from email/chat.
+5. Every list: saved views, column chooser, filters, bulk actions,
+   export, RefreshButton (existing behaviour), empty states that
+   explain the next step.
+6. Every form: DynamicForm from layouts, inline validation, autosave
+   drafts for long forms, clear required markers, mobile-friendly.
+7. Every configurable object (template, workflow, policy, structure):
+   draft -> preview/simulate -> publish -> version history -> revert.
+8. Friendly errors: config problems (e.g. NoConnectionForPurposeError,
+   TRACKER_LOCKED) show a plain-language fix and a link to the right
+   settings page - never a raw 500.
+9. Accessibility WCAG 2.1 AA, keyboard-first, dark mode, RTL.
+10. PWA: installable on phones, offline read of own letters and
+    documents, push/in-app notifications. No native apps at launch.
+11. Contextual help: every setting has help text (i18n) + "what this
+    affects" preview; in-app tours for new modules.
+12. Performance budget: list pages < 1.5s p95 on 10k rows (server-
+    side pagination), bundle split per module.

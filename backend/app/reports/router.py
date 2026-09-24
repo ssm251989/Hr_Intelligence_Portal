@@ -219,7 +219,12 @@ def get_jobs_dashboard_stats(
         db.query(JobRole.id, JobRole.title, func.count(Application.id))
         .outerjoin(Application, Application.job_role_id == JobRole.id)
         .group_by(JobRole.id, JobRole.title)
-        .order_by(func.count(Application.id).desc())
+        # Tied on application_count (routine for 0-application jobs, or any two jobs with
+        # the same count) without a secondary key, Postgres is free to return those rows in
+        # a different order from one query to the next -- job created_at (oldest first),
+        # then id as a final tiebreaker for jobs created in the very same instant, makes
+        # ties stable and reproducible.
+        .order_by(func.count(Application.id).desc(), JobRole.created_at, JobRole.id)
         .limit(5)
         .all()
     )

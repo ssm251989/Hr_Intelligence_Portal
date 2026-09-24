@@ -3,6 +3,8 @@ import Container from "@mui/material/Container";
 import Typography from "@mui/material/Typography";
 import { Link as RouterLink, Outlet } from "react-router-dom";
 
+import { CAREERS_SITE_TITLE, ORG_DISPLAY_NAME } from "../bootstrap/defaults";
+
 export default function CareersLayout() {
   return (
     <Box sx={{ minHeight: "100vh", display: "flex", flexDirection: "column", bgcolor: "background.default" }}>
@@ -14,7 +16,7 @@ export default function CareersLayout() {
             to="/careers"
             sx={{ textDecoration: "none", color: "text.primary", fontWeight: 700 }}
           >
-            CTD Techs Careers
+            {CAREERS_SITE_TITLE}
           </Typography>
         </Container>
       </Box>
@@ -26,7 +28,7 @@ export default function CareersLayout() {
       <Box component="footer" sx={{ borderTop: 1, borderColor: "divider", py: 3 }}>
         <Container maxWidth="md">
           <Typography variant="body2" color="text.secondary" align="center">
-            © {new Date().getFullYear()} CTD Techs. All rights reserved.
+            © {new Date().getFullYear()} {ORG_DISPLAY_NAME}. All rights reserved.
           </Typography>
         </Container>
       </Box>
