@@ -825,6 +825,142 @@ export const reportsApi = {
     ),
 };
 
+// ---- IAM: roles, role assignments, delegations, access review (Part 5A) ----
+
+export interface PermissionRow {
+  code: string;
+  module: string;
+  resource: string;
+  action: string;
+}
+
+export interface RoleRow {
+  id: UUID;
+  name: string;
+  description: string | null;
+  is_system: boolean;
+  permissions: string[];
+}
+
+export interface RoleAssignmentRow {
+  id: UUID;
+  user_id: UUID;
+  role_id: UUID;
+  scope_type: string;
+  scope_ids: UUID[];
+  valid_from: string | null;
+  valid_to: string | null;
+}
+
+export interface DelegationRow {
+  id: UUID;
+  from_user_id: UUID;
+  to_user_id: UUID;
+  permissions: string[] | null;
+  starts_at: string;
+  ends_at: string;
+}
+
+export interface AccessReviewRow {
+  user_id: UUID;
+  email: string;
+  full_name: string | null;
+  role_names: string[];
+}
+
+export const iamApi = {
+  permissions: () => get<PermissionRow[]>("/api/v1/iam/permissions"),
+  roles: () => get<RoleRow[]>("/api/v1/iam/roles"),
+  createRole: (payload: { name: string; description?: string; permissions: string[] }) => post<RoleRow>("/api/v1/iam/roles", payload),
+  updateRole: (id: UUID, payload: { description?: string; permissions?: string[] }) => patch<RoleRow>(`/api/v1/iam/roles/${id}`, payload),
+  deleteRole: (id: UUID) => del<void>(`/api/v1/iam/roles/${id}`),
+
+  roleAssignments: (userId?: UUID) => get<RoleAssignmentRow[]>(`/api/v1/iam/role-assignments${userId ? `?user_id=${userId}` : ""}`),
+  createRoleAssignment: (payload: { user_id: UUID; role_id: UUID; scope_type?: string }) => post<RoleAssignmentRow>("/api/v1/iam/role-assignments", payload),
+  deleteRoleAssignment: (id: UUID) => del<void>(`/api/v1/iam/role-assignments/${id}`),
+
+  delegations: () => get<DelegationRow[]>("/api/v1/iam/delegations"),
+  createDelegation: (payload: { to_user_id: UUID; starts_at: string; ends_at: string; permissions?: string[] }) => post<DelegationRow>("/api/v1/iam/delegations", payload),
+  deleteDelegation: (id: UUID) => del<void>(`/api/v1/iam/delegations/${id}`),
+
+  accessReview: (permission: string) => get<AccessReviewRow[]>(`/api/v1/iam/access-review?permission=${encodeURIComponent(permission)}`),
+  resetMfa: (userId: UUID) => post<void>(`/api/v1/iam/users/${userId}/mfa/reset`),
+};
+
+// ---- MFA self-service (Part 5A) -- for an already-logged-in user enrolling
+// voluntarily; the stored session token is attached automatically by request(), same as
+// every other authenticated call in this file. The login-time "forced enrollment before
+// a real session exists" flow (iam.auth.mfa_required on, not yet enrolled) is a real,
+// tested backend capability (auth/router.py's mfa_enrollment_token) with no frontend UI
+// yet -- not exercised while mfa_required stays off for this tenant (see docs/
+// build_log.md's own Part 5 note on why it defaults off).
+
+export const mfaApi = {
+  enrollTotpStart: () => post<{ secret: string; provisioning_uri: string }>("/auth/mfa/enroll/totp/start"),
+  enrollTotpConfirm: (code: string) => post<{ recovery_codes: string[] }>("/auth/mfa/enroll/totp/confirm", { code }),
+};
+
+// ---- Workflow & Approval Engine (Part 5B) ----
+
+export interface WorkflowDefinitionRow {
+  id: UUID;
+  key: string;
+  name: string;
+  module: string | null;
+  version: number;
+  status: string;
+  graph_json: Record<string, unknown>;
+  published_at: string | null;
+}
+
+export interface WorkflowStepRow {
+  id: UUID;
+  node_id: string;
+  node_type: string;
+  status: string;
+  assignee_user_id: UUID | null;
+  due_at: string | null;
+  acted_by: string | null;
+  action: string | null;
+  comment: string | null;
+}
+
+export interface WorkflowInstanceRow {
+  id: UUID;
+  definition_id: UUID;
+  entity_type: string;
+  entity_id: UUID;
+  status: string;
+  current_node_id: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  steps: WorkflowStepRow[];
+}
+
+export interface InboxRow {
+  step_id: UUID;
+  instance_id: UUID;
+  entity_type: string;
+  entity_id: UUID;
+  node_id: string;
+  due_at: string | null;
+  definition_name: string;
+}
+
+export const workflowApi = {
+  definitions: () => get<WorkflowDefinitionRow[]>("/api/v1/workflow/definitions"),
+  simulate: (id: UUID, sampleContext: Record<string, unknown>) => post<{ path: { node_id: string; type: string }[] }>(`/api/v1/workflow/definitions/${id}/simulate`, { sample_context: sampleContext }),
+  instances: (params?: { entity_type?: string; status?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.entity_type) qs.set("entity_type", params.entity_type);
+    if (params?.status) qs.set("status", params.status);
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return get<WorkflowInstanceRow[]>(`/api/v1/workflow/instances${suffix}`);
+  },
+  actOnStep: (stepId: UUID, action: string, comment?: string) => post<WorkflowStepRow>(`/api/v1/workflow/steps/${stepId}/act`, { action, comment }),
+  inbox: () => get<InboxRow[]>("/api/v1/inbox"),
+};
+
 // ---- public careers portal (no auth) ----
 
 export const publicApi = {

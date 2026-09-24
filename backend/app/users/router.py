@@ -7,6 +7,8 @@ from app.auth.dependencies import get_current_user, require_roles
 from app.core.database import get_db
 from app.core.security import hash_password
 from app.models.user import User
+from app.platform.iam.roles import bridge_single_user
+from app.platform.tenancy.context import get_current_tenant
 from app.schemas.auth import USER_ROLES, AdminUserCreate, UserRead
 
 router = APIRouter(tags=["users"])
@@ -43,4 +45,12 @@ def create_user(
     db.add(user)
     db.commit()
     db.refresh(user)
+
+    # Part 5A: immediately covered by the new authz system too (bridge_single_user's own
+    # docstring explains why this happens at creation, not lazily inside a permission
+    # check) -- a no-op when there's no tenant context to bridge into.
+    tenant_ctx = get_current_tenant()
+    if tenant_ctx is not None:
+        bridge_single_user(db, tenant_ctx, user)
+
     return user

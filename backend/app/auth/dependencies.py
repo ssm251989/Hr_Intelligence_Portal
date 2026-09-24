@@ -37,6 +37,14 @@ def get_current_user(
     except (JWTError, ValueError):
         raise _unauthorized()
 
+    # Part 5A: a "purpose"-carrying token (mfa_challenge / mfa_enrollment -- see
+    # auth/router.py's login()) is a narrow-scope, short-lived token for ONE specific
+    # next step, never a full session -- get_current_user is the dependency every real
+    # endpoint uses, so it must reject these outright rather than silently accepting them
+    # as a logged-in session just because they happen to carry a valid `sub`.
+    if payload.get("purpose") is not None:
+        raise _unauthorized()
+
     # Part 2: reject a token minted for a different tenant than this request resolved to
     # (TenantResolverMiddleware). A token with no "tid" claim at all (every test helper
     # that calls create_access_token directly, never through /auth/login) has nothing to
@@ -62,6 +70,37 @@ def get_current_user_optional(
         return get_current_user(credentials=credentials, db=db)
     except HTTPException:
         return None
+
+
+def get_user_for_mfa_enrollment(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+) -> User:
+    """Accepts EITHER a normal full-session token (a user enrolling voluntarily, self-
+    service, any time after login) OR a `purpose="mfa_enrollment"` token (minted by
+    login() when iam.auth.mfa_required is on and this user hasn't enrolled yet -- they
+    must complete enrollment before a real session token is ever issued). Rejects a
+    `purpose="mfa_challenge"` token -- that one is only for /auth/mfa/verify, never for
+    starting/confirming enrollment."""
+    if credentials is None:
+        raise _unauthorized()
+    try:
+        payload = decode_access_token(credentials.credentials)
+        user_id = payload.get("sub")
+        if user_id is None:
+            raise _unauthorized()
+        user_uuid = uuid.UUID(user_id)
+    except (JWTError, ValueError):
+        raise _unauthorized()
+
+    purpose = payload.get("purpose")
+    if purpose is not None and purpose != "mfa_enrollment":
+        raise _unauthorized()
+
+    user = db.get(User, user_uuid)
+    if user is None:
+        raise _unauthorized()
+    return user
 
 
 def require_roles(*allowed_roles: str):

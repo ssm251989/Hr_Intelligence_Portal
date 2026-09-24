@@ -95,4 +95,22 @@ def register_all() -> None:
     register(SettingDef("ai.models.offer_letter_generation", "str", model_catalog.OFFER_LETTER_GENERATION, module="ai", group="AI Models"))
     register(SettingDef("ai.models.jd_generation", "str", model_catalog.JD_GENERATION, module="ai", group="AI Models"))
 
+    # iam.auth.* -- Part 5A section 1's own per-tenant-configurable auth policy. Platform
+    # defaults are conservative but NOT locked-on (mfa_required defaults false) --
+    # flipping mfa_required on for a real, already-logged-in tenant is this tenant's own
+    # decision to make once its users have actually enrolled, not something this build
+    # should force silently (see docs/build_log.md's own Part 5 note: forcing this on
+    # would lock the real tenant #1 out of its own live app without warning).
+    register(SettingDef("iam.auth.password_min_length", "int", 8, module="iam", group="Authentication"))
+    register(SettingDef("iam.auth.password_require_complexity", "bool", False, module="iam", group="Authentication"))
+    register(SettingDef("iam.auth.password_expiry_days", "int", 0, module="iam", group="Authentication"))  # 0 = never expires
+    register(SettingDef("iam.auth.password_history_count", "int", 3, module="iam", group="Authentication"))
+    register(SettingDef("iam.auth.lockout_threshold", "int", 5, module="iam", group="Authentication"))
+    register(SettingDef("iam.auth.lockout_duration_minutes", "int", 15, module="iam", group="Authentication"))
+    register(SettingDef("iam.auth.mfa_required", "bool", False, module="iam", group="Authentication"))
+    register(SettingDef("iam.auth.remember_device_days", "int", 30, module="iam", group="Authentication"))
+    register(SettingDef("iam.auth.access_token_expiry_minutes", "int", 480, module="iam", group="Authentication"))
+    register(SettingDef("iam.auth.refresh_token_expiry_days", "int", 30, module="iam", group="Authentication"))
+    register(SettingDef("iam.auth.ip_allowlist", "json", [], module="iam", group="Authentication"))  # [] = unrestricted
+
     _registered = True

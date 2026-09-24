@@ -641,3 +641,227 @@ CHECKS: grep for NotificationRuleMatcher, RecipientResolver, InboundRouter (as
 route_inbound/register_inbound_handler, the module's actual API), message_templates,
 brand_themes -- all present and real. `grep -rn "_negotiation_email_html" backend/app`
 -- **no hits**. Guard test: **0 findings, hard pass**.
+
+## PART 5 (branch `hrms-platform`) -- IAM (login + 2FA, RBAC + scopes, field security) + Workflow & Approval Engine
+
+The largest single part so far: real 2FA (TOTP + email OTP), rotating refresh tokens,
+lockout, IP allow-list; a genuine RBAC+ABAC permission system (roles, scoped role
+assignments, delegation, field-level security); and a working workflow/approval engine
+(sequential/parallel/any/quorum approvals, send-back, auto-approve, conditions/switches/
+actions, a Unified Inbox, one-click email-link approve/reject) with 9 seeded default
+workflows. All of it built ALONGSIDE the existing app, not replacing any of its own
+already-tested access control.
+
+**Scope decisions made under the standing autonomy directive:**
+- The existing `users.role` flat string + `require_roles()` (every one of ~19 existing
+  routers) is left completely untouched -- a mechanical sweep retrofitting `authz.require`
+  onto every existing endpoint is its own large, high-blast-radius effort better done as a
+  dedicated pass, not folded into the part that BUILDS the new system. Instead: each of
+  the 4 existing flat roles gets bridged to a matching seeded system Role
+  (`platform/iam/roles.py`'s `bridge_single_user`, called at both real user-creation
+  points -- `/auth/register`, `POST /users` -- and by `conftest.py`'s own `_create_user`
+  test helper), so `authz.require()` resolves real permissions for real, already-existing
+  users immediately, with zero new UI setup required. The new IAM management API
+  (`platform/iam/api_router.py`) itself is gated by `authz.require(...)`, not
+  `require_roles("admin")` -- a deliberate proof point that the new system enforces its
+  own management surface for real, not just new business endpoints nobody's built yet.
+- `iam.auth.mfa_required` defaults **false** platform-wide and is NOT flipped on for
+  tenant #1. Forcing 2FA on for a real, already-logged-in tenant without warning would
+  lock real users out of their own live app -- treated as within the spirit of the
+  standing directive's "cannot be undone"/destructive-action carve-out, even though it's
+  not literally data loss. The mechanism is fully built and tested directly (`test_mfa_
+  required.py`, `test_login_flow_mfa_and_sessions.py`'s own end-to-end HTTP flow toggling
+  the setting on and back off around each test) -- an admin can turn it on for real
+  whenever this tenant is ready, the same "real DATA decision, not a code change" pattern
+  every other per-tenant setting in this build already follows.
+- `authz.scope_filter()`'s org-hierarchy scope types (`legal_entity`/`business_unit`/
+  `location`/`department`/`cost_center`/`reportees_direct`/`reportees_all`) and the
+  matching approver resolvers (`manager(level n)`, `department_head`, `hrbp_of`,
+  `position_holder`) all need Part 7's Core HR org model (employees, managers,
+  departments) to mean anything -- that data doesn't exist yet. Both raise a clear,
+  typed error (`ScopeNotSupportedError`/`ResolverNotSupportedError`) rather than silently
+  resolving to "everyone" or "nobody" -- the safe failure mode for an authorization
+  filter is refuse, never leak, and for an approver resolver is fail loudly rather than
+  create an approval step nobody could ever act on.
+- The workflow engine's `parallel`/`join` node types are scoped to branches of
+  non-pausing nodes only (condition/switch/action, executed synchronously then rejoining)
+  -- true concurrently-PAUSED branches need per-branch cursor tracking
+  `workflow_instances.current_node_id`'s single-column design doesn't have room for; a
+  branch that reaches a pausing node (approval/task/wait/sub_workflow) raises
+  `WorkflowConfigError` rather than silently doing the wrong thing. `sub_workflow` is
+  fire-and-forget for the same reason (a genuinely blocking sub-workflow call needs the
+  same missing capability). `generate_document` is a documented stub (no generic
+  document-generation service exists yet). `set_field`/`create_record` operate on
+  `instance.context_json` only, never a live ORM row on an arbitrary model -- doing that
+  generically and safely needs Part 6's metadata/custom-field registry, not built yet.
+- No live Celery worker/beat is provisioned (same interim as Parts 2/4's own documented
+  gap) -- SLA-escalation and `wait` timers are real `workflow_timers` rows,
+  `process_due_timers()` is real and directly tested, but nothing calls it on a schedule
+  yet. SLA escalation itself additionally needs the same org-hierarchy resolvers this
+  part doesn't have -- a fired SLA timer is correctly marked processed (not stuck
+  reprocessing forever), just without a reassignment action running.
+- The visual workflow builder is a plain definitions list + a "simulate" dry-run dialog
+  (`WorkflowsPanel.tsx`), not the spec's React Flow drag-drop canvas -- same class of UI
+  scope reduction as every other part's admin surface (Settings/Connections/
+  Communications panels). `simulate()` itself is real, pure backend logic (no DB writes),
+  independently useful regardless of whether a canvas ever gets built on top of it.
+- 9 default workflows seeded as real, valid, PUBLISHED `workflow_definitions` (`hrctl.
+  seed_workflows`, idempotent) -- but role-in-scope approvers for roles with no real
+  member yet (Manager, HR Admin, HRBP, Helpdesk Agent -- none of which any of tenant #1's
+  current users hold, confirmed live against the real dev DB) correctly fail loudly with
+  `WorkflowConfigError` rather than silently resolving to nobody, exactly per this part's
+  own "refuse, don't leak/hang" design. Live-verified end to end: temporarily assigning
+  the real admin user to "Hiring Manager", starting a real `recruitment.job_requisition_
+  approval` instance, confirming the step landed on that exact user, approving it, and
+  confirming the instance completed -- then cleaning the test assignment/instance back
+  out. This is real, working machinery waiting on an admin to actually staff the new
+  roles, not a hollow demo.
+- Frontend: no separate "My Profile" page exists yet, so self-service MFA enrollment
+  (`MfaSettingsCard.tsx`) lives in `Admin > Settings` alongside the existing personal HR-
+  mailbox-connect cards (which already mix personal and admin concerns on that one page).
+  The login-time MFA-challenge UI step (password -> OTP entry -> token) is NOT wired into
+  `AuthContext`/`LoginPage.tsx` -- the backend flow is fully real and HTTP-tested, but
+  since `mfa_required` stays off, the existing single-call login flow keeps working
+  completely unchanged (the new `/auth/login` response is a superset of the old
+  `TokenResponse` shape whenever MFA isn't required, so nothing broke); wiring the
+  challenge step into the UI is real future work once a tenant actually turns MFA on.
+
+### 1. Data model
+`app/models/iam.py` -- `Role`, `RoleAssignment`, `FieldSecurity`, `UserDelegation`,
+`RefreshToken`, `UserDevice`, `MfaRecoveryCode`, `MfaChallenge`, `PasswordHistory`,
+`MagicLink`, `ActionToken` (11 tables, all `TenantOwned` + RLS). `app/models/workflow.py`
+-- `WorkflowDefinition`, `WorkflowInstance`, `WorkflowStep`, `WorkflowTimer` (4 tables,
+same). `users` gets 6 new columns (`mfa_totp_secret_ref`, `mfa_totp_enrolled_at`,
+`mfa_email_otp_enabled`, `failed_login_attempts`, `locked_until`,
+`password_changed_at`). Two migrations (`8300a7b9e51e`, `297d43b8024f` -- the second one
+for `mfa_challenges`, split out once its need became clear mid-part rather than
+retrofitting the first, already-applied migration).
+
+### 2. Authentication (`platform/iam/mfa.py`, `sessions.py`, `magic_links.py`)
+TOTP via `pyotp` (new dependency) -- secret stored through `platform.secrets` (envelope-
+encrypted, the exact same `secret_ref` pattern Part 3's Connections already use, never
+plaintext on the `users` row). Email OTP reuses Part 4's `comms.send()` and its own
+already-seeded `system.otp` template -- Part 4's own comms framework paying off directly
+here. Recovery codes hashed with the same `hash_password`/`verify_password` a real
+password uses. Rotating refresh tokens (`platform/iam/sessions.py`) -- only a SHA-256
+hash is ever stored; reuse of an already-rotated token is refused outright (a classic
+compromise signal), not silently accepted. Device list + revoke, lockout
+(`iam.auth.lockout_threshold`/`lockout_duration_minutes`), IP allow-list (CIDR-aware,
+`ipaddress` stdlib). Magic links (candidate/pre-hire portal login) are greenfield --
+`platform/iam/magic_links.py` is real and tested, but no candidate portal exists yet to
+actually issue/consume one (Part 8 builds that), same "seeded ahead of its own caller"
+pattern as several of Part 4's own message_templates.
+
+**Security fix made necessary by this part**: `auth/dependencies.py`'s `get_current_user`
+previously accepted ANY validly-signed JWT with a `sub` claim as a full session --
+nothing distinguished a narrow-purpose token (the new `mfa_challenge`/`mfa_enrollment`
+short-lived tokens this part introduces) from a real one. Fixed by rejecting any token
+carrying a `purpose` claim outright in `get_current_user`, and adding a separate
+`get_user_for_mfa_enrollment` dependency that accepts ONLY a normal session token or a
+`purpose="mfa_enrollment"` one -- verified directly: `test_mfa_required_but_not_enrolled_
+forces_enrollment_before_a_real_session` asserts the enrollment token works for `/auth/
+mfa/enroll/*` but gets a 401 from `/auth/me`.
+
+### 3. Authorization (`platform/iam/authz.py`, `field_security.py`, `delegation.py`)
+`effective_permissions()`/`has_permission()` resolve from a user's own active (`valid_
+from`/`valid_to`-windowed) `role_assignments` UNIONED with anything delegated to them via
+an active `user_delegations` row (optionally scoped to a subset of the delegator's own
+permissions). `scope_filter()` handles `all` (no-op) and `self` (caller supplies which
+column means "owner" for that model -- there's no universal one) for real;
+`permits_row()` is the per-row companion for `scope_type="custom"` (JSONLogic evaluated
+against row data, since a single SQL WHERE can't express an arbitrary per-row condition).
+`field_security.py` is an ALLOWLIST-EXCEPTION model (a field with no matching rule for
+any of a user's roles is unrestricted by default; the MOST PERMISSIVE of a user's own
+roles' rules wins when they conflict, mirroring how `effective_permissions` already
+unions rather than intersects) -- `apply_field_security()` for read-side hiding/masking,
+`filter_write_fields()` so a client can't smuggle a write to a field it was never shown.
+
+### 4. Roles (`platform/iam/roles.py`, `permissions.py`)
+11 system role templates seeded exactly per section 2's own list (Super Admin, HR Admin,
+HRBP, Recruiter, Hiring Manager, Interviewer, Helpdesk Agent, Manager, Employee,
+Candidate, Auditor) -- permission sets built from selector filters over the registry
+(module + action-set), not hand-typed flat lists, so a newly `register_permission()`'d
+code reaches every role whose selector already covers it. Permission registry itself
+(`platform/iam/permissions.py`) seeds a REPRESENTATIVE set across the modules this build
+has actually reached (recruitment.*, platform.*, iam.*, workflow.*) -- not an exhaustive
+enumeration of all 13 modules' every action (see the flat-role-bridge scope note above for
+why retrofitting is separate work).
+
+### 5. Workflow & Approval Engine (`platform/workflow/engine.py`, `resolvers.py`,
+`definitions.py`)
+Node types: `condition`/`switch` (synchronous JSONLogic branching), `approval`/`task`
+(the real center of the engine -- `sequential` mode treats `approvers` as ordered GATES,
+each gate's own resolved pool racing for a single "first responder wins" before the next
+gate opens; `parallel`/`any`/`quorum` resolve every spec into ONE pool up front with a
+single quorum threshold across it, `parallel` = quorum equals pool size, `any` = quorum
+1), `action` (`set_field`/`create_record` against context_json, `send_notification` via
+Part 4's `comms.send()`, `call_connector` via Part 3's `ConnectorRouter`, `webhook` via
+Part 3's `generic_webhook` provider, `run_ai` via Part 4's `ai.gateway.complete` -- 4 of
+6 action types work by directly reusing Parts 2-4's own framework, a real payoff of
+having built those for real), `wait` (creates a real `workflow_timers` row), `parallel`/
+`sub_workflow` (see scope notes above), `end`. `auto_approve_condition` (JSONLogic)
+skips a human step entirely when it matches, logging a synthetic `system:auto-approve`
+step so the audit trail still shows WHY nothing was asked of a person.
+`comments_required_on_reject`/`allow_send_back` are enforced node config, not just UI
+copy. Approver resolvers (`platform/workflow/resolvers.py`): `user`, `role-in-scope`
+(queries `platform.iam`'s own `role_assignments` -- the two new systems interlock for
+real), `expression` (JSONLogic against instance context), `skip-if-same-as-requester`
+(wraps another resolver, drops the requester from its result); org-hierarchy ones raise
+per the scope note above.
+
+**Bug found and fixed writing this part's own tests**: a `WorkflowConfigError` raised
+while entering a pausing node (e.g. zero resolved approvers) left the instance
+committed and stuck `status="running"` forever with no step anyone could ever act on --
+exactly the "half-done state" section 2 explicitly says the engine must never have.
+Fixed: `_advance()` now catches that case and marks the instance `status="failed"` with
+an end timestamp before re-raising, so a misconfigured workflow fails visibly and
+terminally instead of hanging silently. `test_zero_resolved_approvers_raises_config_
+error` asserts the instance's own final state, not just that the exception was raised.
+
+**Second bug, found on a self-review pass, not by a failing test**: `_evaluate_node_
+progress`'s sequential-mode "which gate is live" check used `siblings[-1]` (the last
+element of an un-ordered `.all()` query result) to pick the current gate's steps -- SQL
+gives no ordering guarantee without an explicit `ORDER BY`, so this could occasionally
+pick a stale, already-resolved gate's steps instead of the one actually being acted on
+(every existing test happened to pass regardless, by accident of result-set size/order,
+which is exactly why this needed a self-review to catch rather than a red test). Fixed
+by threading the actually-acted-on `WorkflowStep` through from `act_on_step()` into
+`_evaluate_node_progress()` and deriving `gate_index` from IT directly, never from
+result-set order.
+
+### 6. Action tokens + Unified Inbox + API/UI
+`platform/iam/action_tokens.py` genericizes `NegotiationToken`'s own established pattern
+(opaque `secrets.token_urlsafe` string, one-time-use by timestamp-flip, TenantOwned) into
+`entity_type`/`entity_id`/`action` -- used by the workflow API's one-click email-link
+approve/reject page (`platform/workflow/api_router.py`'s `/api/v1/public/workflow/
+action/{token}`, same self-contained "no build step, no JS, last stop from an email
+link" pattern as `confirm_router.py`/`negotiation_router.py`). `GET /api/v1/inbox`
+(Unified Inbox) is real and module-agnostic -- every pending `workflow_steps` row
+assigned to the caller, across every module, from the ONE shared table, exactly section
+3's own point. `Admin > Settings` gets `AccessControlPanel.tsx` (roles + permission-
+checkbox editor, role-assignment UI, access-review lookup) and `WorkflowsPanel.tsx`
+(definitions list + simulate dialog); a new sidebar module "Approvals" ->
+`UnifiedInboxPage.tsx` (approve/reject with a comment, from the real Unified Inbox
+endpoint). `npx tsc --noEmit` and `npm run build` both clean; `npm run lint` shows zero
+new warnings.
+
+### Tests
+`test_authz_scopes.py` (21), `test_field_security_masking.py` (7), `test_roles_bridge_
+and_delegation.py` (11), `test_mfa_required.py` (14), `test_sessions_and_lockout.py`
+(15), `test_action_tokens.py` (11, covers both `action_tokens.py` and `magic_links.py`),
+`test_login_flow_mfa_and_sessions.py` (9, real end-to-end HTTP: register -> login ->
+refresh rotation -> logout -> lockout -> full MFA enroll+challenge+verify cycle -> forced-
+enrollment-before-session case, toggling `iam.auth.mfa_required` on and back off around
+each MFA test so it never leaks into unrelated tests), `test_iam_api.py` (10),
+`test_workflow_engine.py` (24 -- every node type, all 4 approval modes, send-back,
+reject, auto-approve, the zero-approvers failure-state fix, wait timers, parallel
+branches incl. the pausing-node rejection case, sub_workflow, simulate), `test_workflow_
+api.py` (7) -- **129 new backend tests, all passing** (written and run incrementally
+through the part, catching 3 real bugs before they reached the full suite: the purpose-
+claim auth bypass, the half-done-state instance bug, and the bridge-at-creation-vs-lazy-
+self-heal design issue that would have broken `test_user_with_no_role_assignments_has_
+no_permissions`'s own baseline assumption).
+
+CHECKS: grep for `authz.require`/`scope_filter`/`field_security`/`WorkflowEngine` (as
+`platform.workflow.engine`, the module's actual name) /`workflow_definitions`/
+`action_tokens`/`/api/v1/inbox` -- all present and real.

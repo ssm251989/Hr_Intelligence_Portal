@@ -107,6 +107,15 @@ def _create_user(db_session, role="admin", email=None) -> User:
     db_session.add(user)
     db_session.commit()
     db_session.refresh(user)
+
+    # Part 5A: bridge_single_user is normally called from the two real user-creation
+    # endpoints (auth/router.py's register(), users/router.py's create_user()) -- this
+    # helper builds users directly via the ORM instead, so it needs the same call, or
+    # every test using `client`/`make_auth_headers` would get a flat `role` the OLD
+    # require_roles() honors but the NEW authz.require() resolves to zero permissions for.
+    from app.platform.iam.roles import bridge_single_user
+
+    bridge_single_user(db_session, TenantContext(tenant_id=TENANT_1_ID, slug="tenant1-test", isolation="dedicated_db"), user)
     return user
 
 

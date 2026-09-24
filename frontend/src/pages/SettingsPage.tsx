@@ -18,6 +18,9 @@ import InterviewTrackerSettingsCard from "../components/InterviewTrackerSettings
 import PlatformSettingsPanel from "../components/PlatformSettingsPanel";
 import ConnectionsPanel from "../components/ConnectionsPanel";
 import CommunicationsPanel from "../components/CommunicationsPanel";
+import AccessControlPanel from "../components/AccessControlPanel";
+import WorkflowsPanel from "../components/WorkflowsPanel";
+import MfaSettingsCard from "../components/MfaSettingsCard";
 
 function IntegrationCard({
   title,
@@ -150,8 +153,11 @@ export default function SettingsPage() {
           connect={integrationsApi.connectLinkedin}
         />
         <InterviewTrackerSettingsCard />
+        <MfaSettingsCard />
         {canManagePlatformSettings && <ConnectionsPanel />}
         {canManagePlatformSettings && <CommunicationsPanel />}
+        {canManagePlatformSettings && <AccessControlPanel />}
+        {canManagePlatformSettings && <WorkflowsPanel />}
         {canManagePlatformSettings && <PlatformSettingsPanel />}
       </Stack>
     </Box>

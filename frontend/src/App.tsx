@@ -30,6 +30,7 @@ import ScreeningListPage from "./pages/ScreeningListPage";
 import SettingsPage from "./pages/SettingsPage";
 import ShortlistingDashboardPage from "./pages/ShortlistingDashboardPage";
 import ShortlistingListPage from "./pages/ShortlistingListPage";
+import UnifiedInboxPage from "./pages/UnifiedInboxPage";
 
 export default function App() {
   return (
@@ -70,6 +71,7 @@ export default function App() {
                 <Route path="/interviews/dashboard" element={<InterviewsDashboardPage />} />
                 <Route path="/interviews/list" element={<InterviewListPage />} />
                 <Route path="/hr-inbox" element={<HrInboxListPage />} />
+                <Route path="/approvals" element={<UnifiedInboxPage />} />
                 <Route path="/salary" element={<SalaryPage />} />
                 <Route path="/bgv" element={<BgvPage />} />
                 <Route path="/offers" element={<OffersPage />} />

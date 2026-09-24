@@ -26,5 +26,7 @@ backend/app/interview_scheduling/negotiation_router.py:\x23(14532d|1a1f36|1b8a5a
 
 backend/app/platform/comms/api_router.py:\x23(1a1f36|1b8a5a|3a4257|eef0f5|eef1f6|ffffff) # Generic neutral/status design-system colors for the candidate/employee preferences page -- the brand-tied gradient/primary accent already comes from the tenant's brand_theme via {{PRIMARY}}/{{GRADIENT_FROM}}/{{GRADIENT_TO}} placeholders (same pattern as negotiation_router.py's own entry above). Same class of exclusion as frontend/src/theme's own already-neutral palette.
 
+backend/app/platform/workflow/api_router.py:\x23(1a1a1a|333333|eef1f6|ffffff) # Generic neutral status-page colors for the action-link result page (Part 5B) -- same "no brand tie at all, same class as frontend/src/theme's own neutral palette" reasoning as confirm_router.py's own entry above; this page has no brand_theme/org.display_name context to render with (a bare token-resolution result, not a tenant-branded shell).
+
 frontend/src/bootstrap/defaults.ts:"CTD Techs" # Comment prose in this file's own header explaining its deliberate Part 1 staging/Part 6 deferral, not a runtime value -- see the file's own docstring for the full reasoning.
 frontend/src/bootstrap/defaults.ts:ORG_DISPLAY_NAME = "CTD Techs" # Deliberate Part 1 staging constant -- see this file's own header comment: replaced wholesale by Part 6 section 5's real GET /api/me/bootstrap / public branding API, not something Part 4 (Communication Engine) should preempt.

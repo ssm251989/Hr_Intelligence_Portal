@@ -9,6 +9,7 @@ import EventOutlinedIcon from "@mui/icons-material/EventOutlined";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
+import InboxOutlinedIcon from "@mui/icons-material/InboxOutlined";
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
 import MailOutlineIcon from "@mui/icons-material/MailOutline";
@@ -111,6 +112,7 @@ const MODULES: ModuleLink[] = [
     ],
   },
   { label: "HR Inbox", path: "/hr-inbox", icon: MailOutlineIcon },
+  { label: "Approvals", path: "/approvals", icon: InboxOutlinedIcon },
   { label: "Salary", path: "/salary", icon: PaidOutlinedIcon },
   { label: "BGV", path: "/bgv", icon: VerifiedUserOutlinedIcon },
   { label: "Offers", path: "/offers", icon: DescriptionOutlinedIcon },

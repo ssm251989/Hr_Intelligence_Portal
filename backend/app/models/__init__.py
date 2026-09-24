@@ -15,6 +15,19 @@ from app.models.comms import (
 from app.models.connection import Connection, ConnectionAttempt, ConnectionOAuthToken, ConnectionRoute
 from app.models.hr_inbound_email import HrInboundEmail
 from app.models.hr_integration import HrIntegration
+from app.models.iam import (
+    ActionToken,
+    FieldSecurity,
+    MagicLink,
+    MfaChallenge,
+    MfaRecoveryCode,
+    PasswordHistory,
+    RefreshToken,
+    Role,
+    RoleAssignment,
+    UserDelegation,
+    UserDevice,
+)
 from app.models.interview import Interview
 from app.models.interview_confirmation_token import InterviewConfirmationToken
 from app.models.interview_scheduling_settings import InterviewSchedulingSettings
@@ -27,6 +40,7 @@ from app.models.secret import Secret, SecretScope
 from app.models.setting_value import SettingValue, SettingValueHistory
 from app.models.user import User
 from app.models.user_integration import UserIntegration
+from app.models.workflow import WorkflowDefinition, WorkflowInstance, WorkflowStep, WorkflowTimer
 
 # Every model class must be imported here, even one no code elsewhere in this module ever
 # references by name -- Part 2's own tenant migration (30cb603c4306) found the hard way that
@@ -53,6 +67,17 @@ __all__ = [
     "ConnectionAttempt",
     "ConnectionOAuthToken",
     "ConnectionRoute",
+    "ActionToken",
+    "FieldSecurity",
+    "MagicLink",
+    "MfaChallenge",
+    "MfaRecoveryCode",
+    "PasswordHistory",
+    "RefreshToken",
+    "Role",
+    "RoleAssignment",
+    "UserDelegation",
+    "UserDevice",
     "HrInboundEmail",
     "HrIntegration",
     "Interview",
@@ -69,4 +94,8 @@ __all__ = [
     "SettingValueHistory",
     "User",
     "UserIntegration",
+    "WorkflowDefinition",
+    "WorkflowInstance",
+    "WorkflowStep",
+    "WorkflowTimer",
 ]

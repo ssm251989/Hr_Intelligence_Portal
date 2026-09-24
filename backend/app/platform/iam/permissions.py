@@ -1,0 +1,109 @@
+"""Permissions registry (docs/HRMS_COMPLETE_SPEC.txt Part 5A section 2): a code
+`"<module>.<resource>.<action>"` a module declares, once, the same way Part 2's
+SettingDef/Part 4's purpose registries work -- `register_permission()` here, `authz.py`
+resolves a user's effective set against it.
+
+**Not retrofitted onto every existing router in this pass** (see docs/build_log.md's own
+Part 5 note): the existing `require_roles(...)` calls across ~19 routers stay exactly as
+they are -- a real, already-tested access-control layer this part doesn't touch. What's
+seeded below is a representative permission set covering the modules this build has
+actually reached so far (jobs, candidates, interviews, offers, settings, connections,
+comms, plus IAM/workflow's own new endpoints) -- proof the registry/authz mechanism is
+real and correctly wired, not an exhaustive enumeration of all 13 modules' every action.
+"""
+
+from dataclasses import dataclass
+from typing import Optional
+
+ACTIONS = ("view", "create", "edit", "delete", "approve", "export", "view_sensitive", "configure")
+
+
+@dataclass(frozen=True)
+class PermissionDef:
+    code: str  # "<module>.<resource>.<action>"
+    module: str
+    resource: str
+    action: str
+    label: str = ""
+
+    def __post_init__(self):
+        if self.action not in ACTIONS:
+            raise ValueError(f"{self.code}: unknown action {self.action!r}")
+        expected = f"{self.module}.{self.resource}.{self.action}"
+        if self.code != expected:
+            raise ValueError(f"{self.code}: code must equal '{expected}'")
+
+
+_REGISTRY: dict[str, PermissionDef] = {}
+
+
+def register_permission(module: str, resource: str, action: str, *, label: str = "") -> PermissionDef:
+    code = f"{module}.{resource}.{action}"
+    existing = _REGISTRY.get(code)
+    if existing is not None:
+        return existing
+    definition = PermissionDef(code, module, resource, action, label=label)
+    _REGISTRY[code] = definition
+    return definition
+
+
+def get_permission(code: str) -> Optional[PermissionDef]:
+    return _REGISTRY.get(code)
+
+
+def all_permissions() -> list[PermissionDef]:
+    return sorted(_REGISTRY.values(), key=lambda p: p.code)
+
+
+def is_registered(code: str) -> bool:
+    return code in _REGISTRY
+
+
+_registered = False
+
+
+def register_all() -> None:
+    """Idempotent, same pattern as platform.settings.bootstrap_definitions.register_all."""
+    global _registered
+    if _registered:
+        return
+
+    for module, resource in (
+        ("recruitment", "job"), ("recruitment", "candidate"), ("recruitment", "application"),
+        ("recruitment", "screening"), ("recruitment", "shortlisting"), ("recruitment", "interview"),
+        ("recruitment", "offer"), ("recruitment", "bgv"), ("recruitment", "salary"),
+    ):
+        for action in ("view", "create", "edit", "delete", "export"):
+            register_permission(module, resource, action)
+    register_permission("recruitment", "offer", "approve")
+    register_permission("recruitment", "bgv", "approve")
+    register_permission("recruitment", "salary", "view_sensitive")
+
+    register_permission("platform", "settings", "view")
+    register_permission("platform", "settings", "configure")
+    register_permission("platform", "connections", "view")
+    register_permission("platform", "connections", "configure")
+    register_permission("platform", "comms", "view")
+    register_permission("platform", "comms", "configure")
+    register_permission("platform", "users", "view")
+    register_permission("platform", "users", "create")
+    register_permission("platform", "users", "edit")
+
+    register_permission("iam", "roles", "view")
+    register_permission("iam", "roles", "configure")
+    register_permission("iam", "role_assignments", "view")
+    register_permission("iam", "role_assignments", "configure")
+    register_permission("iam", "field_security", "view")
+    register_permission("iam", "field_security", "configure")
+    register_permission("iam", "delegations", "view")
+    register_permission("iam", "delegations", "create")
+    register_permission("iam", "access_review", "view")
+    register_permission("iam", "impersonation", "create")
+
+    register_permission("workflow", "definitions", "view")
+    register_permission("workflow", "definitions", "configure")
+    register_permission("workflow", "instances", "view")
+    register_permission("workflow", "instances", "approve")
+    register_permission("workflow", "instances", "edit")
+
+    _registered = True
