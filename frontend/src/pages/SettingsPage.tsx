@@ -17,6 +17,7 @@ import HrMailboxSettingsCard from "../components/HrMailboxSettingsCard";
 import InterviewTrackerSettingsCard from "../components/InterviewTrackerSettingsCard";
 import PlatformSettingsPanel from "../components/PlatformSettingsPanel";
 import ConnectionsPanel from "../components/ConnectionsPanel";
+import CommunicationsPanel from "../components/CommunicationsPanel";
 
 function IntegrationCard({
   title,
@@ -150,6 +151,7 @@ export default function SettingsPage() {
         />
         <InterviewTrackerSettingsCard />
         {canManagePlatformSettings && <ConnectionsPanel />}
+        {canManagePlatformSettings && <CommunicationsPanel />}
         {canManagePlatformSettings && <PlatformSettingsPanel />}
       </Stack>
     </Box>

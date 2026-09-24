@@ -2,6 +2,16 @@ from app.models.application import Application
 from app.models.audit_log import AuditLog
 from app.models.bgv_document import BgvDocument
 from app.models.candidate import Candidate
+from app.models.comms import (
+    BrandTheme,
+    InboundMessage,
+    MessageLayout,
+    MessageTemplate,
+    NotificationPreference,
+    NotificationRule,
+    OutboundMessage,
+    SuppressionListEntry,
+)
 from app.models.connection import Connection, ConnectionAttempt, ConnectionOAuthToken, ConnectionRoute
 from app.models.hr_inbound_email import HrInboundEmail
 from app.models.hr_integration import HrIntegration
@@ -30,7 +40,15 @@ __all__ = [
     "Application",
     "AuditLog",
     "BgvDocument",
+    "BrandTheme",
     "Candidate",
+    "InboundMessage",
+    "MessageLayout",
+    "MessageTemplate",
+    "NotificationPreference",
+    "NotificationRule",
+    "OutboundMessage",
+    "SuppressionListEntry",
     "Connection",
     "ConnectionAttempt",
     "ConnectionOAuthToken",

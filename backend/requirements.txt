@@ -22,3 +22,4 @@ openpyxl
 icalendar
 celery
 json-logic-qubit
+jinja2

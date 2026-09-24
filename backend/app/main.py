@@ -36,6 +36,7 @@ from app.platform.connectors.api_router import (
     router as connectors_router,
     routes_router as connection_routes_router,
 )
+from app.platform.comms.api_router import public_router as comms_public_router, router as comms_router
 
 register_tenant_owned_events(tenant_data_base)
 install_tenant_read_filter()
@@ -94,6 +95,8 @@ app.include_router(secrets_router)
 app.include_router(connectors_router)
 app.include_router(connections_router)
 app.include_router(connection_routes_router)
+app.include_router(comms_router)
+app.include_router(comms_public_router)
 
 
 @app.get("/health")

@@ -929,14 +929,22 @@ def test_second_consecutive_no_overlap_flags_manual_scheduling_instead_of_loopin
     assert _candidate_row(db_session, application).id == reprompted_row.id
 
 
-# --- branded HTML negotiation offer emails -- send_hr_email's html_body param, matching
-# the negotiation landing page's own CTD Techs shell (negotiation_router.py), not a plain-
-# text email that then jumps to a fully branded page. ---
+# --- branded HTML negotiation offer emails -- rendered from the real, published
+# recruitment.negotiation.* message_templates (Part 4 -- see
+# hrctl.migrate_comms_templates and _render_negotiation_email), matching the negotiation
+# landing page's own branded shell (negotiation_router.py), not a plain-text email that
+# then jumps to a fully branded page. Content is now DATA (see
+# tests/test_template_render_parity.py for the proof it matches this module's own old,
+# now-deleted hardcoded builders byte-for-byte/text-for-text) -- these tests exercise the
+# real render path end to end instead of a since-deleted pure function. ---
 
 
-def test_interviewer_email_html_interpolates_candidate_job_and_date_with_a_cta_link():
-    html = neg._build_interviewer_email_html(
-        "Jane Doe", "Backend Engineer", date(2026, 8, 26), "https://ctdhr.example.com/interview-negotiation/tok123",
+def test_interviewer_email_html_interpolates_candidate_job_and_date_with_a_cta_link(db_session):
+    _subject, _text, html = neg._render_negotiation_email(
+        db_session, "recruitment.negotiation.interviewer_offer",
+        candidate_name="Jane Doe", job_title="Backend Engineer", round_day="26 Aug 2026",
+        picker_url="https://ctdhr.example.com/interview-negotiation/tok123",
+        required_picks=neg.REQUIRED_PICKS, token_expiry_days=neg.TOKEN_EXPIRY_DAYS,
     )
 
     assert "Jane Doe" in html
@@ -949,9 +957,12 @@ def test_interviewer_email_html_interpolates_candidate_job_and_date_with_a_cta_l
     assert html.strip().lower().startswith("<!doctype html>")
 
 
-def test_candidate_email_html_interpolates_job_with_a_cta_link():
-    html = neg._build_candidate_email_html(
-        "Jane Doe", "Backend Engineer", "https://ctdhr.example.com/interview-negotiation/tok456",
+def test_candidate_email_html_interpolates_job_with_a_cta_link(db_session):
+    _subject, _text, html = neg._render_negotiation_email(
+        db_session, "recruitment.negotiation.candidate_offer",
+        candidate_name="Jane Doe", job_title="Backend Engineer",
+        picker_url="https://ctdhr.example.com/interview-negotiation/tok456",
+        required_picks=neg.REQUIRED_PICKS, token_expiry_days=neg.TOKEN_EXPIRY_DAYS,
     )
 
     assert "Hi Jane Doe," in html
@@ -962,9 +973,11 @@ def test_candidate_email_html_interpolates_job_with_a_cta_link():
     assert "expires in 5 days" in html
 
 
-def test_negotiation_email_html_escapes_candidate_name_and_job_title():
-    html = neg._build_interviewer_email_html(
-        "<script>alert(1)</script>", "R&D <Lead>", date(2026, 8, 26), "https://example.com/x",
+def test_negotiation_email_html_escapes_candidate_name_and_job_title(db_session):
+    _subject, _text, html = neg._render_negotiation_email(
+        db_session, "recruitment.negotiation.interviewer_offer",
+        candidate_name="<script>alert(1)</script>", job_title="R&D <Lead>", round_day="26 Aug 2026",
+        picker_url="https://example.com/x", required_picks=neg.REQUIRED_PICKS, token_expiry_days=neg.TOKEN_EXPIRY_DAYS,
     )
 
     assert "<script>alert(1)</script>" not in html

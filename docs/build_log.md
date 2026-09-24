@@ -440,3 +440,204 @@ CHECKS: `grep` for `ConnectorRouter`/`NoConnectionForPurposeError`/`EmailSender`
 (see UI note above). Live negotiation-email-through-the-migrated-connection: proven at
 the framework level (`ConnectorRouter.resolve()`, a passing test), not yet at the actual
 runtime-send level (see the "runtime call sites NOT rewired" decision above).
+
+## PART 4 (branch `hrms-platform`) -- Communication Engine
+
+**Scope decisions made under the standing autonomy directive:**
+- The API/UI is scoped down the same way Parts 2-3's were (Settings/Connections panels):
+  a plain list + publish/preview for templates, a read-only rules list with an
+  enable/disable toggle, a single default `brand_theme` row (not the full multi-theme/
+  multi-legal-entity model), a message log with resend, and a token-based candidate/
+  employee preferences page -- not the spec's full split-view code/visual template editor
+  with device/dark-mode live preview, a drag-drop "when X and Y send Z" rule builder,
+  per-message delivery timelines, or a diff/versions UI.
+- `resend` re-sends the exact already-rendered subject/body_ref through the same
+  purpose's connector, rather than re-rendering from the original event context --
+  outbound_messages never retained that context (by design, per its own docstring: it
+  logs the rendered body, not the inputs), so a genuinely re-rendered resend would need
+  the triggering event replayed, which is out of scope here.
+- The candidate/employee preferences page is a self-contained server-rendered HTML page
+  (plain form POST, no JS/build step), matching confirm_router.py/negotiation_router.py's
+  own established "last stop from an email link" pattern, rather than a JSON API driving
+  a React SPA route the candidate would need the full frontend bundle for. It's gated by
+  a signed, non-expiring JWT (reusing app.core.security's own SECRET_KEY/ALGORITHM)
+  carrying which candidate/user and tenant, not a stored per-recipient token row -- an
+  unsubscribe link emailed months ago must keep working, and there's no reason to persist
+  state for something a signature can verify.
+- No live Celery worker/beat is provisioned (same interim as Part 2's own TenantTask) --
+  dispatch_event() calls the pipeline synchronously, inline; quiet-hours/digest holds
+  correctly leave a message status="queued" (visibly held, not silently dropped) but the
+  actual "resume once quiet hours end" / "flush the digest" half needs a scheduled worker
+  this installation doesn't have running yet. Documented in quiet_hours.py's own module
+  docstring, not silently incomplete.
+- Inbound polling itself (EmailReceiver.poll() on a live IMAP connection) isn't wired to
+  a scheduler either, for the same reason -- InboundRouter.route_inbound() (the threading
+  + handler-dispatch logic once a message already exists) is real and tested; what calls
+  it periodically is deferred with the rest of the Celery-beat gap.
+
+### 1. Data model
+app/models/comms.py -- 8 tables from section 1 exactly (brand_themes, message_layouts,
+message_templates, notification_rules, notification_preferences, outbound_messages,
+inbound_messages, suppression_list), all TenantOwned + RLS (migration c962423b2a21).
+
+### 2. Rendering
+platform/comms/renderer.py -- Jinja2 SandboxedEnvironment + StrictUndefined, datetime/
+currency filters, t() (i18n passthrough until Part 6's real i18n_overrides table),
+button(url, label, color) (bulletproof table-based button, color defaults to a generic
+scaffold fallback when a caller doesn't pass theme.primary_color -- see the hardcode-
+guard note below). **Bug found writing this part's own tests**: render_string only
+caught jinja2.exceptions.UndefinedError (a missing variable at render time), not
+TemplateSyntaxError (a malformed template caught at compile time by from_string()) or the
+sandbox's own SecurityError -- either would have crashed publish()/preview() with an
+unhandled 500 instead of the clean 400 the API is supposed to return. Fixed by catching
+the shared jinja2.exceptions.TemplateError base instead. **Second bug, same area**:
+templates.py's publish() validated a template's syntax using only its own
+variables_schema_json.required list filled with placeholders -- never the {{ theme.* }}/
+{{ org.* }} context every real send/preview also merges in. Section 5 explicitly expects
+every seeded template to reference {{ org.display_name }}, so ANY new template doing
+exactly what the spec asks for would fail to publish via this validation path (never hit
+by hrctl.migrate_comms_templates.py, since that script sets status="published" directly,
+bypassing publish() entirely -- only exposed once a real caller used the new publish API
+this part built). Fixed by merging a generic sample theme/org context (the same literal
+fallback values platform/comms/theme.py already uses, imported rather than duplicated)
+into publish()'s sample context too.
+
+### 3. Shared theme context
+platform/comms/theme.py (new, factored out of negotiation.py mid-part once
+negotiation_router.py's own candidate-facing HTML pages needed the identical {{
+theme.* }}/{{ org.* }} context negotiation emails already had -- see #6 below) --
+get_theme_and_org_context(db, tenant), falling back to a generic, no-tenant-configured-
+yet scaffold palette/name (not any specific tenant's chosen brand) if a tenant has
+neither a brand_theme row nor an org.display_name setting yet.
+
+### 4. Dispatch pipeline
+platform/comms/rules.py (NotificationRuleMatcher -- JSONLogic condition eval via
+json_logic), recipients.py (RecipientResolver, pre-registered candidate/
+application.interviewers relation resolvers, register_relation_resolver() for modules to
+add their own), suppression.py (suppression list + notification preferences, opt-in-by-
+default semantics -- absence of a preference row means opted in, only an explicit opt-out
+row suppresses), quiet_hours.py (window/digest hold decisions, see the Celery-beat scope
+note above), service.py (send() -- the direct-send entry point, always logs to
+outbound_messages whether the render/route/send succeeds or fails; dispatch_event() --
+the rule-driven half, NotificationRuleMatcher -> RecipientResolver -> quiet-hours/digest
+hold -> send()).
+
+### 5. Inbound routing
+platform/comms/inbound.py -- InboundRouter logic: extract_thread_key() (plus-addressing
+first, falls back to In-Reply-To), register_inbound_handler()/route_inbound() (tries
+every registered handler in order, a handler raises _NotMyThreadError to decline and let
+the next one try; always logs to inbound_messages even when nothing matches -- an
+unmatched row is what the HR inbox queue UI would pick up, not a dropped message).
+
+### 6. Migrated the real negotiation/confirmation emails off hardcoded HTML
+The riskiest single change this part: interview_scheduling/negotiation.py's six
+hardcoded email-building functions (_build_interviewer_email_body,
+_build_candidate_email_body, _negotiation_email_html, _build_interviewer_email_html,
+_build_candidate_email_html, _build_confirmation_email_body) DELETED, replaced by
+_render_negotiation_email() rendering the real, published recruitment.negotiation.*/
+recruitment.interview.confirmation message_templates hrctl.migrate_comms_templates
+seeds. Sequence: seed templates -> write test_template_render_parity.py against FROZEN
+local copies of the old function bodies (so it stays a permanent regression test, not
+something that breaks the moment the old functions are gone) -> verify parity -> rewire
+all 4 call sites -> add NegotiationEmailRenderError to the existing except (SmtpError,
+TrackerLockedNegotiationError) handling at every site (a render failure gets the same
+"invalidate the token, don't leave an orphan" treatment a send failure already got,
+except at _finalize, where the interview is already committed/scheduled -- a render
+failure there is logged, best-effort, never rolled back, matching how a real send failure
+at that same point already behaved) -> delete the old functions -> fix the 3 tests + all
+of test_template_render_parity.py that called them -> re-verify the full negotiation
+suite (49/49). The navy-to-blue gradient moved into tenant #1's real brand_themes row
+(hrctl.migrate_comms_templates's own _TENANT_1_THEME).
+
+**negotiation_router.py/confirm_router.py were NOT named in section 5** (which only
+lists the email-builder functions above), but both candidate-facing PAGES had the exact
+same hardcoded navy/blue brand CSS and a literal "CTD TECHS" wordmark -- the hardcode
+guard's own docstring anticipated this ("the current real offenders are the email/HTML
+builders this will become Part 4's platform/comms/" -- written when there was no comms/
+package yet to scope it to). Fixed for real: negotiation_router.py's _PAGE_CSS became a
+template with {{PRIMARY}}/{{GRADIENT_FROM}}/{{GRADIENT_TO}} placeholders filled in by
+_page_css(theme) from get_theme_and_org_context(), and the "CTD TECHS" wordmark now
+renders org.display_name.upper(). confirm_router.py's own colors (all semantic status
+colors -- success/warning/error -- and neutral grays, no brand blue/navy or wordmark
+anywhere in that file) are genuinely generic, same class of exclusion as frontend/src/
+theme's own already-neutral design-system palette -- allow-listed, not migrated, since
+there was no actual client-specific data in them to migrate. The new candidate/employee
+preferences page (api_router.py's _render_preferences_page) was built theme-driven from
+day one, using the same {{PRIMARY}}/{{GRADIENT_FROM}}/{{GRADIENT_TO}} pattern.
+
+### 7. API + UI
+platform/comms/api_router.py (new) -- template CRUD + publish + preview (merges a sample
+{{ theme.* }}/{{ org.* }} context so a preview matches a real send, not just the caller-
+supplied variables), rule CRUD, single default brand-theme get/upsert, message log list +
+resend, suppression list + remove, and the public token-based preferences JSON API + HTML
+page. Wired into app/main.py. Admin > Settings gets a new CommunicationsPanel card with 5
+tabs (Templates, Rules, Brand theme, Message log, Suppression) -- deliberately not the
+spec's full split-view/live-preview/drag-drop builder (same documented scope reduction as
+Parts 2-3's own UI). npx tsc --noEmit and npm run build both clean; live-smoke-tested
+against the real dev DB (a real admin JWT against a running uvicorn instance):
+templates/brand-theme/rules/outbound all returned tenant #1's actual seeded data
+correctly, and the preferences page rendered with the real navy-to-blue gradient and
+"CTD TECHS" wordmark from tenant #1's real brand_themes row.
+
+### 8. Hardcode guard -- flipped from xfail(strict=True) to a hard pass
+Every real offender from the Part 1 baseline (69 remaining at the start of this part: 53
+hex_color, 11 ctdtechs, 3 email_address, 2 gmail.com) is now either migrated into real
+DATA (the ics.py uid-domain/prodid literals now derive from the organizer's own email
+domain and the real org.display_name setting; the negotiation.py/theme.py brand colors
+and org name are brand_themes/org.display_name rows, not code; stale docstring/comment
+prose mentioning the old literal Gmail address and "CTD Techs" by name was reworded to
+describe the mechanism generically instead) or allow-listed with a specific, reviewed
+reason in hardcode_allowlist.txt: generic no-tenant-configured-yet scaffold defaults (a
+handful of hex literals theme.py/renderer.py/api_router.py fall back to ONLY when a
+tenant has no brand_theme row yet -- not any specific tenant's actual chosen color),
+confirm_router.py's + negotiation_router.py's + the new preferences page's own generic
+semantic-status/neutral design-system colors (same class of exclusion the guard's own
+docstring already carves out for frontend/src/theme), one illustrative jane@example.com
+docstring example (RFC 2606 reserved domain), the pre-existing UI-placeholder entry, and
+frontend/src/bootstrap/defaults.ts's own already-documented Part 1 staging point
+(superseded wholesale by Part 6 section 5's real branding API, not something Part 4
+should preempt). **Allow-list file format bug found and fixed while writing these
+entries**: a line_regex containing a literal '#' (any hex color value) was silently
+truncated by the loader's own raw_line.split("#", 1) before the intended "# reason"
+separator -- every such entry still happened to work by accident (the truncated prefix
+was still specific enough to match), but rewrote all of them to escape the color as
+\x23 instead of leaving that fragile coincidence in a file the spec says gets reviewed at
+the end of this part. Result: **0 findings**, test_no_hardcoded_tenant_values is now a
+real, unconditional pass (@pytest.mark.xfail removed).
+
+### Tests
+test_template_render_parity.py (5, frozen-reference regression test), test_rule_
+matching.py (6), test_recipient_resolver.py (10), test_suppression.py (8),
+test_inbound_threading.py (5, needed a real connections row for route_inbound's
+connection_id FK -- the original draft passed a dangling random UUID, fixed),
+test_quiet_hours_digest.py (8, needed an import fix: purposes.py lives under
+platform.connectors, not platform.comms), test_comms_api.py (12, new -- template
+create/publish/preview incl. the two renderer/publish bugs above, rule CRUD, brand theme
+get/upsert, message log list + a real resend against a monkeypatched SmtpAdapter,
+suppression list/remove, and the token-based JSON + HTML preferences flows incl. a
+forged-token rejection case) -- **54 new backend tests, all passing**. test_interview_
+negotiation.py's 3 branded-HTML-email tests + all of test_no_hardcoded_tenant_values.py
+updated in place. Full backend suite: **996 passed, 0 xfailed** (the guard test's xfail
+is gone). Full frontend suite: **27 passed**. npx tsc --noEmit: clean.
+
+### docs/module_parity_checklist.md re-verification (spec-mandated checkpoint)
+Re-enumerated per the checklist's own "re-verify at the end of Part 4" note. All 13
+modules still present, still routed, nothing dropped. Module #7 (HR Inbox) --
+unaffected; hr_inbox/router.py/imap_poll.py still on their own pre-Part-4 code path, not
+yet rewired onto InboundRouter (that rewire is PART 4's target column in the checklist
+itself, i.e. still future work when this same row gets its live E2E check at Part 8, not
+a Part-4 regression). Checked whether candidates/applications_router.py's
+message_candidate (a free-text recruiter-composed email, not template-driven -- out of
+scope for a template migration by its own nature) or jobs/service.py's "new application"
+internal notification (an explicitly-labeled demo notification to the job's creator, not
+one of the candidate-facing template keys this part seeded) should have migrated onto
+the new templates -- neither maps to a seeded template key, and neither had a prior
+hardcoded equivalent of recruitment.application.received/rejected/shortlisted to migrate
+FROM (this app never had those automatic candidate-status emails built before Part 4; the
+templates are seeded ahead of whichever future part wires them to a real send). No
+regression; nothing silently skipped.
+
+CHECKS: grep for NotificationRuleMatcher, RecipientResolver, InboundRouter (as
+route_inbound/register_inbound_handler, the module's actual API), message_templates,
+brand_themes -- all present and real. `grep -rn "_negotiation_email_html" backend/app`
+-- **no hits**. Guard test: **0 findings, hard pass**.

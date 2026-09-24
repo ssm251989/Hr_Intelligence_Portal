@@ -12,7 +12,8 @@ from typing import Optional
 from uuid import UUID
 
 # Well-known id for "tenant #1" (docs/HRMS_COMPLETE_SPEC.txt Part 2 section 3 + Part 1
-# assumption 5: the current CTD Techs data becomes tenant #1). A literal, not
+# assumption 5: this installation's pre-existing single-tenant data becomes tenant #1). A
+# literal, not
 # gen_random_uuid()'d, specifically so the tenant migration's backfill, hrctl tenant
 # bootstrap-existing, and every test's default TenantContext can all agree on the same id
 # without a control-plane round trip -- this is the ONE tenant id ever allowed to be a

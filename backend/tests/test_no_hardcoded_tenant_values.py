@@ -3,6 +3,13 @@ must never live in backend/app or frontend/src -- see docs/hardcode_inventory.md
 read-only audit this project's own baseline offenders came from, and section A of the spec
 for the full "zero client-specific static values" rule this enforces.
 
+A hard pass as of Part 4: every real offender from the Part 1 baseline was migrated into
+the Settings Registry / Connections / Communication Engine (brand_theme, org.display_name,
+message_templates) across Parts 2-4; what's left in `hardcode_allowlist.txt` is either a
+UI placeholder, a generic non-client-specific scaffold default, or Part 1's own deliberate
+frontend/src/bootstrap/defaults.ts staging point for Part 6's real branding API -- see that
+file's own allowlist entries for the specific reasoning on each.
+
 Patterns checked (exactly the list in Part 1, Step 3):
   - email addresses, outside tests/fixtures
   - "gmail.com"
@@ -11,9 +18,12 @@ Patterns checked (exactly the list in Part 1, Step 3):
   - ".xlsx" literals
   - hex colours -- scoped to backend/app only (frontend/src/theme's palette is a generic,
     already-neutral design-system token set, not client data; the spec's own Step 1 grep
-    for this pattern was backend/app-only too, where the current real offenders are the
-    email/HTML builders this will become Part 4's `platform/comms/` -- there's no comms/
-    package yet to scope this to more narrowly)
+    for this pattern was backend/app-only too). Every genuinely tenant-specific hex color
+    (brand_theme's primary/gradient colors) is DATA now, sourced from platform/comms/ and
+    threaded through negotiation_router.py's own {{PRIMARY}}/{{GRADIENT_FROM}}/
+    {{GRADIENT_TO}} placeholders (Part 4 section 5) -- what's left as a literal is each
+    page/email's own generic, non-brand status/neutral palette (see
+    hardcode_allowlist.txt's own reasoning for each).
   - model IDs ("claude-..."), outside platform/ai/model_catalog.py (doesn't exist yet --
     an inert exclusion until Part 3 creates it)
 
@@ -21,19 +31,11 @@ Patterns checked (exactly the list in Part 1, Step 3):
 reason` per line, blank lines and lines starting with `#` ignored. `path` matches a
 finding's path relative to the repo root; `line_regex` is matched against that finding's
 exact source line.
-
-xfail(strict=True) until Part 4 flips it to a hard pass (spec instruction): Parts 2-4
-migrate every current offender into the Settings Registry / Connections / Communication
-Engine. Until then, this test's job is to prove the scan/allow-list mechanism works and to
-make the current offender count visible (see the assertion failure message, and
-docs/hardcode_inventory.md's own recorded baseline) -- not to block Part 1's own commit.
 """
 
 import re
 from dataclasses import dataclass
 from pathlib import Path
-
-import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_APP = REPO_ROOT / "backend" / "app"
@@ -127,7 +129,6 @@ def _collect_findings() -> list[Finding]:
     return findings
 
 
-@pytest.mark.xfail(strict=True, reason="baseline -- Part 1: real offenders remain until Parts 2-4 migrate them (see docs/hardcode_inventory.md); flips to a hard pass at Part 4's end")
 def test_no_hardcoded_tenant_values():
     findings = _collect_findings()
     if findings:

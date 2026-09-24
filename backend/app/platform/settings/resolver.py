@@ -46,6 +46,14 @@ class SettingNotSetError(Exception):
     a registry bug (every real SettingDef has a default), never a normal runtime path."""
 
 
+# Caches the plain resolved value (or the sentinel below for "no row"), never the
+# SettingValue ORM instance itself -- an instance is bound to the Session that loaded it
+# and goes unusable (DetachedInstanceError) the moment that session closes, which a
+# module-level cache surviving across many short-lived sessions (every request's own
+# get_db() session, every test's own db_session) hits constantly. Found the hard way: a
+# value cached by one test's session raised DetachedInstanceError when a LATER test (a
+# fresh session) read it back from cache.
+_NO_VALUE = object()
 _cache: dict[tuple, Any] = {}
 
 
@@ -67,17 +75,20 @@ class SettingsService:
     def __init__(self, db: Session):
         self.db = db
 
-    def _row(self, tenant_id: UUID, key: str, scope_type: str, scope_id: Optional[UUID]) -> Optional[SettingValue]:
+    def _get_value(self, tenant_id: UUID, key: str, scope_type: str, scope_id: Optional[UUID]):
+        """Returns the resolved value_json for this exact scope, or _NO_VALUE if no row
+        matches -- never the ORM row itself, see _cache's own comment on why."""
         cache_key = _cache_key(tenant_id, key, scope_type, scope_id)
         if cache_key in _cache:
             return _cache[cache_key]
-        query = self.db.query(SettingValue).filter(
+        query = self.db.query(SettingValue.value_json).filter(
             SettingValue.tenant_id == tenant_id, SettingValue.key == key, SettingValue.scope_type == scope_type,
         )
         query = query.filter(SettingValue.scope_id == scope_id) if scope_id is not None else query.filter(SettingValue.scope_id.is_(None))
         row = query.first()
-        _cache[cache_key] = row
-        return row
+        value = row[0] if row is not None else _NO_VALUE
+        _cache[cache_key] = value
+        return value
 
     def get(self, key: str, ctx: SettingContext) -> Any:
         setting_def = get_definition(key)
@@ -89,14 +100,14 @@ class SettingsService:
                 # to platform default, same as any other scope with nothing set for it.
                 continue
             if scope_type == "tenant":
-                row = self._row(ctx.tenant.tenant_id, key, "tenant", None)
+                value = self._get_value(ctx.tenant.tenant_id, key, "tenant", None)
             else:
                 scope_id = ctx.scope_ids.get(scope_type)
                 if scope_id is None:
                     continue
-                row = self._row(ctx.tenant.tenant_id, key, scope_type, scope_id)
-            if row is not None:
-                return row.value_json
+                value = self._get_value(ctx.tenant.tenant_id, key, scope_type, scope_id)
+            if value is not _NO_VALUE:
+                return value
         return setting_def.default
 
     def get_many(self, prefix: str, ctx: SettingContext) -> dict:

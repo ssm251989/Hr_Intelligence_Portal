@@ -14,6 +14,8 @@ from app.interview_scheduling.negotiation import (
     get_negotiation_form,
     submit_negotiation_response,
 )
+from app.platform.comms.theme import get_theme_and_org_context
+from app.platform.tenancy.context import require_current_tenant
 
 # No prefix, no auth -- these are the exact links an interviewer or candidate clicks from
 # their email, same "public, no-auth" pattern as app/interview_scheduling/confirm_router.py.
@@ -42,14 +44,21 @@ ICON_SHIELD = _icon('<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><
 ICON_VIDEO = _icon('<rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3z"/>')
 
 
-_PAGE_CSS = """
+# Brand-tied rules (gradient, primary accent, wordmark) use {{TOKEN}} placeholders filled
+# in by _page_css() from the tenant's own brand_theme row -- see
+# app.platform.comms.theme.get_theme_and_org_context. Everything else here
+# is this page's own generic, non-client-specific design-system palette (status greens/
+# ambers/reds, neutral grays) -- same class of exclusion as frontend/src/theme's own
+# already-neutral palette (see backend/tests/test_no_hardcoded_tenant_values.py's own
+# scoping note), not a per-tenant value.
+_PAGE_CSS_TEMPLATE = """
   * { box-sizing: border-box; }
   body { font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: #eef1f6;
          margin: 0; padding: 0 0 32px; color: #1a1f36; }
   .icon { display: inline-block; vertical-align: -3px; flex-shrink: 0; }
   .shell { max-width: 900px; margin: 0 auto; background: #ffffff; box-shadow: 0 4px 24px rgba(20,30,60,0.08); }
   .topbar { display: flex; align-items: center; justify-content: space-between; padding: 18px 32px;
-            background: linear-gradient(120deg, #0b1f4d, #1d5fd6); color: #ffffff; }
+            background: linear-gradient(120deg, {{GRADIENT_FROM}}, {{GRADIENT_TO}}); color: #ffffff; }
   .brand { display: flex; align-items: center; gap: 10px; }
   .logo-cube { width: 30px; height: 30px; border-radius: 8px;
                background: linear-gradient(135deg, #4f9dff, #7b5cff); flex-shrink: 0; }
@@ -59,19 +68,19 @@ _PAGE_CSS = """
            font-size: 13px; font-weight: 600; color: #ffffff; white-space: nowrap; }
   .page-body { display: grid; grid-template-columns: 1fr 260px; gap: 28px; padding: 32px; }
   @media (max-width: 720px) { .page-body { grid-template-columns: 1fr; padding: 24px 20px; } }
-  h1.heading { font-size: 24px; font-weight: 800; margin: 0 0 10px; color: #0b1f4d; }
+  h1.heading { font-size: 24px; font-weight: 800; margin: 0 0 10px; color: {{GRADIENT_FROM}}; }
   p.copy { font-size: 15px; line-height: 1.6; color: #3a4257; margin: 0 0 26px; }
-  p.copy strong.job { color: #1d5fd6; }
+  p.copy strong.job { color: {{PRIMARY}}; }
   .section-label { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700;
                    text-transform: uppercase; letter-spacing: 0.04em; color: #5b6478; margin-bottom: 12px; }
   .slot-row { display: flex; align-items: center; gap: 14px; border: 1.5px solid #dde2ee; border-radius: 12px;
               padding: 14px 16px; margin-bottom: 12px; cursor: pointer; transition: border-color .15s, background .15s; }
   .slot-row:hover { border-color: #adc4f5; }
-  .slot-row.selected { border-color: #1d5fd6; background: #eef4ff; }
-  .slot-row input[type=checkbox] { width: 18px; height: 18px; accent-color: #1d5fd6; flex-shrink: 0; }
+  .slot-row.selected { border-color: {{PRIMARY}}; background: #eef4ff; }
+  .slot-row input[type=checkbox] { width: 18px; height: 18px; accent-color: {{PRIMARY}}; flex-shrink: 0; }
   .slot-info { display: flex; flex-direction: column; gap: 4px; }
   .slot-date, .slot-time { display: flex; align-items: center; gap: 6px; font-size: 14px; color: #3a4257; }
-  .slot-time strong { color: #1d5fd6; font-weight: 700; }
+  .slot-time strong { color: {{PRIMARY}}; font-weight: 700; }
   .error-banner { background: #fdecec; border: 1px solid #f3b4b4; color: #9a2b2b; border-radius: 10px;
                   padding: 10px 14px; font-size: 14px; margin-bottom: 18px; }
   .action-bar { margin-top: 24px; padding-top: 20px; border-top: 1px solid #eef0f5; display: flex;
@@ -81,9 +90,9 @@ _PAGE_CSS = """
   .action-buttons { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
   .btn { display: inline-flex; align-items: center; gap: 8px; border-radius: 10px; padding: 11px 20px;
          font-size: 14px; font-weight: 700; cursor: pointer; border: none; }
-  .btn-solid { background: #1d5fd6; color: #ffffff; }
+  .btn-solid { background: {{PRIMARY}}; color: #ffffff; }
   .btn-solid:disabled { background: #b9c8ea; cursor: not-allowed; }
-  .btn-outline { background: #ffffff; color: #1d5fd6; border: 1.5px solid #1d5fd6; }
+  .btn-outline { background: #ffffff; color: {{PRIMARY}}; border: 1.5px solid {{PRIMARY}}; }
   .confirm-group { display: flex; flex-direction: column; align-items: center; gap: 4px; }
   .confirm-subtext { font-size: 12px; color: #8a93a6; }
   .side-col { display: flex; flex-direction: column; gap: 16px; }
@@ -109,6 +118,14 @@ _PAGE_CSS = """
   .details p { margin: 6px 0; }
 """
 
+
+def _page_css(theme: dict) -> str:
+    return (
+        _PAGE_CSS_TEMPLATE.replace("{{PRIMARY}}", theme["primary_color"])
+        .replace("{{GRADIENT_FROM}}", theme["gradient_from"])
+        .replace("{{GRADIENT_TO}}", theme["gradient_to"])
+    )
+
 _SLOT_JS = """
 function ctdUpdateSlots() {
   var boxes = document.querySelectorAll('.slot-checkbox');
@@ -132,21 +149,22 @@ document.addEventListener('DOMContentLoaded', function () {
 """
 
 
-def _shell(inner_html: str) -> str:
+def _shell(inner_html: str, theme: dict, org_display_name: str) -> str:
+    brand_name = escape(org_display_name.upper())
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Interview Scheduling</title>
-  <style>{_PAGE_CSS}</style>
+  <style>{_page_css(theme)}</style>
 </head>
 <body>
   <div class="shell">
     <div class="topbar">
       <div class="brand">
         <div class="logo-cube"></div>
-        <span class="brand-name">CTD TECHS</span>
+        <span class="brand-name">{brand_name}</span>
       </div>
       <div class="badge">{ICON_CALENDAR} Interview Scheduling</div>
     </div>
@@ -286,20 +304,26 @@ def _render_outcome(state: NegotiationPageState) -> str:
     """
 
 
-def render_negotiation_page(state: NegotiationPageState) -> str:
+def render_negotiation_page(state: NegotiationPageState, theme: dict, org_display_name: str) -> str:
     """The one page every interviewer/candidate email link lands on, GET (to view) or POST
     (to submit) alike -- pick-2-of-3 checkboxes plus a decline option while `state.status`
     is "form" (including a re-render with `state.error` set after an invalid submission),
     or one of the terminal outcome states otherwise."""
     if state.status == "form":
-        return _shell(_render_form(state))
-    return _shell(_render_outcome(state))
+        return _shell(_render_form(state), theme, org_display_name)
+    return _shell(_render_outcome(state), theme, org_display_name)
+
+
+def _theme_and_org(db: Session) -> tuple[dict, str]:
+    ctx = get_theme_and_org_context(db, require_current_tenant())
+    return ctx["theme"], ctx["org"]["display_name"]
 
 
 @router.get("/interview-negotiation/{token}", response_class=HTMLResponse)
 def negotiate_interview_slot(token: str, db: Session = Depends(get_db)):
     state = get_negotiation_form(db, token)
-    return HTMLResponse(content=render_negotiation_page(state))
+    theme, org_display_name = _theme_and_org(db)
+    return HTMLResponse(content=render_negotiation_page(state, theme, org_display_name))
 
 
 @router.post("/interview-negotiation/{token}", response_class=HTMLResponse)
@@ -310,4 +334,5 @@ def submit_interview_negotiation(
     db: Session = Depends(get_db),
 ):
     state = submit_negotiation_response(db, token, action=action, selected_isos=slots)
-    return HTMLResponse(content=render_negotiation_page(state))
+    theme, org_display_name = _theme_and_org(db)
+    return HTMLResponse(content=render_negotiation_page(state, theme, org_display_name))

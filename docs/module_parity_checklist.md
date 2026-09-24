@@ -39,3 +39,12 @@ comms migration - Jobs/Screening/Shortlisting/Interviews/Offers must still send 
 Part 8 (the actual recruitment refactor - all 13 rows should flip to a live E2E check
 against tenant #1), and Part 10 (once Core HR/Performance exist alongside recruitment, to
 confirm none of the 13 regressed while new modules were added).
+
+**Part 4 re-verification (done):** re-enumerated `backend/app/main.py`'s `include_router`
+calls and `frontend/src/pages/` -- all 13 modules still present, still routed, nothing
+dropped. Module #6 (Interviews) is the only one Part 4 actually touched: its negotiation/
+confirmation emails now render from real `message_templates` (see `docs/build_log.md`'s
+own Part 4 entry) instead of hardcoded HTML -- same behavior, new source. Module #7 (HR
+Inbox) is unaffected by this part; still on its pre-Part-4 code path, not yet rewired
+onto the new `InboundRouter` (that's this same row's own target PART -- still correctly
+future work, not a Part-4 regression). No other module's mail-sending code path changed.

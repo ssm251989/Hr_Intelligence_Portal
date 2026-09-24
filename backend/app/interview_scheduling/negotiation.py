@@ -13,9 +13,10 @@ tracker, app/interview_scheduling/tracker.py):
      already busy this week (the Interview Log sheet is the ONLY busy-check source here --
      no real-time Calendar call, unlike the older select_interviewer flow).
   3. The first non-busy interviewer who also has an email in the Mails sheet gets emailed
-     ONE link (via the shared HR mailbox, never a personal Gmail/Google connection --
-     hradmin65@gmail.com is the single account of record for every interview-scheduling
-     email this mechanic sends) to a page offering 3 canned times for "tomorrow"
+     ONE link (via the tenant's shared HR mailbox connection, never a personal Google
+     connection -- see app/platform/connectors -- the single account of record for every
+     interview-scheduling email this mechanic sends) to a page offering 3 canned times for
+     "tomorrow"
      (10AM/3PM/6PM) -- pick EXACTLY 2, or decline ("None of these work for me"). There is no
      requirement that the name resolve to a registered User account -- the Mails sheet
      address is the only thing that makes someone reachable here (unlike the older
@@ -55,7 +56,6 @@ a live token, a scheduled Interview, or an already-logged manual-scheduling flag
 import secrets
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
-from html import escape
 from pathlib import Path
 from typing import Optional
 
@@ -82,6 +82,11 @@ from app.models.interview import Interview
 from app.models.job_role import JobRole
 from app.models.negotiation_token import NegotiationToken
 from app.models.user import User
+from app.platform.comms.renderer import TemplateRenderError, VariablesValidationError, render_template
+from app.platform.comms.templates import TemplateNotFoundError, get_published_template
+from app.platform.comms.theme import get_theme_and_org_context
+from app.platform.settings.resolver import SettingContext, SettingsService
+from app.platform.tenancy.context import require_current_tenant
 
 # Slot options offered for one negotiated day -- fixed, not derived from any candidate
 # time-preference input (this app has none), per spec.
@@ -342,109 +347,31 @@ def _log_attempt(db: Session, application: Application, actor_email: str, name: 
     )
 
 
-def _build_interviewer_email_body(candidate_name: Optional[str], job_title: str, round_day: date, picker_url: str) -> str:
-    return (
-        f"Hi,\n\n"
-        f"We'd like you to interview {candidate_name or 'a candidate'} for the {job_title} role, "
-        f"on {round_day.strftime('%d %b %Y')}. Please pick exactly {REQUIRED_PICKS} of the 3 time "
-        f"options that work for you:\n\n{picker_url}\n\n"
-        f"This link expires in {TOKEN_EXPIRY_DAYS} days.\n\nThanks!"
-    )
+class NegotiationEmailRenderError(Exception):
+    """Rendering one of the recruitment.negotiation.*/recruitment.interview.confirmation
+    message_templates (Part 4 -- seeded by hrctl.migrate_comms_templates) failed: no
+    published template for this tenant, a required variable missing, or a template syntax
+    error. Callers catch this alongside SmtpError -- same "the row is already committed
+    live, a failed send must not leave it behind" handling (see
+    TrackerLockedNegotiationError's own docstring for why this mirrors that pattern)."""
 
 
-def _build_candidate_email_body(candidate_name: Optional[str], job_title: str, picker_url: str) -> str:
-    return (
-        f"Hi {candidate_name or 'there'},\n\n"
-        f"We'd like to schedule your interview for the {job_title} position. Please pick exactly "
-        f"{REQUIRED_PICKS} of the 3 time options that work best for you:\n\n{picker_url}\n\n"
-        f"This link expires in {TOKEN_EXPIRY_DAYS} days. Thanks!"
-    )
-
-
-# --- HTML counterparts of the two plain-text builders above -- same audience-specific
-# copy, sent as the multipart/alternative HTML part (see hr_email.send_hr_email's
-# html_body param) so the email itself matches the branded look the negotiation page
-# already has (negotiation_router.py's own navy-to-blue CTD Techs shell/button styling),
-# rather than landing on a fully-branded page from a plain-text email. Deliberately plain
-# table/inline-style HTML, not the page's own <style> block -- most email clients (Outlook
-# desktop above all) never render a <head><style> block or CSS gradients, so every visual
-# choice here has to survive as inline styles with a solid bgcolor fallback. ---
-
-_EMAIL_FONT_FAMILY = "-apple-system, Segoe UI, Roboto, Arial, sans-serif"
-
-
-def _negotiation_email_html(heading_html: str, body_copy_html: str, picker_url: str) -> str:
-    """The shared shell both _build_interviewer_email_html/_build_candidate_email_html fill
-    in -- header band, heading + body copy, CTA button, footer -- so the two audiences can
-    never visually drift apart. `heading_html`/`body_copy_html` are assumed already
-    HTML-escaped by the caller (candidate/job-title/date interpolation happens there, right
-    next to the plain-text version that needs the exact same escaping discipline)."""
-    picker_url_attr = escape(picker_url, quote=True)
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Interview Scheduling</title>
-</head>
-<body style="margin:0; padding:0; background-color:#eef1f6;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#eef1f6;">
-<tr><td align="center" style="padding:32px 16px;">
-<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px; width:100%; background-color:#ffffff; border-radius:12px;">
-<tr>
-<td bgcolor="#1d5fd6" style="background-color:#1d5fd6; background-image:linear-gradient(120deg, #0b1f4d, #1d5fd6); border-radius:12px 12px 0 0; padding:22px 32px;">
-<table role="presentation" cellpadding="0" cellspacing="0"><tr>
-<td bgcolor="#5b7cff" style="width:30px; height:30px; border-radius:8px; background-color:#5b7cff; background-image:linear-gradient(135deg, #4f9dff, #7b5cff); font-size:0; line-height:0;">&nbsp;</td>
-<td style="padding-left:10px; font-family:{_EMAIL_FONT_FAMILY}; font-size:15px; font-weight:700; letter-spacing:0.04em; color:#f5f8ff;">CTD TECHS</td>
-</tr></table>
-</td>
-</tr>
-<tr>
-<td style="padding:32px;">
-<h1 style="margin:0 0 12px; font-family:{_EMAIL_FONT_FAMILY}; font-size:22px; font-weight:800; color:#0b1f4d;">{heading_html}</h1>
-<p style="margin:0 0 26px; font-family:{_EMAIL_FONT_FAMILY}; font-size:15px; line-height:1.6; color:#3a4257;">{body_copy_html}</p>
-<table role="presentation" cellpadding="0" cellspacing="0"><tr>
-<td bgcolor="#1d5fd6" style="border-radius:10px; background-color:#1d5fd6;">
-<a href="{picker_url_attr}" target="_blank" style="display:inline-block; padding:13px 26px; font-family:{_EMAIL_FONT_FAMILY}; font-size:14px; font-weight:700; color:#ffffff; text-decoration:none; border-radius:10px;">Choose Your Available Slots</a>
-</td>
-</tr></table>
-<p style="margin:22px 0 0; font-family:{_EMAIL_FONT_FAMILY}; font-size:12px; line-height:1.5; color:#8a93a6;">Or copy and paste this link into your browser:<br>
-<a href="{picker_url_attr}" style="color:#1d5fd6; word-break:break-all;">{picker_url_attr}</a></p>
-</td>
-</tr>
-<tr>
-<td style="padding:16px 32px; background-color:#f6f8fc; border-top:1px solid #e6eaf3; border-radius:0 0 12px 12px; font-family:{_EMAIL_FONT_FAMILY}; font-size:13px; color:#5b6478;">
-This link expires in {TOKEN_EXPIRY_DAYS} days.<br>
-Need help? Reply to this email or contact your recruiter.
-</td>
-</tr>
-</table>
-</td></tr>
-</table>
-</body>
-</html>"""
-
-
-def _build_interviewer_email_html(candidate_name: Optional[str], job_title: str, round_day: date, picker_url: str) -> str:
-    name_html = escape(candidate_name or "a candidate")
-    job_html = escape(job_title)
-    date_html = escape(round_day.strftime("%d %b %Y"))
-    body_copy_html = (
-        f"We'd like you to interview <strong style=\"color:#1d5fd6;\">{name_html}</strong> for the "
-        f"{job_html} role, on {date_html}. Please pick exactly {REQUIRED_PICKS} of the 3 time options "
-        f"that work for you."
-    )
-    return _negotiation_email_html("Hi,", body_copy_html, picker_url)
-
-
-def _build_candidate_email_html(candidate_name: Optional[str], job_title: str, picker_url: str) -> str:
-    name_html = escape(candidate_name or "there")
-    job_html = escape(job_title)
-    body_copy_html = (
-        f"We'd like to schedule your interview for the <strong style=\"color:#1d5fd6;\">{job_html}</strong> "
-        f"position. Please pick exactly {REQUIRED_PICKS} of the 3 time options that work best for you."
-    )
-    return _negotiation_email_html(f"Hi {name_html},", body_copy_html, picker_url)
+def _render_negotiation_email(db: Session, template_key: str, **extra_ctx) -> tuple[str, str, str]:
+    """Renders one of the templates hrctl.migrate_comms_templates seeded -- returns
+    (subject, text_body, html_body). Wraps every failure mode (missing template, missing
+    variable, template syntax) in NegotiationEmailRenderError, so a caller never has to
+    catch three different renderer/template-service exception types by name."""
+    tenant = require_current_tenant()
+    try:
+        template = get_published_template(db, tenant.tenant_id, template_key)
+        ctx = {**extra_ctx, **get_theme_and_org_context(db, tenant)}
+        rendered = render_template(
+            subject_tpl=template.subject_tpl, html_tpl=template.html_tpl, text_tpl=template.text_tpl,
+            variables_schema=template.variables_schema_json, context=ctx,
+        )
+        return rendered["subject"], rendered["text"], rendered["html"]
+    except (TemplateNotFoundError, VariablesValidationError, TemplateRenderError) as exc:
+        raise NegotiationEmailRenderError(str(exc)) from exc
 
 
 def _token_url(token: str) -> str:
@@ -574,7 +501,7 @@ def _advance_interviewer_round(
     Deliberately does NOT require the interviewer to have a registered User account, or
     their own personal Google connection (unlike the older service.py select_interviewer
     flow, which needs both to run its own real-time Calendar availability check) -- the
-    shared HR mailbox (hradmin65@gmail.com) is this app's single account of record for
+    tenant's shared HR mailbox connection is this app's single account of record for
     every email this mechanic sends, interviewer and candidate alike, and availability here
     is decided entirely by tracker.interviewer_busy_this_week's own Excel-log heuristic,
     which reads nothing from any personal calendar or User row. An interviewer's Mails-sheet
@@ -601,11 +528,19 @@ def _advance_interviewer_round(
             job_title=job.title, interviewer_name=name, round_day=round_day, tracker_path=tracker_path,
         )
         try:
-            send_hr_email(
-                hr_integration, to=email, subject=f"Interview scheduling for {job.title}",
-                body=_build_interviewer_email_body(candidate.full_name, job.title, round_day, _token_url(row.token)),
-                html_body=_build_interviewer_email_html(candidate.full_name, job.title, round_day, _token_url(row.token)),
+            subject, text_body, html_body = _render_negotiation_email(
+                db, "recruitment.negotiation.interviewer_offer",
+                candidate_name=candidate.full_name or "a candidate", job_title=job.title,
+                round_day=round_day.strftime("%d %b %Y"), picker_url=_token_url(row.token),
+                required_picks=REQUIRED_PICKS, token_expiry_days=TOKEN_EXPIRY_DAYS,
             )
+        except NegotiationEmailRenderError:
+            # Same "row already committed live, must not survive an email that never
+            # actually went out" reasoning as the SmtpError branch right below.
+            _invalidate_batch(db, [row])
+            raise
+        try:
+            send_hr_email(hr_integration, to=email, subject=subject, body=text_body, html_body=html_body)
         except SmtpError:
             # The row is already committed live (see _create_negotiation_row) -- a failed
             # send must not leave it behind for the idempotency guard to trip over.
@@ -705,7 +640,7 @@ def attempt_auto_negotiate_interview_slots(db: Session, application: Application
 
     try:
         outcome = _advance_interviewer_round(db, application, candidate, job, tracker_path, round_day, actor_user, hr_integration)
-    except (SmtpError, TrackerLockedNegotiationError) as exc:
+    except (SmtpError, TrackerLockedNegotiationError, NegotiationEmailRenderError) as exc:
         reason = str(exc) or "Could not send the interviewer negotiation email"
         _skip(db, application, actor_user.email, reason)
         _flag_send_failed(db, application, tracker_path, candidate, job)
@@ -718,7 +653,7 @@ def attempt_auto_negotiate_interview_slots(db: Session, application: Application
     retry_day = round_day + timedelta(days=1)
     try:
         outcome = _advance_interviewer_round(db, application, candidate, job, tracker_path, retry_day, actor_user, hr_integration)
-    except (SmtpError, TrackerLockedNegotiationError) as exc:
+    except (SmtpError, TrackerLockedNegotiationError, NegotiationEmailRenderError) as exc:
         reason = str(exc) or "Could not send the interviewer negotiation email"
         _skip(db, application, actor_user.email, reason)
         _flag_send_failed(db, application, tracker_path, candidate, job)
@@ -849,7 +784,7 @@ def advance_after_interviewer_batch_resolved(db: Session, application: Applicati
 
     try:
         outcome = _advance_interviewer_round(db, application, candidate, job, tracker_path, batch_round_day, actor_user, hr_integration)
-    except (SmtpError, TrackerLockedNegotiationError):
+    except (SmtpError, TrackerLockedNegotiationError, NegotiationEmailRenderError):
         return
     if outcome == "started":
         return
@@ -862,7 +797,7 @@ def advance_after_interviewer_batch_resolved(db: Session, application: Applicati
     retry_day = batch_round_day + timedelta(days=1)
     try:
         outcome = _advance_interviewer_round(db, application, candidate, job, tracker_path, retry_day, actor_user, hr_integration)
-    except (SmtpError, TrackerLockedNegotiationError):
+    except (SmtpError, TrackerLockedNegotiationError, NegotiationEmailRenderError):
         return
     if outcome == "started":
         return
@@ -871,8 +806,8 @@ def advance_after_interviewer_batch_resolved(db: Session, application: Applicati
 
 def _start_candidate_round(db: Session, application: Application, interviewer_row: NegotiationToken) -> None:
     """Called once an interviewer submits their 2 picks -- emails the candidate the SAME 3
-    canned times independently (see _build_candidate_email_body), blind to which 2 the
-    interviewer chose."""
+    canned times independently (recruitment.negotiation.candidate_offer, see
+    _render_negotiation_email), blind to which 2 the interviewer chose."""
     settings_row = get_interview_scheduling_settings(db)
     tracker_path = settings_row.tracker_path
     candidate = db.get(Candidate, application.candidate_id)
@@ -892,11 +827,17 @@ def _start_candidate_round(db: Session, application: Application, interviewer_ro
         interviewer_name=interviewer_row.interviewer_name, round_day=interviewer_row.round_day, tracker_path=tracker_path,
     )
     try:
-        send_hr_email(
-            hr_integration, to=candidate.email, subject=f"Interview scheduling for {job.title}",
-            body=_build_candidate_email_body(candidate.full_name, job.title, _token_url(row.token)),
-            html_body=_build_candidate_email_html(candidate.full_name, job.title, _token_url(row.token)),
+        subject, text_body, html_body = _render_negotiation_email(
+            db, "recruitment.negotiation.candidate_offer",
+            candidate_name=candidate.full_name or "there", job_title=job.title,
+            picker_url=_token_url(row.token), required_picks=REQUIRED_PICKS, token_expiry_days=TOKEN_EXPIRY_DAYS,
         )
+    except NegotiationEmailRenderError as exc:
+        _invalidate_batch(db, [row])
+        _skip(db, application, interviewer_row.actor_email, str(exc))
+        return
+    try:
+        send_hr_email(hr_integration, to=candidate.email, subject=subject, body=text_body, html_body=html_body)
     except SmtpError as exc:
         # Same reasoning as _advance_interviewer_round's own SmtpError handling -- a failed
         # send must not leave this row live, and must not partially proceed as if it had
@@ -981,11 +922,17 @@ def _reprompt_candidate(db: Session, application: Application, candidate_row: Ne
         interviewer_name=candidate_row.interviewer_name, round_day=candidate_row.round_day, tracker_path=tracker_path,
     )
     try:
-        send_hr_email(
-            hr_integration, to=candidate.email, subject=f"Interview scheduling for {job.title}",
-            body=_build_candidate_email_body(candidate.full_name, job.title, _token_url(new_row.token)),
-            html_body=_build_candidate_email_html(candidate.full_name, job.title, _token_url(new_row.token)),
+        subject, text_body, html_body = _render_negotiation_email(
+            db, "recruitment.negotiation.candidate_reprompt",
+            candidate_name=candidate.full_name or "there", job_title=job.title,
+            picker_url=_token_url(new_row.token), required_picks=REQUIRED_PICKS, token_expiry_days=TOKEN_EXPIRY_DAYS,
         )
+    except NegotiationEmailRenderError as exc:
+        _invalidate_batch(db, [new_row])
+        _skip(db, application, candidate_row.actor_email, str(exc))
+        return NegotiationPageState(status="declined", row=candidate_row)
+    try:
+        send_hr_email(hr_integration, to=candidate.email, subject=subject, body=text_body, html_body=html_body)
     except SmtpError as exc:
         _invalidate_batch(db, [new_row])
         _skip(db, application, candidate_row.actor_email, str(exc) or "Could not send the candidate negotiation email")
@@ -998,19 +945,7 @@ def _reprompt_candidate(db: Session, application: Application, candidate_row: Ne
     return NegotiationPageState(status="candidate_reprompted", row=candidate_row)
 
 
-def _build_confirmation_email_body(candidate_name: Optional[str], job_title: str, interviewer_name: Optional[str], chosen_time: datetime, duration_minutes: int) -> str:
-    return (
-        f"Hi,\n\n"
-        f"This confirms the interview for {candidate_name or 'the candidate'} for the {job_title} "
-        f"role with {interviewer_name or 'the interviewer'}.\n\n"
-        f"Date/Time: {_format_slot(chosen_time)}\n"
-        f"Duration: {duration_minutes} minutes\n"
-        f"Mode: Video call (link in the attached calendar invite)\n\n"
-        f"A calendar invite is attached -- open it to add this to your calendar.\n\nThanks!"
-    )
-
-
-def _send_confirmation_email(hr_integration, *, to: str, job_title: str, body: str, ics_bytes: bytes) -> bool:
+def _send_confirmation_email(hr_integration, *, to: str, subject: str, body: str, ics_bytes: bytes) -> bool:
     """Best-effort per recipient, same philosophy the old Google Calendar path already
     had (a missing/broken connection is logged, never blocks a confirmation that's already
     been recorded) -- except here the only way this can fail is the shared HR mailbox's own
@@ -1018,7 +953,7 @@ def _send_confirmation_email(hr_integration, *, to: str, job_title: str, body: s
     itself needs attention rather than one interviewer's stale Google connection."""
     try:
         send_hr_email(
-            hr_integration, to=to, subject=f"Interview confirmed: {job_title}", body=body,
+            hr_integration, to=to, subject=subject, body=body,
             attachment=EmailAttachment(filename="interview.ics", content=ics_bytes, maintype="text", subtype="calendar"),
         )
         return True
@@ -1070,18 +1005,33 @@ def _finalize(db: Session, application: Application, candidate_row: NegotiationT
 
     interviewer_sent = False
     candidate_sent = False
+    render_failed_reason: Optional[str] = None
     hr_integration = get_hr_integration(db)
     if is_smtp_configured(hr_integration) and candidate is not None and candidate.email and interviewer_email:
+        org_display_name = SettingsService(db).get("org.display_name", SettingContext(tenant=require_current_tenant()))
         ics_bytes = build_interview_ics(
             start=chosen_time, duration_minutes=duration_minutes,
             summary=f"Interview: {candidate_name or 'Candidate'} — {job_title}",
             organizer_email=hr_integration.from_address or hr_integration.smtp_username,
             attendee_emails=[interviewer_email, candidate.email],
             description=f"Interview confirmed for application {application.id}.",
+            prodid_org=org_display_name or "HR Automation",
         )
-        body = _build_confirmation_email_body(candidate_name, job_title, candidate_row.interviewer_name, chosen_time, duration_minutes)
-        interviewer_sent = _send_confirmation_email(hr_integration, to=interviewer_email, job_title=job_title, body=body, ics_bytes=ics_bytes)
-        candidate_sent = _send_confirmation_email(hr_integration, to=candidate.email, job_title=job_title, body=body, ics_bytes=ics_bytes)
+        try:
+            # The interview is ALREADY committed/scheduled by this point -- unlike every
+            # earlier render call site in this module, a render failure here can't roll
+            # anything back (see this function's own docstring); it only means the
+            # confirmation emails don't go out, best-effort, exactly like a real send
+            # failure below already tolerates.
+            subject, body, _html = _render_negotiation_email(
+                db, "recruitment.interview.confirmation", candidate_name=candidate_name or "the candidate",
+                job_title=job_title, interviewer_name=candidate_row.interviewer_name or "the interviewer",
+                scheduled_at=_format_slot(chosen_time), duration_minutes=duration_minutes,
+            )
+            interviewer_sent = _send_confirmation_email(hr_integration, to=interviewer_email, subject=subject, body=body, ics_bytes=ics_bytes)
+            candidate_sent = _send_confirmation_email(hr_integration, to=candidate.email, subject=subject, body=body, ics_bytes=ics_bytes)
+        except NegotiationEmailRenderError as exc:
+            render_failed_reason = str(exc)
 
     log_action(
         db, "application", application.id, _CONFIRMED_ACTION, "candidate",
@@ -1089,6 +1039,7 @@ def _finalize(db: Session, application: Application, candidate_row: NegotiationT
             "previous_status": previous_status, "interviewer_name": candidate_row.interviewer_name,
             "scheduled_at": chosen_time.isoformat(), "interview_id": str(interview.id),
             "interviewer_confirmation_sent": interviewer_sent, "candidate_confirmation_sent": candidate_sent,
+            "confirmation_email_render_failed_reason": render_failed_reason,
         },
     )
     log_action(

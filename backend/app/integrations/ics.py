@@ -21,6 +21,7 @@ def build_interview_ics(
     organizer_email: str,
     attendee_emails: list[str],
     description: str = "",
+    prodid_org: str = "HR Automation",
 ) -> bytes:
     """Returns one complete VCALENDAR payload (bytes, RFC 5545's required CRLF line
     endings -- pass through unchanged, never re-encoded via a str content manager, which
@@ -31,8 +32,10 @@ def build_interview_ics(
     start_utc = start.astimezone(timezone.utc)
     end_utc = start_utc + timedelta(minutes=duration_minutes)
 
+    organizer_domain = organizer_email.rsplit("@", 1)[-1] if "@" in organizer_email else "invalid"
+
     event = Event()
-    event.add("uid", f"{uuid.uuid4()}@ctdtechs.ai")
+    event.add("uid", f"{uuid.uuid4()}@{organizer_domain}")
     event.add("summary", summary)
     event.add("description", description)
     event.add("dtstart", start_utc)
@@ -50,7 +53,7 @@ def build_interview_ics(
         event.add("attendee", attendee, encode=0)
 
     calendar = Calendar()
-    calendar.add("prodid", "-//CTD Techs HR Automation//Interview Scheduling//EN")
+    calendar.add("prodid", f"-//{prodid_org}//Interview Scheduling//EN")
     calendar.add("version", "2.0")
     # REQUEST (not PUBLISH) is what makes Outlook/Gmail/Apple Mail offer an "Accept/
     # Decline/Add to calendar" action on the attachment rather than treating it as an

@@ -48,6 +48,22 @@ def _default_tenant_context():
     reset_current_tenant(token)
 
 
+@pytest.fixture(autouse=True)
+def _clear_settings_cache():
+    """platform/settings/resolver.py's in-process cache (see its own module docstring --
+    no Redis instance provisioned) is a process-level global, so a value written by one
+    test's db_session (rolled back at that test's own teardown, never really persisted)
+    would otherwise leak into every later test that reads the same key. Global/autouse
+    rather than something only test_settings_resolver.py itself worries about -- ANY test
+    that happens to call SettingsService.set() (directly, or indirectly through
+    application code) can pollute it for every other test file too."""
+    from app.platform.settings.resolver import clear_all_cache
+
+    clear_all_cache()
+    yield
+    clear_all_cache()
+
+
 @pytest.fixture()
 def db_session(_default_tenant_context):
     # app.core.database's own SessionLocal "after_begin" event (see its comment) applies

@@ -26,12 +26,13 @@ def register_all() -> None:
     if _registered:
         return
 
-    # org.* -- section 6; org.display_name is THE hardcode_inventory.md "CTD Techs"
-    # offender's eventual home (Part 4/6 branding + i18n wire it up for real). The
-    # PLATFORM default here is deliberately generic, never "CTD Techs" -- that's tenant
-    # #1's own DATA, seeded as a real tenant-scoped setting_values row by hrctl.tenant
-    # bootstrap-existing (from its own --name argument, never a literal), not baked into
-    # this schema-level default every future tenant would otherwise inherit.
+    # org.* -- section 6; org.display_name is THE hardcode_inventory.md's original
+    # client-name offender's eventual home (Part 4/6 branding + i18n wire it up for real).
+    # The PLATFORM default here is deliberately generic, never any specific tenant's own
+    # legal/display name -- that's tenant #1's own DATA, seeded as a real tenant-scoped
+    # setting_values row by hrctl.tenant bootstrap-existing (from its own --name argument,
+    # never a literal), not baked into this schema-level default every future tenant would
+    # otherwise inherit.
     register(SettingDef("org.display_name", "str", "", module="org", group="Organisation"))
     register(SettingDef("org.legal_name", "str", "", module="org", group="Organisation"))
     register(SettingDef("org.timezone", "str", "Asia/Kolkata", module="org", group="Organisation"))

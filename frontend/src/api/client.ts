@@ -310,6 +310,113 @@ export const connectorsApi = {
   deleteConnection: (id: UUID) => del<void>(`/api/v1/connections/${id}`),
 };
 
+// ---- Communication Engine (Part 4) ----
+
+export interface MessageTemplateRow {
+  id: UUID;
+  key: string;
+  channel: string;
+  locale: string;
+  version: number;
+  status: string;
+  subject_tpl: string | null;
+  html_tpl: string | null;
+  text_tpl: string | null;
+  variables_schema_json: { required?: string[] };
+  published_by: string | null;
+  published_at: string | null;
+}
+
+export interface NotificationRuleRow {
+  id: UUID;
+  name: string;
+  event_type: string;
+  condition_jsonlogic: Record<string, unknown> | null;
+  recipients_json: Record<string, unknown>;
+  channels: string[];
+  template_key: string;
+  delay_spec: Record<string, unknown> | null;
+  quiet_hours_respect: boolean;
+  digest_mode: string;
+  priority: number;
+  enabled: boolean;
+}
+
+export interface BrandThemeRow {
+  id: UUID;
+  name: string;
+  primary_color: string | null;
+  secondary_color: string | null;
+  gradient_from: string | null;
+  gradient_to: string | null;
+  font_family: string | null;
+  email_footer_html: string | null;
+  legal_disclaimer: string | null;
+}
+
+export interface OutboundMessageRow {
+  id: UUID;
+  channel: string;
+  purpose: string | null;
+  to_addresses: string[];
+  subject: string | null;
+  status: string;
+  attempts: number;
+  error: string | null;
+  sent_at: string | null;
+  created_at: string | null;
+}
+
+export interface SuppressionRow {
+  address: string;
+  reason: string;
+  created_at: string | null;
+}
+
+export const commsApi = {
+  templates: () => get<MessageTemplateRow[]>("/api/v1/comms/templates"),
+  templateVersions: (key: string) => get<MessageTemplateRow[]>(`/api/v1/comms/templates/${encodeURIComponent(key)}/versions`),
+  createTemplateDraft: (payload: { key: string; channel?: string; locale?: string; subject_tpl?: string; html_tpl?: string; text_tpl?: string; variables_schema?: { required?: string[] } }) =>
+    post<MessageTemplateRow>("/api/v1/comms/templates", payload),
+  publishTemplate: (id: UUID) => post<MessageTemplateRow>(`/api/v1/comms/templates/${id}/publish`),
+  previewTemplate: (id: UUID, sampleContext: Record<string, unknown>) =>
+    post<{ subject: string; html: string; text: string }>(`/api/v1/comms/templates/${id}/preview`, { sample_context: sampleContext }),
+
+  rules: () => get<NotificationRuleRow[]>("/api/v1/comms/rules"),
+  createRule: (payload: Omit<NotificationRuleRow, "id">) => post<NotificationRuleRow>("/api/v1/comms/rules", payload),
+  updateRule: (id: UUID, payload: Partial<Omit<NotificationRuleRow, "id">>) => patch<NotificationRuleRow>(`/api/v1/comms/rules/${id}`, payload),
+  deleteRule: (id: UUID) => del<void>(`/api/v1/comms/rules/${id}`),
+
+  brandTheme: () => get<BrandThemeRow | null>("/api/v1/comms/brand-theme"),
+  upsertBrandTheme: (payload: Partial<Omit<BrandThemeRow, "id">> & { name: string }) => put<BrandThemeRow>("/api/v1/comms/brand-theme", payload),
+
+  outbound: (params?: { status?: string; channel?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.channel) qs.set("channel", params.channel);
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return get<OutboundMessageRow[]>(`/api/v1/comms/outbound${suffix}`);
+  },
+  resendOutbound: (id: UUID) => post<OutboundMessageRow>(`/api/v1/comms/outbound/${id}/resend`),
+
+  suppression: () => get<SuppressionRow[]>("/api/v1/comms/suppression"),
+  removeSuppression: (address: string) => del<void>(`/api/v1/comms/suppression/${encodeURIComponent(address)}`),
+};
+
+// ---- Candidate/employee preferences page (public, token-based -- Part 4 section 6) ----
+
+export interface PreferenceEntryRow {
+  event_group: string;
+  channel: string;
+  opted_in: boolean;
+}
+
+export const publicCommsApi = {
+  preferences: (token: string) => get<{ org_display_name: string; preferences: PreferenceEntryRow[] }>(`/api/v1/public/comms/preferences?token=${encodeURIComponent(token)}`),
+  setPreference: (payload: { token: string; event_group: string; channel: string; opted_in: boolean }) =>
+    post<PreferenceEntryRow>("/api/v1/public/comms/preferences", payload),
+};
+
 export const integrationsApi = {
   connectGoogle: () => get<GoogleAuthUrl>("/integrations/google/connect"),
   googleStatus: (userId?: UUID) =>
