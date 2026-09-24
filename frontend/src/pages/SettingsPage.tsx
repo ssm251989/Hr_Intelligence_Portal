@@ -20,6 +20,7 @@ import ConnectionsPanel from "../components/ConnectionsPanel";
 import CommunicationsPanel from "../components/CommunicationsPanel";
 import AccessControlPanel from "../components/AccessControlPanel";
 import WorkflowsPanel from "../components/WorkflowsPanel";
+import MetadataPanel from "../components/MetadataPanel";
 import MfaSettingsCard from "../components/MfaSettingsCard";
 
 function IntegrationCard({
@@ -158,6 +159,7 @@ export default function SettingsPage() {
         {canManagePlatformSettings && <CommunicationsPanel />}
         {canManagePlatformSettings && <AccessControlPanel />}
         {canManagePlatformSettings && <WorkflowsPanel />}
+        {canManagePlatformSettings && <MetadataPanel />}
         {canManagePlatformSettings && <PlatformSettingsPanel />}
       </Stack>
     </Box>

@@ -31,6 +31,13 @@ class BrandTheme(Base, TenantOwned):
     legal_disclaimer = Column(Text)
     social_links_json = Column(JSONB, server_default=text("'{}'::jsonb"))
     is_default = Column(Boolean, nullable=False, server_default=text("false"))
+    # Part 6 section 5 -- "Custom CSS slot (sanitised) for enterprise tenants (feature
+    # flag)". Always stores the SANITIZED result (platform.branding.css_sanitizer), never
+    # a client's raw submission -- see that module's own docstring for what's stripped and
+    # why. Gated by the `branding.custom_css` feature flag (control-plane
+    # tenant_feature_flags, Part 2), checked by the bootstrap endpoint before ever
+    # including this value in a response, not by this column's mere presence.
+    custom_css = Column(Text)
     legal_entity_id = Column(UUID(as_uuid=True))
 
 

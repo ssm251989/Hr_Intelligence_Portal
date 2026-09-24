@@ -961,6 +961,90 @@ export const workflowApi = {
   inbox: () => get<InboxRow[]>("/api/v1/inbox"),
 };
 
+// ---- Metadata: custom fields, form layouts, masters, sequences (Part 6 sections 1-4) ----
+
+export interface CustomFieldDefRow {
+  id: UUID;
+  entity: string;
+  code: string;
+  label_i18n: Record<string, string>;
+  type: string;
+  validation_json: { options?: string[]; min?: number; max?: number; pattern?: string } | null;
+  default: unknown;
+  section: string | null;
+  order: number;
+  sensitive: boolean;
+  is_active: boolean;
+}
+
+export interface MasterTypeRow {
+  code: string;
+  name: string;
+  hierarchical: boolean;
+}
+
+export interface MasterValueRow {
+  id: UUID;
+  type_code: string;
+  code: string;
+  label_i18n: Record<string, string>;
+  parent_id: UUID | null;
+  sort: number;
+  is_active: boolean;
+}
+
+export const metadataApi = {
+  effectiveLayout: (entity: string, context: string) => get<{ entity: string; context: string; sections: unknown[]; custom_fields: unknown[] }>(`/api/v1/metadata/form-layouts/${entity}/${context}`),
+
+  customFields: (entity?: string) => get<CustomFieldDefRow[]>(`/api/v1/metadata/custom-fields${entity ? `?entity=${entity}` : ""}`),
+  createCustomField: (payload: { entity: string; code: string; type: string; label_i18n?: Record<string, string>; section?: string; order?: number; validation_json?: object }) =>
+    post<CustomFieldDefRow>("/api/v1/metadata/custom-fields", payload),
+  setCustomFieldActive: (id: UUID, isActive: boolean) => patch<CustomFieldDefRow>(`/api/v1/metadata/custom-fields/${id}?is_active=${isActive}`),
+  deleteCustomField: (id: UUID) => del<void>(`/api/v1/metadata/custom-fields/${id}`),
+
+  masterTypes: () => get<MasterTypeRow[]>("/api/v1/metadata/master-types"),
+  masterValues: (typeCode: string) => get<MasterValueRow[]>(`/api/v1/metadata/master-values/${typeCode}`),
+  createMasterValue: (typeCode: string, payload: { code: string; label_i18n: Record<string, string>; sort?: number }) =>
+    post<MasterValueRow>(`/api/v1/metadata/master-values/${typeCode}`, payload),
+  deactivateMasterValue: (id: UUID) => del<void>(`/api/v1/metadata/master-values/${id}`),
+
+  defineSequence: (payload: { key: string; pattern: string; scope?: string; reset?: string }) => post<{ id: UUID; key: string; pattern: string; current: number }>("/api/v1/metadata/sequences", payload),
+  nextSequenceValue: (key: string) => post<{ value: string }>(`/api/v1/metadata/sequences/${key}/next`),
+};
+
+// ---- Branding / bootstrap (Part 6 section 5+7) ----
+
+export interface BrandingRead {
+  product_name: string;
+  logo_file_id: string | null;
+  primary_color: string;
+  secondary_color: string | null;
+  gradient_from: string;
+  gradient_to: string;
+  font_family: string;
+  support_contact: string | null;
+  legal_links: string[];
+  custom_css: string | null;
+}
+
+export interface BootstrapRead {
+  tenant: { id: UUID; slug: string };
+  branding: BrandingRead;
+  locale: string;
+  tz: string;
+  permissions: string[];
+  feature_flags: Record<string, boolean>;
+  nav: { label_key: string; path: string }[];
+  custom_labels: Record<string, string>;
+}
+
+export const brandingApi = {
+  // Public (no-auth) -- works pre-login, on the login page itself.
+  public: () => get<BrandingRead>("/api/v1/public/branding"),
+  meBootstrap: () => get<BootstrapRead>("/api/me/bootstrap"),
+  updateCustomCss: (customCss: string) => request<{ custom_css: string }>("/api/v1/branding/custom-css", { method: "PUT", body: JSON.stringify({ custom_css: customCss }) }),
+};
+
 // ---- public careers portal (no auth) ----
 
 export const publicApi = {

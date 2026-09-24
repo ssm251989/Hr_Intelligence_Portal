@@ -54,3 +54,5 @@ class Application(Base, TenantOwned):
     approved_salary = Column(Numeric)
     created_at = Column(DateTime(timezone=True), server_default=text("now()"))
     updated_at = Column(DateTime(timezone=True), server_default=text("now()"))
+    # Part 6 section 1 -- see candidates.py's own custom_fields column comment.
+    custom_fields = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))

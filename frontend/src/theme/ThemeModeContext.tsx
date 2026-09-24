@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import CssBaseline from "@mui/material/CssBaseline";
 import { ThemeProvider } from "@mui/material/styles";
 
+import { useBootstrap } from "../bootstrap/BootstrapContext";
 import { createAppTheme, type ThemeMode } from "./createAppTheme";
 
 const STORAGE_KEY = "hr-automation-theme-mode";
@@ -26,13 +27,14 @@ export function useThemeMode() {
 
 export function AppThemeProvider({ children }: { children: ReactNode }) {
   const [mode, setMode] = useState<ThemeMode>(readStoredMode);
+  const { branding } = useBootstrap();
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, mode);
   }, [mode]);
 
   const toggleMode = () => setMode((prev) => (prev === "light" ? "dark" : "light"));
-  const theme = useMemo(() => createAppTheme(mode), [mode]);
+  const theme = useMemo(() => createAppTheme(mode, branding?.primary_color), [mode, branding?.primary_color]);
 
   return (
     <ThemeModeContext.Provider value={{ mode, toggleMode }}>

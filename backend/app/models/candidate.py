@@ -33,6 +33,10 @@ class Candidate(Base, TenantOwned):
     resume_path = Column(Text)
     photo_path = Column(Text)
     parsed_fields = Column(JSONB)
+    # Part 6 section 1 -- values keyed by custom_field_defs.code for entity="candidate";
+    # validated server-side against the tenant's own active defs (platform.metadata.
+    # custom_fields.validate_custom_fields), never trusted as-is from a client payload.
+    custom_fields = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
     source = Column(String(50), nullable=False, server_default=text("'manual'"))
     # "Suitable For" suggestion (Part B) -- the best-fitting *published* job this candidate
     # was ever automatically compared against, independent of whichever job(s) they actually

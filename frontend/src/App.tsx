@@ -1,6 +1,7 @@
 import { Navigate, Route, BrowserRouter, Routes } from "react-router-dom";
 
 import { AuthProvider } from "./auth/AuthContext";
+import { BootstrapProvider } from "./bootstrap/BootstrapContext";
 import { AppThemeProvider } from "./theme/ThemeModeContext";
 import ProtectedRoute from "./auth/ProtectedRoute";
 import CareersApplyPage from "./careers/CareersApplyPage";
@@ -35,10 +36,11 @@ import UnifiedInboxPage from "./pages/UnifiedInboxPage";
 export default function App() {
   return (
     <ErrorBoundary>
-      <AppThemeProvider>
-        <BrowserRouter>
-          <AuthProvider>
-            <Routes>
+      <BootstrapProvider>
+        <AppThemeProvider>
+          <BrowserRouter>
+            <AuthProvider>
+              <Routes>
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
               <Route path="/careers" element={<CareersLayout />}>
@@ -78,10 +80,11 @@ export default function App() {
                 <Route path="/reports" element={<ReportsPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
               </Route>
-            </Routes>
-          </AuthProvider>
-        </BrowserRouter>
-      </AppThemeProvider>
+              </Routes>
+            </AuthProvider>
+          </BrowserRouter>
+        </AppThemeProvider>
+      </BootstrapProvider>
     </ErrorBoundary>
   );
 }

@@ -33,6 +33,7 @@ from app.models.interview_confirmation_token import InterviewConfirmationToken
 from app.models.interview_scheduling_settings import InterviewSchedulingSettings
 from app.models.job_role import JobRole
 from app.models.local_import_settings import LocalImportSettings
+from app.models.metadata import CustomFieldDef, FormLayout, FxRate, I18nOverride, MasterType, MasterValue, MetaForm, Sequence
 from app.models.negotiation_token import NegotiationToken
 from app.models.offer import Offer
 from app.models.screening_settings import ScreeningSettings
@@ -85,6 +86,14 @@ __all__ = [
     "InterviewSchedulingSettings",
     "JobRole",
     "LocalImportSettings",
+    "CustomFieldDef",
+    "FormLayout",
+    "FxRate",
+    "I18nOverride",
+    "MasterType",
+    "MasterValue",
+    "MetaForm",
+    "Sequence",
     "NegotiationToken",
     "Offer",
     "ScreeningSettings",

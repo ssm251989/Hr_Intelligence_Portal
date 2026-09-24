@@ -35,12 +35,21 @@ def register_all() -> None:
     # otherwise inherit.
     register(SettingDef("org.display_name", "str", "", module="org", group="Organisation"))
     register(SettingDef("org.legal_name", "str", "", module="org", group="Organisation"))
-    register(SettingDef("org.timezone", "str", "Asia/Kolkata", module="org", group="Organisation"))
-    register(SettingDef("org.locale", "str", "en-IN", module="org", group="Organisation"))
+    # Part 6 section 6 -- scopes_allowed widened to ("user","tenant") on these two
+    # (originally tenant-only, Part 2): a user's own locale/timezone preference is now a
+    # real per-user override layered above the tenant-wide default -- SCOPE_ORDER already
+    # walks "user" before "tenant" for every setting, so this is the ONLY change needed to
+    # make "locale/tz from layered settings (user > location > tenant)" (section 6's own
+    # wording) real for its two implemented layers; "location" needs Part 7's org model.
+    register(SettingDef("org.timezone", "str", "Asia/Kolkata", module="org", group="Organisation", scopes_allowed=("user", "tenant")))
+    register(SettingDef("org.locale", "str", "en-IN", module="org", group="Organisation", scopes_allowed=("user", "tenant")))
     register(SettingDef("org.currency", "str", "INR", module="org", group="Organisation"))
     register(SettingDef("org.date_format", "str", "DD MMM YYYY", module="org", group="Organisation"))
     register(SettingDef("org.week_start", "str", "Monday", module="org", group="Organisation"))
     register(SettingDef("org.fiscal_year_start", "str", "04-01", module="org", group="Organisation"))
+    # Part 6 section 5/7 -- bootstrap's own branding.support_contact/legal_links.
+    register(SettingDef("org.support_email", "email", "", module="org", group="Organisation"))
+    register(SettingDef("org.legal_links", "json", [], module="org", group="Organisation"))
 
     # recruitment.screening.* -- current defaults from app/screening/service.py's
     # ScreeningSettings singleton row (see docs/hardcode_inventory.md).

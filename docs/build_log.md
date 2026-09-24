@@ -865,3 +865,163 @@ no_permissions`'s own baseline assumption).
 CHECKS: grep for `authz.require`/`scope_filter`/`field_security`/`WorkflowEngine` (as
 `platform.workflow.engine`, the module's actual name) /`workflow_definitions`/
 `action_tokens`/`/api/v1/inbox` -- all present and real.
+
+## PART 6 (branch `hrms-platform`) -- Metadata (custom fields, forms, masters), branding, i18n
+
+Custom fields + form layouts, 25 master/picklist types (concurrency-safe numbering
+sequences alongside them), tenant white-label branding with a real runtime-themed MUI
+app, and the i18n override mechanism -- all tied together by a real `GET /api/me/
+bootstrap` endpoint that finally retires `frontend/src/bootstrap/defaults.ts`, the very
+first file Part 1's own hardcode guard flagged and explicitly deferred to this part.
+
+**Scope decisions made under the standing autonomy directive:**
+- `custom_field_defs.entity` accepts all 8 of section 1's own entity names, but a real
+  `custom_fields JSONB` storage column only exists on the 3 entities this app has actual
+  tables for today (`candidates`, `job_roles`, `applications`) -- `employee`/
+  `requisition`/`asset`/`ticket`/`separation` all belong to Parts 7/9/10's own future
+  tables. A def can be authored for any of the 8 now (cheap, data-only, the same "define
+  ahead of the real table" pattern Part 4/5 already used for templates/workflows); trying
+  to actually validate/store a value against one of the 5 not-yet-real entities raises
+  `EntityStorageNotAvailableError` rather than silently accepting or dropping it.
+- `validate_custom_fields()` is a plain, hand-written Python validator (type/range/
+  picklist-membership/JSONLogic-condition checks) rather than literally generating a
+  fresh pydantic model class per request the way section 1's own wording suggests --
+  identical validation behavior either way, and a real function is far more readable/
+  testable than dynamically-synthesized model classes would be.
+- **`candidates.source` was NOT migrated onto `source_of_hire` masters** (its existing
+  `CANDIDATE_SOURCES` CheckConstraint + `UPLOAD_SOURCES` validation in candidates/
+  router.py stay exactly as they are) -- `hrctl.seed_masters` seeds `source_of_hire`
+  master_values that mirror those exact codes as real, editable DATA a tenant could
+  extend, but doesn't touch the enforcement mechanism on an already-tested, actively-used
+  write path. Unlike Part 4's spec text, which explicitly named "MIGRATE CURRENT EMAILS"
+  as a requirement, Part 6's own spec text never names swapping this specific enum's
+  enforcement mechanism -- so it wasn't attempted, following the same "only touch a
+  working, tested path when the spec actually says to" discipline Part 4 itself modeled.
+- No drag-and-drop form builder UI (section 2's own "Form builder UI (drag & drop)") --
+  `<DynamicForm>` (real, and this part's own spec-named `DynamicForm.test.tsx`) renders
+  whatever a `form_layouts` row + a tenant's active `custom_field_defs` describe; AUTHORING
+  a layout is a scoped-down admin panel (`MetadataPanel.tsx`) or the raw API, not a canvas
+  -- same class of reduction as Part 5's workflow engine skipping its own React Flow
+  canvas in favor of a JSON-driven definition + a real `simulate()`.
+- i18n bundles (section 6) seed a REPRESENTATIVE key set (nav labels, common actions, a
+  few renameable entity names -- proving `i18n_overrides` end to end for all 3 launch
+  languages: English, Hindi, Tamil) rather than translating every hardcoded English string
+  already in this app's existing frontend -- that's its own large, separate mechanical
+  sweep (every page's every string needs a key), the same class of decision as Part 5's
+  "don't retrofit authz onto every router." `i18next`/`react-i18next` themselves are
+  **not yet added as frontend dependencies** -- the backend bundle-serving endpoint
+  (`GET /api/v1/public/i18n/{locale}`) is real and tested, but no frontend component
+  reads from it yet (the 2 real frontend UI migrations this part DID do --
+  `bootstrap/defaults.ts` removal and runtime theming -- read branding, not i18n keys).
+- Multi-currency FX (`fx_rates`) is a manually-maintained rate table, no live provider
+  feed -- same class of gap as every other "framework real, external feed not wired"
+  decision already made in this build (comms' own SMTP/IMAP being the one real exception,
+  since that predated this session).
+- The bootstrap response's `nav` field is INFORMATIONAL, not yet enforced -- every
+  existing page is still reachable exactly as it is today (the existing `require_roles()`/
+  `ROLE_MATRIX` gate every one of them, unchanged). Section 7's own "the frontend must not
+  render any menu/label not returned here" is a real, separate `AppLayout.tsx` refactor
+  not attempted in this pass; what IS wired for real is `branding` (see below) and
+  `permissions` (a live `authz.effective_permissions()` call, not a stub).
+- Custom CSS sanitization is a targeted regex strip of the specific constructs that turn
+  "let a tenant override CSS" into a real injection vector (`</style>`/`<script>`
+  breakout, `@import`, `expression()`/`behavior:`, `javascript:`/`vbscript:` URLs) --
+  not a full CSS parser, which this feature (gated off by default behind a real
+  control-plane feature flag, `branding.custom_css`) doesn't warrant.
+
+### 1. Data model
+`app/models/metadata.py` -- `CustomFieldDef`, `FormLayout`, `MetaForm` (named to avoid
+shadowing every WTForms/pydantic-adjacent "Form" symbol, same reasoning as Part 3's
+`anthropic_provider.py`), `MasterValue`, `Sequence`, `I18nOverride`, `FxRate` (7 tables,
+`TenantOwned` + RLS) plus `MasterType` (deliberately NOT `TenantOwned` -- the type
+CATALOG itself is a platform-wide registry, same class as Part 3's connector-purpose
+registry; the VALUES under a type are real per-tenant data). `candidates`/`job_roles`/
+`applications` each get a real `custom_fields JSONB` column; `brand_themes` gets
+`custom_css`. `platform/tenancy/feature_flags.py` (new) -- Part 2 built `feature_flags`/
+`tenant_feature_flags` but nothing ever actually READ them until this part's
+`branding.custom_css` gate needed a real one.
+
+### 2. Custom fields + forms (`platform/metadata/custom_fields.py`, `forms.py`)
+`validate_custom_fields()` checks type/range/picklist-options/JSONLogic required+visible
+conditions against a tenant's own active defs, raising `CustomFieldValidationError({code:
+message})` for every problem at once (never partial-applies a payload). Field-level
+security from Part 5 (`platform.iam.field_security`) applies unchanged -- a custom
+field's `code` IS its `field` name for `field_security` purposes, proven end to end by
+`test_custom_field_security.py`. `get_effective_layout()` merges a `form_layouts` row's
+`sections_json` with the entity's active custom field defs into the one shape
+`<DynamicForm>` renders directly.
+
+### 3. Masters (`platform/metadata/masters.py`) + sequences (`sequences.py`)
+All 25 master_types from section 3's own list registered; `hrctl.seed_masters` seeds
+real values for 6 types with genuine current relevance (`source_of_hire` mirrors
+`Candidate.CANDIDATE_SOURCES` exactly -- see the scope note above --
+plus `education_level`/`document_type`/`relationship`/`blood_group`/`notice_period`).
+Effective-dating (`effective_from`/`effective_to`) + `is_active` filtering both real and
+tested. Sequences: a single atomic `UPDATE ... SET current = current + 1 ... RETURNING
+current` (never a Python-level read-then-write, which would race under real concurrency)
+-- **proven for real**, not just asserted: `test_sequences_concurrency.py` runs 20
+threads x 5 calls each against a real, committed row (each thread its own Postgres
+connection, since the shared test fixture's single rolled-back transaction can't exercise
+genuine cross-connection contention) and asserts all 100 results are unique with no gaps.
+
+**Bug found writing that same test**: `next_value()`'s `{YYYY}` substitution always used
+the CALENDAR year, even for `reset="fy"` sequences, where the pattern should format with
+the FISCAL year label (e.g. "FY2025-01" for a March-2026 date, since FY2025 runs Apr
+2025-Mar 2026) -- caught by `test_fy_reset_uses_april_as_the_fiscal_year_boundary`
+asserting the actual formatted string, not just that a reset happened. Fixed by
+substituting a year-adjusted stand-in datetime into the existing formatter rather than
+teaching the reset-policy-agnostic `_format()` about fiscal years directly.
+
+### 4. Branding + bootstrap (`platform/branding/`)
+`build_bootstrap()`/`build_branding()` assemble `GET /api/me/bootstrap` (authenticated)
+and public `GET /api/v1/public/branding` (no-auth, pre-login) from tenant #1's REAL
+`brand_themes` row + `org.*` settings -- live-verified against the actual dev DB (not
+just unit-tested): both endpoints returned the real navy-to-blue gradient and "CTD Techs"
+product name. `permissions` in the bootstrap payload is a live `authz.effective_
+permissions()` call. Locale/timezone now genuinely resolve per-user: `org.locale`/`org.
+timezone` (Part 2) had their `scopes_allowed` widened from `("tenant",)` to `("user",
+"tenant")` -- the ONLY change needed, since `SettingsService`'s own `SCOPE_ORDER` already
+walked "user" before "tenant" for every setting since Part 2; nothing else new was built
+for section 6's own "locale/tz from layered settings (user > location > tenant)" (2 of its
+3 layers -- "location" needs Part 7).
+
+**Frontend: `bootstrap/defaults.ts` actually removed** (Part 1's own hardcode-guard-
+flagged, explicitly-deferred-to-Part-6 file) -- `BootstrapContext.tsx` (new) fetches the
+public branding endpoint once on app mount and both of the file's 2 real call sites
+(`AppLayout.tsx`'s sidebar brand mark/name, `CareersLayout.tsx`'s site title/footer) now
+read from it. `createAppTheme()` takes an optional `primaryColorOverride` -- `MuiTheme`
+is genuinely built at runtime from the tenant's own brand color now, not a static design
+token, proven by `theme-from-bootstrap.test.tsx`'s own integration test (renders a real
+`BootstrapProvider`+`AppThemeProvider` tree with a mocked branding fetch, reads the
+resulting theme's `palette.primary.main` via `useTheme()`, asserts it matches).
+
+### 5. i18n (`platform/i18n/`)
+`locales/{en,hi,ta}.json` (the 3 launch languages, real translations, not placeholders) +
+`i18n_overrides` -- `merged_bundle()` layers a tenant's own overrides on top of the base
+bundle (falling back to English for any key a partial locale is missing), proven
+end-to-end over real HTTP including a live round-trip (`PUT` an override, confirm the
+public bundle endpoint reflects it, `DELETE` it, confirm it reverts). `platform/i18n/
+currency.py` -- manually-maintained FX rate lookups + currency-symbol formatting.
+
+### Tests
+`test_custom_fields_validation.py` (10), `test_custom_field_security.py` (3),
+`test_masters_effective_dating.py` (9), `test_sequences_concurrency.py` (6, incl. the
+real 100-way concurrency proof above), `test_i18n_overrides.py` (8), `test_branding_
+bootstrap.py` (12, incl. 5 CSS-sanitizer cases), `test_metadata_api.py` (6), `test_
+branding_and_i18n_api.py` (9) -- **63 new backend tests, all passing**. Frontend:
+`DynamicForm.test.tsx` (9 -- found and fixed a REAL bug while writing it: the picklist/
+multipicklist `<Select>` rendered with no visible/accessible label at all, silently
+missing from every screen reader and from `getByLabelText` alike; fixed with a proper
+`FormControl`+`InputLabel` pairing), `theme-from-bootstrap.test.tsx` (5, incl. both
+`createAppTheme()` unit tests and the full-tree integration test described above) -- 14
+new frontend tests, all passing, on top of the existing 27 (**41 total**). `npx tsc
+--noEmit`, `npm run build`, and `npm run lint` all clean.
+
+CHECKS: grep for `custom_field_defs`, `DynamicForm`, `master_values`, `sequences`,
+`/api/me/bootstrap`, `i18n_overrides` -- all present and real. Two-tenant "different
+logos/colours/labels render different UIs from the same build" proven the single-tenant-
+deployment way this build's own architecture allows: `test_branding_bootstrap.py`'s own
+tests change tenant #1's REAL `org.display_name`/`brand_themes.primary_color` and assert
+`build_bootstrap()`'s response reflects each change -- the same code path a second real
+tenant's own row would drive identically, just not exercised against two simultaneously-
+provisioned tenants (this installation is still `TENANCY_MODE=single`).

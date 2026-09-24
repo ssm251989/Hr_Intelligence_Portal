@@ -47,7 +47,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { reportsApi } from "../api/client";
 import type { RecentActivityItem } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
-import { ORG_DISPLAY_NAME, ORG_LOGO_MARK } from "../bootstrap/defaults";
+import { useBootstrap } from "../bootstrap/BootstrapContext";
 import ConfirmDialog from "../components/ConfirmDialog";
 import RecentActivityFeed from "../components/RecentActivityFeed";
 import { useThemeMode } from "../theme/ThemeModeContext";
@@ -137,6 +137,7 @@ function initials(nameOrEmail: string): string {
 export default function AppLayout() {
   const { user, logout } = useAuth();
   const { mode, toggleMode } = useThemeMode();
+  const { productName, logoMark } = useBootstrap();
   const navigate = useNavigate();
   const location = useLocation();
   const [confirmLogoutOpen, setConfirmLogoutOpen] = useState(false);
@@ -250,11 +251,11 @@ export default function AppLayout() {
                 flexShrink: 0,
               }}
             >
-              {ORG_LOGO_MARK}
+              {logoMark}
             </Box>
             <Box sx={{ display: { xs: "none", sm: "block" } }}>
               <Typography variant="subtitle1" fontWeight={700} lineHeight={1.1}>
-                {ORG_DISPLAY_NAME}
+                {productName}
               </Typography>
               <Typography variant="caption" color="text.secondary" lineHeight={1}>
                 HR Automation

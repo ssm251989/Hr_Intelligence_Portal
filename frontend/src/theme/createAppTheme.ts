@@ -13,8 +13,13 @@ import {
 
 export type ThemeMode = "light" | "dark";
 
-export function createAppTheme(mode: ThemeMode): Theme {
-  const brand = BRAND_BLUE[mode];
+export function createAppTheme(mode: ThemeMode, primaryColorOverride?: string | null): Theme {
+  // Part 6 section 5 -- "MUI theme created at runtime" from GET /api/me/bootstrap's own
+  // branding.primary_color (a tenant's real brand_theme row), falling back to this
+  // design system's own generic BRAND_BLUE token (see tokens.ts's own comment on why
+  // that palette is excluded from the hardcode guard -- it's the platform's neutral
+  // default, not client data) until bootstrap has actually loaded.
+  const brand = primaryColorOverride || BRAND_BLUE[mode];
   const surface = SURFACE[mode];
   const pagePlane = PAGE_PLANE[mode];
   const border = HAIRLINE_BORDER[mode];

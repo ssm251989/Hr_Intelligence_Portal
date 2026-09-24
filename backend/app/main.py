@@ -39,6 +39,9 @@ from app.platform.connectors.api_router import (
 from app.platform.comms.api_router import public_router as comms_public_router, router as comms_router
 from app.platform.iam.api_router import router as iam_router
 from app.platform.workflow.api_router import inbox_router as workflow_inbox_router, public_router as workflow_public_router, router as workflow_router
+from app.platform.metadata.api_router import router as metadata_router
+from app.platform.i18n.api_router import public_router as i18n_public_router, router as i18n_router
+from app.platform.branding.api_router import public_router as branding_public_router, router as branding_router
 
 register_tenant_owned_events(tenant_data_base)
 install_tenant_read_filter()
@@ -103,6 +106,11 @@ app.include_router(iam_router)
 app.include_router(workflow_router)
 app.include_router(workflow_inbox_router)
 app.include_router(workflow_public_router)
+app.include_router(metadata_router)
+app.include_router(i18n_router)
+app.include_router(i18n_public_router)
+app.include_router(branding_router)
+app.include_router(branding_public_router)
 
 
 @app.get("/health")
