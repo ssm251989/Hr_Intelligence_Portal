@@ -20,3 +20,4 @@ tzdata
 apscheduler
 openpyxl
 icalendar
+celery

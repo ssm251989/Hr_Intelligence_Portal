@@ -2,13 +2,14 @@ from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Integer, N
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from app.core.database import Base
+from app.platform.tenancy.mixins import TenantOwned
 
 JOB_ROLE_STATUSES = ("draft", "ready_for_publishing", "published", "closed", "on_hold")
 JOB_TYPES = ("Full-time", "Part-time", "Contract")
 EDUCATION_DEGREE_LEVELS = ("Any", "Bachelor's", "Master's", "PhD", "Diploma")
 
 
-class JobRole(Base):
+class JobRole(Base, TenantOwned):
     __tablename__ = "job_roles"
     __table_args__ = (
         CheckConstraint(

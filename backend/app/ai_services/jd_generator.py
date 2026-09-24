@@ -2,10 +2,11 @@ from anthropic import Anthropic
 from pydantic import BaseModel
 
 from app.core.config import settings
+from app.platform.ai import model_catalog
 
 # Sonnet is the deliberate model choice for this service per docs/PROMPTS.md's
 # tiering (Haiku for high-volume/low-complexity, Sonnet for judgment-heavy JD drafting).
-MODEL = "claude-sonnet-5"
+MODEL = model_catalog.JD_GENERATION
 
 SYSTEM_PROMPT = (
     "You are an HR job-description writer. Given structured role inputs, "

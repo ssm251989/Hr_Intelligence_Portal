@@ -234,6 +234,44 @@ export const usersApi = {
 
 // ---- integrations ----
 
+// ---- Platform settings (Part 2: Settings Registry) ----
+
+export interface SettingDefinition {
+  key: string;
+  type: string;
+  default: unknown;
+  module: string;
+  group: string;
+  label_i18n_key: string;
+  help_i18n_key: string;
+  scopes_allowed: string[];
+  sensitive: boolean;
+  requires_restart: boolean;
+}
+
+export interface SettingValueRow {
+  key: string;
+  value: unknown;
+  scope_type: string;
+  scope_id: string | null;
+}
+
+export interface SettingHistoryEntry {
+  value: unknown;
+  version: number;
+  updated_by: string | null;
+  updated_at: string | null;
+  scope_type: string;
+  scope_id: string | null;
+}
+
+export const platformSettingsApi = {
+  definitions: (module?: string) => get<SettingDefinition[]>(`/api/v1/settings/definitions${module ? `?module=${module}` : ""}`),
+  values: () => get<SettingValueRow[]>("/api/v1/settings"),
+  update: (key: string, value: unknown) => put<SettingValueRow>(`/api/v1/settings/${key}`, { value, scope_type: "tenant" }),
+  history: (key: string) => get<SettingHistoryEntry[]>(`/api/v1/settings/${key}/history`),
+};
+
 export const integrationsApi = {
   connectGoogle: () => get<GoogleAuthUrl>("/integrations/google/connect"),
   googleStatus: (userId?: UUID) =>

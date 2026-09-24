@@ -24,6 +24,17 @@ from app.screening.router import router as screening_router
 from app.screening.router import settings_router as screening_settings_router
 from app.shortlisting.router import router as shortlisting_router
 from app.users.router import router as users_router
+import app.models  # noqa: F401  -- registers every model (incl. TenantOwned ones) before the line below
+from app.core.database import Base as tenant_data_base
+from app.platform.tenancy.middleware import TenantResolverMiddleware
+from app.platform.tenancy.mixins import install_tenant_read_filter, register_tenant_owned_events
+from app.platform.settings.bootstrap_definitions import register_all as register_settings_definitions
+from app.platform.settings.router import router as settings_router
+from app.platform.secrets.router import router as secrets_router
+
+register_tenant_owned_events(tenant_data_base)
+install_tenant_read_filter()
+register_settings_definitions()
 
 
 @asynccontextmanager
@@ -40,6 +51,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="HR Automation", lifespan=lifespan)
+
+# Part 2: resolves TenantContext for every request before any route or dependency runs
+# (added last so it's the OUTERMOST middleware -- Starlette runs middlewares in reverse
+# add order -- meaning tenant context is set before CORS or any router logic ever executes).
+app.add_middleware(TenantResolverMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -68,6 +84,8 @@ app.include_router(interview_scheduling_router)
 app.include_router(interview_confirm_router)
 app.include_router(interview_negotiation_router)
 app.include_router(hr_inbox_router)
+app.include_router(settings_router)
+app.include_router(secrets_router)
 
 
 @app.get("/health")

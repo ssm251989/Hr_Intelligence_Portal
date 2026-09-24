@@ -2,9 +2,10 @@ from anthropic import Anthropic
 from pydantic import BaseModel
 
 from app.core.config import settings
+from app.platform.ai import model_catalog
 
 # Haiku per docs/PROMPTS.md's tiering: high-volume/low-complexity drafting.
-MODEL = "claude-haiku-4-5"
+MODEL = model_catalog.OFFER_LETTER_GENERATION
 
 SYSTEM_PROMPT = (
     "You draft an offer letter (LOI) from confirmed hiring details. Use the "

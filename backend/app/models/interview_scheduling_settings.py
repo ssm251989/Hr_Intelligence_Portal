@@ -1,9 +1,10 @@
 from sqlalchemy import Column, DateTime, Integer, Text, text
 
 from app.core.database import Base
+from app.platform.tenancy.mixins import TenantOwned
 
 
-class InterviewSchedulingSettings(Base):
+class InterviewSchedulingSettings(Base, TenantOwned):
     """Singleton row (always id=1) holding the Interview Scheduling automation's
     configurable Excel tracker path -- an absolute path on the server machine to a
     workbook with an "Interviewer Pool" sheet and an "Interview Log" sheet (see

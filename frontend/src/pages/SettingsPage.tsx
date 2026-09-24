@@ -15,6 +15,7 @@ import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
 import HrMailboxSettingsCard from "../components/HrMailboxSettingsCard";
 import InterviewTrackerSettingsCard from "../components/InterviewTrackerSettingsCard";
+import PlatformSettingsPanel from "../components/PlatformSettingsPanel";
 
 function IntegrationCard({
   title,
@@ -115,6 +116,7 @@ function IntegrationCard({
 export default function SettingsPage() {
   const { can } = useAuth();
   const canManageHrIntegration = can(ROLE_MATRIX.hrIntegrationWrite);
+  const canManagePlatformSettings = can(ROLE_MATRIX.platformSettingsWrite);
 
   return (
     <Box>
@@ -146,6 +148,7 @@ export default function SettingsPage() {
           connect={integrationsApi.connectLinkedin}
         />
         <InterviewTrackerSettingsCard />
+        {canManagePlatformSettings && <PlatformSettingsPanel />}
       </Stack>
     </Box>
   );

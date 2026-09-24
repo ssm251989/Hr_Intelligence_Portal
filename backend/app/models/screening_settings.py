@@ -1,9 +1,10 @@
 from sqlalchemy import Column, DateTime, Integer, Numeric, text
 
 from app.core.database import Base
+from app.platform.tenancy.mixins import TenantOwned
 
 
-class ScreeningSettings(Base):
+class ScreeningSettings(Base, TenantOwned):
     """Singleton row (always id=1) holding admin-configurable screening thresholds.
 
     Two independent min/max pairs, each owned by a distinct part of this feature -- never

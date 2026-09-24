@@ -2,9 +2,10 @@ from sqlalchemy import Column, DateTime, ForeignKey, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.core.database import Base
+from app.platform.tenancy.mixins import TenantOwned
 
 
-class HrInboundEmail(Base):
+class HrInboundEmail(Base, TenantOwned):
     """One email fetched from the shared HR mailbox's inbox by the 30-minute IMAP poll
     (app/integrations/imap_poll.py) -- logged here whether or not it could be matched to a
     real candidate, so recruiters have one place (the HR Inbox List) to see every incoming

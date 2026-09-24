@@ -1,9 +1,10 @@
 from sqlalchemy import Column, DateTime, Integer, Text, text
 
 from app.core.database import Base
+from app.platform.tenancy.mixins import TenantOwned
 
 
-class LocalImportSettings(Base):
+class LocalImportSettings(Base, TenantOwned):
     """Singleton row (always id=1) holding Part G's configurable ready-to-upload/already-
     uploaded root paths -- absolute paths on the server machine, set once via the "Import
     from Source" wizard's Local Import configure step (see app/local_import/router.py).

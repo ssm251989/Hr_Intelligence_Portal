@@ -2,6 +2,7 @@ from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Numeric, T
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from app.core.database import Base
+from app.platform.tenancy.mixins import TenantOwned
 
 APPLICATION_STATUSES = (
     "received", "screened", "hr_selected", "hr_rejected",
@@ -22,7 +23,7 @@ TERMINAL_APPLICATION_STATUSES = (
 )
 
 
-class Application(Base):
+class Application(Base, TenantOwned):
     __tablename__ = "applications"
     __table_args__ = (
         CheckConstraint(

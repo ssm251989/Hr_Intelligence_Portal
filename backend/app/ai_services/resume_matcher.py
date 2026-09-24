@@ -4,9 +4,10 @@ from anthropic import Anthropic
 from pydantic import BaseModel
 
 from app.core.config import settings
+from app.platform.ai import model_catalog
 
 # Haiku per docs/PROMPTS.md's tiering: high-volume/low-complexity first-pass matching.
-MODEL = "claude-haiku-4-5"
+MODEL = model_catalog.RESUME_MATCHING
 
 SYSTEM_PROMPT = (
     "You compare a candidate resume against a job description. Base this "

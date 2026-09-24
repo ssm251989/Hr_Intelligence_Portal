@@ -21,6 +21,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from app.core.database import SessionLocal
 from app.local_import.service import run_local_import_scan
 from app.local_import.storage import get_local_import_settings
+from app.platform.tenancy.context import TENANT_1_ID, tenant_context
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +35,13 @@ _scheduler: BackgroundScheduler | None = None
 
 
 def _run_scheduled_scan() -> None:
+    # Part 2: see _run_scheduled_hr_inbox_poll's own comment on why this ticks with an
+    # explicit tenant_context -- run_local_import_scan's OTHER caller (the manual-trigger
+    # endpoint) runs inside a real request and inherits its own TenantContext instead,
+    # so that path is deliberately left alone here.
     try:
-        run_local_import_scan()
+        with tenant_context(TENANT_1_ID):
+            run_local_import_scan()
     except Exception:
         # A single bad run (e.g. a transient Anthropic outage) must never crash the
         # scheduler thread or stop future scheduled ticks from firing.
@@ -49,29 +55,35 @@ def _run_scheduled_hr_inbox_poll() -> None:
     from app.integrations.hr_email import get_hr_integration
     from app.integrations.imap_poll import ImapError, is_imap_configured, poll_hr_inbox
 
-    db = SessionLocal()
-    try:
-        hr_integration = get_hr_integration(db)
-        if not is_imap_configured(hr_integration):
-            return
-        poll_hr_inbox(db, hr_integration)
-    except ImapError:
-        # A single bad tick (mailbox unreachable, credentials revoked, ...) must never
-        # crash the scheduler thread or stop future ticks from firing -- same treatment
-        # as _run_scheduled_scan above.
-        logger.exception("HR inbox IMAP poll failed")
-    except Exception:
-        logger.exception("HR inbox IMAP poll failed")
-    finally:
-        db.close()
+    # Part 2: this ticks on its own timer, with no request to inherit a TenantContext from
+    # -- explicitly the single tenant TENANCY_MODE=single always has (see tenant_context's
+    # own docstring; Celery's TenantTask replaces this with real per-tenant fan-out once
+    # TENANCY_MODE=multi is actually deployed, Part 13).
+    with tenant_context(TENANT_1_ID):
+        db = SessionLocal()
+        try:
+            hr_integration = get_hr_integration(db)
+            if not is_imap_configured(hr_integration):
+                return
+            poll_hr_inbox(db, hr_integration)
+        except ImapError:
+            # A single bad tick (mailbox unreachable, credentials revoked, ...) must never
+            # crash the scheduler thread or stop future ticks from firing -- same treatment
+            # as _run_scheduled_scan above.
+            logger.exception("HR inbox IMAP poll failed")
+        except Exception:
+            logger.exception("HR inbox IMAP poll failed")
+        finally:
+            db.close()
 
 
 def _current_interval_minutes() -> int:
-    db = SessionLocal()
-    try:
-        return get_local_import_settings(db).scan_interval_minutes
-    finally:
-        db.close()
+    with tenant_context(TENANT_1_ID):
+        db = SessionLocal()
+        try:
+            return get_local_import_settings(db).scan_interval_minutes
+        finally:
+            db.close()
 
 
 def start_scheduler() -> BackgroundScheduler:

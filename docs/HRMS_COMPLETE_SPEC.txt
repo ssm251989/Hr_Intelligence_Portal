@@ -3,8 +3,8 @@ HR AUTOMATION -> MULTI-CLIENT, FULLY CONFIGURABLE HRMS
 COMPLETE BUILD SPECIFICATION - ONE DOCUMENT, ONE BUILD
 Repo: hr-automation (FastAPI + PostgreSQL + SQLAlchemy + Alembic +
 React/TS/Vite/MUI).  Spec date: 2026-09-24.  Scope: everything except
-payroll and attendance/leave. Client decisions: section K (they WIN
-over anything else in this document).
+payroll and attendance/leave. Client decisions: sections K and L
+(they WIN over anything else in this document).
 =====================================================================
 
 INSTRUCTIONS TO CLAUDE CODE (read fully before writing any code)
@@ -354,6 +354,144 @@ ROLLOUT
  M2  After recruitment: Onboarding -> Core HR -> Performance (the
      sheet said Attendance third, but attendance is out of scope, so
      Performance takes that slot - confirm with the owner).
+
+---------------------------------------------------------------------
+L. SCREEN & FLOW DECISIONS (Screen & Flow Choices sheet, 2026-09-24)
+   These WIN over Part 14 and any other UI wording in this document.
+---------------------------------------------------------------------
+GLOBAL
+ N1 Collapsible left sidebar.  N2 Role-based home after login.
+ N3 Ctrl+K global search over candidates, employees, jobs, requests/
+    approvals and settings (Postgres full-text + trigram, permission-
+    scoped). N4 Lists default to table view. N5 25 rows per page.
+ N6 No other keyboard shortcuts (Ctrl+K only). Screens must still be
+    fully usable by keyboard (accessibility).
+ Every list keeps: RefreshButton, saved filters, column chooser, bulk
+ actions toolbar when rows are selected, export.
+
+VISUALS, MAPS & MOTION (libraries: keep recharts + Leaflet)
+ V1/V2 Interactive maps (Leaflet + leaflet.markercluster +
+    leaflet.heat, zoom, clusters, click-through to the list):
+    - open jobs by location (today's map, upgraded)
+    - candidate locations heat-map (from city/pincode, never exact
+      address; aggregated, minimum 5 per cell)
+    - employee headcount by office
+    - candidate commute distance to the job's office, shown as an
+      approximate km/time band on the candidate profile
+    Geocoding and routing are CONNECTIONS (purpose geo.geocode,
+    geo.route; providers: OpenStreetMap Nominatim/OSRM self-hosted or
+    Google Maps / Mapbox with the client's own key). Results cached.
+    Map tiles provider is a setting.
+ V3 Animations: Sankey hiring-flow chart (recharts Sankey) on
+    recruitment dashboards; onboarding progress ring animation;
+    celebration (canvas-confetti) when an offer is signed or a joiner
+    is marked joined - shown once per user per event.
+ V4 GIF/video: welcome GIF or short video in the pre-joining portal
+    (uploaded per client, stored in S3); short how-to tours per module
+    (react-joyride steps + looping MP4/WebM clips; real GIF only as a
+    fallback because it is heavy). Admins upload/replace them.
+ V5 Funnel = Sankey.  V6 Org chart = zoomable tree with photos
+    (d3-hierarchy + pan/zoom, lazy-loaded branches).
+ V7 Candidate skills vs job = radar chart (recharts RadarChart).
+ V8 Motion subtle; everything off under prefers-reduced-motion and a
+    per-user "reduce motion" setting.
+
+HOME DASHBOARD
+ O1 Pending tasks & approvals first.  O2 Four number tiles.
+ O3 Users drag/resize widgets (react-grid-layout), layout saved per
+    user, admin sets role default.  O4 Separate alerts panel for SLA
+    breaches and overdue feedback.
+
+JOBS
+ J1 Keep the step-by-step job wizard.  J2 Job template library.
+ J3 AI JD draft in a side-by-side editor.  J4 Job table with candidate
+ counts per stage.  J5 Auto-close when positions are filled OR end
+ date passes (recruiter notified; can reopen).
+
+CANDIDATES
+ C1 Profile: two columns (details left, activity timeline right).
+ C2 Resume PDF preview (pdf.js) beside parsed details.
+ C3 Duplicate at upload: stop and offer merge.  C4 Kanban and table,
+ switchable, choice remembered.  C5 Free tags.  C6 Timeline shows
+ emails, stage changes, notes, interviews, AI scores.
+
+SCREENING & SHORTLISTING
+ S1 One score, breakdown on hover.  S2 Evidence lines quoted from the
+ resume.  S3 Highest score first.  S4 Threshold slider with live
+ "N candidates pass" count.  S5 Compare up to 3 side by side.
+ S6 One-click shortlist, reason optional.  S7 Reject reason required
+ (master list).  S8 Rejection email sent after a delay (setting,
+ default 24h), undoable until sent.
+
+INTERVIEWS
+ I1 Week view calendar.  I2 "My interviews" page for interviewers
+ (join link, candidate summary, scorecard).  I3 Competency ratings +
+ one comment.  I4 Reminders 24h and 1h before.  I5 Candidate
+ self-reschedule by link, max count is a setting (default 2).
+ I6 Panel feedback hidden until you submit yours.  I7 AI interview
+ questions shown inside the scorecard page.
+
+HR INBOX & NOTIFICATIONS
+ H1 Three panes: list / thread / candidate details.  H2 Auto-link
+ replies.  H3 "Assign to candidate" queue for unmatched mail.
+ H4 Insertable reply snippets (from templates).  H5 Bell grouped by
+ module.
+
+SALARY, BGV & OFFERS
+ B1 Band bar showing where the expected salary sits.  B2 One-click
+ approval request.  B3 BGV checklist per document with status chips.
+ B4 AI flags name/DOB mismatches (HR decides).  B5 Vendor updates
+ automatic, shown as a timeline.  B6 Offer template editor with live
+ preview.  B7 Offer expiry default 7 days (setting).  B8 Offer
+ timeline: sent, viewed, signed.
+
+ONBOARDING
+ P1 Portal home = checklist with progress %.  P2 Phone camera upload
+ (<input capture>) with auto-crop/deskew.  P3 HR dashboard = joiner
+ cards by joining date.  P4 Daily digest to task owners.  P5 Buddy +
+ first-week agenda sent automatically.  P6 Readiness alert 3 days
+ before joining.
+
+EMPLOYEE RECORDS
+ E1 Header card + tabs (Personal, Job, Documents, History).
+ E2 Interactive, expandable org chart.  E3 Directory search with
+ department, location, skill filters.  E4 Edit in place, "pending"
+ badge until HR approves.  E5 Standard letters generated instantly.
+ E6 PAN/bank masked, reveal button, every reveal audited.
+
+PERFORMANCE & COMPENSATION
+ F1 Goals tree (company > team > me).  F2 Monthly check-in nudge.
+ F3 One-page review form with sections + autosave.  F4 5-point scale
+ default (still configurable).  F5 9-box with drag and drop (dnd-kit).
+ F6 Manager table of all reportees.  F7 Spreadsheet-style comp grid
+ with budget meter.
+
+HELPDESK & ASSETS
+ T1 Category first, AI suggested answer before submit.  T2 Agent
+ queue with SLA countdown chips.  T3 Breach escalates to the agent's
+ manager.  T4 One-click rating after close.  T5 Asset table + QR
+ code per asset (printable label sheet as PDF).  T6 Asset catalogue
+ with approval.  T7 Electronic handover acknowledgement.
+
+EXIT
+ X1 Employee self-service resignation.  X2 Clearance board by
+ department with owners.  X3 Online exit interview before last day.
+ X4 Daily reminders until clearance done.  X5 Relieving letter
+ generated automatically when clearance completes (HR can hold).
+
+REPORTS & HR ASSISTANT
+ R1 Drag-and-drop report builder with live preview.  R2 Scheduled
+ reports emailed as PDF/Excel.  R3 Charts use the client's brand
+ colours (validated for contrast).  R4 Export Excel, CSV, PDF.
+ R5 Assistant = floating button on every page.  R6 Sources always
+ shown.  R7 Assistant drafts actions; user confirms.
+
+SETTINGS & CAREER SITE
+ A1 Settings: category tree + search.  A2 Change history with revert.
+ A3 Setup health checklist on admin home.  A4 Career site = job list
+ with filters and search.  A5 Short apply form (resume + contact),
+ rest collected later.  A6 Benefits section + FAQ (both editable per
+ client).  A7 Candidate status tracking page.
 
 
 =====================================================================

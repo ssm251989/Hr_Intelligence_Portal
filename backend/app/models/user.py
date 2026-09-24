@@ -4,9 +4,10 @@ from sqlalchemy import CheckConstraint, Column, DateTime, String, text
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.core.database import Base
+from app.platform.tenancy.mixins import TenantOwned
 
 
-class User(Base):
+class User(Base, TenantOwned):
     __tablename__ = "users"
     __table_args__ = (
         CheckConstraint(

@@ -2,9 +2,10 @@ from sqlalchemy import Column, DateTime, ForeignKey, Integer, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.core.database import Base
+from app.platform.tenancy.mixins import TenantOwned
 
 
-class InterviewConfirmationToken(Base):
+class InterviewConfirmationToken(Base, TenantOwned):
     """One candidate-facing confirmation link for one proposed interview slot (Part 3 --
     email + secure-link confirmation). Three of these are created per proposal run, one per
     slot a real interviewer was actually found free for (see

@@ -4,9 +4,10 @@ from anthropic import Anthropic
 from pydantic import BaseModel
 
 from app.core.config import settings
+from app.platform.ai import model_catalog
 
 # Haiku per docs/PROMPTS.md's tiering: high-volume/low-complexity classification.
-MODEL = "claude-haiku-4-5"
+MODEL = model_catalog.DOCUMENT_VALIDATION
 
 SYSTEM_PROMPT = (
     "You classify and validate an extracted BGV document's OCR text. Flag as "

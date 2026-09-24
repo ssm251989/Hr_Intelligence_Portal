@@ -2,9 +2,10 @@ from sqlalchemy import Column, DateTime, ForeignKey, String, Text, UniqueConstra
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from app.core.database import Base
+from app.platform.tenancy.mixins import TenantOwned
 
 
-class UserIntegration(Base):
+class UserIntegration(Base, TenantOwned):
     __tablename__ = "user_integrations"
     __table_args__ = (
         UniqueConstraint("user_id", "provider", name="user_integrations_user_id_provider_key"),

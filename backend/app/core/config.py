@@ -6,7 +6,34 @@ load_dotenv()
 
 
 class Settings:
+    # Migration/admin DSN (a Postgres superuser locally) -- Alembic's own env.py files read
+    # this one, since DDL (ALTER TABLE, CREATE POLICY, ...) needs rights beyond what the
+    # runtime app role below has. Never used for ordinary request/query traffic.
     DATABASE_URL: str = os.getenv("DATABASE_URL", "")
+    # Part 2 (docs/HRMS_COMPLETE_SPEC.txt): the control plane's own database -- tenants,
+    # plans, module enablement -- deliberately separate from DATABASE_URL (tenant #1's own
+    # data) even under TENANCY_MODE=single, so control-plane and tenant migrations/backups
+    # stay independent from day one rather than needing a later split. Also a migration/
+    # admin DSN -- see APP_CONTROL_PLANE_DATABASE_URL for the runtime one.
+    CONTROL_PLANE_DATABASE_URL: str = os.getenv("CONTROL_PLANE_DATABASE_URL", "")
+    # Part 2's actual runtime connections -- a non-superuser role (RLS is unconditionally
+    # bypassed for a Postgres superuser, FORCE ROW LEVEL SECURITY or not, so the app must
+    # never query as one -- see app.platform.tenancy.rls's own comment). Falls back to the
+    # admin DSNs above only so a fresh clone that hasn't set these up yet doesn't hard-crash
+    # on import; every real environment (including this repo's own local dev, see .env)
+    # sets both explicitly.
+    APP_DATABASE_URL: str = os.getenv("APP_DATABASE_URL") or DATABASE_URL
+    APP_CONTROL_PLANE_DATABASE_URL: str = os.getenv("APP_CONTROL_PLANE_DATABASE_URL") or CONTROL_PLANE_DATABASE_URL
+    # single (the only mode deployed at launch, decision A1 -- one installation per client)
+    # or multi (kept in the code, not deployed -- section B). A deployment-shape choice,
+    # not tenant data, per section A's own carve-out.
+    TENANCY_MODE: str = os.getenv("TENANCY_MODE", "single")
+    # platform/secrets/store.py's backend selector; MASTER_KEY wraps DbEncryptedSecretStore's
+    # per-tenant data-encryption key (envelope encryption), never used to encrypt secrets
+    # directly. This pair is deployment/infra config (per-installation, MODE 1), not tenant
+    # data -- allowed to live in env per section A's own carve-out.
+    SECRET_BACKEND: str = os.getenv("SECRET_BACKEND", "db_encrypted")
+    MASTER_KEY: str = os.getenv("MASTER_KEY", "")
     ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
     SECRET_KEY: str = os.getenv("SECRET_KEY", "")
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")

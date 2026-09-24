@@ -2,9 +2,10 @@ from sqlalchemy import CheckConstraint, Column, Date, DateTime, ForeignKey, Inte
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from app.core.database import Base
+from app.platform.tenancy.mixins import TenantOwned
 
 
-class NegotiationToken(Base):
+class NegotiationToken(Base, TenantOwned):
     """One recipient's session in the interviewer-first, double-blind pick-2-of-3
     scheduling negotiation (app/interview_scheduling/negotiation.py) -- the flow
     auto-triggered when an application's status becomes Shortlisted. One row per

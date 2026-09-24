@@ -2,9 +2,10 @@ from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, String, Te
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from app.core.database import Base
+from app.platform.tenancy.mixins import TenantOwned
 
 
-class BgvDocument(Base):
+class BgvDocument(Base, TenantOwned):
     __tablename__ = "bgv_documents"
     __table_args__ = (
         CheckConstraint(

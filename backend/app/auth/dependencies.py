@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import decode_access_token
 from app.models.user import User
+from app.platform.tenancy.context import get_current_tenant
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -35,6 +36,15 @@ def get_current_user(
         user_uuid = uuid.UUID(user_id)
     except (JWTError, ValueError):
         raise _unauthorized()
+
+    # Part 2: reject a token minted for a different tenant than this request resolved to
+    # (TenantResolverMiddleware). A token with no "tid" claim at all (every test helper
+    # that calls create_access_token directly, never through /auth/login) has nothing to
+    # check against -- never treated as a mismatch, only an actual tid disagreement is.
+    token_tid = payload.get("tid")
+    current_tenant = get_current_tenant()
+    if token_tid is not None and current_tenant is not None and token_tid != str(current_tenant.tenant_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Token was not issued for this tenant")
 
     user = db.get(User, user_uuid)
     if user is None:

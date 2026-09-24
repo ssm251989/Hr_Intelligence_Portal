@@ -17,8 +17,9 @@ from anthropic import Anthropic
 from pydantic import BaseModel
 
 from app.core.config import settings
+from app.platform.ai import model_catalog
 
-MODEL = "claude-haiku-4-5"
+MODEL = model_catalog.SHORTLIST_FEEDBACK
 
 SYSTEM_PROMPT = (
     "You draft evaluator feedback for a candidate at the shortlisting stage of a hiring "

@@ -2,9 +2,10 @@ from sqlalchemy import Column, DateTime, Index, String, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from app.core.database import Base
+from app.platform.tenancy.mixins import TenantOwned
 
 
-class AuditLog(Base):
+class AuditLog(Base, TenantOwned):
     __tablename__ = "audit_log"
     __table_args__ = (
         # Supports the Candidates List's Remarks column (see app/screening/service.py

@@ -2,9 +2,10 @@ from anthropic import Anthropic
 from pydantic import BaseModel
 
 from app.core.config import settings
+from app.platform.ai import model_catalog
 
 # Haiku per docs/PROMPTS.md's tiering: high-volume/low-complexity generation.
-MODEL = "claude-haiku-4-5"
+MODEL = model_catalog.INTERVIEW_QUESTIONS
 
 SYSTEM_PROMPT = (
     "You generate role-specific interview questions from a job description. "

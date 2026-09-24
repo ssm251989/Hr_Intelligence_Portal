@@ -4,9 +4,10 @@ from anthropic import Anthropic
 from pydantic import BaseModel
 
 from app.core.config import settings
+from app.platform.ai import model_catalog
 
 # Sonnet per docs/PROMPTS.md's tiering: judgment-heavy shortlist scoring.
-MODEL = "claude-sonnet-5"
+MODEL = model_catalog.CANDIDATE_RANKING
 
 SYSTEM_PROMPT = (
     "You produce an explainable ranking for a shortlisted candidate against a "

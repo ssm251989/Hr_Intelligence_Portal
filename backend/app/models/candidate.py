@@ -2,6 +2,7 @@ from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Numeric, S
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from app.core.database import Base
+from app.platform.tenancy.mixins import TenantOwned
 
 # "career_portal"/"manual" are populated by the two existing creation paths (public apply,
 # internal resume upload); "local_import" by the Import wizard's "Import from Local" step
@@ -15,7 +16,7 @@ CANDIDATE_SOURCES = (
 )
 
 
-class Candidate(Base):
+class Candidate(Base, TenantOwned):
     __tablename__ = "candidates"
     __table_args__ = (
         CheckConstraint(

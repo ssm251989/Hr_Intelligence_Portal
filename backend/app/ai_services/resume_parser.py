@@ -4,9 +4,10 @@ from anthropic import Anthropic
 from pydantic import BaseModel
 
 from app.core.config import settings
+from app.platform.ai import model_catalog
 
 # Haiku per docs/PROMPTS.md's tiering: high-volume/low-complexity extraction.
-MODEL = "claude-haiku-4-5"
+MODEL = model_catalog.RESUME_EXTRACTION
 
 SYSTEM_PROMPT = (
     "You extract structured fields from a raw resume. If a field is not present "

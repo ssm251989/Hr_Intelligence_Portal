@@ -5,6 +5,7 @@ from app.auth.dependencies import get_current_user
 from app.core.database import get_db
 from app.core.security import create_access_token, hash_password, verify_password
 from app.models.user import User
+from app.platform.tenancy.context import get_current_tenant
 from app.schemas.auth import TokenResponse, UserLogin, UserRead, UserRegister
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -34,7 +35,15 @@ def login(payload: UserLogin, db: Session = Depends(get_db)):
     if not user or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
 
-    token = create_access_token(subject=str(user.id))
+    # Part 2: embeds which tenant this session was issued for (tid) -- get_current_user
+    # rejects a token whose tid doesn't match the tenant this SAME request resolves to
+    # (TenantResolverMiddleware, host/header-routed). Omitted (not an empty string) when no
+    # tenant context is set (e.g. a test hitting create_access_token directly without going
+    # through the middleware) -- get_current_user treats a missing tid as "nothing to check
+    # yet", never as a mismatch, so this rolls out without touching every existing caller.
+    tenant_ctx = get_current_tenant()
+    extra_claims = {"tid": str(tenant_ctx.tenant_id)} if tenant_ctx else None
+    token = create_access_token(subject=str(user.id), extra_claims=extra_claims)
     return TokenResponse(access_token=token)
 
 

@@ -1,9 +1,10 @@
 from sqlalchemy import Boolean, Column, Integer, Text
 
 from app.core.database import Base
+from app.platform.tenancy.mixins import TenantOwned
 
 
-class HrIntegration(Base):
+class HrIntegration(Base, TenantOwned):
     """Singleton row (always id=1) holding the single shared, org-level mailbox ("CTDHR")
     every automated HR email in this app sends from, and now also polls for incoming mail --
     plain SMTP/IMAP credentials (universal across providers -- Gmail, Outlook, Yahoo,
