@@ -25,6 +25,7 @@ TestingSessionLocal = sessionmaker(bind=engine)
 def _isolate_uploads(tmp_path, monkeypatch):
     monkeypatch.setattr("app.candidates.storage.UPLOAD_DIR", tmp_path / "resumes")
     monkeypatch.setattr("app.candidates.storage.PHOTO_UPLOAD_DIR", tmp_path / "candidate-photos")
+    monkeypatch.setattr("app.onboarding.portal.UPLOAD_DIR", tmp_path / "onboarding")
     # Part G's ready-to-upload/already-uploaded roots are DB-configured (local_import_
     # settings), not fixed module paths -- nothing to isolate here globally. Tests that
     # exercise the scan configure their own tmp_path roots via that settings row (see

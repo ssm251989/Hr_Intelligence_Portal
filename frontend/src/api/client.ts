@@ -1199,3 +1199,42 @@ export const publicApi = {
     return postForm<PublicApplicationSubmitResponse>("/public/apply", form);
   },
 };
+
+// ---- Part 9: pre-boarding & onboarding ----
+
+export interface PreboardingCaseRow {
+  id: UUID;
+  email: string;
+  joining_date: string;
+  status: string;
+  employee_id: UUID | null;
+  offer_id: UUID | null;
+}
+
+export interface OnboardingDashboard {
+  upcoming_joiners: { case_id: UUID; email: string; joining_date: string; status: string; readiness_percent: number }[];
+  overdue_tasks_by_owner: Record<string, number>;
+  bgv_status: Record<string, number>;
+  documents_pending_verification: number;
+  cases_by_status: Record<string, number>;
+  offer_to_join_drop_off_percent: number;
+}
+
+export interface BgvCaseRow {
+  id: UUID;
+  subject_type: string;
+  status: string;
+  decision: string;
+  checks: { type: string; status: string; notes?: string }[];
+}
+
+export const onboardingApi = {
+  dashboard: () => get<OnboardingDashboard>("/api/v1/onboarding/dashboard"),
+  cases: (status?: string) => get<PreboardingCaseRow[]>(`/api/v1/onboarding/cases${status ? `?status=${status}` : ""}`),
+  createCase: (payload: { email?: string; first_name?: string; last_name?: string; joining_date?: string; offer_id?: UUID }) =>
+    post<PreboardingCaseRow & { portal_token: string }>("/api/v1/onboarding/cases", payload),
+  convert: (caseId: UUID) => post<{ employee_code: string; already_converted: boolean }>(`/api/v1/onboarding/cases/${caseId}/convert`, { confirm_joined: true }),
+  noShow: (caseId: UUID, reason?: string) => post<PreboardingCaseRow>(`/api/v1/onboarding/cases/${caseId}/no-show`, { reason }),
+  revoke: (caseId: UUID, reason?: string) => post<PreboardingCaseRow>(`/api/v1/onboarding/cases/${caseId}/revoke`, { reason }),
+  bgvCases: () => get<BgvCaseRow[]>("/api/v1/onboarding/bgv"),
+};

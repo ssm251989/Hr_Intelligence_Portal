@@ -1365,3 +1365,48 @@ Recorded in docs/HRMS_COMPLETE_SPEC.txt instructions 3-4. Supersedes the earlier
 
 Part 9 was mid-build when this arrived: its models/services were committed as-is
 (`part-9 (wip)`), import-checked only, then Part 9 was finished in a follow-up commit.
+
+## PART 9 (branch `hrms-platform`) -- Pre-boarding & onboarding
+
+Pre-boarding case per accepted offer with a magic-link `PreboardingPortal`, document
+collection + AI prefill + HR verification queue, background-verification cases with
+consent gating and a vendor webhook, template-driven onboarding plans with DOJ-relative
+due dates and dependencies, JSONLogic `assignment_rules`, idempotent pre_hire -> employee
+conversion, and an onboarding dashboard.
+
+**Scope decisions (standing autonomy directive):**
+- **Portal token lives on the case, not in Part 5's `magic_links`**: that table is a 15-min
+  one-time login link keyed on candidate_id; a pre-boarding portal must survive weeks of
+  notice period and be rotatable. TTL is the setting `onboarding.portal.link_ttl_days` (45).
+  The token is returned once at case creation / rotation, never listed again.
+- **Requirements are tenant data**: required forms (Part 6 `meta_forms` keys), documents
+  (`document_type` master codes) and policies come from `onboarding.*` settings, overridable
+  per case via `attributes_json`. Form validation checks the schema's `required` list only
+  (no `jsonschema` dependency added -- same "skip a new dependency" call as Part 7).
+- **BGV `decision` is HITL only**: the vendor webhook (auth: per-case `X-Bgv-Token`,
+  constant-time compare) updates per-check status/report/discrepancy; `decide()` is a
+  human action and "clear" requires every check clear. Old per-application `bgv_documents`
+  flow untouched (13-module parity).
+- **Provisioning = checklist tasks** (`kind="provisioning"`), per the spec's own "at launch".
+- **New flat role `employee`**: `users_role_check` widened (migration) and bridged to the
+  Employee system role, so a converted new hire gets a real login; not self-registrable,
+  not in `AdminUserCreate`'s Literal. Rule-assigned extra roles use `scope_type="self"`.
+- **Optional BGV gate on conversion**: `onboarding.bgv.block_conversion_until_clear`
+  (default false, so existing behaviour isn't changed silently).
+- **No scheduler** for 30/60/90 check-in reminders or overdue nudges -- same documented
+  Celery-beat gap as Parts 2/4/5/7. `overdue_tasks()` is real and on the dashboard.
+- **UI**: `OnboardingPanel.tsx` (HR surface in Settings). The mobile new-hire portal page is
+  not built; its public API is complete.
+
+Migration `c5b972361e4f`: 7 TenantOwned + RLS tables (`preboarding_cases`,
+`preboarding_documents`, `bgv_cases`, `onboarding_plan_templates`, `onboarding_plans`,
+`onboarding_tasks`, `assignment_rules`) + widened `users_role_check`. The 3 pre-existing
+index-drift drops autogenerate keeps proposing were stripped, as in every prior part.
+`alembic upgrade head` on dev DB: OK.
+
+Tests: `tests/test_onboarding.py` (~40 incl. parametrized) -- written, NOT executed
+(testing deferred). Quick checks: `compileall -q app` OK, `import app.main` OK,
+`npx tsc --noEmit` exit 0.
+
+CHECKS grep: onboarding_plan_templates (2 files), bgv_cases (2), assignment_rules (6),
+PreboardingPortal (5).

@@ -123,4 +123,14 @@ def register_all() -> None:
     register_permission("recruitment", "prompt", "view")
     register_permission("recruitment", "prompt", "configure")
 
+    # Part 9: pre-boarding & onboarding.
+    for resource in ("preboarding", "plan", "task", "bgv", "assignment_rule"):
+        for action in ("view", "create", "edit"):
+            register_permission("onboarding", resource, action)
+    register_permission("onboarding", "bgv", "approve")
+    register_permission("onboarding", "preboarding", "approve")  # conversion to employee
+    register_permission("onboarding", "plan", "configure")
+    register_permission("onboarding", "assignment_rule", "configure")
+    register_permission("onboarding", "dashboard", "view")
+
     _registered = True
