@@ -210,6 +210,12 @@ class PreboardingPortal:
         allowed = {v.code for v in masters.list_values(self.db, self.tenant, "document_type")}
         if document_type_code not in allowed:
             raise PortalValidationError(f"{document_type_code!r} is not an active document_type")
+        from app.platform.ops.av_scan import UploadRejectedError, ensure_clean
+
+        try:
+            ensure_clean(file_bytes)  # Part 13: AV scan before anything touches disk
+        except UploadRejectedError as exc:
+            raise PortalValidationError(str(exc)) from exc
         UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
         filename = f"{uuid.uuid4()}.{extension.lstrip('.').lower() or 'bin'}"
         (UPLOAD_DIR / filename).write_bytes(file_bytes)

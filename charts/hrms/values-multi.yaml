@@ -1,0 +1,11 @@
+# MODE 2 -- shared SaaS (kept in the code, not deployed at launch). Tenants resolve by Host
+# against control_plane.tenant_domains; one wildcard certificate + per-custom-domain certs.
+tenancyMode: multi
+api:
+  hpa: { enabled: true, minReplicas: 3, maxReplicas: 20, targetCPUUtilizationPercentage: 65 }
+worker:
+  tenantMaxConcurrentJobs: 2
+ingress:
+  hosts: []
+  wildcardHost: "*.hrms.example"
+  customDomains: [careers.client-a.example]

@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -71,6 +72,18 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="HR Automation", lifespan=lifespan)
 
+# Part 13: added BEFORE TenantResolverMiddleware so they run INSIDE it (Starlette runs the
+# last-added middleware outermost) -- rate limits and metrics need the resolved tenant.
+from app.platform.ops.observability import ObservabilityMiddleware, configure_logging, init_optional_integrations  # noqa: E402
+from app.platform.ops.rate_limit import RateLimitMiddleware  # noqa: E402
+from app.platform.ops.security_headers import SecurityHeadersMiddleware  # noqa: E402
+
+configure_logging()
+init_optional_integrations(app)
+app.add_middleware(RateLimitMiddleware)
+app.add_middleware(ObservabilityMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
+
 # Part 2: resolves TenantContext for every request before any route or dependency runs
 # (added last so it's the OUTERMOST middleware -- Starlette runs middlewares in reverse
 # add order -- meaning tenant context is set before CORS or any router logic ever executes).
@@ -78,7 +91,8 @@ app.add_middleware(TenantResolverMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    # Part 13: per-installation list (CORS_ORIGINS, comma-separated); dev default unchanged.
+    allow_origins=[o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",") if o.strip()],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -128,6 +142,16 @@ app.include_router(onboarding_public_router)
 app.include_router(performance_router)
 app.include_router(service_desk_router)
 app.include_router(intelligence_router)
+
+
+from app.platform.ops.health import router as ops_router  # noqa: E402
+from app.superadmin.router import router as superadmin_router  # noqa: E402
+from app.privacy.api_router import public_router as privacy_public_router, router as privacy_router  # noqa: E402
+
+app.include_router(ops_router)
+app.include_router(superadmin_router)
+app.include_router(privacy_router)
+app.include_router(privacy_public_router)
 
 
 @app.get("/health")

@@ -7,7 +7,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from app.platform.tenancy.database_cp import ControlPlaneBase
 
-TENANT_STATUSES = ("provisioning", "active", "suspended", "archived")
+TENANT_STATUSES = ("provisioning", "active", "suspended", "archived", "deleted")
 TENANT_ISOLATIONS = ("dedicated_db", "shared_rls")
 TLS_STATUSES = ("pending", "issued", "failed")
 PROVISIONING_JOB_STATUSES = ("pending", "running", "succeeded", "failed")
@@ -101,6 +101,11 @@ class PlatformAdmin(ControlPlaneBase):
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
     email = Column(String(255), nullable=False, unique=True)
     mfa_secret_ref = Column(Text)
+    # Part 13: the console's own credentials -- bcrypt hash + mandatory TOTP (the secret
+    # itself lives in the control-plane SecretStore behind mfa_secret_ref).
+    password_hash = Column(String(255))
+    is_active = Column(Boolean, nullable=False, server_default=text("true"))
+    last_login_at = Column(DateTime(timezone=True))
 
 
 class TenantProvisioningJob(ControlPlaneBase):
@@ -146,3 +151,30 @@ class ControlPlaneSecret(ControlPlaneBase):
     key_version = Column(Integer, nullable=False, server_default=text("1"))
     created_by = Column(Text)
     rotated_at = Column(DateTime(timezone=True))
+
+
+class ImpersonationSession(ControlPlaneBase):
+    """Audited, time-boxed support access to a tenant (Part 13 section B). The same event
+    is also written to the TENANT's own audit_log so the tenant can see it happened."""
+
+    __tablename__ = "impersonation_sessions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    platform_admin_id = Column(UUID(as_uuid=True), ForeignKey("platform_admins.id"), nullable=False)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False)
+    target_user_id = Column(UUID(as_uuid=True), nullable=False)  # a user in the tenant's own DB
+    reason = Column(Text, nullable=False)
+    started_at = Column(DateTime(timezone=True), server_default=text("now()"))
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    ended_at = Column(DateTime(timezone=True))
+
+
+class SuperAdminAudit(ControlPlaneBase):
+    __tablename__ = "superadmin_audit"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    admin_email = Column(String(255), nullable=False)
+    action = Column(String(100), nullable=False)
+    tenant_id = Column(UUID(as_uuid=True))
+    details_json = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"))

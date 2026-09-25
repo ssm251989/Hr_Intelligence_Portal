@@ -93,6 +93,13 @@ from app.models.intelligence import (
     ReportSchedule,
     SavedReport,
 )
+from app.models.privacy import (
+    BreachIncident,
+    ConsentRecord,
+    DataPrincipalRequest,
+    PrivacyNotice,
+    RetentionRun,
+)
 from app.models.hiring_team import JobHiringTeamMember
 from app.models.hr_inbound_email import HrInboundEmail
 from app.models.hr_integration import HrIntegration
@@ -195,6 +202,11 @@ __all__ = [
     "MetaForm",
     "Sequence",
     "NegotiationToken",
+    "BreachIncident",
+    "ConsentRecord",
+    "DataPrincipalRequest",
+    "PrivacyNotice",
+    "RetentionRun",
     "AgentSuggestion",
     "AiDecisionLog",
     "AiUsageBudget",

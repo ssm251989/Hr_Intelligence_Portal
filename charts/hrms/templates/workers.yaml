@@ -1,0 +1,52 @@
+{{- range .Values.worker.pools }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hrms.name" $ }}-worker-{{ .name }}
+  labels: {{- include "hrms.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: worker-{{ .name }}
+spec:
+  replicas: {{ .replicas }}
+  selector:
+    matchLabels: { app.kubernetes.io/instance: {{ $.Release.Name }}, app.kubernetes.io/component: worker-{{ .name }} }
+  template:
+    metadata:
+      labels: {{- include "hrms.labels" $ | nindent 8 }}
+        app.kubernetes.io/component: worker-{{ .name }}
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 10001 }
+      containers:
+        - name: worker
+          image: {{ include "hrms.backendImage" $ }}
+          command: ["celery", "-A", "app.platform.jobs.scheduled:celery_app", "worker", "--loglevel=INFO", "-Q", {{ .queues | quote }}, "--concurrency", {{ .concurrency | quote }}]
+          env: {{- include "hrms.backendEnv" $ | nindent 12 }}
+          envFrom: [{ secretRef: { name: {{ $.Values.existingSecret }} } }]
+          resources: {{- toYaml $.Values.worker.resources | nindent 12 }}
+{{- end }}
+---
+# Beat: exactly one replica per installation (duplicate beats would double-fire schedules).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hrms.name" . }}-beat
+  labels: {{- include "hrms.labels" . | nindent 4 }}
+    app.kubernetes.io/component: beat
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: beat }
+  template:
+    metadata:
+      labels: {{- include "hrms.labels" . | nindent 8 }}
+        app.kubernetes.io/component: beat
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 10001 }
+      containers:
+        - name: beat
+          image: {{ include "hrms.backendImage" . }}
+          command: ["celery", "-A", "app.platform.jobs.scheduled:celery_app", "beat", "--loglevel=INFO", "--schedule", "/tmp/celerybeat-schedule"]
+          env: {{- include "hrms.backendEnv" . | nindent 12 }}
+          envFrom: [{ secretRef: { name: {{ .Values.existingSecret }} } }]
+          resources: {{- toYaml .Values.beat.resources | nindent 12 }}

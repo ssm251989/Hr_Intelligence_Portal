@@ -1,0 +1,7 @@
+# MODE 1 -- a client's dedicated installation (the only mode deployed at launch).
+tenancyMode: single
+api:
+  replicas: 2
+ingress:
+  hosts: [hr.client.example]
+  wildcardHost: ""

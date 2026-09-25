@@ -1,0 +1,46 @@
+# Deploy to staging, then smoke-test BOTH deployment shapes (Part 13 section F).
+# Production deploys are a manual approval on the `prod` environment, per client.
+name: deploy
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment: { description: "staging | prod-<client>", required: true, default: staging }
+
+permissions:
+  contents: read
+  id-token: write   # OIDC to AWS, no long-lived keys
+
+jobs:
+  deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'staging' }}
+    strategy:
+      matrix:
+        shape: [single, multi]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with: { role-to-assume: "${{ vars.AWS_DEPLOY_ROLE_ARN }}", aws-region: ap-south-1 }
+      - uses: azure/setup-helm@v4
+      - name: helm upgrade (runs the migrate hook first)
+        run: |
+          aws eks update-kubeconfig --name "${{ vars.EKS_CLUSTER }}"
+          helm upgrade --install "hrms-${{ matrix.shape }}" charts/hrms \
+            -n "hrms-staging-${{ matrix.shape }}" --create-namespace \
+            -f charts/hrms/values-${{ matrix.shape }}.yaml \
+            -f "deploy/staging/${{ matrix.shape }}.values.yaml" \
+            --set image.backend.tag=${{ github.sha }} --set image.frontend.tag=${{ github.sha }} \
+            --wait --timeout 15m
+      - name: smoke tests
+        run: |
+          BASE="${{ vars[format('STAGING_{0}_URL', matrix.shape)] }}"
+          curl -fsS "$BASE/_api/healthz"
+          curl -fsS "$BASE/_api/readyz"
+          curl -fsS "$BASE/_api/api/v1/public/branding" | grep -q product_name
+          test "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/_api/api/v1/onboarding/cases")" = "401"

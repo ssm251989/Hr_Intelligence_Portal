@@ -150,6 +150,11 @@ def register_all() -> None:
         "aadhaar": r"\b\d{4}\s?\d{4}\s?\d{4}\b",
     }, module="ai", group="AI Governance"))
     register(SettingDef("ai.pricing", "json", {}, module="ai", group="AI Governance"))  # {model: {input_per_mtok, output_per_mtok}}
+    # privacy.* -- Part 13 section E (DPDP). Defaults are conservative starting points each
+    # tenant's DPO confirms; ex_employee ~8 years covers common Indian statutory retention.
+    register(SettingDef("privacy.dpr_sla_days", "int", 30, module="privacy", group="Privacy"))
+    register(SettingDef("privacy.retention_days", "json", {"candidate_unhired": 730, "ex_employee": 2920, "copilot_conversations": 365},
+                        module="privacy", group="Privacy"))
     register(SettingDef("analytics.diversity.enabled", "bool", False, module="analytics", group="Analytics"))  # opt-in (spec A.4)
     register(SettingDef("analytics.diversity.min_group_size", "int", 5, module="analytics", group="Analytics"))
     register(SettingDef("analytics.recruiting_spend_ytd", "decimal", 0, module="analytics", group="Analytics"))

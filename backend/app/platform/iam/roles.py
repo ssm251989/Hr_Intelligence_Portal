@@ -39,6 +39,8 @@ _SYSTEM_ROLE_TEMPLATES: dict[str, str | list[tuple[str, set[str]]]] = {
         ("copilot", {"view", "configure"}),
         ("agents", {"view", "create"}),
         ("ai", {"view", "configure"}),
+        ("privacy", {"view", "create", "edit", "approve", "configure"}),
+        ("security", {"export"}),
     ],
     "HRBP": [
         ("recruitment", {"view", "create", "edit", "export"}),
@@ -113,6 +115,8 @@ _SYSTEM_ROLE_TEMPLATES: dict[str, str | list[tuple[str, set[str]]]] = {
         ("separation", {"view", "export"}),
         ("analytics", {"view", "export"}),
         ("ai", {"view"}),
+        ("privacy", {"view"}),
+        ("security", {"export"}),
         ("core_hr", {"view", "view_sensitive"}),
         ("platform", {"view"}),
         ("iam", {"view"}),

@@ -105,6 +105,12 @@ async def submit_application(
     except (UnsupportedFileTypeError, ResumeExtractionError) as exc:
         raise HTTPException(status_code=400, detail=f"Could not read resume: {exc}") from exc
 
+    from app.platform.ops.av_scan import UploadRejectedError, ensure_clean
+
+    try:
+        ensure_clean(file_bytes)  # Part 13: AV scan hook (skipped when no scanner is configured)
+    except UploadRejectedError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     resume_path = save_resume_file(file_bytes, extension)
 
     candidate = Candidate(
@@ -137,6 +143,13 @@ async def submit_application(
         "public",
         {"status": application.status, "source": "careers_portal", "job_role_id": str(job.id)},
     )
+    # Part 13 section E: the consent ledger entry behind consent_given_at (append-only, tied
+    # to the notice version shown, if the tenant has published one).
+    from app.platform.tenancy.context import require_current_tenant
+    from app.privacy.service import record_consent
+
+    record_consent(db, require_current_tenant(), subject_type="candidate", subject_id=candidate.id, subject_email=email,
+                   purpose="recruitment.application", channel="career_site", evidence={"consent_version": CURRENT_CONSENT_VERSION})
 
     disqualify_reason = None
     if job.knockout_questions_json:

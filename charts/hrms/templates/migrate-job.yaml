@@ -1,0 +1,25 @@
+{{- if .Values.migrations.enabled }}
+# Runs before every install/upgrade: control plane first, then every tenant database
+# (hrctl migrate --all-tenants). Migrations are expand-only per release (contract ships a
+# release later), so the previous pods keep serving while this runs.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "hrms.name" . }}-migrate-{{ .Release.Revision }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: Never
+      securityContext: { runAsNonRoot: true, runAsUser: 10001 }
+      containers:
+        - name: migrate
+          image: {{ include "hrms.backendImage" . }}
+          command: ["sh", "-c", "python -m hrctl.installation init && python -m hrctl.migrate --all-tenants --control-plane --parallel 4"]
+          env: {{- include "hrms.backendEnv" . | nindent 12 }}
+          envFrom: [{ secretRef: { name: {{ .Values.existingSecret }} } }]
+{{- end }}

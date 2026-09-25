@@ -76,7 +76,9 @@ import type {
   UUID,
 } from "./types";
 
-const BASE_URL = "http://localhost:8000";
+// Part 13: build-time API origin. Dev default unchanged; the Docker/nginx image builds with
+// VITE_API_BASE_URL="/_api" (same-origin reverse proxy, so the tenant Host header is kept).
+const BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
 export class ApiError extends Error {
   status: number;
@@ -1383,4 +1385,73 @@ export const intelligenceApi = {
   agentInbox: () => get<AgentSuggestionRow[]>("/api/v1/intelligence/agents/inbox"),
   decideSuggestion: (id: UUID, action: "approve" | "edit" | "reject", editedPayload?: Record<string, unknown>) =>
     post<AgentSuggestionRow>(`/api/v1/intelligence/agents/suggestions/${id}/decision`, { action, edited_payload: editedPayload }),
+};
+
+// ---- Part 13: set-password invites, privacy (DPDP), Super-Admin console ----
+
+export const accountApi = {
+  setPassword: (token: string, password: string) => post<void>("/auth/set-password", { token, password }),
+};
+
+export interface PrivacyRequestRow {
+  id: UUID;
+  type: string;
+  subject_type: string;
+  subject_email: string;
+  status: string;
+  due_at: string;
+  identity_verified: boolean;
+  legal_hold: boolean;
+}
+
+export interface BreachRow {
+  id: UUID;
+  title: string;
+  severity: string;
+  status: string;
+  detected_at: string;
+}
+
+export const privacyApi = {
+  requests: () => get<PrivacyRequestRow[]>("/api/v1/privacy/requests"),
+  verify: (id: UUID) => post<PrivacyRequestRow>(`/api/v1/privacy/requests/${id}/verify`),
+  breaches: () => get<BreachRow[]>("/api/v1/privacy/breaches"),
+};
+
+// The console is a separate identity: its own token, never the tenant session's.
+async function consoleRequest<T>(path: string, token: string | null, options: RequestInit = {}): Promise<T> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const response = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+  if (!response.ok) {
+    let detail: unknown = response.statusText;
+    try {
+      const body = await response.json();
+      detail = body.detail ?? body;
+    } catch {
+      /* keep statusText */
+    }
+    throw new ApiError(response.status, detail);
+  }
+  return response.json() as Promise<T>;
+}
+
+export interface ConsoleTenantRow {
+  id: UUID;
+  slug: string;
+  name: string;
+  status: string;
+  isolation: string;
+  region: string | null;
+  plan: string | null;
+  domains: string[];
+}
+
+export const superAdminApi = {
+  login: (email: string, password: string, totp_code: string) =>
+    consoleRequest<{ access_token: string; expires_in_minutes: number }>("/api/v1/superadmin/login", null, { method: "POST", body: JSON.stringify({ email, password, totp_code }) }),
+  tenants: (token: string) => consoleRequest<ConsoleTenantRow[]>("/api/v1/superadmin/tenants", token),
+  setStatus: (token: string, slug: string, status: string, reason?: string) =>
+    consoleRequest<{ status: string }>(`/api/v1/superadmin/tenants/${slug}/status`, token, { method: "POST", body: JSON.stringify({ status, reason }) }),
+  health: (token: string, slug: string) => consoleRequest<{ database: { ok: boolean }; connections?: { name: string; ok: boolean }[] }>(`/api/v1/superadmin/tenants/${slug}/health`, token),
 };

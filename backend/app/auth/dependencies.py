@@ -54,6 +54,20 @@ def get_current_user(
     if token_tid is not None and current_tenant is not None and token_tid != str(current_tenant.tenant_id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Token was not issued for this tenant")
 
+    # Part 13: a platform impersonation token dies the moment its session is ended from
+    # the console, not only at its (already short) expiry.
+    if payload.get("imp"):
+        from app.platform.tenancy.database_cp import ControlPlaneSessionLocal
+        from app.platform.tenancy.models_cp import ImpersonationSession
+
+        cp_db = ControlPlaneSessionLocal()
+        try:
+            session = cp_db.get(ImpersonationSession, uuid.UUID(payload["imp"]))
+            if session is None or session.ended_at is not None:
+                raise _unauthorized()
+        finally:
+            cp_db.close()
+
     user = db.get(User, user_uuid)
     if user is None:
         raise _unauthorized()

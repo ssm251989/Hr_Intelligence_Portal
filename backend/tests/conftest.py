@@ -1,4 +1,9 @@
+import os
 import uuid
+
+# Part 13: the whole suite shares one process-local rate-limit counter; tests that exercise
+# the limiter itself enable it explicitly via monkeypatch.
+os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 
 import pytest
 from fastapi.testclient import TestClient

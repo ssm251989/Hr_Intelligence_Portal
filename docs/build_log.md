@@ -1570,3 +1570,84 @@ Quick checks: `compileall -q app` OK, `import app.main` OK, `npx tsc --noEmit` e
 
 CHECKS grep: datasets (5 files), ReportBuilder (4), CopilotService (3), prompt_registry (5),
 ai_decision_log (2), usage_budget (3).
+
+## PART 13 (branch `hrms-platform`) -- DevOps, provisioning, deployment shapes, security, privacy
+
+**A. Packaging:** `backend/Dockerfile` (one image, targets `api` / `worker` / `beat`, non-root),
+`frontend/Dockerfile` + `frontend/deploy/nginx/default.conf` (SPA + same-origin `/_api/` proxy that
+keeps the tenant Host header, CSP), root `docker-compose.yml` (postgres, redis, minio, mailpit, api,
+worker, beat, frontend + one-shot `bootstrap` that migrates both DBs and runs
+`hrctl demo seed-two-tenants`: acme.localhost / globex.localhost with different brand colours,
+timezone/locale and mailpit mailboxes), `deploy/postgres/init.sh` (non-superuser `hrms_app` role),
+`deploy/compose.env.example` (no secrets committed -- compose refuses to start without them).
+Helm chart `charts/hrms` (api + HPA, worker pools per priority queue, single beat, frontend with
+nginx ConfigMap, ingress with cert-manager for hosts / wildcard / custom domains, pre-install/upgrade
+migrate Job) + `values-single.yaml` / `values-multi.yaml`. Terraform `infra/terraform/aws` (one run =
+one client installation: VPC, ECS Fargate api/worker/beat + migrate task, RDS Postgres 16 with PITR
+and optional ap-south-2 backup replication, ElastiCache Redis TLS, S3 + KMS, CloudFront (SPA +
+`/_api/*` to ALB, Host forwarded), ACM, Route53, Secrets Manager, CloudWatch alarms incl. p95 1.5s;
+regions outside India rejected; MASTER_KEY set out of band, never in state).
+**B. Provisioning:** `app/platform/tenancy/provisioning.py` (shared by CLI + console):
+`hrctl tenant create|suspend|resume|archive|delete|export|import`, `hrctl migrate --all-tenants
+[--parallel N] [--control-plane]`, `hrctl config-pack export|import` (`app/platform/config_pack.py`:
+settings + 28 configuration tables, deterministic uuid5 id remapping, idempotent upsert, never
+secrets/connections), `hrctl installation init` (control-plane DB + runtime role on RDS),
+`hrctl superadmin create` (TOTP always enrolled). Delete is report-only without `--confirm <slug>`;
+dropping a dedicated DB additionally needs `--drop-database`; tenant #1 can't be deleted. First admin
+gets a one-time `set_password` action-token link (new `POST /auth/set-password`, `/set-password` page).
+Super-Admin console `app/superadmin/router.py` (`/api/v1/superadmin`, tenantless, own identities,
+MFA mandatory, audited in `superadmin_audit`): tenants, create (dry-run by default), status, modules,
+plans, usage, per-tenant health, impersonation (reason required, time-boxed, written to the tenant's
+own audit_log, revocable -- `get_current_user` rejects an ended session's token). `/superadmin` UI.
+**C. Reliability:** `/healthz`, `/readyz` (DB, control plane, Redis), `/metrics` (Prometheus text,
+route-template labels, tenant label bounded to 50, optional token); JSON logs with tenant/request ids;
+optional Sentry/OTel; rate limiting per tenant/user/IP (Redis or in-process); Celery queues
+high/default/low + per-tenant concurrency cap in `TenantTask`; **Celery beat schedule with per-tenant
+fan-out** (`app/platform/jobs/scheduled.py`: workflow timers, ticket escalations, report schedules,
+review reminders, document expiry, overdue privacy requests, onboarding chase) -- this closes the
+"no live scheduler" gap noted in Parts 2/4/5/7/9-12 (purges deliberately not scheduled);
+`scripts/backup_tenants.py` + `scripts/restore_drill.py` (restores into its own throwaway DB only).
+**D. Security:** security-headers middleware (API lock-down CSP, HTML self-only CSP, HSTS toggle),
+ClamAV INSTREAM hook on preboarding + careers uploads (skip without scanner, fail-closed with
+`AV_SCAN_REQUIRED`), audit CSV export, `docs/security/security_baseline.md` (ASVS L2 mapping,
+pen-test checklist, ISO/SOC path). CI (`.github/workflows/ci.yml`): gitleaks, ruff, mypy (advisory),
+bandit, pip-audit, semgrep, eslint/oxlint, tsc, vitest, npm audit, trivy, image builds, helm lint +
+template both modes, terraform validate, migrations on a 2-tenant fixture, tests by changed module
+(full suite on main). `deploy.yml`: staging deploy + smoke tests per shape.
+**E. Privacy (DPDP):** `consent_records` (append-only ledger; careers apply now writes it),
+versioned `privacy_notices` + public notice endpoint with the processor list derived from active
+connections, `data_principal_requests` (SLA `privacy.dpr_sla_days`, identity verification, access
+export, erasure = anonymise/pseudonymise with legal hold + statutory-retention exceptions for
+employees, public endpoint that never reveals whether data exists), `retention_runs` (dry-run report
+-> approval by a DIFFERENT person -> execute exactly the reported ids), `breach_incidents` (high/
+critical can't close before the Board is notified). Residency: `ALLOWED_REGIONS` (India) enforced at
+tenant create and in Terraform. `PrivacyPanel.tsx` in Settings.
+
+**Other changes:** frontend API origin now `VITE_API_BASE_URL` (dev default unchanged); CORS origins
+from `CORS_ORIGINS` (dev default unchanged); `alembic -x url=` override for per-tenant migrations;
+tenant middleware returns 410 for archived/deleted tenants; `tests/conftest.py` disables the rate
+limiter for the suite (the limiter test enables it explicitly).
+
+**CI safety:** `ci.yml` is deliberately NOT triggered by pushes to `hrms-platform` (only PRs to /
+pushes on `main`), so pushing this branch does not run tests on GitHub -- honouring the deferred-
+testing directive.
+
+**Not done / deferred (logged, not faked):**
+- CHECK "`docker compose up` brings up 2 demo tenants" and "`helm template` renders both modes":
+  **not executable here** -- Docker, Helm and Terraform are not installed on this machine. Done
+  instead: YAML-parsed compose/chart values/workflows (all OK); CI runs `helm template` for both
+  modes and `terraform validate`. Must be run in the test pass.
+- CHECK "`hrctl tenant create` end-to-end on a fresh DB": ran `--dry-run` only (validates slug,
+  isolation, region, uniqueness against the real control plane; plans every step). The real run
+  creates a database, so it is an end-to-end test -> deferred to the test pass.
+- Object storage: uploads still use the local/`uploads` volume; migrating them onto the Part 3
+  `storage.*` connection purpose (S3/MinIO) is not done (MinIO is in compose for that purpose).
+- MASTER_KEY re-wrap tooling is documented in the runbook but no `hrctl secrets rekey` command yet.
+
+Migrations: tenant `8919112ed307` (5 privacy tables + RLS); control plane `f3c64b202978`
+(`superadmin_audit`, `impersonation_sessions`, platform-admin credentials, `deleted` status). Both
+`alembic upgrade head` OK on dev.
+
+Tests: `tests/test_platform_ops.py` (~35) -- written, NOT executed (testing deferred).
+Quick checks: `compileall -q app hrctl scripts` OK, `import app.main` OK, `npx tsc --noEmit` exit 0,
+`hrctl tenant create --dry-run` OK.

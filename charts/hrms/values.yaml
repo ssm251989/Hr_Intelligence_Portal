@@ -1,0 +1,73 @@
+# Defaults = MODE 1 (one installation per client). values-multi.yaml flips to MODE 2.
+# No client value lives here: hosts, DB/Redis/S3 endpoints and secrets are per-release.
+
+image:
+  backend: { repository: ghcr.io/example/hrms-backend, tag: "" }   # tag defaults to .Chart.AppVersion
+  frontend: { repository: ghcr.io/example/hrms-frontend, tag: "" }
+  pullPolicy: IfNotPresent
+
+tenancyMode: single          # single | multi
+secretBackend: db_encrypted  # db_encrypted | aws_secrets_manager | vault | azure_key_vault
+
+# External managed services (RDS / ElastiCache / S3 in the AWS module). URLs WITHOUT
+# credentials; credentials come from the Secret named in existingSecret.
+external:
+  postgresHost: ""
+  postgresPort: 5432
+  tenantDatabase: hrms
+  controlPlaneDatabase: hrms_control_plane
+  redisUrl: ""               # rediss://... (TLS) in AWS
+  s3Bucket: ""
+  s3Region: ap-south-1
+
+# A pre-created Secret (External Secrets Operator / AWS Secrets Manager CSI / sealed-secret)
+# with keys: DATABASE_URL, CONTROL_PLANE_DATABASE_URL, APP_DATABASE_URL,
+# APP_CONTROL_PLANE_DATABASE_URL, MASTER_KEY, SECRET_KEY, [SENTRY_DSN], [METRICS_TOKEN]
+existingSecret: hrms-secrets
+
+config:
+  frontendUrl: ""
+  appBaseUrl: ""
+  corsOrigins: ""
+  allowedRegions: "ap-south-1,ap-south-2"
+  logFormat: json
+  hstsEnabled: "true"
+  clamavHost: ""             # e.g. clamav.security.svc -- empty = scan skipped
+  avScanRequired: "false"
+  otelEndpoint: ""
+  rateLimitUserPerMinute: "1200"
+  rateLimitAnonPerMinute: "300"
+  rateLimitTenantPerMinute: "20000"
+
+api:
+  replicas: 2
+  resources: { requests: { cpu: 250m, memory: 512Mi }, limits: { cpu: "1", memory: 1Gi } }
+  hpa: { enabled: true, minReplicas: 2, maxReplicas: 8, targetCPUUtilizationPercentage: 70 }
+
+worker:
+  # One Deployment per priority tier so a flood of low-priority jobs can't starve OTP/notifications.
+  pools:
+    - { name: high, queues: high, replicas: 1, concurrency: 4 }
+    - { name: default, queues: "default", replicas: 1, concurrency: 4 }
+    - { name: low, queues: low, replicas: 1, concurrency: 2 }
+  tenantMaxConcurrentJobs: 4
+  resources: { requests: { cpu: 200m, memory: 512Mi }, limits: { cpu: "1", memory: 1Gi } }
+
+beat:
+  resources: { requests: { cpu: 50m, memory: 128Mi }, limits: { cpu: 250m, memory: 256Mi } }
+
+frontend:
+  replicas: 2
+  resources: { requests: { cpu: 50m, memory: 64Mi }, limits: { cpu: 250m, memory: 128Mi } }
+
+migrations:
+  enabled: true              # pre-install/pre-upgrade hook: control plane, then every tenant DB
+
+ingress:
+  enabled: true
+  className: nginx
+  clusterIssuer: letsencrypt  # cert-manager
+  # MODE 1: the client's subdomain and/or custom domain(s).
+  hosts: [hrms.localhost]     # MODE 1: the client subdomain / custom domain(s) -- always overridden per release
+  wildcardHost: ""           # MODE 2: "*.hrms.example" -- tenants resolved by Host
+  customDomains: []          # extra verified client domains, each gets its own certificate

@@ -39,9 +39,17 @@ def clear_single_tenant_cache() -> None:
     _single_tenant_cache = None
 
 
+TENANTLESS_PATH_PREFIXES = ("/api/v1/superadmin", "/healthz", "/readyz", "/metrics")
+
+
 class TenantResolverMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         global _single_tenant_cache
+        # Part 13: the Super-Admin console and infra probes are installation-level, never
+        # tenant-scoped -- they run with NO TenantContext (so no tenant table is readable
+        # through RLS from them by accident).
+        if request.url.path.startswith(TENANTLESS_PATH_PREFIXES):
+            return await call_next(request)
         if settings.TENANCY_MODE == "single" and _single_tenant_cache is not None:
             status, suspended_reason, ctx = _single_tenant_cache
         else:
@@ -60,6 +68,8 @@ class TenantResolverMiddleware(BaseHTTPMiddleware):
             return JSONResponse(status_code=404, content={"detail": "No tenant is configured for this host"})
         if status == "suspended":
             return JSONResponse(status_code=423, content={"detail": suspended_reason or "This tenant is suspended"})
+        if status in ("archived", "deleted"):
+            return JSONResponse(status_code=410, content={"detail": "This organisation's account is no longer active"})
 
         token = set_current_tenant(ctx)
         try:

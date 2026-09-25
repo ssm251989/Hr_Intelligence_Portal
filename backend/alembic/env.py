@@ -12,7 +12,10 @@ from app.models import *  # noqa: F401,F403  -- registers models on Base.metadat
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# Part 13: `alembic -x url=<dsn> upgrade head` targets one specific tenant database
+# (hrctl migrate --all-tenants / tenant create); default stays this installation's own.
+_x_args = context.get_x_argument(as_dictionary=True)
+config.set_main_option("sqlalchemy.url", (_x_args.get("url") or settings.DATABASE_URL).replace("%", "%%"))
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

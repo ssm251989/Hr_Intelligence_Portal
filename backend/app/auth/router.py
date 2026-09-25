@@ -2,6 +2,7 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, get_user_for_mfa_enrollment
@@ -224,3 +225,36 @@ def verify_mfa(payload: MfaVerifyRequest, request: Request, db: Session = Depend
     extra_claims = {"tid": str(tenant_ctx.tenant_id)}
     fake_payload = UserLogin(email=user.email, password="", device_label=payload.device_label, remember_device=payload.remember_device)
     return _issue_full_session(db, tenant_ctx, user, request, fake_payload, extra_claims)
+
+
+# ---- Part 13: one-time set-password link (first admin of a newly provisioned tenant, and
+# any admin-issued invite). The token is a Part 5 action token (action="set_password"),
+# single-use, expiring; the password policy comes from the tenant's iam.auth.* settings.
+
+
+class SetPasswordRequest(BaseModel):
+    token: str
+    password: str
+
+
+@router.post("/set-password", status_code=status.HTTP_204_NO_CONTENT)
+def set_password(payload: SetPasswordRequest, db: Session = Depends(get_db)):
+    from app.platform.iam.action_tokens import ActionTokenError, mark_action_token_responded, resolve_action_token
+    from app.platform.settings.resolver import SettingContext, SettingsService
+
+    tenant_ctx = get_current_tenant()
+    try:
+        row = resolve_action_token(db, tenant_ctx, payload.token)
+    except ActionTokenError:
+        raise HTTPException(status_code=400, detail="This link is invalid or has expired. Ask your administrator for a new one.")
+    if row.action != "set_password" or row.entity_type != "user":
+        raise HTTPException(status_code=400, detail="This link is invalid or has expired. Ask your administrator for a new one.")
+    min_length = int(SettingsService(db).get("iam.auth.password_min_length", SettingContext(tenant=tenant_ctx)) or 8)
+    if len(payload.password) < min_length:
+        raise HTTPException(status_code=400, detail=f"Password must be at least {min_length} characters")
+    user = db.get(User, row.entity_id)
+    if user is None:
+        raise HTTPException(status_code=400, detail="This link is invalid or has expired. Ask your administrator for a new one.")
+    user.hashed_password = hash_password(payload.password)
+    db.commit()
+    mark_action_token_responded(db, row)

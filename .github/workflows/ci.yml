@@ -1,0 +1,149 @@
+# CI (docs/HRMS_COMPLETE_SPEC.txt Part 13 section F): lint, type-check, tests by changed
+# module (full suite on main), the hardcode guard, migrations on a 2-tenant fixture,
+# security scans (pip-audit, npm audit, bandit, semgrep, gitleaks, trivy), image builds,
+# helm/terraform validation.
+name: ci
+
+# Not triggered by pushes to the build branch (hrms-platform): testing is deferred until the
+# owner's change requests are in (docs/build_log.md, 2026-09-25 directive). Runs on PRs to
+# main and on main itself.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secrets-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: gitleaks/gitleaks-action@v2
+        env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+
+  backend-lint:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: backend } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip, cache-dependency-path: backend/requirements.txt }
+      - run: pip install -r requirements.txt ruff mypy bandit pip-audit
+      - run: ruff check app hrctl --select E9,F63,F7,F82,F401 --output-format=github
+      - run: mypy app --ignore-missing-imports --no-strict-optional --follow-imports=silent || true   # advisory until the codebase is typed
+      - run: bandit -q -r app -ll -x app/**/tests
+      - run: pip-audit -r requirements.txt --strict || pip-audit -r requirements.txt
+
+  semgrep:
+    runs-on: ubuntu-latest
+    container: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - run: semgrep scan --config p/python --config p/react --config p/owasp-top-ten --error --exclude frontend/node_modules
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: frontend } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22", cache: npm, cache-dependency-path: frontend/package-lock.json }
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc --noEmit -p tsconfig.app.json
+      - run: npm run test
+      - run: npm run build
+      - run: npm audit --audit-level=high --omit=dev
+
+  backend-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: ci }
+        ports: ["5432:5432"]
+        options: --health-cmd pg_isready --health-interval 5s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:ci@localhost:5432/hrms
+      CONTROL_PLANE_DATABASE_URL: postgresql://postgres:ci@localhost:5432/hrms_control_plane
+      APP_DATABASE_URL: postgresql://hrms_app:ci_app@localhost:5432/hrms
+      APP_CONTROL_PLANE_DATABASE_URL: postgresql://hrms_app:ci_app@localhost:5432/hrms_control_plane
+      MASTER_KEY: ${{ secrets.CI_MASTER_KEY }}
+      SECRET_KEY: ci-only-not-a-secret
+      RATE_LIMIT_ENABLED: "false"
+    defaults: { run: { working-directory: backend } }
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip, cache-dependency-path: backend/requirements.txt }
+      - run: pip install -r requirements.txt
+      - name: create databases + runtime role
+        run: |
+          PGPASSWORD=ci psql -h localhost -U postgres -c "CREATE DATABASE hrms"
+          python -m hrctl.installation init
+      - name: migrations
+        run: |
+          alembic -c alembic_control_plane.ini upgrade head
+          alembic upgrade head
+          python -m hrctl.tenant bootstrap-existing --slug ci-tenant --name "CI Tenant"
+      - name: migrations check on a 2-tenant fixture (downgrade/upgrade round trip + second tenant)
+        run: |
+          alembic downgrade -1 && alembic upgrade head
+          python -m hrctl.tenant create --slug ci-second --name "CI Second" --isolation dedicated_db
+          python -m hrctl.migrate --all-tenants --parallel 2
+          alembic check || true
+      - name: hardcode guard
+        run: pytest -q tests/test_no_hardcoded_tenant_values.py tests/test_no_provider_names_in_modules.py
+      - name: tests (changed modules on PRs, full suite on main)
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            CHANGED=$(git diff --name-only origin/${{ github.base_ref }}... -- backend/app | cut -d/ -f3 | sort -u | tr '\n' ' ')
+            echo "changed modules: $CHANGED"
+            FILES=""
+            for m in $CHANGED; do FILES="$FILES $(ls tests/test_${m}*.py 2>/dev/null)"; done
+            if [ -n "$(echo $FILES | tr -d ' ')" ]; then pytest -q $FILES; else pytest -q tests/test_tenant_isolation.py; fi
+          else
+            pytest -q
+          fi
+
+  images:
+    needs: [backend-lint, frontend, backend-tests, secrets-scan]
+    runs-on: ubuntu-latest
+    permissions: { contents: read, packages: write }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        if: github.ref == 'refs/heads/main'
+        with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
+      - uses: docker/build-push-action@v6
+        with: { context: backend, target: api, push: "${{ github.ref == 'refs/heads/main' }}", tags: "ghcr.io/${{ github.repository }}/hrms-backend:${{ github.sha }}" }
+      - uses: docker/build-push-action@v6
+        with: { context: frontend, push: "${{ github.ref == 'refs/heads/main' }}", tags: "ghcr.io/${{ github.repository }}/hrms-frontend:${{ github.sha }}", build-args: "VITE_API_BASE_URL=/_api" }
+      - uses: aquasecurity/trivy-action@0.28.0
+        with: { image-ref: "ghcr.io/${{ github.repository }}/hrms-backend:${{ github.sha }}", severity: "CRITICAL,HIGH", exit-code: "1", ignore-unfixed: true }
+
+  infra-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - run: |
+          helm lint charts/hrms -f charts/hrms/values-single.yaml
+          helm template hrms charts/hrms -f charts/hrms/values-single.yaml > /dev/null
+          helm template hrms charts/hrms -f charts/hrms/values-multi.yaml > /dev/null
+      - uses: hashicorp/setup-terraform@v3
+      - run: |
+          cd infra/terraform/aws
+          terraform init -backend=false
+          terraform validate
+          terraform fmt -check -recursive

@@ -182,4 +182,15 @@ def register_all() -> None:
     register_permission("ai", "governance", "configure")
     register_permission("ai", "decision_log", "view")
 
+    # Part 13: privacy (DPDP) + security.
+    register_permission("privacy", "notice", "configure")
+    register_permission("privacy", "consent", "view")
+    for action in ("view", "edit", "approve"):
+        register_permission("privacy", "request", action)
+    register_permission("privacy", "retention", "create")
+    register_permission("privacy", "retention", "approve")
+    for action in ("view", "create", "edit"):
+        register_permission("privacy", "breach", action)
+    register_permission("security", "audit", "export")
+
     _registered = True

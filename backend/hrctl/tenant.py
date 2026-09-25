@@ -1,12 +1,15 @@
 """hrctl tenant <command> (docs/HRMS_COMPLETE_SPEC.txt Part 2 section 3, Part 13 section B).
 
-Only `bootstrap-existing` is implemented so far -- the one Part 2 actually needs (moving
-the current single-installation data into a real control-plane tenant #1 row). `create`,
-`suspend`, `resume`, `archive`, `delete`, `export`, `import` are Part 13 (provisioning a
-BRAND NEW client installation from scratch) and are out of Part 2's scope.
+`bootstrap-existing` (Part 2) moves the original single-installation data into tenant #1.
+Part 13 adds the full lifecycle (see hrctl/provisioning.py):
 
-Usage:
-    python -m hrctl.tenant bootstrap-existing --slug <slug> --name "<display name>" [--dry-run]
+    python -m hrctl.tenant bootstrap-existing --slug <slug> --name "<name>" [--dry-run]
+    python -m hrctl.tenant create --slug <slug> --name "<name>" [--plan <code>] [--isolation dedicated_db|shared_rls]
+                                  [--region ap-south-1] [--admin-email <email>] [--domain <host>] [--config-pack <file>] [--dry-run]
+    python -m hrctl.tenant suspend|resume|archive --slug <slug> [--reason "..."]
+    python -m hrctl.tenant delete --slug <slug> [--confirm <slug>] [--drop-database]   (report only without --confirm)
+    python -m hrctl.tenant export --slug <slug> --out <file.zip>
+    python -m hrctl.tenant import --file <file.zip> [--isolation ...] [--region ...] [--dry-run]
 """
 
 import argparse
@@ -115,9 +118,65 @@ def main(argv=None) -> int:
     bootstrap.add_argument("--name", required=True)
     bootstrap.add_argument("--dry-run", action="store_true")
 
+    # ---- Part 13 lifecycle (logic in hrctl/provisioning.py, shared with the Super-Admin console) ----
+    create = subparsers.add_parser("create")
+    create.add_argument("--slug", required=True)
+    create.add_argument("--name", required=True)
+    create.add_argument("--plan")
+    create.add_argument("--isolation", default="dedicated_db", choices=("dedicated_db", "shared_rls"))
+    create.add_argument("--region", default="ap-south-1")
+    create.add_argument("--admin-email")
+    create.add_argument("--domain")
+    create.add_argument("--config-pack")
+    create.add_argument("--dry-run", action="store_true")
+
+    for name in ("suspend", "resume", "archive"):
+        sub = subparsers.add_parser(name)
+        sub.add_argument("--slug", required=True)
+        sub.add_argument("--reason")
+
+    delete = subparsers.add_parser("delete")
+    delete.add_argument("--slug", required=True)
+    delete.add_argument("--confirm", help="repeat the slug to actually delete; without it only a report is printed")
+    delete.add_argument("--drop-database", action="store_true")
+
+    export = subparsers.add_parser("export")
+    export.add_argument("--slug", required=True)
+    export.add_argument("--out", required=True)
+
+    imp = subparsers.add_parser("import")
+    imp.add_argument("--file", required=True)
+    imp.add_argument("--isolation", default="dedicated_db", choices=("dedicated_db", "shared_rls"))
+    imp.add_argument("--region")
+    imp.add_argument("--dry-run", action="store_true")
+
     args = parser.parse_args(argv)
     if args.command == "bootstrap-existing":
         bootstrap_existing(args.slug, args.name, args.dry_run)
+        return 0
+
+    import json
+
+    from app.platform.tenancy import provisioning
+
+    try:
+        if args.command == "create":
+            pack = json.loads(open(args.config_pack, encoding="utf-8").read()) if args.config_pack else None
+            result = provisioning.create_tenant(slug=args.slug, name=args.name, isolation=args.isolation, region=args.region, plan_code=args.plan,
+                                                admin_email=args.admin_email, domain=args.domain, config_pack=pack, dry_run=args.dry_run)
+        elif args.command in ("suspend", "resume", "archive"):
+            status = {"suspend": "suspended", "resume": "active", "archive": "archived"}[args.command]
+            result = provisioning.set_status(args.slug, status, reason=args.reason)
+        elif args.command == "delete":
+            result = provisioning.delete_tenant(args.slug, confirm=args.confirm, drop_database=args.drop_database)
+        elif args.command == "export":
+            result = provisioning.export_tenant(args.slug, args.out)
+        else:
+            result = provisioning.import_tenant(args.file, isolation=args.isolation, region=args.region, dry_run=args.dry_run)
+    except provisioning.ProvisioningError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps(result, indent=2, default=str))
     return 0
 
 

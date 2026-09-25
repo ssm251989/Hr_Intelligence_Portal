@@ -63,5 +63,27 @@ class Settings:
     # rather than FRONTEND_URL.
     APP_BASE_URL: str = os.getenv("APP_BASE_URL", "http://localhost:8000")
 
+    # ---- Part 13: deployment / reliability / security (per-installation infra config,
+    # never tenant data -- section A's carve-out) ----
+    REDIS_URL: str = os.getenv("REDIS_URL", "")
+    CELERY_ALWAYS_EAGER: bool = os.getenv("CELERY_ALWAYS_EAGER", "true").lower() == "true"
+    RATE_LIMIT_ENABLED: bool = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
+    RATE_LIMIT_USER_PER_MINUTE: int = int(os.getenv("RATE_LIMIT_USER_PER_MINUTE", "1200"))
+    RATE_LIMIT_ANON_PER_MINUTE: int = int(os.getenv("RATE_LIMIT_ANON_PER_MINUTE", "300"))
+    RATE_LIMIT_TENANT_PER_MINUTE: int = int(os.getenv("RATE_LIMIT_TENANT_PER_MINUTE", "20000"))
+    HSTS_ENABLED: bool = os.getenv("HSTS_ENABLED", "false").lower() == "true"
+    CLAMAV_HOST: str = os.getenv("CLAMAV_HOST", "")
+    CLAMAV_PORT: int = int(os.getenv("CLAMAV_PORT", "3310"))
+    AV_SCAN_REQUIRED: bool = os.getenv("AV_SCAN_REQUIRED", "false").lower() == "true"  # fail closed if the scanner is unreachable
+    LOG_FORMAT: str = os.getenv("LOG_FORMAT", "text")  # text | json
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+    METRICS_TOKEN: str = os.getenv("METRICS_TOKEN", "")  # if set, /metrics requires "Authorization: Bearer <token>"
+    SENTRY_DSN: str = os.getenv("SENTRY_DSN", "")
+    OTEL_EXPORTER_OTLP_ENDPOINT: str = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+    # Data residency (section E): regions a tenant may be pinned to. India-only by default.
+    ALLOWED_REGIONS: tuple = tuple(r.strip() for r in os.getenv("ALLOWED_REGIONS", "ap-south-1,ap-south-2").split(",") if r.strip())
+    SUPERADMIN_SESSION_MINUTES: int = int(os.getenv("SUPERADMIN_SESSION_MINUTES", "30"))
+    IMPERSONATION_MAX_MINUTES: int = int(os.getenv("IMPERSONATION_MAX_MINUTES", "30"))
+
 
 settings = Settings()

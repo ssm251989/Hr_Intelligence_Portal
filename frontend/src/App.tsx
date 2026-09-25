@@ -29,7 +29,9 @@ import ReportsPage from "./pages/ReportsPage";
 import SalaryPage from "./pages/SalaryPage";
 import ScreeningDashboardPage from "./pages/ScreeningDashboardPage";
 import ScreeningListPage from "./pages/ScreeningListPage";
+import SetPasswordPage from "./pages/SetPasswordPage";
 import SettingsPage from "./pages/SettingsPage";
+import SuperAdminPage from "./pages/SuperAdminPage";
 import ShortlistingDashboardPage from "./pages/ShortlistingDashboardPage";
 import ShortlistingListPage from "./pages/ShortlistingListPage";
 import UnifiedInboxPage from "./pages/UnifiedInboxPage";
@@ -44,6 +46,8 @@ export default function App() {
               <Routes>
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
+              <Route path="/set-password" element={<SetPasswordPage />} />
+              <Route path="/superadmin" element={<SuperAdminPage />} />
               <Route path="/careers" element={<CareersLayout />}>
                 <Route index element={<CareersListPage />} />
                 <Route path=":id" element={<CareersJobDetailPage />} />
