@@ -119,7 +119,19 @@ export function extractErrorMessage(err: unknown, fallback: string): string {
   if (detail && typeof detail === "object" && "msg" in detail) {
     return String((detail as { msg: unknown }).msg);
   }
+  // Part 14 section 8: friendly config errors -- {code, message, fix, fix_path}.
+  if (detail && typeof detail === "object" && "message" in detail) {
+    const { message, fix } = detail as { message: unknown; fix?: unknown };
+    return fix ? `${String(message)} ${String(fix)}` : String(message);
+  }
   return fallback;
+}
+
+/** Part 14 section 8: the settings page that fixes a friendly config error, if any. */
+export function errorFixPath(err: unknown): string | null {
+  if (!(err instanceof ApiError) || !err.detail || typeof err.detail !== "object") return null;
+  const path = (err.detail as { fix_path?: unknown }).fix_path;
+  return typeof path === "string" && path ? path : null;
 }
 
 /**
@@ -249,6 +261,8 @@ export interface SettingDefinition {
   scopes_allowed: string[];
   sensitive: boolean;
   requires_restart: boolean;
+  help?: string | null;
+  affects?: string | null;
 }
 
 export interface SettingValueRow {
@@ -1039,6 +1053,9 @@ export interface BootstrapRead {
   nav: { label_key: string; path: string }[];
   custom_labels: Record<string, string>;
   ai?: { enabled: boolean; features: Record<string, boolean> };
+  home_path?: string;
+  modules?: string[];
+  ux?: { reduce_motion: boolean; page_size: number; direction: "ltr" | "rtl" };
 }
 
 export const brandingApi = {
@@ -1313,8 +1330,8 @@ export interface SeparationSummary {
 }
 
 export const serviceDeskApi = {
-  tickets: (status?: string) => get<{ total: number; items: TicketRow[] }>(`/api/v1/service-desk/tickets?page_size=50${status ? `&status=${status}` : ""}`),
-  assets: () => get<{ total: number; items: AssetRow[] }>("/api/v1/service-desk/assets?page_size=50"),
+  tickets: (status?: string) => get<{ total: number; items: TicketRow[] }>(`/api/v1/service-desk/tickets?page_size=25${status ? `&status=${status}` : ""}`),
+  assets: () => get<{ total: number; items: AssetRow[] }>("/api/v1/service-desk/assets?page_size=25"),
   separations: () => get<SeparationSummary[]>("/api/v1/service-desk/separations"),
   exportSeparationsUrl: "/api/v1/service-desk/separations-export",
 };
@@ -1454,4 +1471,70 @@ export const superAdminApi = {
   setStatus: (token: string, slug: string, status: string, reason?: string) =>
     consoleRequest<{ status: string }>(`/api/v1/superadmin/tenants/${slug}/status`, token, { method: "POST", body: JSON.stringify({ status, reason }) }),
   health: (token: string, slug: string) => consoleRequest<{ database: { ok: boolean }; connections?: { name: string; ok: boolean }[] }>(`/api/v1/superadmin/tenants/${slug}/health`, token),
+};
+
+// ---- Part 14: setup wizard, config health, search, unified inbox, views, drafts, versions ----
+
+export interface SetupStep {
+  step: string;
+  done: boolean;
+  skipped: boolean;
+  skippable: boolean;
+  detail: string;
+  fix_path: string;
+}
+
+export interface SetupProgress {
+  steps: SetupStep[];
+  percent: number;
+  complete: boolean;
+}
+
+export interface HealthIssue {
+  severity: "error" | "warning" | "info";
+  code: string;
+  message: string;
+  fix: string;
+  fix_path: string;
+}
+
+export interface InboxItem {
+  kind: string;
+  id: string;
+  title: string;
+  subtitle: string;
+  due_at: string | null;
+  path: string;
+  actions: string[];
+}
+
+export interface SavedViewRow {
+  id: UUID;
+  name: string;
+  config: Record<string, unknown>;
+  is_default: boolean;
+  mine: boolean;
+}
+
+export const experienceApi = {
+  search: (q: string) => get<{ groups: { type: string; label_key: string; items: { id: string; title: string; subtitle?: string | null; path: string }[] }[] }>(`/api/v1/search?q=${encodeURIComponent(q)}`),
+  setupProgress: () => get<SetupProgress>("/api/v1/setup/progress"),
+  setCompany: (payload: { display_name: string; legal_name?: string; timezone: string; locale?: string; currency?: string }) => post<SetupProgress>("/api/v1/setup/company", payload),
+  setModules: (modules: string[]) => post<SetupProgress>("/api/v1/setup/modules", { modules }),
+  applyConfigPack: (pack: unknown, dryRun: boolean) => post<Record<string, unknown>>("/api/v1/setup/config-pack", { pack, dry_run: dryRun }),
+  inviteAdmin: (email: string, fullName?: string) => post<{ email_sent: boolean; link: string | null }>("/api/v1/setup/invite-admin", { email, full_name: fullName }),
+  skipStep: (step: string, undo = false) => post<SetupProgress>(`/api/v1/setup/steps/${step}/skip`, { undo }),
+  configHealth: () => get<{ healthy: boolean; issues: HealthIssue[]; counts: Record<string, number> }>("/api/v1/setup/config-health"),
+  inbox: () => get<InboxItem[]>("/api/v1/inbox/all"),
+  views: (listKey: string) => get<SavedViewRow[]>(`/api/v1/views/${listKey}`),
+  saveView: (listKey: string, payload: { name: string; config: Record<string, unknown>; is_default?: boolean }) => put<SavedViewRow>(`/api/v1/views/${listKey}`, payload),
+  deleteView: (listKey: string, id: UUID) => request<void>(`/api/v1/views/${listKey}/${id}`, { method: "DELETE" }),
+  getDraft: (formKey: string, entityRef = "") => get<{ data: Record<string, unknown> | null; updated_at: string | null }>(`/api/v1/drafts/${formKey}?entity_ref=${encodeURIComponent(entityRef)}`),
+  saveDraft: (formKey: string, data: Record<string, unknown>, entityRef = "") => put<{ updated_at: string }>(`/api/v1/drafts/${formKey}?entity_ref=${encodeURIComponent(entityRef)}`, { data }),
+  discardDraft: (formKey: string, entityRef = "") => request<void>(`/api/v1/drafts/${formKey}?entity_ref=${encodeURIComponent(entityRef)}`, { method: "DELETE" }),
+  versions: (kind: string, key: string) => get<{ id: UUID; version: number; status: string; created_at: string | null }[]>(`/api/v1/versions/${kind}/${key}`),
+  revertVersion: (kind: string, key: string, version: number) => post<{ version: number; next_step: string }>(`/api/v1/versions/${kind}/${key}/revert`, { version }),
+  updatePreferences: (payload: { reduce_motion?: boolean; page_size?: number; locale?: string; timezone?: string }) => put<{ ok: boolean }>("/api/v1/me/preferences", payload),
+  myLetters: () => get<{ id: UUID; template_key: string; html: string }[]>("/api/v1/me/letters"),
+  myDocuments: () => get<{ id: UUID; type: string; issued_date: string | null; expiry_date: string | null }[]>("/api/v1/me/documents"),
 };

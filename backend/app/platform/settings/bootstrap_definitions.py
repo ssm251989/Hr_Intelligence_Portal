@@ -162,6 +162,16 @@ def register_all() -> None:
     register(SettingDef("copilot.min_confidence", "decimal", 0.35, module="copilot", group="HR Copilot"))
     register(SettingDef("copilot.handover_category", "str", "", module="copilot", group="HR Copilot"))  # a ticket_category code
 
+    # Part 14: module enablement (within the licence), setup wizard, per-user UX prefs.
+    register(SettingDef("platform.modules.enabled", "json",
+                        ["recruitment", "onboarding", "core_hr", "performance", "helpdesk", "assets", "separation", "analytics", "copilot"],
+                        module="platform", group="Modules"))
+    register(SettingDef("platform.setup.skipped", "json", [], module="platform", group="Setup"))
+    register(SettingDef("platform.setup.config_pack", "json", {}, module="platform", group="Setup"))  # which pack was applied (Setup Wizard)
+    register(SettingDef("ux.reduce_motion", "bool", False, module="ux", group="Accessibility", scopes_allowed=("user", "tenant")))
+    register(SettingDef("ux.page_size", "int", 25, module="ux", group="Lists", scopes_allowed=("user", "tenant")))
+    register(SettingDef("org.rtl_locales", "json", ["ar", "he", "fa", "ur"], module="org", group="Organisation"))
+
     # iam.auth.* -- Part 5A section 1's own per-tenant-configurable auth policy. Platform
     # defaults are conservative but NOT locked-on (mfa_required defaults false) --
     # flipping mfa_required on for a real, already-logged-in tenant is this tenant's own

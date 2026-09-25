@@ -20,6 +20,7 @@ from app.models.comms import BrandTheme
 from app.models.user import User
 from app.platform.branding.css_sanitizer import sanitize_css
 from app.platform.iam.authz import effective_permissions
+from app.platform.modules import enabled_modules, home_path, nav_for
 from app.platform.settings.resolver import SettingContext, SettingsService
 from app.platform.tenancy.context import TenantContext
 from app.platform.tenancy.database_cp import ControlPlaneSessionLocal
@@ -95,7 +96,15 @@ def build_bootstrap(db: Session, tenant: TenantContext, user: Optional[User], *,
         "tz": settings_service.get("org.timezone", ctx) or "Asia/Kolkata",
         "permissions": permissions,
         "feature_flags": feature_flags,
-        "nav": [{"label_key": key, "path": path} for key, path in _NAV_MODULES],
+        # Part 14 section 3: nav comes ONLY from here -- module registry x enablement x permissions.
+        "nav": nav_for(db, tenant, user, set(permissions)) if user is not None else [{"label_key": key, "path": path} for key, path in _NAV_MODULES],
+        "home_path": home_path(set(permissions)),
+        "modules": sorted(enabled_modules(db, tenant)),
+        "ux": {
+            "reduce_motion": bool(settings_service.get("ux.reduce_motion", ctx)),
+            "page_size": int(settings_service.get("ux.page_size", ctx) or 25),
+            "direction": "rtl" if resolved_locale in (settings_service.get("org.rtl_locales", ctx) or []) else "ltr",
+        },
         "custom_labels": custom_labels,
         # Part 12: every AI affordance in the UI is gated on these (AI disabled -> hidden).
         "ai": _ai_flags(db, tenant),

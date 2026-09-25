@@ -129,8 +129,14 @@ function SettingRow({
             {isDefault && <Chip label="platform default" size="small" variant="outlined" />}
           </Stack>
         }
+        // Part 14 section 11: plain-language help + what the setting affects, always visible.
+        primaryTypographyProps={{ component: "div" }}
         secondary={
-          editing ? (
+          !editing && def.help ? (
+            <Typography variant="caption" color="text.secondary" component="span">
+              {def.help}{def.affects ? ` Affects: ${def.affects}.` : ""}
+            </Typography>
+          ) : editing ? (
             <Stack direction="row" spacing={1} alignItems="center" mt={1}>
               {def.type === "bool" ? (
                 <Select size="small" value={draft} onChange={(e) => setDraft(e.target.value)}>

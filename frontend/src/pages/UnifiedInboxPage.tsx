@@ -20,6 +20,7 @@ import Typography from "@mui/material/Typography";
 
 import { extractErrorMessage, workflowApi, type InboxRow } from "../api/client";
 import RefreshButton from "../components/RefreshButton";
+import InboxOtherItems from "../components/InboxOtherItems";
 
 // Part 5B section 3's Unified Inbox: every pending approval/task assigned to the current
 // user, across every module -- real and module-agnostic (one workflow_steps table),
@@ -149,6 +150,8 @@ export default function UnifiedInboxPage() {
           </TableBody>
         </Table>
       </TableContainer>
+
+      <InboxOtherItems />
 
       <ActDialog row={acting?.row ?? null} action={acting?.action ?? null} onClose={() => setActing(null)} onDone={load} onError={setError} />
     </Box>

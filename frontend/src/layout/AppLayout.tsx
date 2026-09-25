@@ -17,12 +17,10 @@ import NotificationsOutlinedIcon from "@mui/icons-material/NotificationsOutlined
 import PaidOutlinedIcon from "@mui/icons-material/PaidOutlined";
 import PeopleAltOutlinedIcon from "@mui/icons-material/PeopleAltOutlined";
 import PlaylistAddCheckOutlinedIcon from "@mui/icons-material/PlaylistAddCheckOutlined";
-import SearchIcon from "@mui/icons-material/Search";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import VerifiedUserOutlinedIcon from "@mui/icons-material/VerifiedUserOutlined";
 import WorkOutlineIcon from "@mui/icons-material/WorkOutline";
 import type { SvgIconComponent } from "@mui/icons-material";
-import Autocomplete from "@mui/material/Autocomplete";
 import AppBar from "@mui/material/AppBar";
 import Avatar from "@mui/material/Avatar";
 import Badge from "@mui/material/Badge";
@@ -38,7 +36,6 @@ import ListItemIcon from "@mui/material/ListItemIcon";
 import ListItemText from "@mui/material/ListItemText";
 import Popover from "@mui/material/Popover";
 import Stack from "@mui/material/Stack";
-import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
 import Toolbar from "@mui/material/Toolbar";
 import Typography from "@mui/material/Typography";
@@ -50,6 +47,10 @@ import { useAuth } from "../auth/AuthContext";
 import { useBootstrap } from "../bootstrap/BootstrapContext";
 import ConfirmDialog from "../components/ConfirmDialog";
 import CopilotWidget from "../components/CopilotWidget";
+import GlobalSearch from "../components/GlobalSearch";
+import ModuleTour from "../components/ModuleTour";
+import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
+import AppsOutlinedIcon from "@mui/icons-material/AppsOutlined";
 import RecentActivityFeed from "../components/RecentActivityFeed";
 import { useThemeMode } from "../theme/ThemeModeContext";
 
@@ -133,6 +134,25 @@ function initials(nameOrEmail: string): string {
   const parts = trimmed.split(/\s+/).filter(Boolean);
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
   return trimmed.slice(0, 2).toUpperCase();
+}
+
+// Part 14 section 3: the menu comes from GET /api/me/bootstrap (module enablement x permissions).
+// Until it loads (or if it fails) the original static list is shown, so the app is never menu-less.
+const NAV_LABELS: Record<string, string> = {
+  "nav.onboarding": "Onboarding", "nav.performance": "Performance", "nav.helpdesk": "Helpdesk", "nav.setup": "Setup", "nav.analytics": "Analytics",
+};
+
+function useNavModules(): ModuleLink[] {
+  const { data } = useMeBootstrap();
+  const nav = data?.nav;
+  if (!nav || nav.length === 0) return MODULES;
+  const covered = (m: ModuleLink, p: string) => p === m.path || p.startsWith(m.path + "/") || (m.children ?? []).some((c) => c.path === p);
+  const known = MODULES.filter((m) => nav.some((n) => covered(m, n.path)));
+  const extra = nav
+    .filter((n) => !MODULES.some((m) => covered(m, n.path)))
+    .map((n) => ({ label: data?.custom_labels?.[n.label_key] ?? NAV_LABELS[n.label_key] ?? n.label_key, path: n.path, icon: AppsOutlinedIcon }));
+  const settingsIndex = known.findIndex((m) => m.path === "/settings");
+  return settingsIndex >= 0 ? [...known.slice(0, settingsIndex), ...extra, ...known.slice(settingsIndex)] : [...known, ...extra];
 }
 
 export default function AppLayout() {
@@ -227,9 +247,14 @@ export default function AppLayout() {
   };
 
   const drawerWidth = expanded ? DRAWER_WIDTH : RAIL_WIDTH;
+  const navModules = useNavModules();
 
   return (
     <Box sx={{ display: "flex" }}>
+      {/* WCAG 2.4.1 bypass block: first focusable element on every page. */}
+      <Box component="a" href="#main-content" sx={{ position: "absolute", left: -9999, top: 8, zIndex: 2000, p: 1, bgcolor: "background.paper", "&:focus": { left: 8 } }}>
+        Skip to main content
+      </Box>
       <AppBar
         position="fixed"
         color="default"
@@ -264,32 +289,11 @@ export default function AppLayout() {
             </Box>
           </Stack>
 
-          {/* Real navigation, not a decorative search box -- filters MODULES by label and
-              jumps straight to the matching page. A full cross-entity search would need a
-              backend index this app doesn't have; this is the honest scope for now. */}
-          <Autocomplete
-            options={SEARCHABLE_MODULES}
-            getOptionLabel={(option) => option.label}
-            onChange={(_event, value) => value && navigate(value.path)}
-            blurOnSelect
-            clearOnBlur
-            size="small"
-            sx={{ width: 260, display: { xs: "none", md: "block" } }}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                placeholder="Jump to a module..."
-                slotProps={{
-                  input: {
-                    ...params.InputProps,
-                    startAdornment: <SearchIcon fontSize="small" sx={{ color: "text.secondary", mr: 0.5 }} />,
-                  },
-                }}
-              />
-            )}
-          />
+          {/* Part 14 section 3 / L-N3: Ctrl/Cmd+K global search (server-side, permission-scoped). */}
+          <GlobalSearch pages={SEARCHABLE_MODULES} />
 
           <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
+            <ModuleTour />
             <Tooltip title={mode === "dark" ? "Switch to light mode" : "Switch to dark mode"}>
               <IconButton color="inherit" onClick={toggleMode} aria-label="Toggle color mode">
                 {mode === "dark" ? <LightModeOutlinedIcon /> : <DarkModeOutlinedIcon />}
@@ -329,7 +333,7 @@ export default function AppLayout() {
         </Box>
         <Divider />
         <List sx={{ flexGrow: 1 }}>
-          {MODULES.map(({ label, path, icon: Icon, children }) => {
+          {navModules.map(({ label, path, icon: Icon, children }) => {
             const isSectionRoute = activeParentPath === path;
             const isOpen = Boolean(children) && Boolean(openSections[path]);
 
@@ -462,7 +466,7 @@ export default function AppLayout() {
           </Box>
         )}
       </Drawer>
-      <Box component="main" sx={{ flexGrow: 1, p: 3, minWidth: 0 }}>
+      <Box component="main" id="main-content" tabIndex={-1} sx={{ flexGrow: 1, p: 3, minWidth: 0, outline: "none" }}>
         <Toolbar />
         <Outlet />
       </Box>

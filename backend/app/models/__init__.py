@@ -100,6 +100,10 @@ from app.models.privacy import (
     PrivacyNotice,
     RetentionRun,
 )
+from app.models.experience import (
+    FormDraft,
+    SavedView,
+)
 from app.models.hiring_team import JobHiringTeamMember
 from app.models.hr_inbound_email import HrInboundEmail
 from app.models.hr_integration import HrIntegration
@@ -202,6 +206,8 @@ __all__ = [
     "MetaForm",
     "Sequence",
     "NegotiationToken",
+    "FormDraft",
+    "SavedView",
     "BreachIncident",
     "ConsentRecord",
     "DataPrincipalRequest",

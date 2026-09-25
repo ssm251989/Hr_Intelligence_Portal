@@ -81,6 +81,9 @@ from app.platform.ops.security_headers import SecurityHeadersMiddleware  # noqa:
 configure_logging()
 init_optional_integrations(app)
 app.add_middleware(RateLimitMiddleware)
+from app.platform.modules import ModuleGateMiddleware  # noqa: E402
+
+app.add_middleware(ModuleGateMiddleware)
 app.add_middleware(ObservabilityMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 
@@ -147,11 +150,15 @@ app.include_router(intelligence_router)
 from app.platform.ops.health import router as ops_router  # noqa: E402
 from app.superadmin.router import router as superadmin_router  # noqa: E402
 from app.privacy.api_router import public_router as privacy_public_router, router as privacy_router  # noqa: E402
+from app.experience.api_router import router as experience_router  # noqa: E402
+from app.experience.errors import install as install_friendly_errors  # noqa: E402
 
 app.include_router(ops_router)
 app.include_router(superadmin_router)
 app.include_router(privacy_router)
 app.include_router(privacy_public_router)
+app.include_router(experience_router)
+install_friendly_errors(app)
 
 
 @app.get("/health")

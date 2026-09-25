@@ -33,6 +33,10 @@ class SettingDefinitionRead(BaseModel):
     scopes_allowed: list[str]
     sensitive: bool
     requires_restart: bool
+    # Part 14 section 11: plain-language help + "what this affects" (see help_catalog.py)
+    help: Optional[str] = None
+    affects: Optional[str] = None
+    affects_i18n_key: Optional[str] = None
 
 
 class SettingValueRead(BaseModel):
@@ -58,10 +62,14 @@ class SettingHistoryEntry(BaseModel):
 
 
 def _to_def_read(d) -> SettingDefinitionRead:
+    from app.platform.settings.help_catalog import help_for
+
+    info = help_for(d.key) or {}
     return SettingDefinitionRead(
         key=d.key, type=d.type, default=d.default, module=d.module, group=d.group,
-        label_i18n_key=d.label_i18n_key, help_i18n_key=d.help_i18n_key,
+        label_i18n_key=d.label_i18n_key, help_i18n_key=d.help_i18n_key or info.get("help_i18n_key", ""),
         scopes_allowed=list(d.scopes_allowed), sensitive=d.sensitive, requires_restart=d.requires_restart,
+        help=info.get("help"), affects=info.get("affects"), affects_i18n_key=info.get("affects_i18n_key"),
     )
 
 
@@ -171,3 +179,29 @@ def import_settings(
         except ValueError as exc:
             skipped.append({"key": key, "reason": str(exc)})
     return {"imported": imported, "skipped": skipped}
+
+
+class SettingRevertRequest(BaseModel):
+    version: int
+    scope_type: str = "tenant"
+    scope_id: Optional[UUID] = None
+
+
+@router.post("/{key}/revert", response_model=SettingValueRead)
+def revert_setting(key: str, payload: SettingRevertRequest, db: Session = Depends(get_db), current_user: User = Depends(require_roles("admin"))):
+    """Part 14 section 7 / L-A2 ("change history with revert"): re-applies an earlier
+    version's value as a NEW version -- history is never rewritten."""
+    try:
+        get_definition(key)
+    except UnknownSettingError:
+        raise HTTPException(status_code=404, detail=f"No such setting: {key}")
+    tenant = require_current_tenant()
+    service = SettingsService(db)
+    entry = next((h for h in service.history(key, SettingContext(tenant=tenant)) if h.version == payload.version and h.scope_type == payload.scope_type), None)
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f"No version {payload.version} in this setting's history")
+    try:
+        row = service.set(key, entry.value_json, scope_type=payload.scope_type, scope_id=payload.scope_id, actor=f"{current_user.email} (revert to v{payload.version})", tenant=tenant)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return SettingValueRead(key=row.key, value=row.value_json, scope_type=row.scope_type, scope_id=row.scope_id)

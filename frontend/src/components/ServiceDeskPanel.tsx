@@ -9,38 +9,78 @@ import ListItemText from "@mui/material/ListItemText";
 import Stack from "@mui/material/Stack";
 import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
+import Table from "@mui/material/Table";
+import TableBody from "@mui/material/TableBody";
+import TableCell from "@mui/material/TableCell";
+import TableHead from "@mui/material/TableHead";
+import TableRow from "@mui/material/TableRow";
 import Typography from "@mui/material/Typography";
 
 import { extractErrorMessage, serviceDeskApi, type AssetRow, type SeparationSummary, type TicketRow } from "../api/client";
+import ListToolbar, { type ListColumn, type ListViewState } from "./ListToolbar";
 
 // Part 11 (docs/HRMS_COMPLETE_SPEC.txt): helpdesk queue with SLA state, asset register,
 // open separations with clearance progress. Ticket detail/agent workspace, asset
 // allocation dialogs and the clearance board have complete backend APIs but no screens
 // yet (see docs/build_log.md Part 11).
 
+const TICKET_COLUMNS: ListColumn[] = [
+  { key: "number", label: "Ticket" }, { key: "subject", label: "Subject" }, { key: "category_code", label: "Category" },
+  { key: "priority", label: "Priority" }, { key: "status", label: "Status" }, { key: "sla", label: "SLA" },
+];
+
+function SlaChip({ t }: { t: TicketRow }) {
+  if (!t.sla?.has_sla) return null;
+  return (
+    <Chip size="small" color={t.sla.resolution_breached ? "error" : (t.sla.resolution_elapsed_pct ?? 0) >= 80 ? "warning" : "default"}
+      label={t.sla.resolution_breached ? "SLA breached" : `${Math.round(t.sla.resolution_elapsed_pct ?? 0)}% of SLA`} />
+  );
+}
+
+// Reference implementation of the Part 14 list standard: ListToolbar (saved views, column
+// chooser, export, RefreshButton), table view by default (L-N4), empty state that says what to do.
 function TicketsTab() {
   const [rows, setRows] = useState<TicketRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    serviceDeskApi.tickets().then((r) => setRows(r.items)).catch((err) => setError(extractErrorMessage(err, "Failed to load tickets")));
-  }, []);
+  const [view, setView] = useState<ListViewState>({ columns: TICKET_COLUMNS.map((c) => c.key), filters: {} });
+  const load = () => {
+    setLoading(true);
+    serviceDeskApi.tickets().then((r) => setRows(r.items)).catch((err) => setError(extractErrorMessage(err, "Failed to load tickets"))).finally(() => setLoading(false));
+  };
+  useEffect(load, []);
   if (error) return <Alert severity="error">{error}</Alert>;
-  if (rows.length === 0) return <Typography color="text.secondary">No tickets. Add ticket categories under Masters and an SLA policy to start the helpdesk.</Typography>;
+  const shown = TICKET_COLUMNS.filter((c) => view.columns.includes(c.key));
   return (
-    <List dense>
-      {rows.map((t) => (
-        <ListItem key={t.id}>
-          <ListItemText primary={`${t.number} · ${t.subject}`} secondary={`${t.category_code} · ${t.priority} · ${t.status}`} />
-          <Stack direction="row" spacing={1}>
-            {t.confidential && <Chip size="small" label="Confidential" />}
-            {t.sla?.has_sla && (
-              <Chip size="small" color={t.sla.resolution_breached ? "error" : (t.sla.resolution_elapsed_pct ?? 0) >= 80 ? "warning" : "default"}
-                label={t.sla.resolution_breached ? "SLA breached" : `${Math.round(t.sla.resolution_elapsed_pct ?? 0)}% of SLA`} />
-            )}
-          </Stack>
-        </ListItem>
-      ))}
-    </List>
+    <>
+      <ListToolbar listKey="helpdesk.tickets" columns={TICKET_COLUMNS} state={view} onStateChange={setView}
+        rows={rows as unknown as Record<string, unknown>[]} loading={loading} onRefresh={load} />
+      {rows.length === 0 && !loading ? (
+        <Typography color="text.secondary">No tickets. Add ticket categories under Masters and an SLA policy to start the helpdesk.</Typography>
+      ) : (
+        <Table size="small">
+          <TableHead>
+            <TableRow>{shown.map((c) => <TableCell key={c.key}>{c.label}</TableCell>)}</TableRow>
+          </TableHead>
+          <TableBody>
+            {rows.map((t) => (
+              <TableRow key={t.id} hover>
+                {shown.map((c) => (
+                  <TableCell key={c.key}>
+                    {c.key === "sla" ? <SlaChip t={t} /> : c.key === "subject" ? (
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <span>{t.subject}</span>
+                        {t.confidential && <Chip size="small" label="Confidential" />}
+                      </Stack>
+                    ) : String((t as unknown as Record<string, unknown>)[c.key] ?? "")}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </>
   );
 }
 

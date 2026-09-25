@@ -41,6 +41,15 @@ export function MeBootstrapProvider({ children }: { children: ReactNode }) {
 
   useEffect(load, []);
 
+  // Part 14 section 9 / L-V8: reading direction and the per-user reduce-motion preference
+  // apply to the whole document (CSS in index.css honours .reduce-motion and the OS setting).
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dir = data?.ux?.direction ?? "ltr";
+    root.classList.toggle("reduce-motion", Boolean(data?.ux?.reduce_motion));
+    if (data?.locale) root.lang = data.locale;
+  }, [data]);
+
   const permissions = new Set(data?.permissions ?? []);
   const value: MeBootstrapValue = {
     data,

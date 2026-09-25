@@ -1,40 +1,47 @@
+import { lazy, Suspense } from "react";
 import { Navigate, Route, BrowserRouter, Routes } from "react-router-dom";
+import CircularProgress from "@mui/material/CircularProgress";
 
 import { AuthProvider } from "./auth/AuthContext";
 import { BootstrapProvider } from "./bootstrap/BootstrapContext";
 import { MeBootstrapProvider } from "./bootstrap/MeBootstrapContext";
 import { AppThemeProvider } from "./theme/ThemeModeContext";
 import ProtectedRoute from "./auth/ProtectedRoute";
-import CareersApplyPage from "./careers/CareersApplyPage";
-import CareersJobDetailPage from "./careers/CareersJobDetailPage";
-import CareersLayout from "./careers/CareersLayout";
-import CareersListPage from "./careers/CareersListPage";
-import CareersThankYouPage from "./careers/CareersThankYouPage";
 import ErrorBoundary from "./components/ErrorBoundary";
 import AppLayout from "./layout/AppLayout";
-import BgvPage from "./pages/BgvPage";
-import CandidateDetailPage from "./pages/CandidateDetailPage";
-import CandidatesDashboardPage from "./pages/CandidatesDashboardPage";
-import CandidatesImportPage from "./pages/CandidatesImportPage";
-import CandidatesListPage from "./pages/CandidatesListPage";
-import HrInboxListPage from "./pages/HrInboxListPage";
-import InterviewListPage from "./pages/InterviewListPage";
-import InterviewsDashboardPage from "./pages/InterviewsDashboardPage";
-import JobsPage from "./pages/JobsPage";
-import LoginPage from "./pages/LoginPage";
-import OffersPage from "./pages/OffersPage";
-import OverviewPage from "./pages/OverviewPage";
-import RegisterPage from "./pages/RegisterPage";
-import ReportsPage from "./pages/ReportsPage";
-import SalaryPage from "./pages/SalaryPage";
-import ScreeningDashboardPage from "./pages/ScreeningDashboardPage";
-import ScreeningListPage from "./pages/ScreeningListPage";
-import SetPasswordPage from "./pages/SetPasswordPage";
-import SettingsPage from "./pages/SettingsPage";
-import SuperAdminPage from "./pages/SuperAdminPage";
-import ShortlistingDashboardPage from "./pages/ShortlistingDashboardPage";
-import ShortlistingListPage from "./pages/ShortlistingListPage";
-import UnifiedInboxPage from "./pages/UnifiedInboxPage";
+
+// Part 14 section 12: one bundle chunk per page (route-level code splitting).
+const CareersApplyPage = lazy(() => import("./careers/CareersApplyPage"));
+const CareersJobDetailPage = lazy(() => import("./careers/CareersJobDetailPage"));
+const CareersLayout = lazy(() => import("./careers/CareersLayout"));
+const CareersListPage = lazy(() => import("./careers/CareersListPage"));
+const CareersThankYouPage = lazy(() => import("./careers/CareersThankYouPage"));
+const BgvPage = lazy(() => import("./pages/BgvPage"));
+const CandidateDetailPage = lazy(() => import("./pages/CandidateDetailPage"));
+const CandidatesDashboardPage = lazy(() => import("./pages/CandidatesDashboardPage"));
+const CandidatesImportPage = lazy(() => import("./pages/CandidatesImportPage"));
+const CandidatesListPage = lazy(() => import("./pages/CandidatesListPage"));
+const HrInboxListPage = lazy(() => import("./pages/HrInboxListPage"));
+const InterviewListPage = lazy(() => import("./pages/InterviewListPage"));
+const InterviewsDashboardPage = lazy(() => import("./pages/InterviewsDashboardPage"));
+const JobsPage = lazy(() => import("./pages/JobsPage"));
+const LoginPage = lazy(() => import("./pages/LoginPage"));
+const OffersPage = lazy(() => import("./pages/OffersPage"));
+const OverviewPage = lazy(() => import("./pages/OverviewPage"));
+const RegisterPage = lazy(() => import("./pages/RegisterPage"));
+const ReportsPage = lazy(() => import("./pages/ReportsPage"));
+const SalaryPage = lazy(() => import("./pages/SalaryPage"));
+const ScreeningDashboardPage = lazy(() => import("./pages/ScreeningDashboardPage"));
+const ScreeningListPage = lazy(() => import("./pages/ScreeningListPage"));
+const SetPasswordPage = lazy(() => import("./pages/SetPasswordPage"));
+const SetupWizardPage = lazy(() => import("./pages/SetupWizardPage"));
+const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const SuperAdminPage = lazy(() => import("./pages/SuperAdminPage"));
+const ShortlistingDashboardPage = lazy(() => import("./pages/ShortlistingDashboardPage"));
+const ShortlistingListPage = lazy(() => import("./pages/ShortlistingListPage"));
+const UnifiedInboxPage = lazy(() => import("./pages/UnifiedInboxPage"));
+
+const PageLoading = () => <CircularProgress sx={{ m: 4 }} aria-label="Loading" />;
 
 export default function App() {
   return (
@@ -43,6 +50,7 @@ export default function App() {
         <AppThemeProvider>
           <BrowserRouter>
             <AuthProvider>
+              <Suspense fallback={<PageLoading />}>
               <Routes>
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
@@ -85,9 +93,11 @@ export default function App() {
                 <Route path="/bgv" element={<BgvPage />} />
                 <Route path="/offers" element={<OffersPage />} />
                 <Route path="/reports" element={<ReportsPage />} />
+                <Route path="/setup" element={<SetupWizardPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
               </Route>
               </Routes>
+              </Suspense>
             </AuthProvider>
           </BrowserRouter>
         </AppThemeProvider>

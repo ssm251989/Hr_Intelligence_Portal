@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { authApi, setAuthToken, setUnauthorizedHandler } from "../api/client";
 import type { UserRead, UserRole } from "../api/types";
 import { roleAllows } from "./roles";
+import { clearOfflineData } from "../pwa";
 
 const TOKEN_STORAGE_KEY = "hr_automation_token";
 
@@ -67,6 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
+    clearOfflineData(); // Part 14: the offline copy of this user's letters/documents must not outlive the session
     setAuthToken(null);
     localStorage.removeItem(TOKEN_STORAGE_KEY);
     setUser(null);

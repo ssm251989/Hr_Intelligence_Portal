@@ -13,7 +13,9 @@ import Typography from "@mui/material/Typography";
 import ChatOutlinedIcon from "@mui/icons-material/ChatOutlined";
 import CloseIcon from "@mui/icons-material/Close";
 
-import { extractErrorMessage, intelligenceApi, type CopilotAnswer, type UUID } from "../api/client";
+import { extractErrorMessage, intelligenceApi, type CopilotAnswer } from "../api/client";
+
+type UUID = string;
 import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
 
 // Part 12 section B (docs/HRMS_COMPLETE_SPEC.txt): the HR Copilot web widget. Rendered

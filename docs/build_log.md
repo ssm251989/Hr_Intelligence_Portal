@@ -1651,3 +1651,100 @@ Migrations: tenant `8919112ed307` (5 privacy tables + RLS); control plane `f3c64
 Tests: `tests/test_platform_ops.py` (~35) -- written, NOT executed (testing deferred).
 Quick checks: `compileall -q app hrctl scripts` OK, `import app.main` OK, `npx tsc --noEmit` exit 0,
 `hrctl tenant create --dry-run` OK.
+
+## Correction (found during Part 14) -- frontend type-check command
+
+The root `npx tsc --noEmit` used in Parts 9-13's quick checks type-checks **nothing**: the root
+`frontend/tsconfig.json` only holds project references (`files: []`). The real check is
+`npx tsc --noEmit -p tsconfig.app.json` (+ `-p tsconfig.node.json`). Running it found 3 errors,
+2 of them already committed in Part 12 (`CopilotWidget.tsx` importing a non-exported `UUID` type)
+and 1 new in Part 14 (unused imports in `AppLayout.tsx`). All fixed in the Part 14 commit; both real
+checks now exit 0. Treat "tsc --noEmit exit 0" in the Part 9-13 entries as NOT verified until this
+correction.
+
+## PART 14 (branch `hrms-platform`) -- UX standards
+
+Built as reusable platform infrastructure + applied where it maps to Section L's decisions (which win
+over Part 14 wording):
+
+1. **Setup Wizard** (`experience/setup_wizard.py`, `/setup` page): company -> entities & locations ->
+   branding -> mailbox (tested) -> import employees -> modules -> config pack -> invite admins.
+   Progress is DERIVED from real data (tested mailbox route, employee rows...), optional steps can be
+   skipped (`platform.setup.skipped`), required ones can't. Invites use a one-time set-password link
+   sent through the tenant's OWN mailbox (decision D2); the link is returned if mail can't go out.
+   `AdminHomeChecklist` on the overview until 100% (+ health issues) -- L-A3.
+2. **Configuration health** (`experience/config_health.py`): unrouted needed purposes (fallback-chain
+   aware, per enabled module), rules using unpublished templates, published workflows with approver-
+   less approval steps, admins/users without 2FA (decision C2), expiring OAuth tokens that can't
+   refresh, failing connections, Copilot with no knowledge. Each issue: message + fix + fix_path.
+3. **Navigation from `/api/me/bootstrap` only**: `platform/modules.py` registry (module x nav x
+   permission x API prefixes); bootstrap now returns `nav` (enablement x permissions), `home_path`
+   (L-N2 role-based home), `modules`, `ux` (reduce_motion, page_size 25 = L-N5, direction).
+   `ModuleGateMiddleware` returns 404 `MODULE_DISABLED` for a disabled module's APIs (section F),
+   honouring both the control-plane licence (`tenant_modules`) and `platform.modules.enabled`. The
+   original 13 recruitment screens are always-on (parity). AppLayout renders the menu from bootstrap
+   (falls back to the static list until it loads). **Global search Ctrl/Cmd+K** (`experience/search.py`,
+   `GlobalSearch.tsx`): candidates, people (org-scoped), jobs, requests (tickets + my pending
+   approvals), settings (incl. help text), reports; pg_trgm GIN indexes + similarity ranking (L-N3);
+   Ctrl+K is the only shortcut (L-N6); the dialog is fully keyboard operable.
+4. **Unified Inbox**: `/api/v1/inbox/all` adds AI suggestions (approve/reject in place), reviews to
+   write and clearance items to the existing workflow approvals (unchanged, still approvable from email).
+5. **Lists**: `ListToolbar` (server-side saved views per user, admin-shared by role; column chooser;
+   bulk-action slot on selection; CSV export; RefreshButton) + `saved_views` table/API; reference
+   implementation on helpdesk tickets (table view, 25 rows -- L-N4/N5).
+6. **Forms**: `useAutosaveDraft` hook + `form_drafts` table/API (server-side, debounced, restorable).
+7. **Versioning**: `experience/versioning.py` history + revert-as-new-draft for message templates,
+   workflows, letter templates, prompts (`VersionHistoryDialog`); settings revert endpoint (L-A2).
+8. **Friendly errors**: `experience/errors.py` maps 13 config exceptions (no connection for purpose,
+   unpublished template/prompt/letter, missing sequence/workflow, AI disabled/budget, provider,
+   upload rejected...) to `{code, message, fix, fix_path}`; any unhandled error -> 500 with a request
+   id, never a traceback. `extractErrorMessage` renders it; `errorFixPath()` exposes the link.
+9. **Accessibility**: skip-to-content link, `main` landmark, visible `:focus-visible` ring, aria labels
+   on new controls; dark mode (existing); RTL via `org.rtl_locales` -> `<html dir>`; reduced motion
+   (OS setting + per-user `ux.reduce_motion`, L-V8) via CSS.
+10. **PWA**: `manifest.webmanifest`, `sw.js` (app shell, offline read of `/api/v1/me/letters` and
+    `/api/v1/me/documents` only, wiped on logout, push + notification-click handlers), registration in
+    production builds only. New `/api/v1/me/letters|documents|preferences`.
+11. **Contextual help**: `settings/help_catalog.py` -- help + "affects" for **all 81 settings**
+    (a test enforces completeness), exposed on the definitions API and shown in Settings;
+    dependency-free `ModuleTour` ("?" in the app bar, first visit per module).
+12. **Performance**: route-level code splitting (28 pages via `React.lazy`); new lists paginate
+    server-side at 25.
+
+Also: `.gitattributes` keeps `*.sh`, Dockerfiles, nginx/helm templates LF on Windows checkouts;
+i18n keys for search/setup/a11y added to en/hi/ta.
+
+**Deliberately NOT built (Section L screen backlog -- logged, not faked):** react-grid-layout home
+widgets (O3), Sankey/radar/9-box dnd-kit/org-chart d3 visuals (V3/V5/V6/V7/F5), Leaflet heat-maps
+and geo connections (V1/V2), confetti/GIF/video tours with react-joyride (V3/V4), Kanban candidate
+board + pdf.js preview + duplicate-merge (C1-C6), screening compare/threshold slider (S1-S8), week-view
+interview calendar and interviewer page (I1-I7), HR-inbox three-pane + snippets (H1-H5), band bar /
+BGV timeline / offer editor (B1-B8), portal camera auto-crop (P2), employee header-card tabs + org
+chart (E1-E6), spreadsheet comp grid (F7), asset QR labels PDF (T5), clearance board (X2), live-preview
+drag-drop report canvas + PDF export (R1/R4), career-site benefits/FAQ + status page (A6/A7). Several
+need new npm dependencies (react-grid-layout, dnd-kit, react-joyride, pdf.js, d3, leaflet plugins,
+canvas-confetti), which were not added without the owner's go-ahead. Other decision-sheet items still
+open: M3 licence heartbeat to the central console, C2 MFA-mandatory default (the setting exists; its
+default stays off so tenant #1 is not locked out), F1 auto-shortlist undo window, G1 per-job
+scheduling mode, E2 agency portal / job boards beyond LinkedIn.
+
+**Behaviour changes to watch in the test pass:** the friendly-error handlers turn some previously
+raw exceptions into 4xx responses (tests that expected an exception may need updating); bootstrap
+`nav` is now permission-filtered for signed-in users (anonymous shape unchanged); the module gate can
+404 onboarding/performance/helpdesk/assets/separation/analytics/copilot APIs when disabled (all on by
+default).
+
+Migration `45ed086dca28`: `saved_views`, `form_drafts` (+RLS), `pg_trgm` extension + 6 trigram GIN
+indexes. `alembic upgrade head`: OK.
+
+Tests: `tests/test_experience.py` (~27) -- written, NOT executed (testing deferred).
+Quick checks: `compileall -q app hrctl scripts` OK, `import app.main` OK,
+`npx tsc --noEmit -p tsconfig.app.json` exit 0, `-p tsconfig.node.json` exit 0.
+
+## BUILD STATUS after Part 14 -- stopped for the owner's change requests
+
+Parts 1-14 are committed and pushed on `hrms-platform`. Per the 2026-09-25 directive, no test suite
+has been run since Part 8; the full end-to-end pass (backend + frontend suites in chunks, fixes,
+manual smoke test of all 13 original modules, `docker compose up`, `helm template`, real
+`hrctl tenant create`) happens after the owner's change requests. Merge to `main` remains gated on
+that pass (spec instruction 8).

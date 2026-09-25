@@ -11,6 +11,7 @@ import { Link as RouterLink } from "react-router-dom";
 
 import { candidatesApi, extractErrorMessage, jobsApi, reportsApi } from "../api/client";
 import type { CandidateRead, JobRoleRead, PipelineResponse } from "../api/types";
+import AdminHomeChecklist from "../components/AdminHomeChecklist";
 import RefreshButton from "../components/RefreshButton";
 import StatCard from "../components/StatCard";
 import StatusChip, { statusColor } from "../components/StatusChip";
@@ -86,6 +87,8 @@ export default function OverviewPage() {
         <Typography variant="h4">Overview</Typography>
         <RefreshButton loading={loading} onRefresh={loadOverview} />
       </Stack>
+
+      <AdminHomeChecklist />
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
