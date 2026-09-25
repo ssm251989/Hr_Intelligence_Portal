@@ -59,3 +59,27 @@ def complete(
         model = SettingsService(db).get(setting_key, SettingContext(tenant=tenant))
 
     return adapter.complete(system=system, messages=messages, model=model, **kwargs)
+
+
+def response_text(result: dict) -> str:
+    """Concatenated text blocks of a provider message dump ({"content": [{"type": "text", ...}]})."""
+    content = result.get("content") if isinstance(result, dict) else None
+    if isinstance(content, str):
+        return content
+    return "".join(block.get("text", "") for block in content or [] if isinstance(block, dict) and block.get("type", "text") == "text")
+
+
+def complete_text(db: Session, tenant: TenantContext, *, purpose: str, system: str, messages: list[dict], **kwargs: Any) -> str:
+    return response_text(complete(db, tenant, purpose=purpose, system=system, messages=messages, **kwargs))
+
+
+def complete_json(db: Session, tenant: TenantContext, *, purpose: str, system: str, messages: list[dict], **kwargs: Any) -> Any:
+    """complete_text + tolerant JSON parse (strips a ```json fence if the model added one).
+    Raises ValueError when the reply isn't JSON."""
+    import json
+
+    text_out = complete_text(db, tenant, purpose=purpose, system=system, messages=messages, **kwargs).strip()
+    if text_out.startswith("```"):
+        text_out = text_out.strip("`")
+        text_out = text_out[4:] if text_out.lower().startswith("json") else text_out
+    return json.loads(text_out)

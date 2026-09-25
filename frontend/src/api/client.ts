@@ -1238,3 +1238,40 @@ export const onboardingApi = {
   revoke: (caseId: UUID, reason?: string) => post<PreboardingCaseRow>(`/api/v1/onboarding/cases/${caseId}/revoke`, { reason }),
   bgvCases: () => get<BgvCaseRow[]>("/api/v1/onboarding/bgv"),
 };
+
+// ---- Part 10: performance, compensation, succession ----
+
+export interface ReviewCycleRow {
+  id: UUID;
+  name: string;
+  cycle_type: string;
+  period_start: string;
+  period_end: string;
+  status: string;
+}
+
+export interface GoalTreeNode {
+  id: UUID;
+  title: string;
+  level: string;
+  progress_pct: number;
+  rolled_up_progress_pct?: number;
+  children: GoalTreeNode[];
+}
+
+export interface CriticalPositionRow {
+  position_id: UUID;
+  title: string;
+  coverage: "covered" | "at_risk" | "uncovered";
+  successors: { employee_id: UUID; readiness: string }[];
+}
+
+export const performanceApi = {
+  cycles: () => get<ReviewCycleRow[]>("/api/v1/performance/cycles"),
+  createCycle: (payload: { name: string; cycle_type: string; period_start: string; period_end: string; stages: { stage: string; weight: number }[]; sections: { key: string; weight: number }[] }) =>
+    post<ReviewCycleRow>("/api/v1/performance/cycles", payload),
+  eligibilityPreview: (cycleId: UUID) => get<{ eligible_count: number }>(`/api/v1/performance/cycles/${cycleId}/eligibility-preview`),
+  launchCycle: (cycleId: UUID) => post<{ eligible: number; reviews_created: number }>(`/api/v1/performance/cycles/${cycleId}/launch`),
+  goalTree: () => get<GoalTreeNode[]>("/api/v1/performance/goals/tree"),
+  criticalPositions: () => get<CriticalPositionRow[]>("/api/v1/performance/succession/critical-positions"),
+};

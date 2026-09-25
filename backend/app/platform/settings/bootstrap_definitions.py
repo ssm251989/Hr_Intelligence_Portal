@@ -113,6 +113,16 @@ def register_all() -> None:
     register(SettingDef("onboarding.bgv.block_conversion_until_clear", "bool", False, module="onboarding", group="Background Verification"))
     register(SettingDef("onboarding.conversion.default_plan_template", "str", "", module="onboarding", group="Conversion"))
 
+    # performance.* -- Part 10.
+    register(SettingDef("performance.goals.weightage_rules", "json", {"total": 100, "min_goals": None, "max_goals": None, "min_per_goal": None}, module="performance", group="Goals"))
+    # Generic, non-client-specific starter list for the review bias-language check; each
+    # tenant edits its own.
+    register(SettingDef(
+        "performance.ai.bias_terms", "json",
+        ["abrasive", "aggressive", "bossy", "emotional", "hysterical", "shrill", "young", "old", "energetic", "mature", "maternal", "pushy", "cultural fit"],
+        module="performance", group="Reviews",
+    ))
+
     # iam.auth.* -- Part 5A section 1's own per-tenant-configurable auth policy. Platform
     # defaults are conservative but NOT locked-on (mfa_required defaults false) --
     # flipping mfa_required on for a real, already-logged-in tenant is this tenant's own

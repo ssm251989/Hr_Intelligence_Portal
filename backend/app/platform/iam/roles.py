@@ -30,6 +30,8 @@ _SYSTEM_ROLE_TEMPLATES: dict[str, str | list[tuple[str, set[str]]]] = {
         ("iam", {"view", "configure"}),
         ("workflow", {"view", "configure", "approve", "edit"}),
         ("onboarding", {"view", "create", "edit", "approve", "configure"}),
+        ("performance", {"view", "create", "edit", "approve", "configure", "view_sensitive"}),
+        ("compensation", {"view", "create", "edit", "approve", "configure", "export", "view_sensitive"}),
     ],
     "HRBP": [
         ("recruitment", {"view", "create", "edit", "export"}),
@@ -37,6 +39,8 @@ _SYSTEM_ROLE_TEMPLATES: dict[str, str | list[tuple[str, set[str]]]] = {
         ("iam", {"view"}),
         ("workflow", {"view", "approve"}),
         ("onboarding", {"view", "create", "edit"}),
+        ("performance", {"view", "create", "edit"}),
+        ("compensation", {"view"}),
     ],
     "Recruiter": [
         ("recruitment", {"view", "create", "edit"}),
@@ -57,15 +61,20 @@ _SYSTEM_ROLE_TEMPLATES: dict[str, str | list[tuple[str, set[str]]]] = {
         ("recruitment", {"view", "approve"}),
         ("core_hr", {"view"}),
         ("onboarding", {"view", "edit"}),
+        ("performance", {"view", "create", "edit"}),
+        ("compensation", {"view", "create", "edit"}),
         ("workflow", {"view", "approve"}),
     ],
     "Employee": [
         ("workflow", {"view"}),
+        ("performance.self", {"view", "edit"}),  # own goals/reviews/feedback only (the /me endpoints)
     ],
     "Candidate": [],
     "Auditor": [
         ("recruitment", {"view", "view_sensitive", "export"}),
         ("onboarding", {"view"}),
+        ("performance", {"view"}),
+        ("compensation", {"view"}),
         ("core_hr", {"view", "view_sensitive"}),
         ("platform", {"view"}),
         ("iam", {"view"}),
@@ -92,7 +101,12 @@ def _permissions_for(selector) -> list[str]:
         return [p.code for p in all_permissions()]
     codes = []
     for module, actions in selector:
-        codes.extend(p.code for p in all_permissions() if p.module == module and p.action in actions)
+        # "module" widens to every resource; "module.resource" narrows to one resource.
+        module, _, resource = module.partition(".")
+        codes.extend(
+            p.code for p in all_permissions()
+            if p.module == module and p.action in actions and (not resource or p.resource == resource)
+        )
     return sorted(set(codes))
 
 

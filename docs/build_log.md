@@ -1410,3 +1410,50 @@ Tests: `tests/test_onboarding.py` (~40 incl. parametrized) -- written, NOT execu
 
 CHECKS grep: onboarding_plan_templates (2 files), bgv_cases (2), assignment_rules (6),
 PreboardingPortal (5).
+
+## PART 10 (branch `hrms-platform`) -- Performance, goals/OKR, 360, calibration, compensation, succession
+
+**Built:** cascading goals with KPI-driven progress, check-ins, integration auto-progress
+(`external_ref`) and an alignment tree with roll-up; 1:1s (manager-private notes never
+reach the employee), feedback/praise, manager nudges; per-cycle configurable review cycles
+(JSONLogic eligibility, stages with weights, weighted sections, rating scales, anonymity
+rules, deadline reminders via comms `performance.review_due`), peer nomination/approval,
+weightage formula (`reviews.compute_final_rating` -- documented in the module docstring),
+AI draft summary (HITL, `llm.judgment`, deterministic bias-term flags from the
+`performance.ai.bias_terms` setting, never submits); calibration sessions (distribution
+guideline soft/hard, 9-box, mandatory-reason audit per move, normalisation report);
+compensation (salary bands + compa-ratio, merit matrix with overlap validation, bonus rules,
+department budget pools, manager worksheet, guideline/budget justification rules, optional
+Part 5 workflow `compensation_proposal`, effective-dated `compensation_records`, promotion
+via Part 7 lifecycle, letters, CSV export); talent profiles, flight risk (manager input
+overrides the AI estimate), succession slates with readiness coverage, critical-position
+report, internal gig/project/IJP marketplace.
+
+**Scope decisions (standing autonomy directive):**
+- **Self-service via `/me/...` endpoints gated by `performance.self.*`**, always resolved to
+  the caller's OWN employee (Employee.user_id); the Employee system role gets only those two
+  codes. Needed a small extension to the role-template selector: `"module.resource"` now
+  narrows to one resource (`roles._permissions_for`), existing selectors unchanged.
+- **Anonymity**: peer reviews withheld (employee + manager) below `min_peer_responses`;
+  identities stripped when `peer_anonymous`; HR sees identities only if the cycle sets
+  `hr_sees_peer_identity` AND the caller holds `performance.review.view_sensitive`.
+- **Calibration output feeds comp planning** via `calibration.calibrated_rating()`
+  (finalized calibrated rating, else computed final rating).
+- **AI gateway helpers added**: `gateway.complete_text()` / `complete_json()` (the adapter
+  returns a raw provider message dump); Part 9's document extraction switched to
+  `complete_json`.
+- **Shared `core_hr/context.py`**: one JSONLogic employee context (tenure, grade, dept,
+  manager, custom fields as `cf_*`) for Part 10 eligibility and later parts.
+- **Not built:** 9-box drag board, compensation worksheet grid, employee self-service
+  pages, React Flow-style goal map; no scheduler for reminders/nudges (functions are real
+  and callable; same Celery-beat gap as earlier parts). Payroll export is the CSV only.
+- **UI:** `PerformancePanel.tsx` (cycles create/preview/launch, goal tree, succession
+  coverage) in Settings.
+
+Migration `49ffa4f98df2`: 23 TenantOwned + RLS tables. `alembic upgrade head`: OK.
+
+Tests: `tests/test_performance.py` (~30) -- written, NOT executed (testing deferred).
+Quick checks: `compileall -q app` OK, `import app.main` OK, `npx tsc --noEmit` exit 0.
+
+CHECKS grep: "goals" (4 files), review_cycles (2), calibration (7), merit_matri (5),
+succession_slates (2).

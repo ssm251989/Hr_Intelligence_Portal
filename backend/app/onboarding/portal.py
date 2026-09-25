@@ -230,11 +230,11 @@ class PreboardingPortal:
             "Return only a JSON object of the fields you can read; use null for anything not present. Never guess."
         )
         try:
-            result = gateway.complete(
+            fields = gateway.complete_json(
                 self.db, self.tenant, purpose="llm.resume_extraction", system=system,
                 messages=[{"role": "user", "content": f"Document type: {document.document_type_code}\n\n{document_text}"}],
             )
-            document.extracted_json = {"fields": result.get("json") or result.get("content") or result, "source": "ai"}
+            document.extracted_json = {"fields": fields, "source": "ai"}
         except Exception as exc:  # no connection routed / provider error -> HR just verifies manually
             document.extracted_json = {"error": type(exc).__name__}
         self.db.commit()

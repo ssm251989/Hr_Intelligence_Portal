@@ -133,4 +133,16 @@ def register_all() -> None:
     register_permission("onboarding", "assignment_rule", "configure")
     register_permission("onboarding", "dashboard", "view")
 
+    # Part 10: performance, goals, compensation planning, succession.
+    for resource in ("goal", "feedback", "one_on_one", "review", "cycle", "calibration", "talent", "succession", "marketplace"):
+        for action in ("view", "create", "edit"):
+            register_permission("performance", resource, action)
+    register_permission("performance", "cycle", "configure")
+    register_permission("performance", "calibration", "approve")
+    register_permission("performance", "review", "view_sensitive")  # peer identities where the cycle allows HR to see them
+    register_permission("performance", "self", "view")  # own goals/reviews/feedback via /me endpoints
+    register_permission("performance", "self", "edit")
+    for action in ("view", "create", "edit", "approve", "configure", "export", "view_sensitive"):
+        register_permission("compensation", "planning", action)
+
     _registered = True

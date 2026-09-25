@@ -44,6 +44,7 @@ from app.platform.i18n.api_router import public_router as i18n_public_router, ro
 from app.platform.branding.api_router import public_router as branding_public_router, router as branding_router
 from app.core_hr.api_router import public_router as core_hr_public_router, router as core_hr_router
 from app.onboarding.api_router import public_router as onboarding_public_router, router as onboarding_router
+from app.performance.api_router import router as performance_router
 from app.recruitment.api_router import public_router as recruitment_public_router, router as recruitment_router
 
 register_tenant_owned_events(tenant_data_base)
@@ -120,6 +121,7 @@ app.include_router(recruitment_router)
 app.include_router(recruitment_public_router)
 app.include_router(onboarding_router)
 app.include_router(onboarding_public_router)
+app.include_router(performance_router)
 
 
 @app.get("/health")
