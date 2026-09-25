@@ -1275,3 +1275,43 @@ export const performanceApi = {
   goalTree: () => get<GoalTreeNode[]>("/api/v1/performance/goals/tree"),
   criticalPositions: () => get<CriticalPositionRow[]>("/api/v1/performance/succession/critical-positions"),
 };
+
+// ---- Part 11: helpdesk, assets, separation ----
+
+export interface TicketRow {
+  id: UUID;
+  number: string;
+  subject: string;
+  category_code: string;
+  priority: string;
+  status: string;
+  confidential: boolean;
+  sla: { has_sla: boolean; resolution_breached?: boolean; resolution_elapsed_pct?: number } | null;
+}
+
+export interface AssetRow {
+  id: UUID;
+  asset_tag: string;
+  name: string;
+  category_code: string;
+  status: string;
+  allocated_to: UUID | null;
+  book_value: number | null;
+}
+
+export interface SeparationSummary {
+  separation_id: UUID;
+  employee_id: UUID;
+  type: string;
+  status: string;
+  last_working_day: string | null;
+  clearance_pending: number;
+  assets_pending: number;
+}
+
+export const serviceDeskApi = {
+  tickets: (status?: string) => get<{ total: number; items: TicketRow[] }>(`/api/v1/service-desk/tickets?page_size=50${status ? `&status=${status}` : ""}`),
+  assets: () => get<{ total: number; items: AssetRow[] }>("/api/v1/service-desk/assets?page_size=50"),
+  separations: () => get<SeparationSummary[]>("/api/v1/service-desk/separations"),
+  exportSeparationsUrl: "/api/v1/service-desk/separations-export",
+};

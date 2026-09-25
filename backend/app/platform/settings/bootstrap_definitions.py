@@ -123,6 +123,22 @@ def register_all() -> None:
         module="performance", group="Reviews",
     ))
 
+    # helpdesk.* / separation.* -- Part 11.
+    register(SettingDef("helpdesk.email.default_category", "str", "", module="helpdesk", group="Helpdesk"))  # a ticket_category code
+    register(SettingDef("separation.default_notice_days", "int", 30, module="separation", group="Separation"))
+    register(SettingDef("separation.retention_step_enabled", "bool", False, module="separation", group="Separation"))
+    register(SettingDef("separation.require_shortfall_cover", "bool", True, module="separation", group="Separation"))
+    register(SettingDef("separation.relieving_letter_template", "str", "", module="separation", group="Separation"))  # a letter template key
+    register(SettingDef("separation.experience_letter_template", "str", "", module="separation", group="Separation"))
+    # Generic starter checklist; every tenant edits its own departments/items.
+    register(SettingDef("separation.clearance_checklist", "json", [
+        {"department": "it", "title": "Revoke system and email access", "kind": "access_revocation"},
+        {"department": "admin", "title": "Return ID / access card"},
+        {"department": "finance", "title": "Settle advances and reimbursements"},
+        {"department": "manager", "title": "Handover sign-off"},
+        {"department": "hr", "title": "Exit interview and documents", "blocks_relieving": False},
+    ], module="separation", group="Separation"))
+
     # iam.auth.* -- Part 5A section 1's own per-tenant-configurable auth policy. Platform
     # defaults are conservative but NOT locked-on (mfa_required defaults false) --
     # flipping mfa_required on for a real, already-logged-in tenant is this tenant's own

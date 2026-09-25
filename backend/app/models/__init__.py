@@ -62,6 +62,21 @@ from app.models.performance import (
     SuccessionSlate,
     TalentProfile,
 )
+from app.models.service_desk import (
+    Asset,
+    AssetAllocation,
+    AssetMaintenance,
+    AssetRequest,
+    BusinessCalendar,
+    ClearanceItem,
+    KbArticle,
+    Separation,
+    SlaPolicy,
+    Ticket,
+    TicketAssignmentRule,
+    TicketComment,
+    TicketQueue,
+)
 from app.models.hiring_team import JobHiringTeamMember
 from app.models.hr_inbound_email import HrInboundEmail
 from app.models.hr_integration import HrIntegration
@@ -164,6 +179,19 @@ __all__ = [
     "MetaForm",
     "Sequence",
     "NegotiationToken",
+    "Asset",
+    "AssetAllocation",
+    "AssetMaintenance",
+    "AssetRequest",
+    "BusinessCalendar",
+    "ClearanceItem",
+    "KbArticle",
+    "Separation",
+    "SlaPolicy",
+    "Ticket",
+    "TicketAssignmentRule",
+    "TicketComment",
+    "TicketQueue",
     "CalibrationAudit",
     "CalibrationEntry",
     "CalibrationSession",

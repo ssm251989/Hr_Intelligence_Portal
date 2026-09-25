@@ -145,4 +145,25 @@ def register_all() -> None:
     for action in ("view", "create", "edit", "approve", "configure", "export", "view_sensitive"):
         register_permission("compensation", "planning", action)
 
+    # Part 11: helpdesk, assets, separation.
+    for action in ("view", "create", "edit", "view_sensitive", "export"):
+        register_permission("helpdesk", "ticket", action)  # view_sensitive = confidential categories
+    for resource in ("queue", "sla"):
+        register_permission("helpdesk", resource, "view")
+        register_permission("helpdesk", resource, "configure")
+    for action in ("view", "create", "edit"):
+        register_permission("helpdesk", "kb", action)
+    register_permission("helpdesk", "self", "view")
+    register_permission("helpdesk", "self", "create")
+    for action in ("view", "create", "edit", "approve", "export"):
+        register_permission("assets", "asset", action)
+    register_permission("assets", "self", "view")
+    register_permission("assets", "self", "create")
+    for action in ("view", "create", "edit", "approve", "export"):
+        register_permission("separation", "case", action)
+    register_permission("separation", "clearance", "view")
+    register_permission("separation", "clearance", "edit")
+    register_permission("separation", "self", "view")
+    register_permission("separation", "self", "create")
+
     _registered = True

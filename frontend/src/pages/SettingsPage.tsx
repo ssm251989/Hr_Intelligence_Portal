@@ -25,6 +25,7 @@ import CoreHrPanel from "../components/CoreHrPanel";
 import RecruitmentPanel from "../components/RecruitmentPanel";
 import OnboardingPanel from "../components/OnboardingPanel";
 import PerformancePanel from "../components/PerformancePanel";
+import ServiceDeskPanel from "../components/ServiceDeskPanel";
 import MfaSettingsCard from "../components/MfaSettingsCard";
 
 function IntegrationCard({
@@ -168,6 +169,7 @@ export default function SettingsPage() {
         {canManagePlatformSettings && <RecruitmentPanel />}
         {canManagePlatformSettings && <OnboardingPanel />}
         {canManagePlatformSettings && <PerformancePanel />}
+        {canManagePlatformSettings && <ServiceDeskPanel />}
         {canManagePlatformSettings && <PlatformSettingsPanel />}
       </Stack>
     </Box>

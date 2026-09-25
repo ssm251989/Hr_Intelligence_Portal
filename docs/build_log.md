@@ -1457,3 +1457,43 @@ Quick checks: `compileall -q app` OK, `import app.main` OK, `npx tsc --noEmit` e
 
 CHECKS grep: "goals" (4 files), review_cycles (2), calibration (7), merit_matri (5),
 succession_slates (2).
+
+## PART 11 (branch `hrms-platform`) -- Helpdesk, assets, separation / exit
+
+**Built:** tickets on `ticket_category` masters (subcategories = child master values;
+a category's `attributes_json` carries `confidential` / `queue`), `TKT-` numbering via Part 6
+sequences, SLA policies per category/priority with **business-hours timers** from the
+requester's location calendar (`business_calendars`: timezone, working days, hours,
+holidays) falling back to the policy's / "default" calendar / wall-clock, pause while
+`waiting_on_requester` (due date extended by paused business minutes), first-response
+tracking, escalation steps (`escalation_json` at-% thresholds -> `helpdesk.ticket_escalated`),
+assignment rules (round-robin / skill + least-loaded / queue), CSAT, email-to-ticket
+(`ticket_from_email` + a `helpdesk.ticket_reply` inbound handler for `ticket-<number>`
+threads), KB search + deflection counters, confidential visibility (404 -- never confirms
+existence). Assets: register on `asset_category` masters, allocate/acknowledge/return with
+condition, maintenance log, straight-line depreciation, requests (Part 5 `asset_request`
+workflow if published, else auto-approved) and fulfilment. Separation: resignation /
+termination / absconding / retirement; notice from employment record -> `notice_period`
+master (grade match) -> setting; optional retention step; LWD approval with shortfall
+cover by waiver/buyout; clearance checklist from `separation.clearance_checklist` + one
+asset-recovery item per unreturned allocation (department from the asset category's
+`clearance_department`) + access revocation (manual at launch) + KT tasks; asset return
+auto-clears its item; **relieving/experience letters blocked (409) until every blocking
+item is cleared/waived**; exit interview + AI summary (HITL); absconding legal notices via
+Part 7 letter templates; completion closes the employment record at LWD, sets
+`rehire_eligible`/`inactive`, alumni flag; exit summary + CSV export for finance/payroll.
+
+**Scope decisions:** no scheduler for escalations (`POST /tickets/process-escalations` and
+`tickets.process_escalations()` are real; same Celery-beat gap); directory/access
+revocation is a manual checklist item (spec: "later"); no mailbox poller change -- the
+poller calls `ticket_from_email` for helpdesk-routed mailboxes, plus a manual
+"inbound -> ticket" endpoint. UI: `ServiceDeskPanel.tsx` (tickets with SLA chips, asset
+register, open separations). Agent workspace / clearance board not built.
+
+Migration `83c8faf6267c`: 13 TenantOwned + RLS tables. `alembic upgrade head`: OK.
+
+Tests: `tests/test_service_desk.py` (~27) -- written, NOT executed (testing deferred).
+Quick checks: `compileall -q app` OK, `import app.main` OK, `npx tsc --noEmit` exit 0.
+
+CHECKS grep: "tickets" (2 files), sla_policies (2), "assets" (4), separations (6),
+clearance_items (2).

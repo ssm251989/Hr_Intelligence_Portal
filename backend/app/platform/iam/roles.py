@@ -32,6 +32,9 @@ _SYSTEM_ROLE_TEMPLATES: dict[str, str | list[tuple[str, set[str]]]] = {
         ("onboarding", {"view", "create", "edit", "approve", "configure"}),
         ("performance", {"view", "create", "edit", "approve", "configure", "view_sensitive"}),
         ("compensation", {"view", "create", "edit", "approve", "configure", "export", "view_sensitive"}),
+        ("helpdesk", {"view", "create", "edit", "view_sensitive", "export", "configure"}),
+        ("assets", {"view", "create", "edit", "approve", "export"}),
+        ("separation", {"view", "create", "edit", "approve", "export"}),
     ],
     "HRBP": [
         ("recruitment", {"view", "create", "edit", "export"}),
@@ -41,6 +44,9 @@ _SYSTEM_ROLE_TEMPLATES: dict[str, str | list[tuple[str, set[str]]]] = {
         ("onboarding", {"view", "create", "edit"}),
         ("performance", {"view", "create", "edit"}),
         ("compensation", {"view"}),
+        ("helpdesk", {"view", "create", "edit"}),
+        ("assets", {"view", "create", "edit"}),
+        ("separation", {"view", "create", "edit"}),
     ],
     "Recruiter": [
         ("recruitment", {"view", "create", "edit"}),
@@ -55,6 +61,8 @@ _SYSTEM_ROLE_TEMPLATES: dict[str, str | list[tuple[str, set[str]]]] = {
     ],
     "Helpdesk Agent": [
         ("recruitment", {"view"}),
+        ("helpdesk", {"view", "create", "edit"}),
+        ("assets", {"view", "create", "edit"}),
         ("workflow", {"view", "approve"}),
     ],
     "Manager": [
@@ -63,11 +71,18 @@ _SYSTEM_ROLE_TEMPLATES: dict[str, str | list[tuple[str, set[str]]]] = {
         ("onboarding", {"view", "edit"}),
         ("performance", {"view", "create", "edit"}),
         ("compensation", {"view", "create", "edit"}),
+        ("separation", {"view", "approve"}),
+        ("assets.asset", {"view"}),
+        ("assets.self", {"view", "create"}),
+        ("helpdesk.self", {"view", "create"}),
         ("workflow", {"view", "approve"}),
     ],
     "Employee": [
         ("workflow", {"view"}),
         ("performance.self", {"view", "edit"}),  # own goals/reviews/feedback only (the /me endpoints)
+        ("helpdesk.self", {"view", "create"}),
+        ("assets.self", {"view", "create"}),
+        ("separation.self", {"view", "create"}),
     ],
     "Candidate": [],
     "Auditor": [
@@ -75,6 +90,9 @@ _SYSTEM_ROLE_TEMPLATES: dict[str, str | list[tuple[str, set[str]]]] = {
         ("onboarding", {"view"}),
         ("performance", {"view"}),
         ("compensation", {"view"}),
+        ("helpdesk", {"view", "export"}),
+        ("assets", {"view", "export"}),
+        ("separation", {"view", "export"}),
         ("core_hr", {"view", "view_sensitive"}),
         ("platform", {"view"}),
         ("iam", {"view"}),
