@@ -24,7 +24,7 @@ from app.platform.tenancy.context import TenantContext
 _SYSTEM_ROLE_TEMPLATES: dict[str, str | list[tuple[str, set[str]]]] = {
     "Super Admin": "*",
     "HR Admin": [
-        ("recruitment", {"view", "create", "edit", "delete", "approve", "export", "view_sensitive"}),
+        ("recruitment", {"view", "create", "edit", "delete", "approve", "export", "view_sensitive", "configure"}),
         ("core_hr", {"view", "create", "edit", "delete", "view_sensitive"}),
         ("platform", {"view", "configure"}),
         ("iam", {"view", "configure"}),

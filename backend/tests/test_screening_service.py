@@ -8,7 +8,8 @@ from app.models.application import Application
 from app.models.audit_log import AuditLog
 from app.models.candidate import Candidate
 from app.models.job_role import JobRole
-from app.models.screening_settings import ScreeningSettings
+from app.platform.settings.resolver import SettingContext, SettingsService
+from app.platform.tenancy.context import TENANT_1_ID, TenantContext
 from app.screening import service as screening_service
 
 
@@ -861,10 +862,11 @@ def test_run_screening_below_min_threshold_stays_received_but_is_still_scored(db
 
 def test_run_screening_respects_configured_threshold_not_just_the_default(db_session, monkeypatch):
     # A score of 55 is below the seeded default min (60) but above a lowered min (40) --
-    # proves the threshold is actually read from screening_settings, not hardcoded.
-    settings_row = db_session.get(ScreeningSettings, 1)
-    settings_row.dashboard_min_score = 40
-    db_session.commit()
+    # proves the threshold is actually read from Part 2's Settings Registry, not hardcoded.
+    tenant = TenantContext(tenant_id=TENANT_1_ID, slug="tenant1-test", isolation="dedicated_db")
+    SettingsService(db_session).set(
+        "recruitment.screening.dashboard_min_score", 40, scope_type="tenant", scope_id=None, actor="test", tenant=tenant,
+    )
 
     monkeypatch.setattr(
         "app.screening.service.match_resume",

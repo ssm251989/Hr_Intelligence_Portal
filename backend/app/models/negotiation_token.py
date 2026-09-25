@@ -60,6 +60,15 @@ class NegotiationToken(Base, TenantOwned):
     round_day = Column(Date, nullable=False)
     duration_minutes = Column(Integer, server_default=text("60"))
     tracker_path = Column(Text)
+    # Part 8 section 6 -- recruitment.negotiation.slots_offered/slots_to_pick are now real
+    # tenant settings (app/interview_scheduling/negotiation.py); snapshotted here at row-
+    # creation time for the SAME reason duration_minutes/tracker_path already are (see this
+    # table's own docstring): a submission resolved days later, or a re-render of an
+    # already-sent picker link, must reflect what was actually OFFERED, not whatever the
+    # tenant's settings have since changed to. slot_hours_json is a list of "HH:MM" strings
+    # (IST); required_picks is the exact-pick count for this row.
+    slot_hours_json = Column(JSONB, nullable=False, server_default=text('\'["10:00","15:00","18:00"]\'::jsonb'))
+    required_picks = Column(Integer, nullable=False, server_default=text("2"))
     token = Column(Text, nullable=False, unique=True)
     # Populated on a valid (exactly-2) submission -- a JSON list of the 2 chosen slots' ISO
     # timestamps. NULL while pending; also NULL after a decline (distinguished from

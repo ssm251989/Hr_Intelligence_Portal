@@ -247,7 +247,7 @@ def _candidate_row(db_session, application) -> Optional[NegotiationToken]:
 
 
 def _slot_isos(round_day) -> list[str]:
-    return [t.isoformat() for t in neg._slot_times_for_day(round_day)]
+    return [t.isoformat() for t in neg._slot_times_for_day(round_day, neg._DEFAULT_SLOT_HOURS_IST)]
 
 
 # --- walk-the-pool-on-busy (unchanged pool-walk mechanic) ---
@@ -944,7 +944,7 @@ def test_interviewer_email_html_interpolates_candidate_job_and_date_with_a_cta_l
         db_session, "recruitment.negotiation.interviewer_offer",
         candidate_name="Jane Doe", job_title="Backend Engineer", round_day="26 Aug 2026",
         picker_url="https://ctdhr.example.com/interview-negotiation/tok123",
-        required_picks=neg.REQUIRED_PICKS, token_expiry_days=neg.TOKEN_EXPIRY_DAYS,
+        required_picks=neg._DEFAULT_REQUIRED_PICKS, token_expiry_days=neg.TOKEN_EXPIRY_DAYS,
     )
 
     assert "Jane Doe" in html
@@ -962,7 +962,7 @@ def test_candidate_email_html_interpolates_job_with_a_cta_link(db_session):
         db_session, "recruitment.negotiation.candidate_offer",
         candidate_name="Jane Doe", job_title="Backend Engineer",
         picker_url="https://ctdhr.example.com/interview-negotiation/tok456",
-        required_picks=neg.REQUIRED_PICKS, token_expiry_days=neg.TOKEN_EXPIRY_DAYS,
+        required_picks=neg._DEFAULT_REQUIRED_PICKS, token_expiry_days=neg.TOKEN_EXPIRY_DAYS,
     )
 
     assert "Hi Jane Doe," in html
@@ -977,7 +977,7 @@ def test_negotiation_email_html_escapes_candidate_name_and_job_title(db_session)
     _subject, _text, html = neg._render_negotiation_email(
         db_session, "recruitment.negotiation.interviewer_offer",
         candidate_name="<script>alert(1)</script>", job_title="R&D <Lead>", round_day="26 Aug 2026",
-        picker_url="https://example.com/x", required_picks=neg.REQUIRED_PICKS, token_expiry_days=neg.TOKEN_EXPIRY_DAYS,
+        picker_url="https://example.com/x", required_picks=neg._DEFAULT_REQUIRED_PICKS, token_expiry_days=neg.TOKEN_EXPIRY_DAYS,
     )
 
     assert "<script>alert(1)</script>" not in html
@@ -1840,3 +1840,141 @@ def test_retry_negotiation_endpoint_rejects_when_an_interview_already_exists(
 
     assert response.status_code == 409
     assert "already been scheduled" in response.json()["detail"]
+
+
+# --- Part 8 section 6: negotiation mechanics from settings, busy_source dispatch --------
+
+from app.interview_scheduling.availability import upsert_availability  # noqa: E402
+from app.platform.settings.resolver import SettingContext, SettingsService  # noqa: E402
+from app.platform.tenancy.context import TENANT_1_ID, TenantContext  # noqa: E402
+
+_TENANT = TenantContext(tenant_id=TENANT_1_ID, slug="tenant1-test", isolation="dedicated_db")
+
+
+def _set_negotiation_setting(db_session, key: str, value) -> None:
+    SettingsService(db_session).set(key, value, scope_type="tenant", scope_id=None, actor="test", tenant=_TENANT)
+
+
+def test_negotiation_reads_non_default_slots_offered_and_slots_to_pick(db_session, tmp_path, monkeypatch):
+    """docs/HRMS_COMPLETE_SPEC.txt Part 8's own TESTS wording: "negotiation with
+    non-default settings (e.g. 4 slots pick 1)" -- both recruitment.negotiation.
+    slots_offered and .slots_to_pick are real tenant settings, snapshotted onto the
+    NegotiationToken row they produce."""
+    _set_negotiation_setting(db_session, "recruitment.negotiation.slots_offered", 4)
+    _set_negotiation_setting(db_session, "recruitment.negotiation.slots_to_pick", 1)
+
+    tracker_path = _real_tracker_copy(tmp_path)
+    _configure_tracker(db_session, tracker_path)
+    _real_pool_interviewer(db_session)
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application(db_session, job, candidate)
+    recruiter = _make_user(db_session, "Recruiter", role="recruiter")
+    _connect_hr_smtp(db_session)
+    _capture_emails(monkeypatch)
+
+    outcome, _reason = neg.attempt_auto_negotiate_interview_slots(db_session, application, recruiter)
+
+    assert outcome == "started"
+    row = _interviewer_row(db_session, application)
+    assert row.required_picks == 1
+    assert len(row.slot_hours_json) == 4
+    assert row.slot_hours_json == ["10:00", "15:00", "18:00", "11:00"]
+
+
+def test_negotiation_submission_enforces_the_rows_own_snapshotted_pick_count(db_session, tmp_path, monkeypatch, client, make_auth_headers):
+    _set_negotiation_setting(db_session, "recruitment.negotiation.slots_offered", 4)
+    _set_negotiation_setting(db_session, "recruitment.negotiation.slots_to_pick", 1)
+
+    tracker_path = _real_tracker_copy(tmp_path)
+    _configure_tracker(db_session, tracker_path)
+    _real_pool_interviewer(db_session)
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application(db_session, job, candidate)
+    recruiter = _make_user(db_session, "Recruiter", role="recruiter")
+    _connect_hr_smtp(db_session)
+    _capture_emails(monkeypatch)
+
+    neg.attempt_auto_negotiate_interview_slots(db_session, application, recruiter)
+    row = _interviewer_row(db_session, application)
+    one_slot = row.slot_hours_json[0]
+    slot_iso = neg._slot_times_for_day(row.round_day, neg._parse_slot_hours([one_slot]))[0].isoformat()
+
+    # Submitting exactly 1 (the row's own snapshotted required_picks, not the module
+    # default of 2) succeeds.
+    response = client.post(f"/interview-negotiation/{row.token}", data={"action": "submit", "slots": [slot_iso]})
+    assert response.status_code == 200
+    assert "Thanks" in response.text
+
+
+def test_negotiation_busy_source_internal_skips_a_busy_interviewer(db_session, tmp_path, monkeypatch):
+    """TESTS: "internal availability" -- recruitment.negotiation.busy_source=internal
+    reads InterviewerAvailability instead of the Excel tracker's own busy-this-week log."""
+    _set_negotiation_setting(db_session, "recruitment.negotiation.busy_source", "internal")
+
+    tracker_path = _real_tracker_copy(tmp_path)
+    _configure_tracker(db_session, tracker_path)
+    _real_pool_interviewer(db_session)
+    _extend_pool_with(tracker_path, ["Backup Interviewer"])
+    _add_mail_entry(tracker_path, "Backup Interviewer", "backup@example.com")
+
+    tomorrow = neg._tomorrow_ist(neg.datetime.now(neg.timezone.utc))
+    upsert_availability(
+        db_session, _TENANT, interviewer_email="kg@ctdtechs.com", interviewer_name=REAL_POOL_INTERVIEWER,
+        weekly_pattern={("mon", "tue", "wed", "thu", "fri", "sat", "sun")[tomorrow.weekday()]: False},
+    )
+
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application(db_session, job, candidate)
+    recruiter = _make_user(db_session, "Recruiter", role="recruiter")
+    _connect_hr_smtp(db_session)
+    _capture_emails(monkeypatch)
+
+    outcome, _reason = neg.attempt_auto_negotiate_interview_slots(db_session, application, recruiter)
+
+    assert outcome == "started"
+    row = _interviewer_row(db_session, application)
+    assert row.interviewer_name == "Backup Interviewer"
+
+
+def test_negotiation_busy_source_calendar_checks_the_interviewers_google_connection(db_session, tmp_path, monkeypatch):
+    """TESTS: "calendar busy-source (mock)" -- recruitment.negotiation.busy_source=calendar
+    calls check_calendar_availability for an interviewer with a real Employee/User/Google
+    connection linked through InterviewerAvailability.employee_id."""
+    from app.core_hr import employees as employees_service
+    from app.platform.tenancy.context import TenantContext as TC
+
+    _set_negotiation_setting(db_session, "recruitment.negotiation.busy_source", "calendar")
+
+    tracker_path = _real_tracker_copy(tmp_path)
+    _configure_tracker(db_session, tracker_path)
+    interviewer_user = _real_pool_interviewer(db_session)
+
+    employee = employees_service.create_employee(db_session, _TENANT, first_name="Kishore", user_id=interviewer_user.id)
+    upsert_availability(
+        db_session, _TENANT, interviewer_email="kg@ctdtechs.com", interviewer_name=REAL_POOL_INTERVIEWER,
+        employee_id=employee.id,
+    )
+
+    calls = []
+    monkeypatch.setattr(
+        "app.integrations.google_calendar.check_calendar_availability",
+        lambda refresh_token, start, end: calls.append((start, end)) or False,
+    )
+
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application(db_session, job, candidate)
+    recruiter = _make_user(db_session, "Recruiter", role="recruiter")
+    _connect_hr_smtp(db_session)
+    _capture_emails(monkeypatch)
+
+    outcome, reason = neg.attempt_auto_negotiate_interview_slots(db_session, application, recruiter)
+
+    assert len(calls) >= 1
+    # check_calendar_availability returned False (not available) -- Kishore is treated as
+    # busy and the whole pool (just Kishore here) is exhausted for both tried days.
+    assert outcome is None
+    assert "manually" in (reason or "")

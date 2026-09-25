@@ -151,7 +151,7 @@ def test_submit_application_success(anonymous_client, db_session):
 
     response = anonymous_client.post(
         "/public/apply",
-        data={"job_id": str(job.id), "full_name": "Jordan Applicant", "email": "jordan@example.com", "phone": "555-0100"},
+        data={"job_id": str(job.id), "consent": "true", "full_name": "Jordan Applicant", "email": "jordan@example.com", "phone": "555-0100"},
         files={"resume": ("resume.docx", resume_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
     )
 
@@ -186,7 +186,7 @@ def test_submit_application_without_phone(anonymous_client, db_session):
 
     response = anonymous_client.post(
         "/public/apply",
-        data={"job_id": str(job.id), "full_name": "No Phone Applicant", "email": "nophone@example.com"},
+        data={"job_id": str(job.id), "consent": "true", "full_name": "No Phone Applicant", "email": "nophone@example.com"},
         files={"resume": ("resume.docx", resume_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
     )
 
@@ -212,7 +212,7 @@ def test_submit_application_schedules_background_resume_parsing(anonymous_client
 
     response = anonymous_client.post(
         "/public/apply",
-        data={"job_id": str(job.id), "full_name": "Some Applicant", "email": "some@example.com"},
+        data={"job_id": str(job.id), "consent": "true", "full_name": "Some Applicant", "email": "some@example.com"},
         files={"resume": ("resume.docx", resume_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
     )
 
@@ -229,7 +229,7 @@ def test_submit_application_against_unpublished_job_returns_404(anonymous_client
 
     response = anonymous_client.post(
         "/public/apply",
-        data={"job_id": str(job.id), "full_name": "Applicant", "email": "applicant@example.com"},
+        data={"job_id": str(job.id), "consent": "true", "full_name": "Applicant", "email": "applicant@example.com"},
         files={"resume": ("resume.docx", resume_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
     )
 
@@ -241,7 +241,7 @@ def test_submit_application_against_nonexistent_job_returns_404(anonymous_client
 
     response = anonymous_client.post(
         "/public/apply",
-        data={"job_id": str(uuid.uuid4()), "full_name": "Applicant", "email": "applicant@example.com"},
+        data={"job_id": str(uuid.uuid4()), "consent": "true", "full_name": "Applicant", "email": "applicant@example.com"},
         files={"resume": ("resume.docx", resume_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
     )
 
@@ -253,7 +253,7 @@ def test_submit_application_rejects_unsupported_file_type(anonymous_client, db_s
 
     response = anonymous_client.post(
         "/public/apply",
-        data={"job_id": str(job.id), "full_name": "Applicant", "email": "applicant@example.com"},
+        data={"job_id": str(job.id), "consent": "true", "full_name": "Applicant", "email": "applicant@example.com"},
         files={"resume": ("resume.txt", b"plain text resume", "text/plain")},
     )
 
@@ -267,11 +267,47 @@ def test_submit_application_no_candidate_created_when_job_rejected(anonymous_cli
 
     anonymous_client.post(
         "/public/apply",
-        data={"job_id": str(job.id), "full_name": "Applicant", "email": "applicant@example.com"},
+        data={"job_id": str(job.id), "consent": "true", "full_name": "Applicant", "email": "applicant@example.com"},
         files={"resume": ("resume.docx", resume_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
     )
 
     assert db_session.query(Candidate).count() == before_count
+
+
+def test_submit_application_without_consent_returns_400(anonymous_client, db_session):
+    job = _make_job(db_session, title="Consent Required Role", status="published")
+    resume_bytes = _make_docx_bytes("Applicant")
+
+    response = anonymous_client.post(
+        "/public/apply",
+        data={"job_id": str(job.id), "consent": "false", "full_name": "Applicant", "email": "applicant@example.com"},
+        files={"resume": ("resume.docx", resume_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+    )
+
+    assert response.status_code == 400
+    assert "consent" in response.json()["detail"].lower()
+
+
+def test_submit_application_disqualified_by_knockout_question_is_recorded_but_auto_rejected(anonymous_client, db_session):
+    job = _make_job(db_session, title="Knockout Role", status="published")
+    job.knockout_questions_json = [{"question": "Are you authorized to work in this country?", "disqualify_on": "no"}]
+    db_session.commit()
+    resume_bytes = _make_docx_bytes("Knockout Applicant")
+
+    response = anonymous_client.post(
+        "/public/apply",
+        data={
+            "job_id": str(job.id), "consent": "true", "full_name": "Knockout Applicant", "email": "knockout@example.com",
+            "knockout_answers": '{"Are you authorized to work in this country?": "no"}',
+        },
+        files={"resume": ("resume.docx", resume_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+    )
+
+    assert response.status_code == 201
+    application = db_session.get(Application, uuid.UUID(response.json()["application_id"]))
+    assert application.status == "hr_rejected"
+    audit_actions = db_session.query(AuditLog.action).filter(AuditLog.entity_id == application.id).all()
+    assert ("knockout_disqualified",) in audit_actions
 
 
 # --- No-auth-required contract -------------------------------------------------
@@ -285,7 +321,7 @@ def test_public_endpoints_require_no_authentication(anonymous_client, db_session
     detail_response = anonymous_client.get(f"/public/jobs/{job.id}")
     apply_response = anonymous_client.post(
         "/public/apply",
-        data={"job_id": str(job.id), "full_name": "Applicant", "email": "applicant@example.com"},
+        data={"job_id": str(job.id), "consent": "true", "full_name": "Applicant", "email": "applicant@example.com"},
         files={"resume": ("resume.docx", resume_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
     )
 
@@ -340,7 +376,7 @@ def test_submit_application_past_deadline_returns_400_not_404(anonymous_client, 
 
     response = anonymous_client.post(
         "/public/apply",
-        data={"job_id": str(job.id), "full_name": "Late Applicant", "email": "late@example.com"},
+        data={"job_id": str(job.id), "consent": "true", "full_name": "Late Applicant", "email": "late@example.com"},
         files={"resume": ("resume.docx", resume_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
     )
 
@@ -385,7 +421,7 @@ def test_submit_application_triggers_owner_notification_when_enabled_and_connect
 
     response = anonymous_client.post(
         "/public/apply",
-        data={"job_id": str(job.id), "full_name": "Notify Applicant", "email": "notify@example.com"},
+        data={"job_id": str(job.id), "consent": "true", "full_name": "Notify Applicant", "email": "notify@example.com"},
         files={"resume": ("resume.docx", resume_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
     )
 
@@ -402,7 +438,7 @@ def test_submit_application_before_deadline_still_succeeds(anonymous_client, db_
 
     response = anonymous_client.post(
         "/public/apply",
-        data={"job_id": str(job.id), "full_name": "On Time Applicant", "email": "ontime@example.com"},
+        data={"job_id": str(job.id), "consent": "true", "full_name": "On Time Applicant", "email": "ontime@example.com"},
         files={"resume": ("resume.docx", resume_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
     )
 

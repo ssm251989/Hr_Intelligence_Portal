@@ -55,6 +55,10 @@ class JobRole(Base, TenantOwned):
     publish_settings = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
     posting_url_naukri = Column(Text)
     posting_url_linkedin = Column(Text)
+    # Part 8 section 1 -- nullable: unset uses the tenant's default PipelineTemplate.
+    pipeline_template_id = Column(UUID(as_uuid=True), ForeignKey("pipeline_templates.id"))
+    # Part 8 section 3 -- career-site knockout questions: [{"question": str, "disqualify_on": str}].
+    knockout_questions_json = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
     # Set only when a real LinkedIn post was created via the API (see
     # app/jobs/router.py _try_post_to_linkedin) -- as opposed to posting_url_linkedin,
     # which is the manually-pasted fallback link used when there's no LinkedIn connection.

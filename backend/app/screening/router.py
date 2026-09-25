@@ -13,8 +13,9 @@ from app.models.application import Application
 from app.models.candidate import Candidate
 from app.models.interview import Interview
 from app.models.job_role import JobRole
-from app.models.screening_settings import ScreeningSettings
 from app.models.user import User
+from app.platform.settings.resolver import SettingContext, SettingsService
+from app.platform.tenancy.context import require_current_tenant
 from app.schemas.application import ApplicationRead
 from app.schemas.screening import ReEvaluateAllResult, ScreeningSettingsRead, ScreeningSettingsUpdate
 from app.screening.service import get_screening_settings, re_evaluate_all, run_screening
@@ -104,7 +105,7 @@ def rank_application(
     ] or None
 
     try:
-        result = rank_candidate(job.jd_text, match_data, interview_feedback)
+        result = rank_candidate(db, job.jd_text, match_data, interview_feedback)
     except CandidateRankingError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     ranking_score = float(result["composite_score"])
@@ -143,17 +144,22 @@ def update_settings(
     Partial update: only the pair(s) actually present in payload are written (see
     ScreeningSettingsUpdate's validator) -- the Candidates Dashboard's threshold form sends
     only dashboard_min/max_score, the Screening Dashboard's sends only interview_min/
-    max_score, and neither ever overwrites the other's pair."""
-    settings_row: ScreeningSettings = get_screening_settings(db)
+    max_score, and neither ever overwrites the other's pair. Writes land in Part 2's
+    Settings Registry at tenant scope (Part 8 migration -- see get_screening_settings's own
+    docstring)."""
+    tenant = require_current_tenant()
+    service = SettingsService(db)
+
+    def _set(key: str, value: float) -> None:
+        service.set(key, value, scope_type="tenant", scope_id=None, actor=current_user.email, tenant=tenant)
+
     if payload.dashboard_min_score is not None:
-        settings_row.dashboard_min_score = payload.dashboard_min_score
-        settings_row.dashboard_max_score = payload.dashboard_max_score
+        _set("recruitment.screening.dashboard_min_score", payload.dashboard_min_score)
+        _set("recruitment.screening.dashboard_max_score", payload.dashboard_max_score)
     if payload.interview_min_score is not None:
-        settings_row.interview_min_score = payload.interview_min_score
-        settings_row.interview_max_score = payload.interview_max_score
-    db.commit()
-    db.refresh(settings_row)
-    return settings_row
+        _set("recruitment.screening.interview_min_score", payload.interview_min_score)
+        _set("recruitment.screening.interview_max_score", payload.interview_max_score)
+    return get_screening_settings(db)
 
 
 @settings_router.post("/re-evaluate-all", response_model=ReEvaluateAllResult)

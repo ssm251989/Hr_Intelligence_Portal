@@ -1122,18 +1122,80 @@ export const coreHrApi = {
   letters: (employeeId: UUID) => get<{ id: UUID; template_key: string; generated_at: string | null; verification_token: string }[]>(`/api/v1/core-hr/employees/${employeeId}/letters`),
 };
 
+// ---- Recruitment platform (Part 8): pipeline, requisitions, availability, offer components ----
+
+export interface PipelineTemplateRow {
+  id: UUID;
+  name: string;
+  is_default: boolean;
+}
+
+export interface PipelineStageRow {
+  id: UUID;
+  code: string;
+  name_i18n: Record<string, string>;
+  order: number;
+  category: string;
+  sla_days: number | null;
+}
+
+export interface JobRequisitionRow {
+  id: UUID;
+  title: string;
+  reason: string;
+  headcount: number;
+  status: string;
+}
+
+export interface InterviewerAvailabilityRow {
+  id: UUID;
+  interviewer_email: string;
+  interviewer_name: string | null;
+  max_interviews_per_day: number | null;
+  max_interviews_per_week: number | null;
+  source: string;
+}
+
+export interface OfferComponentRow {
+  id: UUID;
+  code: string;
+  name: string;
+  type: string;
+  value: number;
+}
+
+export const recruitmentApi = {
+  seedDefaultPipelineTemplate: () => post<{ id: UUID; name: string; is_default: boolean }>("/api/v1/recruitment/pipeline-templates/seed-default"),
+  pipelineTemplates: () => get<PipelineTemplateRow[]>("/api/v1/recruitment/pipeline-templates"),
+  pipelineStages: (templateId: UUID) => get<PipelineStageRow[]>(`/api/v1/recruitment/pipeline-templates/${templateId}/stages`),
+
+  requisitions: (status?: string) => get<JobRequisitionRow[]>(`/api/v1/recruitment/requisitions${status ? `?status=${status}` : ""}`),
+  createRequisition: (payload: { title: string; reason?: string; headcount?: number; justification?: string }) =>
+    post<{ id: UUID; status: string }>("/api/v1/recruitment/requisitions", payload),
+  requestRequisitionApproval: (id: UUID) => post<{ applied: boolean; status?: string; workflow_instance_id?: UUID }>(`/api/v1/recruitment/requisitions/${id}/request-approval`),
+
+  interviewerAvailability: () => get<InterviewerAvailabilityRow[]>("/api/v1/recruitment/interviewer-availability"),
+  upsertInterviewerAvailability: (payload: { interviewer_email: string; interviewer_name?: string; max_interviews_per_day?: number; max_interviews_per_week?: number }) =>
+    put<{ id: UUID; interviewer_email: string }>("/api/v1/recruitment/interviewer-availability", payload),
+
+  offerComponents: () => get<OfferComponentRow[]>("/api/v1/recruitment/offer-components"),
+  createOfferComponent: (payload: { code: string; name: string; type: string; value: number }) => post<{ id: UUID; code: string }>("/api/v1/recruitment/offer-components", payload),
+};
+
 // ---- public careers portal (no auth) ----
 
 export const publicApi = {
   listJobs: () => get<PublicJobRead[]>("/public/jobs"),
   getJob: (jobId: UUID) => get<PublicJobRead>(`/public/jobs/${jobId}`),
-  apply: (payload: { jobId: UUID; fullName: string; email: string; phone?: string; resume: File }) => {
+  apply: (payload: { jobId: UUID; fullName: string; email: string; phone?: string; resume: File; consent: boolean; knockoutAnswers?: Record<string, string> }) => {
     const form = new FormData();
     form.append("job_id", payload.jobId);
     form.append("full_name", payload.fullName);
     form.append("email", payload.email);
     if (payload.phone) form.append("phone", payload.phone);
     form.append("resume", payload.resume);
+    form.append("consent", String(payload.consent));
+    if (payload.knockoutAnswers) form.append("knockout_answers", JSON.stringify(payload.knockoutAnswers));
     return postForm<PublicApplicationSubmitResponse>("/public/apply", form);
   },
 };

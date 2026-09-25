@@ -7,9 +7,9 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.integrations.google_calendar import APP_TIMEZONE, format_ist_datetime
 from app.interview_scheduling.negotiation import (
-    REQUIRED_PICKS,
     NegotiationPageState,
     TOKEN_EXPIRY_DAYS,
+    _parse_slot_hours,
     _slot_times_for_day,
     get_negotiation_form,
     submit_negotiation_response,
@@ -149,7 +149,7 @@ document.addEventListener('DOMContentLoaded', function () {
 """
 
 
-def _shell(inner_html: str, theme: dict, org_display_name: str) -> str:
+def _shell(inner_html: str, theme: dict, org_display_name: str, expiry_days: int = TOKEN_EXPIRY_DAYS) -> str:
     brand_name = escape(org_display_name.upper())
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -170,7 +170,7 @@ def _shell(inner_html: str, theme: dict, org_display_name: str) -> str:
     </div>
     {inner_html}
     <div class="footer-bar">
-      {ICON_CLOCK} These links expire in {TOKEN_EXPIRY_DAYS} days
+      {ICON_CLOCK} These links expire in {expiry_days} days
       <span class="sep">|</span>
       {ICON_MAIL} Need help? Reply to this email or contact your recruiter.
     </div>
@@ -180,30 +180,32 @@ def _shell(inner_html: str, theme: dict, org_display_name: str) -> str:
 """
 
 
-def _copy_for(row) -> tuple[str, str]:
+def _copy_for(row, slot_count: int) -> tuple[str, str]:
     """(heading, body copy) -- candidate sees the job title prominently; interviewer sees
-    the candidate's name plus the job title."""
+    the candidate's name plus the job title. `slot_count`/`row.required_picks` (Part 8
+    section 6 -- both are real, per-row-snapshotted tenant settings now, not always 3/2)."""
     job_title = escape(row.job_title or "this role")
+    required_picks = row.required_picks
     if row.role == "candidate":
         name = escape(row.candidate_name or "there")
         return (
             f"Hi {name},",
             f"We'd like to schedule your interview for the <strong class=\"job\">{job_title}</strong> "
-            f"position. Please pick exactly {REQUIRED_PICKS} of the 3 times below that work best for you.",
+            f"position. Please pick exactly {required_picks} of the {slot_count} times below that work best for you.",
         )
     name = escape(row.interviewer_name or "there")
     candidate_name = escape(row.candidate_name or "the candidate")
     return (
         f"Hi {name},",
-        f"Please pick exactly {REQUIRED_PICKS} of the 3 times below when you're available to interview "
+        f"Please pick exactly {required_picks} of the {slot_count} times below when you're available to interview "
         f"<strong class=\"job\">{candidate_name}</strong> for the {job_title} role.",
     )
 
 
 def _render_form(state: NegotiationPageState) -> str:
     row = state.row
-    heading, copy = _copy_for(row)
-    slot_times = _slot_times_for_day(row.round_day)
+    slot_times = _slot_times_for_day(row.round_day, _parse_slot_hours(row.slot_hours_json))
+    heading, copy = _copy_for(row, len(slot_times))
     checked = set(state.checked_isos)
 
     rows_html = []
@@ -244,7 +246,7 @@ def _render_form(state: NegotiationPageState) -> str:
               <div class="confirm-group">
                 <button type="submit" name="action" value="submit" id="submit-btn" class="btn btn-solid" disabled>
                   {ICON_CHECK} Submit My Selections</button>
-                <div class="confirm-subtext" id="slot-count">{len(checked)} of {REQUIRED_PICKS} selected</div>
+                <div class="confirm-subtext" id="slot-count">{len(checked)} of {row.required_picks} selected</div>
               </div>
             </div>
           </div>
@@ -261,7 +263,7 @@ def _render_form(state: NegotiationPageState) -> str:
         </div>
       </div>
     </div>
-    <script>var REQUIRED_PICKS = {REQUIRED_PICKS};{_SLOT_JS}</script>
+    <script>var REQUIRED_PICKS = {row.required_picks};{_SLOT_JS}</script>
     """
     return inner
 

@@ -162,7 +162,7 @@ def test_screen_application_not_found_returns_404(client):
 def test_rank_application_success(client, db_session, monkeypatch):
     monkeypatch.setattr(
         "app.screening.router.rank_candidate",
-        lambda jd_text, match_data, interview_feedback: FAKE_RANKING_RESULT,
+        lambda db, jd_text, match_data, interview_feedback: FAKE_RANKING_RESULT,
     )
 
     job = _make_job(db_session, jd_text="We need a backend engineer skilled in Python and FastAPI.")
@@ -192,7 +192,7 @@ def test_rank_application_success(client, db_session, monkeypatch):
 
 
 def test_rank_application_ai_failure_returns_502(client, db_session, monkeypatch):
-    def fake_rank_candidate(jd_text, match_data, interview_feedback):
+    def fake_rank_candidate(db, jd_text, match_data, interview_feedback):
         raise CandidateRankingError("Failed to rank candidate: AI service timed out")
 
     monkeypatch.setattr("app.screening.router.rank_candidate", fake_rank_candidate)

@@ -48,3 +48,44 @@ own Part 4 entry) instead of hardcoded HTML -- same behavior, new source. Module
 Inbox) is unaffected by this part; still on its pre-Part-4 code path, not yet rewired
 onto the new `InboundRouter` (that's this same row's own target PART -- still correctly
 future work, not a Part-4 regression). No other module's mail-sending code path changed.
+
+**Part 8 re-verification (done):** re-enumerated `backend/app/main.py`'s `include_router`
+calls -- all 13 modules still present, still routed, nothing dropped (2 new routers added:
+`app.core_hr.api_router`'s from Part 7 and this part's own `app.recruitment.api_router`).
+Not every row got a full live E2E re-check against tenant #1 this part (honest correction
+to this doc's own Part-1-era plan for this checkpoint, which assumed a uniform sweep) --
+what actually happened, per row:
+- **#2 Jobs**: `job_roles` gets `pipeline_template_id` (nullable) + `knockout_questions_
+  json`; real `job_requisitions`/`job_hiring_team_members` tables + API added alongside
+  it. The existing Jobs router/service itself is untouched -- 0 regressions (`test_jobs.py`/
+  `test_jobs_service.py` pass unchanged).
+- **#3 Candidates**: the public apply flow (`app/public/router.py`) now requires DPDP
+  `consent` and evaluates a job's own `knockout_questions_json`, tested end-to-end
+  including a real disqualification case (`test_public.py`, 26 passing incl. 2 new).
+- **#4 Screening**: `ScreeningSettings` (a separate singleton table) was fully migrated
+  onto Part 2's Settings Registry (`recruitment.screening.*`), with a real data migration
+  copying any existing tenant's thresholds forward -- `screening/service.py`/`router.py`
+  read/write through `SettingsService` now, table dropped. `candidate_ranker.py` migrated
+  onto `ai.gateway.complete()` + the new prompt registry (the other 7 `ai_services/*.py`
+  modules remain unmigrated, a documented gap). Live-verified: `test_screening_service.py`/
+  `test_screening.py`/`test_screening_settings.py`/`test_screening_dashboard.py`/
+  `test_candidate_ranker.py` all pass (99 + 3 tests).
+- **#6 Interviews**: `interviewer_availability` (real table) + `recruitment.negotiation.
+  busy_source` (internal/excel/calendar) now genuinely dispatch the negotiation flow's
+  busy-check, with tenant #1 explicitly pinned to `busy_source=excel` (preserving today's
+  exact live behavior -- see docs/build_log.md's own Part 8 note) while the schema default
+  (`internal`, Part 2's own choice) is real and tested for a future-migrated tenant.
+  `slots_offered`/`slots_to_pick`/`retry_day_offset` are real settings now, snapshotted
+  per-`NegotiationToken` row for correctness. Full existing suite (`test_interview_
+  negotiation.py` + 4 new Part 8 tests, `test_interviews_dashboard.py`, `test_scheduling.py`,
+  `test_interview_confirmation.py`, `test_interview_scheduling.py`) -- 148 passing, 0
+  regressions.
+- **#10 Offers**: `offers` gets `ctc_breakup_json`/`joining_date`/`expiry_date`/
+  `counter_offer_json`; a real `offer_components` catalog + `compute_ctc_breakup()`.
+  Existing offer generation/DocuSign/salary-band-breach approval flow (`offers/router.py`,
+  `salary/router.py`) is untouched -- `test_offers.py`/`test_salary.py` pass unchanged.
+- **#13 Careers portal**: covered under #3 above (same apply endpoint).
+- **#1 Overview, #5 Shortlisting, #7 HR Inbox, #8 Salary (its own row), #9 BGV, #11
+  Reports, #12 Settings**: not touched by this part at all -- their own target PARTs
+  (12, 9, 12) are unchanged, and their existing test suites were run as part of this
+  part's full-suite check with 0 regressions, but this part made no code change to them.

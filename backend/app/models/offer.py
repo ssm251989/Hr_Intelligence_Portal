@@ -1,5 +1,5 @@
-from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, String, Text, text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, CheckConstraint, Column, Date, DateTime, ForeignKey, String, Text, text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from app.core.database import Base
 from app.platform.tenancy.mixins import TenantOwned
@@ -25,3 +25,10 @@ class Offer(Base, TenantOwned):
     signed = Column(Boolean, server_default=text("false"))
     onboarding_status = Column(String(50), server_default=text("'not_started'"))
     created_at = Column(DateTime(timezone=True), server_default=text("now()"))
+    # Part 8 section 7 -- CTC breakup builder (display-only, see app/recruitment/ctc.py),
+    # joining-date confirmation, offer expiry & reminders, counter-offer tracking.
+    ctc_breakup_json = Column(JSONB)
+    joining_date = Column(Date)
+    expiry_date = Column(Date)
+    # [{"amount": float, "notes": str, "recorded_at": iso str}], oldest first.
+    counter_offer_json = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))

@@ -111,4 +111,16 @@ def register_all() -> None:
             register_permission("core_hr", resource, action)
     register_permission("core_hr", "employee", "view_sensitive")
 
+    # Part 8: configurable pipeline, requisitions, interviewer availability, prompt
+    # registry -- new resources under the already-registered "recruitment" module.
+    register_permission("recruitment", "pipeline", "view")
+    register_permission("recruitment", "pipeline", "configure")
+    register_permission("recruitment", "requisition", "view")
+    register_permission("recruitment", "requisition", "create")
+    register_permission("recruitment", "requisition", "approve")
+    register_permission("recruitment", "availability", "view")
+    register_permission("recruitment", "availability", "configure")
+    register_permission("recruitment", "prompt", "view")
+    register_permission("recruitment", "prompt", "configure")
+
     _registered = True

@@ -66,12 +66,12 @@ from app.core.config import settings
 from app.integrations.google_calendar import APP_TIMEZONE, DEFAULT_INTERVIEW_DURATION_MINUTES, format_ist_datetime
 from app.integrations.hr_email import EmailAttachment, get_hr_integration, is_smtp_configured, send_hr_email, SmtpError
 from app.integrations.ics import build_interview_ics
+from app.interview_scheduling.availability import is_interviewer_busy
 from app.interview_scheduling.storage import get_interview_scheduling_settings
 from app.interview_scheduling.tracker import (
     append_interview_log_row,
     eligible_interviewers_for_job,
     email_for_interviewer,
-    interviewer_busy_this_week,
     sync_interviewer_pool_job_titles,
     TrackerFileLockedError,
 )
@@ -88,18 +88,49 @@ from app.platform.comms.theme import get_theme_and_org_context
 from app.platform.settings.resolver import SettingContext, SettingsService
 from app.platform.tenancy.context import require_current_tenant
 
-# Slot options offered for one negotiated day -- fixed, not derived from any candidate
-# time-preference input (this app has none), per spec.
-SLOT_HOURS_IST = (time(10, 0), time(15, 0), time(18, 0))
+# Candidate slot times for one negotiated day -- fixed clock times, not derived from any
+# candidate time-preference input (this app has none), per spec. Part 8 section 6 makes
+# the COUNT offered (recruitment.negotiation.slots_offered) and the pick count
+# (recruitment.negotiation.slots_to_pick) real tenant settings -- this tuple is the
+# canonical ordered superset a tenant's `slots_offered` count draws its first N from; its
+# own first 3 entries are exactly this flow's original, still-default (10AM/3PM/6PM)
+# times, so the schema-registered default of 3 reproduces the original behavior exactly.
+_CANONICAL_SLOT_HOURS_IST = (time(10, 0), time(15, 0), time(18, 0), time(11, 0), time(14, 0), time(16, 0))
 
-# How many of SLOT_HOURS_IST a recipient must pick -- exactly, not "at least". Named so the
-# validation in submit_negotiation_response and the frontend JS enable/disable logic in
-# render_negotiation_page both read from the same source of truth.
-REQUIRED_PICKS = 2
-
-# Same window InterviewConfirmationToken already uses for its own links -- no reason for a
-# different lifetime for this flow's own links.
+# Fallback default only -- every real call site below resolves slot_hours/slots_to_pick
+# from Part 2's Settings Registry (via _negotiation_mechanics) or, past row-creation time,
+# from the NegotiationToken row's own snapshotted slot_hours_json/required_picks (see that
+# model's own docstring for why creation-time values are snapshotted rather than re-read
+# live). TOKEN_EXPIRY_DAYS is NOT one of section 6's own named "negotiation mechanics from
+# settings" (slots_offered/slots_to_pick/double_blind/retry_day_offset/max_retry_days/pool
+# walk order) -- kept a plain constant, unchanged from this flow's original behavior.
+_DEFAULT_SLOT_HOURS_IST = _CANONICAL_SLOT_HOURS_IST[:3]
+_DEFAULT_REQUIRED_PICKS = 2
 TOKEN_EXPIRY_DAYS = 5
+
+
+def _negotiation_mechanics(db: Session, tenant) -> dict:
+    """Resolves recruitment.negotiation.* (Part 2's own already-registered SettingDefs,
+    see platform/settings/bootstrap_definitions.py) ONCE per row-creation call site --
+    downstream reads of an already-created row use its own snapshot instead (see
+    NegotiationToken's own docstring)."""
+    ctx = SettingContext(tenant=tenant)
+    service = SettingsService(db)
+    slots_offered = max(1, min(int(service.get("recruitment.negotiation.slots_offered", ctx)), len(_CANONICAL_SLOT_HOURS_IST)))
+    return {
+        "slot_hours": list(_CANONICAL_SLOT_HOURS_IST[:slots_offered]),
+        "slots_to_pick": int(service.get("recruitment.negotiation.slots_to_pick", ctx)),
+        "retry_day_offset": int(service.get("recruitment.negotiation.retry_day_offset", ctx)),
+        "busy_source": service.get("recruitment.negotiation.busy_source", ctx),
+    }
+
+
+def _format_slot_hours(hours: list) -> list:
+    return [h.strftime("%H:%M") for h in hours]
+
+
+def _parse_slot_hours(values: list) -> list:
+    return [time.fromisoformat(v) for v in values] if values else list(_DEFAULT_SLOT_HOURS_IST)
 
 _SKIP_ACTION = "interview_negotiation_skipped"
 _ATTEMPT_ACTION = "interview_negotiation_interviewer_attempt"
@@ -187,8 +218,8 @@ def _tomorrow_ist(now: datetime) -> date:
     return (now.astimezone(APP_TIMEZONE) + timedelta(days=1)).date()
 
 
-def _slot_times_for_day(day: date) -> list[datetime]:
-    return [datetime.combine(day, hour, tzinfo=APP_TIMEZONE).astimezone(timezone.utc) for hour in SLOT_HOURS_IST]
+def _slot_times_for_day(day: date, slot_hours: list) -> list[datetime]:
+    return [datetime.combine(day, hour, tzinfo=APP_TIMEZONE).astimezone(timezone.utc) for hour in slot_hours]
 
 
 def _format_slot(slot_time: datetime) -> str:
@@ -391,14 +422,25 @@ def _create_negotiation_row(
     interviewer_email: Optional[str] = None,
     round_day: date,
     tracker_path: str,
+    slot_hours_json: Optional[list] = None,
+    required_picks: Optional[int] = None,
     now: Optional[datetime] = None,
 ) -> NegotiationToken:
+    """slot_hours_json/required_picks: what was ACTUALLY offered, snapshotted onto the row
+    (see NegotiationToken's own docstring) -- pass the live-resolved values (via
+    _negotiation_mechanics) when starting a genuinely NEW round, or copy an existing row's
+    own slot_hours_json/required_picks forward when continuing the SAME round (candidate
+    round after an interviewer's picks, or a defensive re-prompt) so every recipient of one
+    round sees identical times/pick-count. Falls back to this flow's original defaults if
+    omitted."""
     now = now or datetime.now(timezone.utc)
     row = NegotiationToken(
         application_id=application.id, role=role, interviewer_user_id=interviewer_user_id,
         actor_email=actor_email, candidate_name=candidate_name, job_title=job_title,
         interviewer_name=interviewer_name, interviewer_email=interviewer_email, round_day=round_day,
         tracker_path=str(tracker_path), token=secrets.token_urlsafe(32),
+        slot_hours_json=slot_hours_json if slot_hours_json is not None else _format_slot_hours(_DEFAULT_SLOT_HOURS_IST),
+        required_picks=required_picks if required_picks is not None else _DEFAULT_REQUIRED_PICKS,
         # Explicit Python wall-clock time, not the column's server_default=now() -- Postgres
         # now() is pinned to the enclosing transaction's start time, so two rows created
         # moments apart in the SAME transaction (e.g. a defensive candidate re-prompt, which
@@ -502,22 +544,33 @@ def _advance_interviewer_round(
     their own personal Google connection (unlike the older service.py select_interviewer
     flow, which needs both to run its own real-time Calendar availability check) -- the
     tenant's shared HR mailbox connection is this app's single account of record for
-    every email this mechanic sends, interviewer and candidate alike, and availability here
-    is decided entirely by tracker.interviewer_busy_this_week's own Excel-log heuristic,
-    which reads nothing from any personal calendar or User row. An interviewer's Mails-sheet
-    address is the only thing that makes them reachable.
+    every email this mechanic sends, interviewer and candidate alike. Availability is
+    decided by whichever recruitment.negotiation.busy_source this tenant has configured
+    (Part 8 section 6, see app.interview_scheduling.availability.is_interviewer_busy) --
+    "excel" (the default this build preserves for tenant #1) reads nothing but
+    tracker.interviewer_busy_this_week's own Excel-log heuristic, exactly as this flow
+    always has; "internal"/"calendar" are real alternatives that need nothing from the
+    tracker beyond the pool listing itself.
     """
+    mechanics = _negotiation_mechanics(db, require_current_tenant())
     pool = eligible_interviewers_for_job(Path(tracker_path), job.title)
+    slot_times = _slot_times_for_day(round_day, mechanics["slot_hours"])
 
     tried = _already_attempted_names(db, application, round_day)
     for name in pool:
         name_key = name.strip().lower()
         if name_key in tried:
             continue
-        if interviewer_busy_this_week(Path(tracker_path), name):
+        # Resolved before the busy check (a harmless reordering -- email_for_interviewer is
+        # a pure, side-effect-free Mails-sheet lookup) since internal/calendar busy-checking
+        # needs the email too, unlike the excel check, which only ever needed the name.
+        email = email_for_interviewer(Path(tracker_path), name)
+        if is_interviewer_busy(
+            db, require_current_tenant(), busy_source=mechanics["busy_source"], tracker_path=tracker_path,
+            interviewer_name=name, interviewer_email=email, day=round_day, slot_times=slot_times,
+        ):
             _log_attempt(db, application, actor_user.email, name, round_day, "busy_this_week")
             continue
-        email = email_for_interviewer(Path(tracker_path), name)
         if not email:
             _log_attempt(db, application, actor_user.email, name, round_day, "no_email_on_file")
             continue
@@ -526,13 +579,14 @@ def _advance_interviewer_round(
             db, application=application, role="interviewer", interviewer_user_id=None,
             interviewer_email=email, actor_email=actor_user.email, candidate_name=candidate.full_name,
             job_title=job.title, interviewer_name=name, round_day=round_day, tracker_path=tracker_path,
+            slot_hours_json=_format_slot_hours(mechanics["slot_hours"]), required_picks=mechanics["slots_to_pick"],
         )
         try:
             subject, text_body, html_body = _render_negotiation_email(
                 db, "recruitment.negotiation.interviewer_offer",
                 candidate_name=candidate.full_name or "a candidate", job_title=job.title,
                 round_day=round_day.strftime("%d %b %Y"), picker_url=_token_url(row.token),
-                required_picks=REQUIRED_PICKS, token_expiry_days=TOKEN_EXPIRY_DAYS,
+                required_picks=mechanics["slots_to_pick"], token_expiry_days=TOKEN_EXPIRY_DAYS,
             )
         except NegotiationEmailRenderError:
             # Same "row already committed live, must not survive an email that never
@@ -553,7 +607,7 @@ def _advance_interviewer_round(
                 Path(tracker_path),
                 {
                     "Candidate": candidate.full_name or "", "Job Title": job.title, "Assigned Interviewer": name,
-                    "Slots Offered": ", ".join(_format_slot(t) for t in _slot_times_for_day(round_day)),
+                    "Slots Offered": ", ".join(_format_slot(t) for t in slot_times),
                     "Status": "Awaiting Interviewer Response",
                 },
             )
@@ -805,9 +859,13 @@ def advance_after_interviewer_batch_resolved(db: Session, application: Applicati
 
 
 def _start_candidate_round(db: Session, application: Application, interviewer_row: NegotiationToken) -> None:
-    """Called once an interviewer submits their 2 picks -- emails the candidate the SAME 3
-    canned times independently (recruitment.negotiation.candidate_offer, see
-    _render_negotiation_email), blind to which 2 the interviewer chose."""
+    """Called once an interviewer submits their picks -- emails the candidate the SAME
+    times independently (recruitment.negotiation.candidate_offer, see
+    _render_negotiation_email), blind to which ones the interviewer chose. Copies
+    interviewer_row's own slot_hours_json/required_picks forward rather than re-resolving
+    live settings -- both sides of one round must see identical times/pick-count even if
+    a tenant changes its negotiation settings between the interviewer's response and this
+    call (see NegotiationToken's own docstring)."""
     settings_row = get_interview_scheduling_settings(db)
     tracker_path = settings_row.tracker_path
     candidate = db.get(Candidate, application.candidate_id)
@@ -825,12 +883,13 @@ def _start_candidate_round(db: Session, application: Application, interviewer_ro
         interviewer_email=interviewer_row.interviewer_email,
         actor_email=interviewer_row.actor_email, candidate_name=candidate.full_name, job_title=job.title,
         interviewer_name=interviewer_row.interviewer_name, round_day=interviewer_row.round_day, tracker_path=tracker_path,
+        slot_hours_json=interviewer_row.slot_hours_json, required_picks=interviewer_row.required_picks,
     )
     try:
         subject, text_body, html_body = _render_negotiation_email(
             db, "recruitment.negotiation.candidate_offer",
             candidate_name=candidate.full_name or "there", job_title=job.title,
-            picker_url=_token_url(row.token), required_picks=REQUIRED_PICKS, token_expiry_days=TOKEN_EXPIRY_DAYS,
+            picker_url=_token_url(row.token), required_picks=row.required_picks, token_expiry_days=TOKEN_EXPIRY_DAYS,
         )
     except NegotiationEmailRenderError as exc:
         _invalidate_batch(db, [row])
@@ -920,12 +979,13 @@ def _reprompt_candidate(db: Session, application: Application, candidate_row: Ne
         interviewer_email=candidate_row.interviewer_email,
         actor_email=candidate_row.actor_email, candidate_name=candidate_row.candidate_name, job_title=candidate_row.job_title,
         interviewer_name=candidate_row.interviewer_name, round_day=candidate_row.round_day, tracker_path=tracker_path,
+        slot_hours_json=candidate_row.slot_hours_json, required_picks=candidate_row.required_picks,
     )
     try:
         subject, text_body, html_body = _render_negotiation_email(
             db, "recruitment.negotiation.candidate_reprompt",
             candidate_name=candidate.full_name or "there", job_title=job.title,
-            picker_url=_token_url(new_row.token), required_picks=REQUIRED_PICKS, token_expiry_days=TOKEN_EXPIRY_DAYS,
+            picker_url=_token_url(new_row.token), required_picks=new_row.required_picks, token_expiry_days=TOKEN_EXPIRY_DAYS,
         )
     except NegotiationEmailRenderError as exc:
         _invalidate_batch(db, [new_row])
@@ -1146,11 +1206,12 @@ def submit_negotiation_response(
 ) -> NegotiationPageState:
     """The single entry point behind POST /interview-negotiation/{token}. `action` is
     "decline" or "submit" (the form's two distinct submit buttons); `selected_isos` is
-    whatever the "slots" checkboxes sent, deduped and filtered down to this round_day's real
-    3 canned times before anything is trusted -- a submission is only ever accepted with
-    exactly REQUIRED_PICKS of those. An invalid count re-renders the same form with `error`
-    set rather than failing outright, since a JS-disabled browser or a slow double-submit
-    can genuinely reach this without any bad intent."""
+    whatever the "slots" checkboxes sent, deduped and filtered down to this round's own
+    snapshotted `slot_hours_json` times (see NegotiationToken's own docstring) before
+    anything is trusted -- a submission is only ever accepted with exactly the row's own
+    `required_picks` of those. An invalid count re-renders the same form with `error` set
+    rather than failing outright, since a JS-disabled browser or a slow double-submit can
+    genuinely reach this without any bad intent."""
     now = now or datetime.now(timezone.utc)
     status, row = _lookup_row(db, token, now)
     if status != "pending":
@@ -1167,12 +1228,13 @@ def submit_negotiation_response(
         _resolve_declined(db, application, row)
         return NegotiationPageState(status="declined", row=row)
 
-    valid_isos = {t.isoformat() for t in _slot_times_for_day(row.round_day)}
+    valid_isos = {t.isoformat() for t in _slot_times_for_day(row.round_day, _parse_slot_hours(row.slot_hours_json))}
     chosen = [iso for iso in dict.fromkeys(selected_isos) if iso in valid_isos]
-    if len(chosen) != REQUIRED_PICKS:
+    required_picks = row.required_picks or _DEFAULT_REQUIRED_PICKS
+    if len(chosen) != required_picks:
         return NegotiationPageState(
             status="form", row=row, checked_isos=chosen,
-            error=f"Please select exactly {REQUIRED_PICKS} time options before submitting.",
+            error=f"Please select exactly {required_picks} time options before submitting.",
         )
 
     row.responded_at = now

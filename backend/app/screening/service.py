@@ -3,7 +3,7 @@
 Extends the AI resume-matching call (app/ai_services/resume_matcher.match_resume) with
 an equal-weighted composite score across five factors, and decides whether an
 application should auto-advance to 'screened' based on the configurable dashboard
-threshold (app/models/screening_settings.py). Used by:
+threshold (Part 2 Settings Registry (recruitment.screening.*)). Used by:
   - The manual "Screen Candidate" button (app/screening/router.py screen_application).
   - Automatic screening right after a resume is parsed (app/candidates/router.py
     parse_and_apply_resume), for a candidate whose application(s) already have a job
@@ -14,6 +14,7 @@ threshold (app/models/screening_settings.py). Used by:
 """
 
 import re
+from dataclasses import dataclass
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -23,7 +24,8 @@ from app.audit.service import log_action
 from app.models.application import Application
 from app.models.candidate import Candidate
 from app.models.job_role import JobRole
-from app.models.screening_settings import ScreeningSettings
+from app.platform.settings.resolver import SettingContext, SettingsService
+from app.platform.tenancy.context import require_current_tenant
 
 FACTOR_COUNT = 5
 
@@ -126,7 +128,7 @@ def describe_interview_readiness(action: str, details: dict) -> str:
     same ai_screening_scored/ai_screening_failed audit_log entry describe_screening_audit_
     entry above renders for the Candidates List, but describing something different:
     whether the score cleared the *separate*, Screening-owned interview_min_score threshold
-    (see app/models/screening_settings.py), not the Candidates Dashboard's own threshold.
+    (see Part 2 Settings Registry (recruitment.screening.*)), not the Candidates Dashboard's own threshold.
 
     Purely descriptive -- interview_ready is a computed indicator recorded on the audit_log
     entry at scoring time (see run_screening below), never a status change. Whether an
@@ -148,21 +150,32 @@ def describe_interview_readiness(action: str, details: dict) -> str:
     return f"Below interview threshold{score_text}"
 
 
-def get_screening_settings(db: Session) -> ScreeningSettings:
-    """The singleton settings row (id=1), seeded by migration e1f3a7c9b2d4 (dashboard
-    threshold) and b3f8e6a2d5c9 (interview threshold). Defensively creates it if somehow
-    missing (e.g. a test DB that ran migrations before this table existed) rather than
-    crashing screening outright."""
-    settings_row = db.get(ScreeningSettings, 1)
-    if settings_row is None:
-        settings_row = ScreeningSettings(
-            id=1, dashboard_min_score=60, dashboard_max_score=100,
-            interview_min_score=75, interview_max_score=100,
-        )
-        db.add(settings_row)
-        db.commit()
-        db.refresh(settings_row)
-    return settings_row
+@dataclass
+class ScreeningThresholds:
+    """Replaces the old `ScreeningSettings` singleton row (Part 8 section 4 -- migrated
+    onto Part 2's Settings Registry, `recruitment.screening.*`, per docs/hardcode_
+    inventory.md's own target for this exact table). Same 4-field shape the old ORM row
+    had, so every existing caller below is unaffected beyond its import."""
+
+    dashboard_min_score: float
+    dashboard_max_score: float
+    interview_min_score: float
+    interview_max_score: float
+
+
+def get_screening_settings(db: Session) -> ScreeningThresholds:
+    """Reads the tenant's current thresholds fresh via SettingsService on every call --
+    same "never a value cached at some earlier point" guarantee the old singleton row
+    already had (SettingsService's own cache is invalidated synchronously on every write,
+    see its own module docstring)."""
+    ctx = SettingContext(tenant=require_current_tenant())
+    service = SettingsService(db)
+    return ScreeningThresholds(
+        dashboard_min_score=float(service.get("recruitment.screening.dashboard_min_score", ctx)),
+        dashboard_max_score=float(service.get("recruitment.screening.dashboard_max_score", ctx)),
+        interview_min_score=float(service.get("recruitment.screening.interview_min_score", ctx)),
+        interview_max_score=float(service.get("recruitment.screening.interview_max_score", ctx)),
+    )
 
 
 def compute_experience_score(

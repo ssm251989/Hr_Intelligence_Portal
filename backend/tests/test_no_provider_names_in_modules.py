@@ -17,7 +17,7 @@ BACKEND_APP = Path(__file__).resolve().parents[1] / "app"
 BUSINESS_PACKAGES = (
     "candidates", "screening", "shortlisting", "jobs", "scheduling", "interview_scheduling",
     "salary", "bgv", "offers", "reports", "users", "auth", "public", "hr_inbox",
-    "local_import", "ai_services", "audit",
+    "local_import", "ai_services", "audit", "core_hr", "recruitment",
 )
 
 
@@ -48,9 +48,11 @@ def test_no_business_module_imports_a_provider_adapter_directly():
 
 def test_no_business_module_imports_a_specific_provider_sdk_used_by_the_new_framework():
     """A softer, forward-looking check: none of these packages should import the anthropic
-    SDK directly either -- ai_services/*.py still does today (not yet migrated onto
-    ai.gateway.complete(), see docs/build_log.md's own Part 3 scope note) so this is
-    recorded, not asserted, to avoid failing on a known, already-documented gap."""
+    SDK directly either -- most of ai_services/*.py still doesn't (not yet migrated onto
+    ai.gateway.complete(), see docs/build_log.md's own Part 3/8 scope notes) so this is
+    recorded, not asserted, to avoid failing on a known, already-documented gap.
+    `candidate_ranker.py` was migrated in Part 8 (see its own module docstring) and is no
+    longer in this list."""
     offenders: list[str] = []
     for package in BUSINESS_PACKAGES:
         package_dir = BACKEND_APP / package
@@ -59,12 +61,12 @@ def test_no_business_module_imports_a_specific_provider_sdk_used_by_the_new_fram
         for py_file in package_dir.rglob("*.py"):
             if "anthropic" in _imports_in(py_file):
                 offenders.append(str(py_file.relative_to(BACKEND_APP)))
-    # Known, documented gap (ai_services/*.py) -- not yet wired to ai.gateway. Normalized
-    # to forward slashes + sorted -- rglob() order/path separators aren't guaranteed
-    # consistent across platforms.
+    # Known, documented gap (ai_services/*.py minus candidate_ranker.py) -- not yet wired
+    # to ai.gateway. Normalized to forward slashes + sorted -- rglob() order/path
+    # separators aren't guaranteed consistent across platforms.
     normalized = sorted(o.replace("\\", "/") for o in offenders)
     assert normalized == [
-        "ai_services/candidate_ranker.py", "ai_services/document_validator.py",
+        "ai_services/document_validator.py",
         "ai_services/interview_question_generator.py", "ai_services/jd_generator.py",
         "ai_services/offer_letter_generator.py", "ai_services/resume_matcher.py",
         "ai_services/resume_parser.py", "ai_services/shortlist_feedback_generator.py",

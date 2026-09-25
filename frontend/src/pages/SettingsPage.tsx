@@ -22,6 +22,7 @@ import AccessControlPanel from "../components/AccessControlPanel";
 import WorkflowsPanel from "../components/WorkflowsPanel";
 import MetadataPanel from "../components/MetadataPanel";
 import CoreHrPanel from "../components/CoreHrPanel";
+import RecruitmentPanel from "../components/RecruitmentPanel";
 import MfaSettingsCard from "../components/MfaSettingsCard";
 
 function IntegrationCard({
@@ -162,6 +163,7 @@ export default function SettingsPage() {
         {canManagePlatformSettings && <WorkflowsPanel />}
         {canManagePlatformSettings && <MetadataPanel />}
         {canManagePlatformSettings && <CoreHrPanel />}
+        {canManagePlatformSettings && <RecruitmentPanel />}
         {canManagePlatformSettings && <PlatformSettingsPanel />}
       </Stack>
     </Box>

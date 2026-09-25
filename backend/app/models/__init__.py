@@ -28,6 +28,7 @@ from app.models.core_hr import (
     Location,
     Position,
 )
+from app.models.hiring_team import JobHiringTeamMember
 from app.models.hr_inbound_email import HrInboundEmail
 from app.models.hr_integration import HrIntegration
 from app.models.iam import (
@@ -46,12 +47,16 @@ from app.models.iam import (
 from app.models.interview import Interview
 from app.models.interview_confirmation_token import InterviewConfirmationToken
 from app.models.interview_scheduling_settings import InterviewSchedulingSettings
+from app.models.interviewer_availability import InterviewerAvailability
 from app.models.job_role import JobRole
 from app.models.local_import_settings import LocalImportSettings
 from app.models.metadata import CustomFieldDef, FormLayout, FxRate, I18nOverride, MasterType, MasterValue, MetaForm, Sequence
 from app.models.negotiation_token import NegotiationToken
 from app.models.offer import Offer
-from app.models.screening_settings import ScreeningSettings
+from app.models.offer_component import OfferComponent
+from app.models.pipeline import PipelineStage, PipelineTemplate
+from app.models.prompt import PromptTemplate
+from app.models.requisition import JobRequisition
 from app.models.secret import Secret, SecretScope
 from app.models.setting_value import SettingValue, SettingValueHistory
 from app.models.user import User
@@ -107,11 +112,13 @@ __all__ = [
     "RoleAssignment",
     "UserDelegation",
     "UserDevice",
+    "JobHiringTeamMember",
     "HrInboundEmail",
     "HrIntegration",
     "Interview",
     "InterviewConfirmationToken",
     "InterviewSchedulingSettings",
+    "InterviewerAvailability",
     "JobRole",
     "LocalImportSettings",
     "CustomFieldDef",
@@ -124,7 +131,11 @@ __all__ = [
     "Sequence",
     "NegotiationToken",
     "Offer",
-    "ScreeningSettings",
+    "OfferComponent",
+    "PipelineStage",
+    "PipelineTemplate",
+    "PromptTemplate",
+    "JobRequisition",
     "Secret",
     "SecretScope",
     "SettingValue",

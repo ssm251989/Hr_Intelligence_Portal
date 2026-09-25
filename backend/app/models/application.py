@@ -56,3 +56,7 @@ class Application(Base, TenantOwned):
     updated_at = Column(DateTime(timezone=True), server_default=text("now()"))
     # Part 6 section 1 -- see candidates.py's own custom_fields column comment.
     custom_fields = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    # Part 8 section 3 -- DPDP consent capture at career-site apply time. Both null for any
+    # application not created through the public apply flow (e.g. local import).
+    consent_given_at = Column(DateTime(timezone=True))
+    consent_version = Column(Text)

@@ -3,6 +3,8 @@ import type { ChangeEvent, FormEvent } from "react";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Checkbox from "@mui/material/Checkbox";
+import FormControlLabel from "@mui/material/FormControlLabel";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
@@ -23,6 +25,7 @@ export default function CareersApplyPage() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [resume, setResume] = useState<File | null>(null);
+  const [consent, setConsent] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,11 +59,15 @@ export default function CareersApplyPage() {
       setError("Please attach your resume.");
       return;
     }
+    if (!consent) {
+      setError("Please confirm you consent to your data being processed for this application.");
+      return;
+    }
 
     setSubmitting(true);
     setError(null);
     try {
-      await publicApi.apply({ jobId: id, fullName, email, phone: phone || undefined, resume });
+      await publicApi.apply({ jobId: id, fullName, email, phone: phone || undefined, resume, consent });
       navigate(`/careers/${id}/thank-you`);
     } catch (err) {
       setError(extractErrorMessage(err, "Failed to submit your application. Please try again."));
@@ -127,6 +134,11 @@ export default function CareersApplyPage() {
               <input type="file" hidden accept=".pdf,.docx" onChange={handleFileChange} />
             </Button>
           </Box>
+
+          <FormControlLabel
+            control={<Checkbox checked={consent} onChange={(e) => setConsent(e.target.checked)} />}
+            label="I consent to my personal data being processed for this application, in line with the privacy policy."
+          />
 
           <Button type="submit" variant="contained" size="large" disabled={submitting}>
             {submitting ? "Submitting..." : "Submit Application"}
