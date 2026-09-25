@@ -104,6 +104,15 @@ def register_all() -> None:
     register(SettingDef("ai.models.offer_letter_generation", "str", model_catalog.OFFER_LETTER_GENERATION, module="ai", group="AI Models"))
     register(SettingDef("ai.models.jd_generation", "str", model_catalog.JD_GENERATION, module="ai", group="AI Models"))
 
+    # onboarding.* -- Part 9: pre-boarding portal + BGV + conversion policy.
+    register(SettingDef("onboarding.portal.link_ttl_days", "int", 45, module="onboarding", group="Pre-boarding"))
+    register(SettingDef("onboarding.portal.required_forms", "json", [], module="onboarding", group="Pre-boarding"))  # [form key]
+    register(SettingDef("onboarding.portal.required_policies", "json", [], module="onboarding", group="Pre-boarding"))  # [policy code]
+    register(SettingDef("onboarding.documents.required_types", "json", [], module="onboarding", group="Pre-boarding"))  # [document_type master code]
+    register(SettingDef("onboarding.bgv.default_package", "json", ["identity", "education", "employment"], module="onboarding", group="Background Verification"))
+    register(SettingDef("onboarding.bgv.block_conversion_until_clear", "bool", False, module="onboarding", group="Background Verification"))
+    register(SettingDef("onboarding.conversion.default_plan_template", "str", "", module="onboarding", group="Conversion"))
+
     # iam.auth.* -- Part 5A section 1's own per-tenant-configurable auth policy. Platform
     # defaults are conservative but NOT locked-on (mfa_required defaults false) --
     # flipping mfa_required on for a real, already-logged-in tenant is this tenant's own

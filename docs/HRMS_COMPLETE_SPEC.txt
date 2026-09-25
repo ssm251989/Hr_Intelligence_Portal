@@ -17,18 +17,26 @@ PART 1 to PART 14 top to bottom, because later parts use earlier ones.
    document arrived.
 2. Create a branch `hrms-platform` and build there, not on main.
 3. Commit + push after each PART (message "part-N: <title>"). Before
-   each commit: grep for that part's "Checks" symbols and run that
-   part's tests; quote the literal output in the commit summary.
-4. Testing: while working, run only the relevant test files. Run the FULL
-   suite once at the end of each PART and once at the very end.
+   each commit: grep for that part's "Checks" symbols only (quick).
+4. TESTING IS DEFERRED (owner directive 2026-09-25): do NOT run any test
+   suite - full or per-file, backend or frontend - during the build.
+   Write the tests each part asks for, but do not execute them. Only
+   quick non-test checks are allowed: grep for symbols, `python -m
+   compileall -q app` / import check, `npx tsc --noEmit`, and alembic
+   upgrade on the dev DB so the app still starts.
+   Order of work: (a) build PART 1-14 end to end, (b) apply the owner's
+   change requests, (c) THEN one complete end-to-end test pass (full
+   backend + frontend suites in chunks, fix failures, manual smoke test
+   of all 13 original modules).
 5. Keep a running log `docs/build_log.md`: part, commit hash, tests
    passed, anything deferred and why.
 6. Never delete data. The tenant #1 migration runs --dry-run first,
    saves its report in docs/, then runs for real.
 7. The current 13 modules must keep working at every commit. See
    the parity checklist in Part 1.
-8. At the end: merge to main only after the full suite is green, the
-   hardcode guard test passes, and the parity checklist is 100%.
+8. At the end (after step 4c): merge to main only after the full suite
+   is green, the hardcode guard test passes, and the parity checklist
+   is 100%. Never merge to main before the end-to-end test pass.
 
 ---------------------------------------------------------------------
 A. THE NON-NEGOTIABLE RULE: ZERO CLIENT-SPECIFIC STATIC VALUES

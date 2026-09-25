@@ -1348,3 +1348,20 @@ locatable). Live E2E on tenant #1: `hrctl.seed_pipeline` seeded a real 19-stage 
 template against the live dev DB; `recruitment.negotiation.busy_source` was set to
 `"excel"` via a real `SettingsService.set()` write against the live dev DB, verified by
 re-reading it back.
+
+## Standing directive update (from user, 2026-09-25) -- TESTING DEFERRED
+
+Recorded in docs/HRMS_COMPLETE_SPEC.txt instructions 3-4. Supersedes the earlier
+"run that part's new/changed test files" rule:
+- Do NOT run any test suite -- full or per-file, backend or frontend -- during the build.
+  Tests each part asks for are still WRITTEN, just not executed.
+- Allowed quick checks only: grep for the part's CHECKS symbols, `python -m compileall -q
+  app` / import check, `npx tsc --noEmit`, `alembic upgrade head` on the dev DB.
+- Order: (a) build Parts 1-14 end to end, (b) owner's change requests, (c) THEN one full
+  end-to-end test pass (full backend + frontend suites in chunks, fix failures, manual
+  smoke test of all 13 original modules).
+- After Part 14: STOP and report -- the owner gives change requests before any testing.
+- Per-part test status in this log from here on reads "written, not executed (deferred)".
+
+Part 9 was mid-build when this arrived: its models/services were committed as-is
+(`part-9 (wip)`), import-checked only, then Part 9 was finished in a follow-up commit.

@@ -28,6 +28,15 @@ from app.models.core_hr import (
     Location,
     Position,
 )
+from app.models.onboarding import (
+    AssignmentRule,
+    BgvCase,
+    OnboardingPlan,
+    OnboardingPlanTemplate,
+    OnboardingTask,
+    PreboardingCase,
+    PreboardingDocument,
+)
 from app.models.hiring_team import JobHiringTeamMember
 from app.models.hr_inbound_email import HrInboundEmail
 from app.models.hr_integration import HrIntegration
@@ -130,6 +139,13 @@ __all__ = [
     "MetaForm",
     "Sequence",
     "NegotiationToken",
+    "AssignmentRule",
+    "BgvCase",
+    "OnboardingPlan",
+    "OnboardingPlanTemplate",
+    "OnboardingTask",
+    "PreboardingCase",
+    "PreboardingDocument",
     "Offer",
     "OfferComponent",
     "PipelineStage",

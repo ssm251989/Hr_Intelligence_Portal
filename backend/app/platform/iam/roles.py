@@ -77,6 +77,9 @@ _FLAT_ROLE_BRIDGE = {
     "recruiter": "Recruiter",
     "hiring_manager": "Hiring Manager",
     "interviewer": "Interviewer",
+    # Part 9: a converted new hire's own login (onboarding/conversion.py) -- never
+    # self-registrable, never admin-creatable via AdminUserCreate's Literal.
+    "employee": "Employee",
 }
 
 

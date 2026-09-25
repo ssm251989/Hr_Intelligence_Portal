@@ -4,7 +4,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-USER_ROLES = ("recruiter", "hiring_manager", "interviewer", "admin")
+USER_ROLES = ("recruiter", "hiring_manager", "interviewer", "admin", "employee")
 PUBLIC_REGISTRABLE_ROLES = ("recruiter", "hiring_manager", "interviewer")
 
 
