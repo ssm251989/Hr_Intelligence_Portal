@@ -13,6 +13,21 @@ from app.models.comms import (
     SuppressionListEntry,
 )
 from app.models.connection import Connection, ConnectionAttempt, ConnectionOAuthToken, ConnectionRoute
+from app.models.core_hr import (
+    BusinessUnit,
+    CostCenter,
+    Department,
+    Employee,
+    EmployeeDocument,
+    EmploymentRecord,
+    ImportBatch,
+    ImportRow,
+    LegalEntity,
+    LetterRecord,
+    LetterTemplate,
+    Location,
+    Position,
+)
 from app.models.hr_inbound_email import HrInboundEmail
 from app.models.hr_integration import HrIntegration
 from app.models.iam import (
@@ -68,6 +83,19 @@ __all__ = [
     "ConnectionAttempt",
     "ConnectionOAuthToken",
     "ConnectionRoute",
+    "BusinessUnit",
+    "CostCenter",
+    "Department",
+    "Employee",
+    "EmployeeDocument",
+    "EmploymentRecord",
+    "ImportBatch",
+    "ImportRow",
+    "LegalEntity",
+    "LetterRecord",
+    "LetterTemplate",
+    "Location",
+    "Position",
     "ActionToken",
     "FieldSecurity",
     "MagicLink",

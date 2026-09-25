@@ -25,12 +25,14 @@ _SYSTEM_ROLE_TEMPLATES: dict[str, str | list[tuple[str, set[str]]]] = {
     "Super Admin": "*",
     "HR Admin": [
         ("recruitment", {"view", "create", "edit", "delete", "approve", "export", "view_sensitive"}),
+        ("core_hr", {"view", "create", "edit", "delete", "view_sensitive"}),
         ("platform", {"view", "configure"}),
         ("iam", {"view", "configure"}),
         ("workflow", {"view", "configure", "approve", "edit"}),
     ],
     "HRBP": [
         ("recruitment", {"view", "create", "edit", "export"}),
+        ("core_hr", {"view", "create", "edit"}),
         ("iam", {"view"}),
         ("workflow", {"view", "approve"}),
     ],
@@ -51,6 +53,7 @@ _SYSTEM_ROLE_TEMPLATES: dict[str, str | list[tuple[str, set[str]]]] = {
     ],
     "Manager": [
         ("recruitment", {"view", "approve"}),
+        ("core_hr", {"view"}),
         ("workflow", {"view", "approve"}),
     ],
     "Employee": [
@@ -59,6 +62,7 @@ _SYSTEM_ROLE_TEMPLATES: dict[str, str | list[tuple[str, set[str]]]] = {
     "Candidate": [],
     "Auditor": [
         ("recruitment", {"view", "view_sensitive", "export"}),
+        ("core_hr", {"view", "view_sensitive"}),
         ("platform", {"view"}),
         ("iam", {"view"}),
         ("workflow", {"view"}),

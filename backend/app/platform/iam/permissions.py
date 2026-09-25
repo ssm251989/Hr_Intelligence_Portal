@@ -106,4 +106,9 @@ def register_all() -> None:
     register_permission("workflow", "instances", "approve")
     register_permission("workflow", "instances", "edit")
 
+    for resource in ("employee", "employment", "org", "letter", "import"):
+        for action in ("view", "create", "edit", "delete"):
+            register_permission("core_hr", resource, action)
+    register_permission("core_hr", "employee", "view_sensitive")
+
     _registered = True

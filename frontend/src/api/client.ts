@@ -1045,6 +1045,83 @@ export const brandingApi = {
   updateCustomCss: (customCss: string) => request<{ custom_css: string }>("/api/v1/branding/custom-css", { method: "PUT", body: JSON.stringify({ custom_css: customCss }) }),
 };
 
+// ---- Core HR (Part 7): org model, employee master, lifecycle, documents, letters ----
+
+export interface DepartmentRow {
+  id: UUID;
+  name: string;
+  business_unit_id: UUID | null;
+  parent_id: UUID | null;
+}
+
+export interface PositionRow {
+  id: UUID;
+  code: string;
+  title: string;
+  department_id: UUID | null;
+  location_id: UUID | null;
+  grade: string | null;
+  reports_to_position_id: UUID | null;
+  status: string;
+  is_critical: boolean;
+}
+
+export interface EmployeeRow {
+  id: UUID;
+  employee_code: string;
+  status: string;
+  worker_type: string;
+  first_name: string;
+  last_name: string | null;
+  personal_email: string | null;
+  pan: string | null;
+  aadhaar: string | null;
+  bank_account: string | null;
+}
+
+export interface EmploymentRecordRow {
+  id: UUID;
+  employee_id: UUID;
+  effective_from: string;
+  effective_to: string | null;
+  event_type: string;
+  event_reason: string | null;
+  designation: string | null;
+  grade: string | null;
+  work_mode: string | null;
+}
+
+export const coreHrApi = {
+  departments: () => get<DepartmentRow[]>("/api/v1/core-hr/departments"),
+  createDepartment: (payload: { name: string; business_unit_id?: UUID; parent_id?: UUID }) => post<DepartmentRow>("/api/v1/core-hr/departments", payload),
+
+  positions: () => get<PositionRow[]>("/api/v1/core-hr/positions"),
+  createPosition: (payload: { code: string; title: string; department_id?: UUID; grade?: string }) => post<PositionRow>("/api/v1/core-hr/positions", payload),
+  setReportsTo: (positionId: UUID, reportsToPositionId: UUID | null) =>
+    patch<PositionRow>(`/api/v1/core-hr/positions/${positionId}/reports-to`, { reports_to_position_id: reportsToPositionId }),
+  orgChart: (rootPositionId?: UUID) => get<{ id: UUID; code: string; title: string; status: string; is_critical: boolean; has_children: boolean }[]>(`/api/v1/core-hr/org-chart${rootPositionId ? `?root_position_id=${rootPositionId}` : ""}`),
+
+  employees: (status?: string) => get<EmployeeRow[]>(`/api/v1/core-hr/employees${status ? `?status=${status}` : ""}`),
+  createEmployee: (payload: { first_name: string; last_name?: string; status?: string; worker_type?: string; personal_email?: string }) => post<EmployeeRow>("/api/v1/core-hr/employees", payload),
+  getEmployee: (id: UUID) => get<EmployeeRow>(`/api/v1/core-hr/employees/${id}`),
+  setEncryptedField: (id: UUID, field: string, value: string) => request<{ ok: boolean }>(`/api/v1/core-hr/employees/${id}/encrypted-field`, { method: "PUT", body: JSON.stringify({ field, value }) }),
+  revealEncryptedField: (id: UUID, field: string) => get<{ field: string; value: string | null }>(`/api/v1/core-hr/employees/${id}/encrypted-field/${field}`),
+
+  requestLifecycleEvent: (employeeId: UUID, payload: { event_type: string; effective_from: string; changes?: Record<string, unknown>; reason?: string }) =>
+    post<{ applied: boolean; employment_record_id?: UUID; workflow_instance_id?: UUID }>(`/api/v1/core-hr/employees/${employeeId}/lifecycle-events`, payload),
+  employmentHistory: (employeeId: UUID) => get<EmploymentRecordRow[]>(`/api/v1/core-hr/employees/${employeeId}/employment-history`),
+
+  documents: (employeeId: UUID) => get<{ id: UUID; type: string; issued_date: string | null; expiry_date: string | null; visibility: string }[]>(`/api/v1/core-hr/employees/${employeeId}/documents`),
+  addDocument: (employeeId: UUID, payload: { doc_type: string; expiry_date?: string; visibility?: string }) =>
+    post<{ id: UUID; type: string; expiry_date: string | null }>(`/api/v1/core-hr/employees/${employeeId}/documents`, payload),
+
+  createLetterTemplate: (payload: { key: string; name: string; html_tpl: string; variables_schema?: object }) => post<{ id: UUID; key: string; version: number; status: string }>("/api/v1/core-hr/letter-templates", payload),
+  publishLetterTemplate: (id: UUID) => post<{ id: UUID; status: string }>(`/api/v1/core-hr/letter-templates/${id}/publish`),
+  generateLetter: (employeeId: UUID, payload: { template_key: string; context?: Record<string, unknown> }) =>
+    post<{ id: UUID; verification_token: string; rendered_html: string }>(`/api/v1/core-hr/employees/${employeeId}/letters`, payload),
+  letters: (employeeId: UUID) => get<{ id: UUID; template_key: string; generated_at: string | null; verification_token: string }[]>(`/api/v1/core-hr/employees/${employeeId}/letters`),
+};
+
 // ---- public careers portal (no auth) ----
 
 export const publicApi = {

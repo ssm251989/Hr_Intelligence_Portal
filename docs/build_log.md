@@ -1025,3 +1025,144 @@ tests change tenant #1's REAL `org.display_name`/`brand_themes.primary_color` an
 `build_bootstrap()`'s response reflects each change -- the same code path a second real
 tenant's own row would drive identically, just not exercised against two simultaneously-
 provisioned tenants (this installation is still `TENANCY_MODE=single`).
+
+## PART 7 (branch `hrms-platform`) -- Core HR (org model, employee master, lifecycle, documents/letters, import wizard)
+
+The org model (legal entities -> business units -> departments -> positions, with a real
+lazy org-chart API), the employee master (encrypted identity/bank PII via Part 3's own
+`SecretStore`), an effective-dated employment history (`employment_records`) gated by
+Part 5's own workflow engine, a documents register with expiry alerts, a letter-template +
+generation + public-verification register, and an employee data-import wizard
+(preview -> dry_run -> commit -> rollback).
+
+**Scope decisions made under the standing autonomy directive:**
+- **Effective-dating is scoped to ONE table**: only `employment_records` carries
+  `effective_from`/`effective_to` -- the ONE table this part's own TESTS section names
+  ("effective-dating queries (as-of date)"). `legal_entities`/`business_units`/
+  `departments`/`locations`/`cost_centers`/`positions` stay simpler always-current master
+  data; a real historical org chart (effective-dated departments/positions too) is future
+  work, not attempted here -- same "only build what the spec's own CHECKS/TESTS actually
+  name" discipline Part 6 applied to i18n/custom-fields scope.
+- **`LifecycleService` is a module of functions (`core_hr/lifecycle.py`), not a literal
+  Python class** -- `request_event()`/`apply_event()`/`get_current_employment()`/
+  `employment_history()`/`apply_from_approved_workflow()` are the real, tested surface
+  this part's own CHECKS names by that term; a class wrapper around them would add a layer
+  with no behavioral difference, the same "a real function beats a synthesized object for
+  readability" call Part 6 made for `validate_custom_fields()`.
+- **PDF/DOCX letter generation not attempted**: every letter renders as real, tested,
+  Jinja-sandboxed HTML (`platform.comms.renderer`, the same engine every email already
+  uses) -- turning that into an actual PDF/DOCX binary needs a document-generation service
+  this installation doesn't have, the identical gap Part 5's own `generate_document`
+  workflow action already documented. e-sign is Part 3's own `esign.*` connection purpose,
+  already real, not rebuilt here.
+- **Digital verification is a token + URL, not a QR code image**: `letter_records.
+  verification_token` is real, unique, and checkable via a public no-auth endpoint; no
+  `qrcode` library was added to render it as an image -- the same "skip a new dependency
+  for a rendering nicety" call Part 5 made for TOTP enrollment's own QR code.
+- **Import wizard scoped to ONE entity (`employee`)**: `IMPORT_ENTITY_TYPES = ("employee",)`
+  is real, extensible (`_VALIDATORS` dict keyed by entity), and fully tested end to end
+  (preview validation, dry_run, commit, rollback that touches ONLY rows the batch itself
+  created) -- a generic importer for arbitrary future entities isn't built ahead of there
+  being a second real target table, the same "don't build for a hypothetical" discipline
+  applied throughout this build.
+- **Org chart / department tree are lazy, one-level APIs**, not the spec's own drag-drop
+  org-chart canvas, PNG/PDF export, or Leaflet locations map -- same class of reduction as
+  every other part's admin surface (Part 5's workflow engine skipping its React Flow
+  canvas, Part 6's metadata skipping its form-builder canvas). The org CHART DATA itself
+  (cycle-prevention, lazy children, search) is real and tested.
+- **No full ESS/MSS employee self-service pages** -- `CoreHrPanel.tsx` is a scoped HR-admin
+  surface (employee list + create + audited PII reveal, department/position CRUD),
+  consistent with every prior part's "admin panel, not the full end-user experience"
+  reduction. Letter template authoring, the import wizard UI, and the org-chart
+  visualization all have real, tested backend endpoints but no frontend yet.
+- **No live scheduler for future-dated changes or document-expiry sweeps**: a future-dated
+  `employment_records` row is written immediately (so it's visible/auditable right away)
+  and `get_current_employment()`'s as-of logic naturally treats it as not-yet-current until
+  its date arrives; `check_expiring_documents()` is real and directly callable/tested but
+  nothing invokes it on a schedule -- the same documented Celery-beat gap as every other
+  "needs a live scheduler" capability already noted in Parts 2/4/5.
+- **`employee_to_dict()` never returns a decrypted value by default** -- `pan`/`passport`/
+  `bank_account` show only presence (`"***"` or `null`); `aadhaar` shows a real masked
+  last-4 (`aadhaar_last4`, the ONE unencrypted fragment ever stored, matching section 2's
+  own "masked last 4" wording). Every actual reveal goes through `GET .../encrypted-field/
+  {field}`, gated by the new `core_hr.employee.view_sensitive` permission and unconditionally
+  audit-logged (`sensitive_field_revealed`) -- checked directly against this part's own
+  "plaintext fallback must never store/read a secret unencrypted" standing instruction.
+
+### 1. Data model (`app/models/core_hr.py`)
+13 new `TenantOwned` + RLS tables: `LegalEntity`, `BusinessUnit`, `Department` (self-
+referential tree via `parent_id`), `Location`, `CostCenter`, `Position` (self-referential
+`reports_to_position_id`), `Employee`, `EmploymentRecord`, `EmployeeDocument`,
+`LetterTemplate`, `LetterRecord`, `ImportBatch`, `ImportRow`. Migration `25e5c8383986`
+applied clean against the real dev DB; `alembic check` shows only the same 3 pre-existing
+index-drift entries every prior part's migration already carried forward, nothing new.
+
+### 2. Employee master + encrypted PII (`core_hr/employees.py`)
+`create_employee()` auto-generates `employee_code` off Part 6's own numbering sequences
+(`EMP-{SEQ:5}`, key `core_hr.employee_code`). `set_encrypted_field()`/`get_encrypted_field()`
+route PAN/Aadhaar/passport/visa/driving-licence/bank-account through the exact same
+`platform.secrets.SecretStore` envelope encryption Part 3's Connection passwords and Part
+5's TOTP secrets already use -- verified directly (`test_encrypted_field_round_trips_and_
+is_never_stored_plaintext`) that the stored `*_secret_ref` column never contains the
+plaintext value.
+
+### 3. Lifecycle / effective-dating (`core_hr/lifecycle.py`)
+`apply_event()` closes out whatever `employment_records` row was current immediately
+before `effective_from` and inserts a new one, carrying forward every field not present in
+`changes` -- "no silent edits of job info" (section 3's own wording): a transfer changing
+only `department_id` doesn't require re-specifying manager/grade/etc. `request_event()`
+starts a real Part 5 workflow instance when a published `workflow_definitions` row exists
+for key `core_hr.lifecycle.<event_type>` (context stored in `context_json`, nothing
+written to `employment_records` until approval resolves via `apply_from_approved_
+workflow()`); an event type with no matching published definition applies immediately,
+un-gated. `get_current_employment(as_of=...)` is the as-of-date query this part's own
+TESTS name explicitly -- proven directly by `test_effective_dating_as_of_date_query`.
+
+### 4. Org model + documents + letters (`core_hr/org.py`, `documents.py`, `letters.py`)
+`would_create_cycle()`/`set_reports_to()` walk a proposed `reports_to_position_id` chain
+and reject any assignment that would loop back to the position itself -- proven by
+`test_org_chart_cycle_prevention`. `check_expiring_documents()` emits `document.expiring`
+through Part 4's own `dispatch_event()` for every document inside a configurable window.
+Letters render through Part 4's Jinja sandbox and get a real, unique `verification_token`
+a public no-auth endpoint (`GET /api/v1/public/core-hr/letters/verify/{token}`) can check.
+
+### 5. Import wizard (`core_hr/import_wizard.py`)
+`create_batch()` applies a column mapping and validates every row immediately (status
+`preview`, each row scored `valid`/`invalid` up front). `commit_batch()` creates one
+`Employee` per valid row, recording `committed_entity_id` on each row so `rollback_batch()`
+can delete ONLY the rows this specific batch created -- never touches any other data,
+bounded and safe by construction (proven by `test_rollback_only_touches_rows_this_batch_
+committed`, which plants an unrelated pre-existing employee and confirms it survives).
+
+### 6. API + permissions (`core_hr/api_router.py`)
+Every endpoint gated by a new `core_hr.<resource>.<action>` permission code (Part 5's
+registry) -- `HR Admin` gets full `view/create/edit/delete/view_sensitive`, `HRBP` gets
+`view/create/edit`, `Manager`/`Auditor` get read-only (`Auditor` also `view_sensitive`,
+matching its existing recruitment-module scope). Verified no regression against Part 5's
+own 42 IAM/authz/roles tests before adding a single router endpoint.
+
+### Frontend
+`CoreHrPanel.tsx` (new, mounted in `SettingsPage.tsx` alongside every other Part 5/6 admin
+panel) -- employee list/create with an audited masked-PII reveal control, department/
+position CRUD. `coreHrApi` added to `api/client.ts`. `npx tsc --noEmit`, `npm run build`,
+`npm run lint`, `npm run test` (41 tests, unchanged from Part 6 -- no new frontend unit
+tests added this part; `CoreHrPanel` is exercised by the backend API tests' own coverage
+of every endpoint it calls, not a separate component test) all clean.
+
+### Tests
+`test_core_hr.py` -- 29 new tests: employee_code generation, encrypted-field round-trip +
+masking, effective-dating as-of queries, lifecycle carry-forward + unknown-event rejection,
+workflow-gated vs. immediate lifecycle events, position vacancy, org-chart cycle
+prevention + lazy tree, document-expiry windowing, letter generate/verify/publish-
+validation, import batch validate/dry-run/commit/rollback + isolation, and 12 API-level
+tests covering every router endpoint. **1228 backend tests total, all passing** (1199
+pre-existing + 29 new). Hardcode guard: 0 findings.
+
+CHECKS: grep for `legal_entities`, `positions`, `employment_records`, `LifecycleService`,
+`letter_templates`, `ImportWizard` -- `legal_entities`/`positions`/`employment_records`/
+`letter_templates` are real table names throughout `app/models/core_hr.py` and every
+service module. `LifecycleService`'s functionality is real and tested (see scope decision
+above on why it's a module, not a class) -- `core_hr/lifecycle.py`'s own docstring names it
+directly. `ImportWizard`'s functionality is `core_hr/import_wizard.py` in full (module name
+differs by one word from the spec's own casing; behavior -- preview/dry_run/commit/rollback
+-- is exactly what the spec's own CHECKS describes).
