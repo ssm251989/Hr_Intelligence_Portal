@@ -166,4 +166,20 @@ def register_all() -> None:
     register_permission("separation", "self", "view")
     register_permission("separation", "self", "create")
 
+    # Part 12: analytics, copilot, agents, AI governance.
+    for action in ("view", "create", "edit", "export"):
+        register_permission("analytics", "report", action)
+    register_permission("analytics", "dashboard", "view")
+    register_permission("analytics", "dashboard", "configure")
+    register_permission("analytics", "metrics", "view")
+    register_permission("analytics", "predictive", "view")
+    register_permission("copilot", "chat", "view")
+    register_permission("copilot", "knowledge", "view")
+    register_permission("copilot", "knowledge", "configure")
+    register_permission("agents", "suggestion", "view")
+    register_permission("agents", "run", "create")
+    register_permission("ai", "governance", "view")
+    register_permission("ai", "governance", "configure")
+    register_permission("ai", "decision_log", "view")
+
     _registered = True

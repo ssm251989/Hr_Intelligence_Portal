@@ -50,6 +50,11 @@ def _register_all() -> None:
     register_purpose("meeting.google_meet")
     register_purpose("meeting.teams")
     register_purpose("meeting.zoom")
+    # Parts 11-12
+    register_purpose("email.inbound.helpdesk")
+    register_purpose("email.outbound.helpdesk", fallback="email.outbound.default")
+    register_purpose("email.outbound.reports", fallback="email.outbound.default")
+    register_purpose("analytics.warehouse_push")
 
 
 _register_all()

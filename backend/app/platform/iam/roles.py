@@ -35,6 +35,10 @@ _SYSTEM_ROLE_TEMPLATES: dict[str, str | list[tuple[str, set[str]]]] = {
         ("helpdesk", {"view", "create", "edit", "view_sensitive", "export", "configure"}),
         ("assets", {"view", "create", "edit", "approve", "export"}),
         ("separation", {"view", "create", "edit", "approve", "export"}),
+        ("analytics", {"view", "create", "edit", "export", "configure"}),
+        ("copilot", {"view", "configure"}),
+        ("agents", {"view", "create"}),
+        ("ai", {"view", "configure"}),
     ],
     "HRBP": [
         ("recruitment", {"view", "create", "edit", "export"}),
@@ -46,10 +50,19 @@ _SYSTEM_ROLE_TEMPLATES: dict[str, str | list[tuple[str, set[str]]]] = {
         ("compensation", {"view"}),
         ("helpdesk", {"view", "create", "edit"}),
         ("assets", {"view", "create", "edit"}),
+        ("copilot.chat", {"view"}),
+        ("agents.suggestion", {"view"}),
         ("separation", {"view", "create", "edit"}),
+        ("analytics", {"view", "create", "edit", "export"}),
+        ("copilot", {"view"}),
+        ("agents", {"view", "create"}),
     ],
     "Recruiter": [
         ("recruitment", {"view", "create", "edit"}),
+        ("analytics.report", {"view", "create", "export"}),
+        ("analytics.metrics", {"view"}),
+        ("copilot.chat", {"view"}),
+        ("agents", {"view", "create"}),
         ("workflow", {"view"}),
     ],
     "Hiring Manager": [
@@ -75,6 +88,10 @@ _SYSTEM_ROLE_TEMPLATES: dict[str, str | list[tuple[str, set[str]]]] = {
         ("assets.asset", {"view"}),
         ("assets.self", {"view", "create"}),
         ("helpdesk.self", {"view", "create"}),
+        ("analytics.report", {"view", "create", "export"}),
+        ("analytics.metrics", {"view"}),
+        ("analytics.dashboard", {"view"}),
+        ("copilot.chat", {"view"}),
         ("workflow", {"view", "approve"}),
     ],
     "Employee": [
@@ -83,6 +100,7 @@ _SYSTEM_ROLE_TEMPLATES: dict[str, str | list[tuple[str, set[str]]]] = {
         ("helpdesk.self", {"view", "create"}),
         ("assets.self", {"view", "create"}),
         ("separation.self", {"view", "create"}),
+        ("copilot.chat", {"view"}),
     ],
     "Candidate": [],
     "Auditor": [
@@ -93,6 +111,8 @@ _SYSTEM_ROLE_TEMPLATES: dict[str, str | list[tuple[str, set[str]]]] = {
         ("helpdesk", {"view", "export"}),
         ("assets", {"view", "export"}),
         ("separation", {"view", "export"}),
+        ("analytics", {"view", "export"}),
+        ("ai", {"view"}),
         ("core_hr", {"view", "view_sensitive"}),
         ("platform", {"view"}),
         ("iam", {"view"}),
@@ -185,3 +205,16 @@ def sync_role_assignments_for_existing_users(db: Session, tenant: TenantContext)
         if bridge_single_user(db, tenant, user, roles_by_name) is not None:
             created += 1
     return created
+
+
+def role_names_for(db: Session, tenant: TenantContext, user: User) -> list[str]:
+    """Names of the caller's currently-active roles (report sharing, dashboard audiences,
+    knowledge-document audiences all key on role NAME, which tenants recognise)."""
+    from app.platform.iam.authz import active_role_assignments
+
+    names = []
+    for assignment in active_role_assignments(db, tenant, user.id):
+        role = db.get(Role, assignment.role_id)
+        if role is not None:
+            names.append(role.name)
+    return names

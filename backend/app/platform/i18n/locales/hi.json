@@ -24,5 +24,15 @@
   "entity.employee": "कर्मचारी",
   "entity.requisition": "मांग पत्र",
   "entity.candidate": "उम्मीदवार",
-  "entity.job": "नौकरी"
+  "entity.job": "नौकरी",
+  "copilot.handover": "मुझे आपके संगठन की नीतियों में इसका भरोसेमंद उत्तर नहीं मिला। मैंने आपके लिए एक हेल्पडेस्क टिकट तैयार किया है -- भेजने के लिए उसे देखकर पुष्टि करें।",
+  "copilot.draft_ready": "मैंने इसे आपके लिए तैयार किया है। आपकी पुष्टि के बिना कुछ भी जमा नहीं होगा।",
+  "copilot.no_permission": "आपके पास उस जानकारी तक पहुंच नहीं है।",
+  "copilot.nothing_found": "मुझे वहां आपके लिए कुछ नहीं मिला।",
+  "copilot.disabled": "आपके संगठन के लिए HR कोपायलट बंद है।",
+  "nav.onboarding": "ऑनबोर्डिंग",
+  "nav.performance": "प्रदर्शन",
+  "nav.helpdesk": "हेल्पडेस्क",
+  "nav.analytics": "विश्लेषण",
+  "nav.copilot": "HR कोपायलट"
 }

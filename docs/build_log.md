@@ -1497,3 +1497,76 @@ Quick checks: `compileall -q app` OK, `import app.main` OK, `npx tsc --noEmit` e
 
 CHECKS grep: "tickets" (2 files), sla_policies (2), "assets" (4), separations (6),
 clearance_items (2).
+
+## PART 12 (branch `hrms-platform`) -- Analytics, report builder, HR Copilot & AI agents (HITL)
+
+**Built:**
+- **Org-hierarchy data scopes are now real** (`platform/iam/org_scope.py`): `self`,
+  `reportees_direct`, `reportees_all` (transitive, cycle-safe), `legal_entity` /
+  `business_unit` / `location` / `department` / `cost_center` (via `scope_ids`) resolved to
+  employee-id sets against Part 7 employment records. `authz.scope_filter()` is unchanged
+  (still refuses these for arbitrary models); datasets/metrics/copilot use the new resolver.
+- **Semantic layer** (`analytics/datasets.py`): headcount (as-of date over employment
+  records, custom fields as `cf_*`), exits, hiring funnel, onboarding, performance, goals,
+  helpdesk (confidential tickets excluded), assets. Each declares its permission, employee
+  column (scope applied as SQL WHERE) and field-security entity.
+- **ReportBuilder** (`analytics/report_builder.py`): columns / filters (12 ops) / group-by /
+  measures (6 aggs) / pivot / sort / pagination compiled to one SQL query; hidden/masked
+  fields refused in filters and grouping, masked in row output; CSV + XLSX export. Saved
+  reports shared by role name run with the VIEWER's scope; schedules
+  (`analytics/schedules.py`, daily/weekly/monthly in the tenant timezone) run AS THE OWNER
+  and send the file as an attachment via comms on `email.outbound.reports`; failures are
+  recorded in `report_deliveries`, never crash the loop.
+- **Metrics** (14, all scope-aware; diversity opt-in with small-group folding;
+  cost-per-hire returns a reason instead of a number without a spend figure);
+  **dashboards** with metric/report widgets per audience role; **predictive** estimates
+  (attrition risk with listed factors -> talent profile AI field only, time-to-fill, plan
+  vs actual), labelled `"kind": "estimate"`, gated by `analytics.predictive`.
+- **AI governance** (`platform/ai/governance.py`): `governed_complete()` -- feature toggle
+  (`ai.enabled`, `ai.features.disabled` incl. `module.*`) -> budget cutoff (per-month
+  `ai_usage_budgets`, hard stop + one-time `ai.budget_alert`) -> PII redaction (tenant
+  regex patterns: email/phone/PAN/Aadhaar defaults) -> call -> usage metering with tenant
+  price table -> `ai_decision_log` (input refs, model, prompt version, redaction counts,
+  human reviewer, final decision). Parts 9-11 AI calls (document extraction, review
+  drafts, exit summaries) now go through it; document extraction passes
+  `redact_input=False` by design (logged as skipped). Bootstrap exposes `ai` flags; the UI
+  hides AI affordances when off. Prompt-registry evaluation fixtures (`prompt_eval.py`).
+- **HR Copilot** (`copilot/`): per-tenant knowledge index (uploads + published KB articles
+  re-indexed on save), role-audience restriction, BM25 retrieval; `CopilotService.ask()`:
+  action intents -> **drafts only** (confirm endpoint is the sole executor); personal-data
+  tools (`my_interviews`, `my_assets`, `my_tickets`, `who_approves`) each permission-checked
+  and caller-only; policy answers must cite passages -- uncited or `NO_ANSWER` replies are
+  suppressed and **handed over** as a draft ticket; low retrieval confidence hands over
+  without calling the LLM. en/hi/ta answers; user-facing strings are i18n keys
+  (`copilot.*`) added to all three bundles.
+- **Agents** (`agents/service.py`): recruiter (JD draft, interview kit, sourcing
+  shortlist), onboarding (chase missing documents), helpdesk triage (never for
+  confidential tickets), policy checker. Output = `agent_suggestions` in the reviewer's
+  inbox; only approve/edit runs the kind's applier; the decision is written back to the
+  decision log.
+
+**Scope decisions (standing autonomy directive):**
+- **No pgvector on this Postgres** (only `pg_trgm` available). Retrieval is lexical BM25;
+  `knowledge_chunks.embedding_json` is reserved and `retrieval.search()` is the sole reader,
+  so a pgvector switch is a contained change. Logged as deferred, not faked.
+- **No materialised views / read replica**: datasets query the tenant DB directly with
+  server-side limits (10k max rows). BI export is a pull endpoint
+  (`/warehouse-export/{dataset}` CSV); `analytics.warehouse_push` purpose registered with no
+  adapter yet. **PDF export deferred** (no PDF renderer in the image; CSV/XLSX done).
+- **Copilot intent routing is phrase-based** (tenant-extensible later), not LLM tool-use:
+  deterministic, testable, and it keeps personal-data lookups out of the model entirely.
+- **Agent suggestions have their own inbox endpoint** (`/agents/inbox`); merging them into
+  the workflow Unified Inbox response is left for Part 14's inbox UI (changing the existing
+  `InboxRow` contract now would risk the current Approvals page).
+- **Slack/Teams/WhatsApp channels** not built (spec: later); web widget done (PWA in Part 14).
+- **UI:** `CopilotWidget.tsx` (floating, gated on `copilot.chat` + permission, citations,
+  confirm/discard drafts), `AnalyticsPanel.tsx` on the Reports page (dataset -> columns or
+  group-by count -> run -> save), `MeBootstrapContext.tsx` (permissions + AI flags).
+
+Migration `4f9039601211`: 14 TenantOwned + RLS tables. `alembic upgrade head`: OK.
+
+Tests: `tests/test_intelligence.py` (~33) -- written, NOT executed (testing deferred).
+Quick checks: `compileall -q app` OK, `import app.main` OK, `npx tsc --noEmit` exit 0.
+
+CHECKS grep: datasets (5 files), ReportBuilder (4), CopilotService (3), prompt_registry (5),
+ai_decision_log (2), usage_budget (3).

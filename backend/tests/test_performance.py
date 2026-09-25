@@ -195,7 +195,9 @@ def test_ai_draft_never_submits_and_flags_bias(db_session, monkeypatch):
     review = Review(tenant_id=TENANT.tenant_id, cycle_id=cycle.id, employee_id=emp.id, reviewer_employee_id=emp.id, stage="self")
     db_session.add(review)
     db_session.commit()
-    monkeypatch.setattr("app.platform.ai.gateway.complete_text", lambda *a, **k: "She can be abrasive in meetings but delivers.")
+    from types import SimpleNamespace
+
+    monkeypatch.setattr("app.platform.ai.governance.governed_complete", lambda *a, **k: SimpleNamespace(text="She can be abrasive in meetings but delivers."))
     review = reviews.draft_review_summary(db_session, TENANT, review)
     assert review.status == "pending"
     assert "abrasive" in review.ai_draft_json["bias_flags"]

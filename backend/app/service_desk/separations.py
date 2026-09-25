@@ -274,15 +274,18 @@ def submit_exit_interview(db: Session, separation: Separation, *, answers: dict)
 
 def summarize_exit_interview(db: Session, tenant: TenantContext, separation: Separation) -> Separation:
     """Advisory themes for HR (`llm.judgment`), stored separately from the answers."""
-    from app.platform.ai import gateway
+    from app.platform.ai import governance
 
     if not separation.exit_interview_json:
         raise SeparationError("no exit interview recorded")
     answers = separation.exit_interview_json.get("answers", {})
     system = "Summarise this exit interview for HR in at most 5 neutral bullet points: main reasons for leaving, what could have retained the person, suggestions. Do not speculate beyond the answers."
     try:
-        summary = gateway.complete_text(db, tenant, purpose="llm.judgment", system=system,
-                                        messages=[{"role": "user", "content": "\n".join(f"{k}: {v}" for k, v in answers.items())}])
+        summary = governance.governed_complete(
+            db, tenant, feature="separation.exit_summary", purpose="llm.judgment", system=system,
+            messages=[{"role": "user", "content": "\n".join(f"{k}: {v}" for k, v in answers.items())}],
+            input_refs={"separation_id": str(separation.id)},
+        ).text
         separation.exit_interview_ai_summary_json = {"summary": summary, "source": "ai", "reviewed": False}
     except Exception as exc:
         separation.exit_interview_ai_summary_json = {"error": type(exc).__name__}

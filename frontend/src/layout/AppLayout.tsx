@@ -49,6 +49,7 @@ import type { RecentActivityItem } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { useBootstrap } from "../bootstrap/BootstrapContext";
 import ConfirmDialog from "../components/ConfirmDialog";
+import CopilotWidget from "../components/CopilotWidget";
 import RecentActivityFeed from "../components/RecentActivityFeed";
 import { useThemeMode } from "../theme/ThemeModeContext";
 
@@ -465,6 +466,7 @@ export default function AppLayout() {
         <Toolbar />
         <Outlet />
       </Box>
+      <CopilotWidget />
 
       <ConfirmDialog
         open={confirmLogoutOpen}

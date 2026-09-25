@@ -223,19 +223,22 @@ class PreboardingPortal:
     def extract_document(self, document: PreboardingDocument, document_text: str) -> PreboardingDocument:
         """AI prefill via the `llm.resume_extraction` purpose (the spec's own choice).
         Advisory only -- stored for HR's verification queue, never auto-verifies."""
-        from app.platform.ai import gateway
+        from app.platform.ai import governance
 
         system = (
             "You extract structured fields from an identity, education or employment document. "
             "Return only a JSON object of the fields you can read; use null for anything not present. Never guess."
         )
         try:
-            fields = gateway.complete_json(
-                self.db, self.tenant, purpose="llm.resume_extraction", system=system,
+            # Redaction skipped by design: the document's identifiers ARE what's being
+            # extracted. Toggle, budget and decision log still apply.
+            fields, log_id = governance.governed_json(
+                self.db, self.tenant, feature="onboarding.document_extraction", purpose="llm.resume_extraction", system=system,
                 messages=[{"role": "user", "content": f"Document type: {document.document_type_code}\n\n{document_text}"}],
+                input_refs={"preboarding_document_id": str(document.id)}, redact_input=False,
             )
-            document.extracted_json = {"fields": fields, "source": "ai"}
-        except Exception as exc:  # no connection routed / provider error -> HR just verifies manually
+            document.extracted_json = {"fields": fields, "source": "ai", "decision_log_id": str(log_id)}
+        except Exception as exc:  # AI off / no connection routed / provider error -> HR just verifies manually
             document.extracted_json = {"error": type(exc).__name__}
         self.db.commit()
         self.db.refresh(document)

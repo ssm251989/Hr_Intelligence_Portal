@@ -2,6 +2,7 @@ import { Navigate, Route, BrowserRouter, Routes } from "react-router-dom";
 
 import { AuthProvider } from "./auth/AuthContext";
 import { BootstrapProvider } from "./bootstrap/BootstrapContext";
+import { MeBootstrapProvider } from "./bootstrap/MeBootstrapContext";
 import { AppThemeProvider } from "./theme/ThemeModeContext";
 import ProtectedRoute from "./auth/ProtectedRoute";
 import CareersApplyPage from "./careers/CareersApplyPage";
@@ -52,7 +53,9 @@ export default function App() {
               <Route
                 element={
                   <ProtectedRoute>
-                    <AppLayout />
+                    <MeBootstrapProvider>
+                      <AppLayout />
+                    </MeBootstrapProvider>
                   </ProtectedRoute>
                 }
               >

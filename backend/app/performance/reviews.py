@@ -323,7 +323,7 @@ def draft_review_summary(db: Session, tenant: TenantContext, review: Review) -> 
     """Drafts a summary from the period's goals, feedback and shared 1:1 notes via the
     `llm.judgment` purpose. Stored in ai_draft_json for the reviewer to edit -- the review's
     status is never touched here."""
-    from app.platform.ai import gateway
+    from app.platform.ai import governance
 
     cycle = db.get(ReviewCycle, review.cycle_id)
     goals = db.query(Goal).filter(Goal.tenant_id == tenant.tenant_id, Goal.owner_employee_id == review.employee_id, Goal.status != "cancelled").all()
@@ -340,10 +340,10 @@ def draft_review_summary(db: Session, tenant: TenantContext, review: Review) -> 
         "gender, family or health. Return plain text, at most 200 words."
     )
     try:
-        summary = gateway.complete_text(
-            db, tenant, purpose="llm.judgment", system=system,
+        summary = governance.governed_complete(
+            db, tenant, feature="performance.review_draft", purpose="llm.judgment", system=system, input_refs={"review_id": str(review.id)},
             messages=[{"role": "user", "content": f"Cycle: {cycle.name}\nStage: {review.stage}\n\n{material or 'No material recorded.'}"}],
-        )
+        ).text
         review.ai_draft_json = {"summary": summary, "bias_flags": bias_flags(db, tenant, summary), "source": "ai", "generated_at": datetime.now(timezone.utc).isoformat()}
     except Exception as exc:
         review.ai_draft_json = {"error": type(exc).__name__}

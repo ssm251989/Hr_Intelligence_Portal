@@ -1036,6 +1036,7 @@ export interface BootstrapRead {
   feature_flags: Record<string, boolean>;
   nav: { label_key: string; path: string }[];
   custom_labels: Record<string, string>;
+  ai?: { enabled: boolean; features: Record<string, boolean> };
 }
 
 export const brandingApi = {
@@ -1314,4 +1315,72 @@ export const serviceDeskApi = {
   assets: () => get<{ total: number; items: AssetRow[] }>("/api/v1/service-desk/assets?page_size=50"),
   separations: () => get<SeparationSummary[]>("/api/v1/service-desk/separations"),
   exportSeparationsUrl: "/api/v1/service-desk/separations-export",
+};
+
+// ---- Part 12: analytics, report builder, HR Copilot, agents ----
+
+export interface DatasetField {
+  key: string;
+  label: string;
+  type: string;
+}
+
+export interface DatasetRead {
+  code: string;
+  label: string;
+  module: string;
+  as_of_supported: boolean;
+  fields: DatasetField[];
+}
+
+export interface ReportResult {
+  columns: string[];
+  rows: Record<string, unknown>[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+export interface ReportDefinition {
+  columns?: string[];
+  filters?: { field: string; op: string; value?: unknown }[];
+  group_by?: string[];
+  measures?: { field: string; agg: string; as?: string }[];
+  sort?: { field: string; dir: "asc" | "desc" }[];
+  limit?: number;
+  as_of?: string;
+}
+
+export interface CopilotAnswer {
+  conversation_id: UUID;
+  answer: string;
+  citations: { n: number; title: string; heading: string | null; excerpt: string }[];
+  draft: { id: UUID; action: string; payload: Record<string, unknown> } | null;
+  handover?: boolean;
+}
+
+export interface AgentSuggestionRow {
+  id: UUID;
+  agent: string;
+  kind: string;
+  title: string;
+  payload: Record<string, unknown>;
+  status: string;
+  created_at: string | null;
+}
+
+export const intelligenceApi = {
+  datasets: () => get<DatasetRead[]>("/api/v1/intelligence/datasets"),
+  runReport: (dataset: string, definition: ReportDefinition, offset = 0) => post<ReportResult>("/api/v1/intelligence/reports/run", { dataset, definition, offset }),
+  saveReport: (payload: { name: string; dataset: string; definition: ReportDefinition; shared_role_names?: string[] }) => post<{ id: UUID }>("/api/v1/intelligence/reports", payload),
+  reports: () => get<{ id: UUID; name: string; dataset: string }[]>("/api/v1/intelligence/reports"),
+  exportUrl: (reportId: UUID, format: "csv" | "xlsx") => `/api/v1/intelligence/reports/${reportId}/export?format=${format}`,
+  metric: (code: string) => get<{ metric: string; value: unknown; unit?: string; reason?: string }>(`/api/v1/intelligence/metrics/${code}`),
+  ask: (question: string, language: string, conversationId?: UUID) =>
+    post<CopilotAnswer>("/api/v1/intelligence/copilot/ask", { question, language, conversation_id: conversationId }),
+  confirmDraft: (draftId: UUID, overrides: Record<string, unknown> = {}) => post<{ status: string; result: string | null; error: string | null }>(`/api/v1/intelligence/copilot/drafts/${draftId}/confirm`, { overrides }),
+  discardDraft: (draftId: UUID) => post<{ ok: boolean }>(`/api/v1/intelligence/copilot/drafts/${draftId}/discard`),
+  agentInbox: () => get<AgentSuggestionRow[]>("/api/v1/intelligence/agents/inbox"),
+  decideSuggestion: (id: UUID, action: "approve" | "edit" | "reject", editedPayload?: Record<string, unknown>) =>
+    post<AgentSuggestionRow>(`/api/v1/intelligence/agents/suggestions/${id}/decision`, { action, edited_payload: editedPayload }),
 };

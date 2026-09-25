@@ -77,6 +77,22 @@ from app.models.service_desk import (
     TicketComment,
     TicketQueue,
 )
+from app.models.intelligence import (
+    AgentSuggestion,
+    AiDecisionLog,
+    AiUsageBudget,
+    AiUsageRecord,
+    CopilotConversation,
+    CopilotDraft,
+    CopilotMessage,
+    Dashboard,
+    KnowledgeChunk,
+    KnowledgeDocument,
+    PromptEvalFixture,
+    ReportDelivery,
+    ReportSchedule,
+    SavedReport,
+)
 from app.models.hiring_team import JobHiringTeamMember
 from app.models.hr_inbound_email import HrInboundEmail
 from app.models.hr_integration import HrIntegration
@@ -179,6 +195,20 @@ __all__ = [
     "MetaForm",
     "Sequence",
     "NegotiationToken",
+    "AgentSuggestion",
+    "AiDecisionLog",
+    "AiUsageBudget",
+    "AiUsageRecord",
+    "CopilotConversation",
+    "CopilotDraft",
+    "CopilotMessage",
+    "Dashboard",
+    "KnowledgeChunk",
+    "KnowledgeDocument",
+    "PromptEvalFixture",
+    "ReportDelivery",
+    "ReportSchedule",
+    "SavedReport",
     "Asset",
     "AssetAllocation",
     "AssetMaintenance",

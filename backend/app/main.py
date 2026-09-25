@@ -46,6 +46,7 @@ from app.core_hr.api_router import public_router as core_hr_public_router, route
 from app.onboarding.api_router import public_router as onboarding_public_router, router as onboarding_router
 from app.performance.api_router import router as performance_router
 from app.service_desk.api_router import router as service_desk_router
+from app.analytics.api_router import router as intelligence_router
 from app.service_desk.tickets import register_inbound as register_helpdesk_inbound
 from app.recruitment.api_router import public_router as recruitment_public_router, router as recruitment_router
 
@@ -126,6 +127,7 @@ app.include_router(onboarding_router)
 app.include_router(onboarding_public_router)
 app.include_router(performance_router)
 app.include_router(service_desk_router)
+app.include_router(intelligence_router)
 
 
 @app.get("/health")

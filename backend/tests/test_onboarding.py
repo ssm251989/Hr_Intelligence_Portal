@@ -141,7 +141,7 @@ def test_extract_document_degrades_gracefully_without_ai_connection(db_session, 
     def _boom(*args, **kwargs):
         raise RuntimeError("no route")
 
-    monkeypatch.setattr("app.platform.ai.gateway.complete_json", _boom)
+    monkeypatch.setattr("app.platform.ai.governance.governed_json", _boom)
     doc = portal.extract_document(doc, "B.Tech 2020")
     assert doc.extracted_json == {"error": "RuntimeError"}
     assert doc.verification_status == "pending"  # AI never auto-verifies

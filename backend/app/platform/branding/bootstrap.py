@@ -97,4 +97,12 @@ def build_bootstrap(db: Session, tenant: TenantContext, user: Optional[User], *,
         "feature_flags": feature_flags,
         "nav": [{"label_key": key, "path": path} for key, path in _NAV_MODULES],
         "custom_labels": custom_labels,
+        # Part 12: every AI affordance in the UI is gated on these (AI disabled -> hidden).
+        "ai": _ai_flags(db, tenant),
     }
+
+
+def _ai_flags(db: Session, tenant: TenantContext) -> dict:
+    from app.platform.ai.governance import feature_flags
+
+    return feature_flags(db, tenant)

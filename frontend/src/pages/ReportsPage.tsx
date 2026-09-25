@@ -21,6 +21,7 @@ import Typography from "@mui/material/Typography";
 
 import { extractErrorMessage, jobsApi, reportsApi } from "../api/client";
 import type { AuditLogPage, ApplicationTimelineResponse, JobRoleRead, JobSummaryResponse, PipelineResponse } from "../api/types";
+import AnalyticsPanel from "../components/AnalyticsPanel";
 import RefreshButton from "../components/RefreshButton";
 
 const AUDIT_PAGE_SIZE = 20;
@@ -439,6 +440,7 @@ export default function ReportsPage() {
           {tab === 3 && <TimelineView key={resetKey} />}
         </CardContent>
       </Card>
+      <AnalyticsPanel />
     </Box>
   );
 }

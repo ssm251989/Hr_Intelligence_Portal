@@ -139,6 +139,24 @@ def register_all() -> None:
         {"department": "hr", "title": "Exit interview and documents", "blocks_relieving": False},
     ], module="separation", group="Separation"))
 
+    # ai.* governance -- Part 12 section D.
+    register(SettingDef("ai.enabled", "bool", True, module="ai", group="AI Governance"))
+    register(SettingDef("ai.features.disabled", "json", [], module="ai", group="AI Governance"))  # feature codes or "<module>.*"
+    register(SettingDef("ai.redaction.enabled", "bool", True, module="ai", group="AI Governance"))
+    register(SettingDef("ai.redaction.patterns", "json", {
+        "email": r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
+        "phone": r"(?<!\d)(?:\+?\d{1,3}[\s-]?)?\d{10}(?!\d)",
+        "pan": r"\b[A-Z]{5}[0-9]{4}[A-Z]\b",
+        "aadhaar": r"\b\d{4}\s?\d{4}\s?\d{4}\b",
+    }, module="ai", group="AI Governance"))
+    register(SettingDef("ai.pricing", "json", {}, module="ai", group="AI Governance"))  # {model: {input_per_mtok, output_per_mtok}}
+    register(SettingDef("analytics.diversity.enabled", "bool", False, module="analytics", group="Analytics"))  # opt-in (spec A.4)
+    register(SettingDef("analytics.diversity.min_group_size", "int", 5, module="analytics", group="Analytics"))
+    register(SettingDef("analytics.recruiting_spend_ytd", "decimal", 0, module="analytics", group="Analytics"))
+    register(SettingDef("copilot.languages", "json", ["en", "hi", "ta"], module="copilot", group="HR Copilot"))
+    register(SettingDef("copilot.min_confidence", "decimal", 0.35, module="copilot", group="HR Copilot"))
+    register(SettingDef("copilot.handover_category", "str", "", module="copilot", group="HR Copilot"))  # a ticket_category code
+
     # iam.auth.* -- Part 5A section 1's own per-tenant-configurable auth policy. Platform
     # defaults are conservative but NOT locked-on (mfa_required defaults false) --
     # flipping mfa_required on for a real, already-logged-in tenant is this tenant's own

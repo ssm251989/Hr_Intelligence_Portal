@@ -352,6 +352,9 @@ def upsert_kb(payload: KbUpsert, db: Session = Depends(get_db), current_user: Us
         db.add(row)
     row.title, row.body, row.category_code, row.tags_json, row.status = payload.title, payload.body, payload.category_code, payload.tags, payload.status
     db.commit()
+    from app.copilot.retrieval import reindex_kb_article
+
+    reindex_kb_article(db, tenant, row)  # published KB articles are also HR Copilot knowledge (Part 12)
     return {"id": str(row.id), "slug": row.slug, "status": row.status}
 
 

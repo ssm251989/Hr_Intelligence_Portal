@@ -24,5 +24,15 @@
   "entity.employee": "Employee",
   "entity.requisition": "Requisition",
   "entity.candidate": "Candidate",
-  "entity.job": "Job"
+  "entity.job": "Job",
+  "copilot.handover": "I couldn't find a reliable answer in your organisation's policies. I've prepared a helpdesk ticket for you -- review and confirm it to send.",
+  "copilot.draft_ready": "I've prepared this for you. Nothing is submitted until you confirm.",
+  "copilot.no_permission": "You don't have access to that information.",
+  "copilot.nothing_found": "I didn't find anything for you there.",
+  "copilot.disabled": "HR Copilot is turned off for your organisation.",
+  "nav.onboarding": "Onboarding",
+  "nav.performance": "Performance",
+  "nav.helpdesk": "Helpdesk",
+  "nav.analytics": "Analytics",
+  "nav.copilot": "HR Copilot"
 }
