@@ -1,0 +1,19 @@
+// Part 15 B: the friendly visual kit -- one import for every page.
+export { default as Emoji, EMOJI, hasEmoji } from "./Emoji";
+export { default as Illustration, type IllustrationName } from "./Illustration";
+export { default as FriendlyAnimation, type AnimationName } from "./FriendlyAnimation";
+export { default as PageHeader } from "./PageHeader";
+export { default as StatTile } from "./StatTile";
+export { default as EmptyState } from "./EmptyState";
+export { default as FriendlyError, explainError } from "./FriendlyError";
+export { default as StepForm, type FormStep } from "./StepForm";
+export { default as ProgressRing } from "./ProgressRing";
+export { default as Timeline, type TimelineItem } from "./Timeline";
+export { default as StageStepper } from "./StageStepper";
+export { default as StatusChip, STATUS_STYLES, statusStyle, humanise, useToneColours, type Tone } from "./StatusChip";
+export { default as InfoTip } from "./InfoTip";
+export { default as UserAvatar } from "./UserAvatar";
+export { default as ShowMeHow, refreshMediaCache } from "./ShowMeHow";
+export { default as PageTour, startPageTour, type TourStep } from "./PageTour";
+export { celebrate } from "./celebrate";
+export { useReducedMotion, prefersReducedMotion } from "./motion";

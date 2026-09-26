@@ -1555,3 +1555,31 @@ export const experienceApi = {
   myLetters: () => get<{ id: UUID; template_key: string; html: string }[]>("/api/v1/me/letters"),
   myDocuments: () => get<{ id: UUID; type: string; issued_date: string | null; expiry_date: string | null }[]>("/api/v1/me/documents"),
 };
+
+// ---- Part 15 B: company media (welcome video, "Show me how" clips) + celebrate-once ----
+
+export interface MediaItem {
+  key: string;
+  content_type: string;
+  size_bytes: number;
+  title: string | null;
+  url: string;
+  updated_at: string | null;
+}
+
+export const mediaApi = {
+  list: () => get<MediaItem[]>("/api/v1/media"),
+  upload: (key: string, file: File, title?: string) => {
+    const form = new FormData();
+    form.append("file", file);
+    if (title) form.append("title", title);
+    return request<MediaItem>(`/api/v1/media/${encodeURIComponent(key)}`, { method: "PUT", body: form });
+  },
+  remove: (key: string) => del<void>(`/api/v1/media/${encodeURIComponent(key)}`),
+  // Public file URL -- usable directly as <video src>, no auth header needed.
+  fileUrl: (key: string) => `${BASE_URL}/api/v1/public/media/${encodeURIComponent(key)}`,
+};
+
+export const celebrationsApi = {
+  once: (eventKey: string) => post<{ first: boolean }>(`/api/me/celebrations/${encodeURIComponent(eventKey)}`),
+};

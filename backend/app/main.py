@@ -158,6 +158,9 @@ app.include_router(superadmin_router)
 app.include_router(privacy_router)
 app.include_router(privacy_public_router)
 app.include_router(experience_router)
+from app.experience.media_router import router as media_router  # noqa: E402
+
+app.include_router(media_router)
 install_friendly_errors(app)
 
 

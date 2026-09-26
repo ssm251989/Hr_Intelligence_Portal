@@ -103,6 +103,8 @@ from app.models.privacy import (
 from app.models.experience import (
     FormDraft,
     SavedView,
+    TenantMedia,
+    UserCelebration,
 )
 from app.models.hiring_team import JobHiringTeamMember
 from app.models.hr_inbound_email import HrInboundEmail
@@ -208,6 +210,8 @@ __all__ = [
     "NegotiationToken",
     "FormDraft",
     "SavedView",
+    "TenantMedia",
+    "UserCelebration",
     "BreachIncident",
     "ConsentRecord",
     "DataPrincipalRequest",
