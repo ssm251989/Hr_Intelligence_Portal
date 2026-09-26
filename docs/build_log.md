@@ -1927,3 +1927,37 @@ Decisions / gaps to review:
 
 Quick checks: `tsc --noEmit -p tsconfig.app.json` exit 0, `npm run build` OK, `compileall -q app`
 OK, `import app.main` OK.
+
+## Part 15.5 -- Role-based home screens (2026-09-26)
+
+Built:
+- Backend `experience/home_router.py`: `GET /api/v1/me/home` (home kind from roles: HR roles ->
+  hr; Manager/Hiring Manager/Interviewer or anyone with direct reports -> manager; else employee;
+  admins may preview any home with `?kind=`), `PUT|DELETE /api/v1/me/home/layout` (own layout),
+  `PUT /api/v1/home/defaults/{kind}` (company default per home, `platform.settings.configure`),
+  `GET /api/v1/home/hiring-flow` (Sankey data from where every application is now: reached-stage
+  counts + drop-outs), `/home/alerts` (response times missed, interview feedback overdue, joiners
+  in 3 days not ready -- each only if the user may see it), `/home/people-by-office`,
+  `/home/my-team`, `/home/my-feedback`, `/home/my-goals`. Layouts stored as settings
+  (`ux.home_layout` user scope, `ux.home_default_hr|manager|employee` tenant scope) so they get
+  settings history/revert; only {i,x,y,w,h} integers are accepted.
+- Frontend `pages/HomePage.tsx` (route `/`; the old Overview stays at `/overview`):
+  greeting hero, react-grid-layout board ("Arrange my home" -> drag by title / resize; autosave;
+  "Back to the standard layout"; admins: "Show home for HR / Managers / Employees" + "Use as company
+  default"); phones get a single stacked column. Saved layouts can only rearrange a home's boxes.
+  - HR: 4 number tiles (open jobs, candidates in progress, interviews this month, hired this month)
+    with words, "Where candidates go" recharts Sankey (forward brand / drop-outs coral + legend in
+    words), to-do sorted by urgency (Late / Nh left / date chips), people-by-office Leaflet bubbles
+    (click -> directory filtered by office), heads-up alerts, setup checklist for admins.
+  - Manager: to-do/approvals, interviews waiting for my feedback (join / give feedback), my team,
+    team goals, alerts.  Employee: my tasks, my goals, my tickets, my assets (confirm receipt),
+    my letters (sandboxed preview).
+- All text in `i18n/pages/home.ts` (en/hi/ta).
+
+Decisions: the Sankey is built from current statuses (not transition history) -- truthful
+"reached this stage" counts with no extra tables; office map uses the office's stored lat/lng
+(offices without one are listed as chips instead of guessed); widget data loads per box so one
+forbidden/slow source never blanks the page.
+
+Quick checks: `tsc` exit 0, `npm run build` OK, `compileall` OK; the 9 home endpoints answered
+200 against the running backend for the admin user (layout save/reset round-trip verified).

@@ -161,6 +161,9 @@ app.include_router(experience_router)
 from app.experience.media_router import router as media_router  # noqa: E402
 
 app.include_router(media_router)
+from app.experience.home_router import router as home_router  # noqa: E402
+
+app.include_router(home_router)
 from app.experience.ui_offers_router import router as ui_offers_router  # noqa: E402
 
 app.include_router(ui_offers_router)
