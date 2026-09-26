@@ -1,6 +1,6 @@
 import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster/dist/MarkerCluster.css";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import L, { latLngBounds } from "leaflet";
 import { CircleMarker, MapContainer, TileLayer, Tooltip as LeafletTooltip, useMap } from "react-leaflet";
 import Box from "@mui/material/Box";
@@ -9,8 +9,8 @@ import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
 import { useNavigate } from "react-router-dom";
 
-import type { Office } from "../../api/homeApi";
-import type { HeatCell, JobLocation } from "../../api/insightsApi";
+import { geoApi, type GeoConfig } from "../../api/geoApi";
+import type { HeatCell } from "../../api/insightsApi";
 import { useT } from "../../i18n";
 
 // Part 15.6 L-V1/V2/V3: the three Analytics maps. This whole file is lazy-loaded by the
@@ -59,15 +59,13 @@ function FitBounds({ points }: { points: [number, number][] }) {
 function BaseMap({ points, height, label, children }: { points: [number, number][]; height: number; label: string; children: ReactNode }) {
   const theme = useTheme();
   const f = theme.palette.fresh;
-  const style = theme.palette.mode === "dark" ? "dark_all" : "light_all";
+  const [tiles, setTiles] = useState<GeoConfig | null>(null);
+  useEffect(() => { geoApi.config().then(setTiles).catch(() => setTiles(null)); }, []);
   return (
     <Box role="img" aria-label={label} sx={{ height, borderRadius: "14px", overflow: "hidden", border: `1px solid ${f.line}`, "& .leaflet-container": { bgcolor: f.surface2, fontFamily: "inherit" } }}>
       <MapContainer center={[22.5, 80]} zoom={4} style={{ height: "100%", width: "100%" }} scrollWheelZoom={false}>
         <FitBounds points={points} />
-        <TileLayer
-          url={`https://{s}.basemaps.cartocdn.com/${style}/{z}/{x}/{y}{r}.png`}
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-        />
+        {tiles && <TileLayer url={tiles.tile_url} attribution={tiles.attribution} />}
         {children}
       </MapContainer>
     </Box>
@@ -87,38 +85,6 @@ function PlaceChips({ items, onPick }: { items: { key: string; label: string; co
         </Box>
       ))}
     </Stack>
-  );
-}
-
-// ---- L-V1: open jobs by location ----
-
-export function JobsMap({ locations, height = 300 }: { locations: JobLocation[]; height?: number }) {
-  const t = useT();
-  const f = useTheme().palette.fresh;
-  const chart = useTheme().palette.chart;
-  const navigate = useNavigate();
-  const placed = locations.filter((l) => l.lat !== null && l.lng !== null);
-  const max = Math.max(1, ...locations.map((l) => l.count));
-  const open = (loc: string | null) => navigate(`/jobs?status=published${loc ? `&location=${encodeURIComponent(loc)}` : ""}`);
-  const label = (l: JobLocation) => l.location || t("analytics.maps.no_location");
-  const summary = locations.map((l) => `${label(l)}: ${t("analytics.maps.jobs", { count: l.count })}`).join(", ");
-
-  return (
-    <Box>
-      {placed.length > 0 && (
-        <BaseMap points={placed.map((l) => [l.lat!, l.lng!])} height={height} label={summary}>
-          {placed.map((l) => (
-            <CircleMarker key={`${l.location}`} center={[l.lat!, l.lng!]} radius={7 + (l.count / max) * 14}
-              pathOptions={{ color: chart[0] ?? f.brand, fillColor: chart[0] ?? f.brand, fillOpacity: 0.4, weight: 2 }}
-              eventHandlers={{ click: () => open(l.location) }}>
-              <LeafletTooltip>{label(l)}: {t("analytics.maps.jobs", { count: l.count })}</LeafletTooltip>
-            </CircleMarker>
-          ))}
-        </BaseMap>
-      )}
-      <PlaceChips items={locations.map((l) => ({ key: l.location ?? "", label: label(l), count: t("analytics.maps.jobs", { count: l.count }) }))}
-        onPick={(k) => open(k || null)} />
-    </Box>
   );
 }
 
@@ -167,61 +133,6 @@ export function CandidateHeatMap({ cells, height = 300 }: { cells: HeatCell[]; h
         <Typography variant="caption">{t("analytics.maps.more")}</Typography>
       </Stack>
       <PlaceChips items={cells.map((c) => ({ key: c.city, label: c.city, count: t("analytics.maps.candidates", { count: c.count }) }))} onPick={open} />
-    </Box>
-  );
-}
-
-// ---- L-V3: headcount by office with marker clusters (clusters add up their offices) ----
-
-function ClusterLayer({ offices, colour, ink, onPick, peopleLabel }: {
-  offices: Office[]; colour: string; ink: string; onPick: (id: string) => void; peopleLabel: (n: number) => string;
-}) {
-  const map = useMap();
-  useEffect(() => {
-    const bubble = (n: number, size: number) =>
-      L.divIcon({
-        html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${colour};color:${ink};display:grid;place-items:center;font-weight:800;font-size:13px;box-shadow:0 0 0 5px ${colour}55">${n}</div>`,
-        className: "", iconSize: [size, size],
-      });
-    const group = L.markerClusterGroup({
-      showCoverageOnHover: false, maxClusterRadius: 50,
-      iconCreateFunction: (cluster) => {
-        const sum = cluster.getAllChildMarkers().reduce((acc, m) => acc + ((m.options as { count?: number }).count ?? 0), 0);
-        return bubble(sum, 40);
-      },
-    });
-    offices.filter((o) => o.lat !== null && o.lng !== null).forEach((o) => {
-      const marker = L.marker([o.lat!, o.lng!], { icon: bubble(o.count, 32), count: o.count, keyboard: true, title: `${o.name}: ${peopleLabel(o.count)}` } as L.MarkerOptions & { count: number });
-      marker.bindTooltip(`${o.name}: ${peopleLabel(o.count)}`);
-      marker.on("click", () => onPick(o.id));
-      group.addLayer(marker);
-    });
-    map.addLayer(group);
-    return () => {
-      map.removeLayer(group);
-    };
-  }, [map, offices, colour, ink, onPick, peopleLabel]);
-  return null;
-}
-
-export function HeadcountClusterMap({ offices, height = 300 }: { offices: Office[]; height?: number }) {
-  const t = useT();
-  const f = useTheme().palette.fresh;
-  const navigate = useNavigate();
-  const ready = usePlugins();
-  const placed = useMemo(() => offices.filter((o) => o.lat !== null && o.lng !== null), [offices]);
-  const open = useCallback((id: string) => navigate(`/directory?location=${encodeURIComponent(id)}`), [navigate]);
-  const people = useCallback((n: number) => t("analytics.maps.people", { count: n }), [t]);
-  const summary = offices.map((o) => `${o.name}: ${people(o.count)}`).join(", ");
-
-  return (
-    <Box>
-      {placed.length > 0 && (
-        <BaseMap points={placed.map((o) => [o.lat!, o.lng!])} height={height} label={summary}>
-          {ready && <ClusterLayer offices={placed} colour={f.brand} ink={f.brandInk} onPick={open} peopleLabel={people} />}
-        </BaseMap>
-      )}
-      <PlaceChips items={offices.map((o) => ({ key: o.id, label: o.name, count: people(o.count) }))} onPick={open} />
     </Box>
   );
 }

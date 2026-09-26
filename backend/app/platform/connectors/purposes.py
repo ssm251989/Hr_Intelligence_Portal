@@ -36,6 +36,7 @@ def _register_all() -> None:
     register_purpose("meeting.interviews")
     register_purpose("chat.hr_alerts")
     register_purpose("storage.documents")
+    register_purpose("geo.geocoding")  # Part 17.3: place name / PIN -> map coordinates
     register_purpose("storage.exports")
     register_purpose("llm.resume_extraction")
     register_purpose("llm.scoring")

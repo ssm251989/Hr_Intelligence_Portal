@@ -77,3 +77,52 @@ GET /candidates/applications?status=screened,hr_selected -> 200 (multi-status fi
 - Raw default stage names ("Hr Selected") are no longer shown.
 
 **Screenshot:** `home.png`, `analytics.png` -- **pending login proof**.
+
+---
+
+## 17.3 Maps
+
+**Wrong:**
+- Three separate map implementations, each with its own small hard-coded city table (about 55 cities).
+- The Home map never re-measured itself inside its resizable box, which gave grey or shifted tiles and misplaced markers.
+- There was no geocoding and no bounds check. A place that wasn't in a table silently became a chip, and nobody could fix it.
+
+**Changed:**
+- `app/platform/geo/`:
+  - `india_cities.py`: 304 cities plus aliases (Bangalore, Gurgaon, Bombay…) and India's bounds.
+  - `service.py`: resolves a place in this order: manual fix, then the office's own coordinates, then the `geo_cache` table (new, migration `c7e2a9d4f1b8`), then the offline table (whole text, then its parts, then any known city word, e.g. "Plot 12, Madhapur, Hyderabad 500081" gives Hyderabad), then the geocoding connection.
+- New connector provider `nominatim` and purpose `geo.geocoding`. The public OpenStreetMap Nominatim server is the default; a company can route its own server.
+  - Online lookups run in a background task, 1 request per second (the server's policy), and every answer is cached, including misses (retried after 7 days). A page never waits on the network.
+- Settings: `geo.tile_url` (OpenStreetMap by default), `geo.tile_attribution`, `geo.online_lookup`, `geo.countries` (["IN"]). Points outside the allowed countries are rejected.
+- API: `GET /api/v1/geo/config`, `GET /api/v1/geo/places?kind=offices|jobs` (placed points plus a not-found list), `PUT /api/v1/geo/fix` (city name or lat/lng, audited; offices also get their record updated).
+- One shared `components/maps/PlacesMap.tsx`, used by Home "People by office", the Jobs page panel and the Analytics jobs and offices maps:
+  - real Leaflet map, tiles from the setting, zoom (scroll wheel) and pan;
+  - marker clusters that add up their counts, auto-fit, bubble size = count;
+  - popup with place, count and an "Open list" button;
+  - a "Location not found - fix it" list with a Fix dialog.
+- The Analytics heat map also uses the tile setting. The old `OfficeMap.tsx` and `JobsLocationMap.tsx` are removed.
+
+**Verified (API):**
+```
+GET /api/v1/geo/config -> 200  tile_url https://tile.openstreetmap.org/{z}/{x}/{y}.png, countries ["IN"], bounds [[6.5,68],[37.2,97.5]]
+GET /api/v1/geo/places?kind=offices -> 200
+    Demo - Bengaluru office  3 people  12.972, 77.595 (record)
+    Demo - Chennai office    3 people  13.083, 80.271 (record)
+GET /api/v1/geo/places?kind=jobs -> 200   Chennai  2 open jobs  13.083, 80.271 (offline)
+offline lookups:
+    'Hyderabad'                           -> 17.385, 78.4867  Hyderabad, Telangana
+    'Bangalore - Whitefield'              -> 12.9716, 77.5946 Bengaluru, Karnataka
+    'Chennai, Tamil Nadu'                 -> 13.0827, 80.2707
+    'Pune (Hinjewadi)'                    -> 18.5204, 73.8567
+    'Plot 12, Madhapur, Hyderabad 500081' -> Hyderabad
+    'Gurgaon' -> Gurugram;  'Remote' -> not found;  London inside India? False
+live Nominatim: 'Hinjewadi, Pune' -> 18.592, 73.758 (IN)
+PUT /api/v1/geo/fix {"kind":"jobs","text":"Hitech City","city":"Hyderabad"} -> 200 (source manual)
+PUT /api/v1/geo/fix ... lat 51.5, lng -0.12 -> 400 "That point is outside the countries your company works in."
+PUT /api/v1/geo/fix ... city "Atlantis" -> 400 "We don't know that city yet…"
+```
+(The "Hitech City -> Hyderabad" manual entry is left in `geo_cache` for ctd-techs, where it is correct.)
+
+**Screenshot:**
+- `fix17-3-map-cities.png`: Hyderabad, Bengaluru, Chennai and Pune plotted from the geo service's coordinates on OpenStreetMap tiles. Each dot sits on its city.
+- In-app maps (`home.png`, `jobs.png`, `analytics.png`): **pending login proof**.

@@ -2100,3 +2100,15 @@ NEXT: commit 17.1 (i18n) once the people/performance bundles land, then 17.3 map
 - `npm run i18n:check` added and wired into `npm run build` (fails the build on any gap).
 
 NEXT: 17.3 maps (geo service + cache + offline India table, shared Leaflet map, "Location not found" fix list).
+
+## Part 17.3 -- Maps (2026-09-27)
+
+- Geo service (cache table + 304-city offline table + `nominatim` connector for purpose
+  `geo.geocoding`, background lookups at 1 req/s, India bounds via `geo.countries`), map API
+  (`/api/v1/geo/config|places|fix`), one shared Leaflet `PlacesMap` (tiles from `geo.tile_url`,
+  clusters, auto-fit, popup + open list, "Location not found - fix it").
+- Decisions: public Nominatim is the default geocoder (no key; policy respected, answers
+  cached); Jobs-page panel's map now shows all open jobs (its legend filter still applies to
+  the legend); old per-component city tables removed.
+
+NEXT: 17.4 one scoring language ("Match score (0-100)" + one "Shortlist threshold").

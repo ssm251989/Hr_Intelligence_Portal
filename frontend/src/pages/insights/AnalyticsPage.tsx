@@ -22,9 +22,8 @@ import { useReducedMotion } from "../../ui-kit/motion";
 
 const HiringSankey = lazy(() => import("../../components/home/HiringSankey"));
 const HiringFunnel = lazy(() => import("../../components/home/HiringFunnel"));
-const JobsMap = lazy(() => import("../../components/insights/InsightsMaps").then((m) => ({ default: m.JobsMap })));
+const PlacesMap = lazy(() => import("../../components/maps/PlacesMap"));
 const CandidateHeatMap = lazy(() => import("../../components/insights/InsightsMaps").then((m) => ({ default: m.CandidateHeatMap })));
-const HeadcountClusterMap = lazy(() => import("../../components/insights/InsightsMaps").then((m) => ({ default: m.HeadcountClusterMap })));
 
 function Body<T>({ value, reload, empty, children }: { value: Loaded<T>; reload: () => void; empty: (d: T) => boolean; children: (d: T) => React.ReactNode }) {
   const t = useT();
@@ -123,7 +122,7 @@ export default function AnalyticsPage() {
 
         <Cell span={{ xs: 12, lg: 6 }}>
           <InsightCard emoji="briefcase" title={t("analytics.jobs_map.title")} sub={t("analytics.jobs_map.sub")}>
-            <Body value={jobs} reload={reloadJobs} empty={(d) => d.locations.length === 0}>{(d) => <JobsMap locations={d.locations} />}</Body>
+            <Body value={jobs} reload={reloadJobs} empty={(d) => d.locations.length === 0}>{() => <PlacesMap kind="jobs" />}</Body>
           </InsightCard>
         </Cell>
         <Cell span={{ xs: 12, lg: 6 }}>
@@ -145,7 +144,7 @@ export default function AnalyticsPage() {
 
         <Cell span={12}>
           <InsightCard emoji="building" title={t("analytics.offices.title")} sub={t("analytics.offices.sub")}>
-            <Body value={offices} reload={reloadOffices} empty={(d) => d.offices.length === 0}>{(d) => <HeadcountClusterMap offices={d.offices} height={360} />}</Body>
+            <Body value={offices} reload={reloadOffices} empty={(d) => d.offices.length === 0}>{() => <PlacesMap kind="offices" height={360} />}</Body>
           </InsightCard>
         </Cell>
       </PageGrid>

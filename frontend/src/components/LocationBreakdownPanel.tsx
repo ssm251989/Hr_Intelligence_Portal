@@ -10,7 +10,9 @@ import Typography from "@mui/material/Typography";
 
 import type { LabeledCount } from "../api/types";
 import BreakdownLegend, { toBreakdownSlices } from "./BreakdownLegend";
-import JobsLocationMap from "./JobsLocationMap";
+import { lazy, Suspense } from "react";
+
+const PlacesMap = lazy(() => import("./maps/PlacesMap"));
 
 const ALL_LOCATIONS = "all";
 
@@ -50,7 +52,7 @@ export default function LocationBreakdownPanel({ rows }: { rows: LabeledCount[] 
           room at this panel's actual (2-up-then-1, or 3-up on wide screens) width. */}
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, md: 7 }}>
-          <JobsLocationMap rows={filteredRows} />
+          <Suspense fallback={null}><PlacesMap kind="jobs" height={280} /></Suspense>
         </Grid>
         <Grid size={{ xs: 12, md: 5 }}>
           <BreakdownLegend slices={slices} total={total} />

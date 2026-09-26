@@ -136,6 +136,7 @@ from app.models.pipeline import PipelineStage, PipelineTemplate
 from app.models.prompt import PromptTemplate
 from app.models.requisition import JobRequisition
 from app.models.secret import Secret, SecretScope
+from app.models.geo import GeoCacheEntry
 from app.models.agency import AgencyJobAssignment, AgencyMember, AgencySubmission, RecruitmentAgency
 from app.models.setting_value import SettingValue, SettingValueHistory
 from app.models.user import User
@@ -151,6 +152,7 @@ from app.models.workflow import WorkflowDefinition, WorkflowInstance, WorkflowSt
 # populated tables that happened to only ever be imported directly by their own
 # routers/services, never through this file) until this fix.
 __all__ = [
+    "GeoCacheEntry",
     "AgencyJobAssignment",
     "AgencyMember",
     "AgencySubmission",

@@ -41,6 +41,13 @@ def register_all() -> None:
     # walks "user" before "tenant" for every setting, so this is the ONLY change needed to
     # make "locale/tz from layered settings (user > location > tenant)" (section 6's own
     # wording) real for its two implemented layers; "location" needs Part 7's org model.
+    # Part 17.3 maps: tile server (any OpenStreetMap-style {z}/{x}/{y} URL), whether unknown
+    # places may be looked up online through the geocoding connection, and which countries
+    # a point may fall in (ISO codes; India only by default).
+    register(SettingDef("geo.tile_url", "str", "https://tile.openstreetmap.org/{z}/{x}/{y}.png", module="geo", group="Maps"))
+    register(SettingDef("geo.tile_attribution", "str", "&copy; OpenStreetMap contributors", module="geo", group="Maps"))
+    register(SettingDef("geo.online_lookup", "bool", True, module="geo", group="Maps"))
+    register(SettingDef("geo.countries", "json", ["IN"], module="geo", group="Maps"))
     register(SettingDef("org.timezone", "str", "Asia/Kolkata", module="org", group="Organisation", scopes_allowed=("user", "tenant")))
     register(SettingDef("org.locale", "str", "en-IN", module="org", group="Organisation", scopes_allowed=("user", "tenant")))
     register(SettingDef("org.currency", "str", "INR", module="org", group="Organisation"))

@@ -20,7 +20,7 @@ import AdminHomeChecklist from "../AdminHomeChecklist";
 // Part 15.5: the boxes on the role-based home pages. Each widget loads its own data so one
 // slow or forbidden source never blanks the whole page.
 
-const OfficeMap = lazy(() => import("./OfficeMap"));
+const PlacesMap = lazy(() => import("../maps/PlacesMap"));
 const HiringFunnel = lazy(() => import("./HiringFunnel"));
 
 /** Load once; `null` = still loading, `false` = failed/forbidden. */
@@ -182,7 +182,7 @@ export function OfficesWidget({ editing }: { editing?: boolean }) {
         <EmptyState compact illustration="map" title={t("home.offices.empty")}
           action={<Button variant="outlined" component={RouterLink} to="/settings#core-hr">{t("home.offices.add")}</Button>} />
       ) : (
-        <Suspense fallback={<Loading />}><OfficeMap offices={data.offices} /></Suspense>
+        <Suspense fallback={<Loading />}><PlacesMap kind="offices" height={240} /></Suspense>
       )}
     </WidgetCard>
   );
