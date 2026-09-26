@@ -42,6 +42,11 @@ export const hi: Bundle = {
   "nav.sub.shortlist": "शॉर्टलिस्ट",
   "nav.sub.all_interviews": "सभी इंटरव्यू",
   "nav.sub.my_interviews": "मेरे इंटरव्यू",
+  "nav.sub.my_performance": "मेरा प्रदर्शन",
+  "nav.sub.my_team": "मेरी टीम",
+  "nav.sub.my_tickets": "मेरे टिकट",
+  "nav.sub.ticket_queue": "टिकट कतार",
+  "nav.sub.all_reports": "सभी रिपोर्ट",
 
   "shell.skip_to_content": "मुख्य सामग्री पर जाएँ",
   "shell.menu_open": "मेन्यू खोलें",

@@ -20,6 +20,9 @@ export const FALLBACK_NAV: NavEntry[] = [
   { label_key: "nav.salary", path: "/salary", group: "hiring", icon: "money" },
   { label_key: "nav.bgv", path: "/bgv", group: "hiring", icon: "shield" },
   { label_key: "nav.offers", path: "/offers", group: "hiring", icon: "envelope" },
+  { label_key: "nav.employees", path: "/employees", group: "people", icon: "people" },
+  { label_key: "nav.directory", path: "/directory", group: "people", icon: "id_card" },
+  { label_key: "nav.helpdesk", path: "/helpdesk", group: "people", icon: "ring_buoy" },
   { label_key: "nav.reports", path: "/reports", group: "insights", icon: "bar_chart" },
   { label_key: "nav.settings", path: "/settings", group: "admin", icon: "gear" },
 ];
@@ -43,6 +46,18 @@ export const NAV_CHILDREN: Record<string, { labelKey: string; path: string }[]> 
     { labelKey: "nav.sub.dashboard", path: "/interviews/dashboard" },
     { labelKey: "nav.sub.all_interviews", path: "/interviews/list" },
     { labelKey: "nav.sub.my_interviews", path: "/interviews/my" },
+  ],
+  "/performance": [
+    { labelKey: "nav.sub.my_performance", path: "/performance" },
+    { labelKey: "nav.sub.my_team", path: "/performance/team" },
+  ],
+  "/helpdesk": [
+    { labelKey: "nav.sub.my_tickets", path: "/helpdesk" },
+    { labelKey: "nav.sub.ticket_queue", path: "/helpdesk/queue" },
+  ],
+  "/reports": [
+    { labelKey: "nav.sub.all_reports", path: "/reports" },
+    { labelKey: "nav.report_builder", path: "/reports/builder" },
   ],
 };
 

@@ -42,6 +42,11 @@ export const ta: Bundle = {
   "nav.sub.shortlist": "குறும்பட்டியல்",
   "nav.sub.all_interviews": "அனைத்து நேர்காணல்கள்",
   "nav.sub.my_interviews": "என் நேர்காணல்கள்",
+  "nav.sub.my_performance": "என் செயல்திறன்",
+  "nav.sub.my_team": "என் குழு",
+  "nav.sub.my_tickets": "என் டிக்கெட்டுகள்",
+  "nav.sub.ticket_queue": "டிக்கெட் வரிசை",
+  "nav.sub.all_reports": "எல்லா அறிக்கைகளும்",
 
   "shell.skip_to_content": "முதன்மை உள்ளடக்கத்திற்குச் செல்லவும்",
   "shell.menu_open": "மெனுவைத் திறக்கவும்",

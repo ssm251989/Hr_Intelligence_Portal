@@ -185,6 +185,24 @@ app.include_router(ui_careers_router)
 from app.experience.settings_home_router import router as settings_home_router  # noqa: E402
 
 app.include_router(settings_home_router)
+from app.experience.ui_people_router import router as ui_people_router  # noqa: E402
+
+app.include_router(ui_people_router)
+from app.experience.ui_onboarding_router import router as ui_onboarding_router  # noqa: E402
+
+app.include_router(ui_onboarding_router)
+from app.experience.ui_performance_router import router as ui_performance_router  # noqa: E402
+
+app.include_router(ui_performance_router)
+from app.experience.ui_servicedesk_router import router as ui_servicedesk_router  # noqa: E402
+
+app.include_router(ui_servicedesk_router)
+from app.experience.ui_insights_router import router as ui_insights_router  # noqa: E402
+
+app.include_router(ui_insights_router)
+from app.experience.ui_onboarding_router import public_router as ui_onboarding_public_router  # noqa: E402
+
+app.include_router(ui_onboarding_public_router)
 install_friendly_errors(app)
 
 

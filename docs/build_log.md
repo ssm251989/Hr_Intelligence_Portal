@@ -1961,3 +1961,22 @@ forbidden/slow source never blanks the page.
 
 Quick checks: `tsc` exit 0, `npm run build` OK, `compileall` OK; the 9 home endpoints answered
 200 against the running backend for the admin user (layout save/reset round-trip verified).
+
+## Part 15.6 -- Pages for the new modules: wiring (2026-09-26)
+
+Resumed after a restart: the page/component/router files for 15.6 were written but not wired.
+Fixed 4 tsc errors in them, committed as "wip: resume after restart", then:
+- Backend: registered `ui_people|ui_onboarding(+public)|ui_performance|ui_servicedesk|ui_insights`
+  routers in `main.py`. Module registry: new `core_hr` module (Employees, People directory, Org
+  chart); Onboarding/Performance/Helpdesk nav now point at the real pages instead of
+  `/settings#...`; nav entries for Compensation, Succession, Assets, Exits, Analytics. `NavItem`
+  gained `any_of` so self-service pages (Helpdesk, Assets, Exits, Performance) show for staff OR
+  employees. `/api/v1/ui/*` prefixes added to their module so a switched-off module is blocked.
+- Frontend: routes for all new pages (lazy), `/welcome` + `/welcome/:token` public,
+  `/settings` -> new Settings home + `/settings/:category/:page` (old `#anchor` links redirect;
+  old SettingsPage file kept, no longer routed). Sub-menus for Performance, Helpdesk, Reports.
+
+Decision: Agency portal has no backend at all (no table, permission or endpoint) -- built
+separately as its own small step (next).
+
+Quick checks: tsc exit 0, compileall OK, `import app.main` OK (25 nav items).

@@ -45,6 +45,11 @@ export const en = {
   "nav.sub.shortlist": "Shortlist",
   "nav.sub.all_interviews": "All interviews",
   "nav.sub.my_interviews": "My interviews",
+  "nav.sub.my_performance": "My performance",
+  "nav.sub.my_team": "My team",
+  "nav.sub.my_tickets": "My tickets",
+  "nav.sub.ticket_queue": "Ticket queue",
+  "nav.sub.all_reports": "All reports",
 
   // app shell
   "shell.skip_to_content": "Skip to main content",

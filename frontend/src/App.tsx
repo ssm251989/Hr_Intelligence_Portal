@@ -38,11 +38,30 @@ const ScreeningDashboardPage = lazy(() => import("./pages/ScreeningDashboardPage
 const ScreeningListPage = lazy(() => import("./pages/ScreeningListPage"));
 const SetPasswordPage = lazy(() => import("./pages/SetPasswordPage"));
 const SetupWizardPage = lazy(() => import("./pages/SetupWizardPage"));
-const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const SuperAdminPage = lazy(() => import("./pages/SuperAdminPage"));
 const ShortlistingDashboardPage = lazy(() => import("./pages/ShortlistingDashboardPage"));
 const ShortlistingListPage = lazy(() => import("./pages/ShortlistingListPage"));
 const UnifiedInboxPage = lazy(() => import("./pages/UnifiedInboxPage"));
+// Part 15.6: pages for the new modules.
+const EmployeesPage = lazy(() => import("./pages/people/EmployeesPage"));
+const EmployeeProfilePage = lazy(() => import("./pages/people/EmployeeProfilePage"));
+const DirectoryPage = lazy(() => import("./pages/people/DirectoryPage"));
+const OrgChartPage = lazy(() => import("./pages/people/OrgChartPage"));
+const OnboardingDashboardPage = lazy(() => import("./pages/onboarding/OnboardingDashboardPage"));
+const WelcomePortalPage = lazy(() => import("./pages/onboarding/WelcomePortalPage"));
+const PerformancePage = lazy(() => import("./pages/performance/PerformancePage"));
+const TeamPerformancePage = lazy(() => import("./pages/performance/TeamPerformancePage"));
+const ReviewFormPage = lazy(() => import("./pages/performance/ReviewFormPage"));
+const CompensationPage = lazy(() => import("./pages/performance/CompensationPage"));
+const SuccessionPage = lazy(() => import("./pages/performance/SuccessionPage"));
+const HelpdeskPage = lazy(() => import("./pages/servicedesk/HelpdeskPage"));
+const HelpdeskQueuePage = lazy(() => import("./pages/servicedesk/HelpdeskQueuePage"));
+const AssetsPage = lazy(() => import("./pages/servicedesk/AssetsPage"));
+const ExitsPage = lazy(() => import("./pages/servicedesk/ExitsPage"));
+const AnalyticsPage = lazy(() => import("./pages/insights/AnalyticsPage"));
+const ReportBuilderPage = lazy(() => import("./pages/insights/ReportBuilderPage"));
+const SettingsHomePage = lazy(() => import("./pages/settings/SettingsHomePage"));
+const SettingsCategoryPage = lazy(() => import("./pages/settings/SettingsCategoryPage"));
 
 const PageLoading = () => <CircularProgress sx={{ m: 4 }} aria-label="Loading" />;
 
@@ -60,6 +79,8 @@ export default function App() {
               <Route path="/register" element={<RegisterPage />} />
               <Route path="/set-password" element={<SetPasswordPage />} />
               <Route path="/superadmin" element={<SuperAdminPage />} />
+              <Route path="/welcome" element={<WelcomePortalPage />} />
+              <Route path="/welcome/:token" element={<WelcomePortalPage />} />
               <Route path="/careers" element={<CareersLayout />}>
                 <Route index element={<CareersListPage />} />
                 <Route path=":id" element={<CareersJobDetailPage />} />
@@ -99,8 +120,26 @@ export default function App() {
                 <Route path="/bgv" element={<BgvPage />} />
                 <Route path="/offers" element={<OffersPage />} />
                 <Route path="/reports" element={<ReportsPage />} />
+                <Route path="/reports/builder" element={<ReportBuilderPage />} />
+                <Route path="/analytics" element={<AnalyticsPage />} />
+                <Route path="/employees" element={<EmployeesPage />} />
+                <Route path="/employees/:employeeId" element={<EmployeeProfilePage />} />
+                <Route path="/directory" element={<DirectoryPage />} />
+                <Route path="/org-chart" element={<OrgChartPage />} />
+                <Route path="/onboarding" element={<OnboardingDashboardPage />} />
+                <Route path="/performance" element={<PerformancePage />} />
+                <Route path="/performance/team" element={<TeamPerformancePage />} />
+                <Route path="/performance/review/:reviewId" element={<ReviewFormPage />} />
+                <Route path="/compensation" element={<CompensationPage />} />
+                <Route path="/succession" element={<SuccessionPage />} />
+                <Route path="/helpdesk" element={<HelpdeskPage />} />
+                <Route path="/helpdesk/queue" element={<HelpdeskQueuePage />} />
+                <Route path="/assets" element={<AssetsPage />} />
+                <Route path="/exits" element={<ExitsPage />} />
                 <Route path="/setup" element={<SetupWizardPage />} />
-                <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/settings" element={<SettingsHomePage />} />
+                <Route path="/settings/:category" element={<SettingsCategoryPage />} />
+                <Route path="/settings/:category/:page" element={<SettingsCategoryPage />} />
               </Route>
               </Routes>
               </Suspense>

@@ -23,6 +23,9 @@ class NavItem:
     label_key: str
     path: str
     permission: Optional[str] = None  # None = any signed-in user
+    # Part 15.6: pages that serve both staff and self-service (e.g. Helpdesk) show when the
+    # user holds ANY of these; used instead of `permission` when set.
+    any_of: tuple[str, ...] = ()
     # Part 15 app shell: sidebar section (today/hiring/people/insights/admin) and the
     # Fluent emoji name shown beside the label.
     group: str = "today"
@@ -53,18 +56,30 @@ MODULES: tuple[ModuleDef, ...] = (
         # the original Reports page (13-module parity); the builder lives on it too
         NavItem("nav.reports", "/reports", group="insights", icon="bar_chart"),
     ), always_on=True),
-    ModuleDef("onboarding", (NavItem("nav.onboarding", "/settings#onboarding", "onboarding.preboarding.view", group="people", icon="waving_hand"),),
-              ("/api/v1/onboarding", "/api/v1/public/onboarding")),
-    ModuleDef("performance", (NavItem("nav.performance", "/settings#performance", "performance.cycle.view", group="people", icon="target"),), ("/api/v1/performance",)),
-    ModuleDef("helpdesk", (NavItem("nav.helpdesk", "/settings#helpdesk", "helpdesk.ticket.view", group="people", icon="ring_buoy"),),
+    ModuleDef("onboarding", (NavItem("nav.onboarding", "/onboarding", "onboarding.preboarding.view", group="people", icon="waving_hand"),),
+              ("/api/v1/onboarding", "/api/v1/public/onboarding", "/api/v1/ui/onboarding", "/api/v1/public/ui/onboarding")),
+    ModuleDef("core_hr", (
+        NavItem("nav.employees", "/employees", "core_hr.employee.view", group="people", icon="people"),
+        NavItem("nav.directory", "/directory", "core_hr.employee.view", group="people", icon="id_card"),
+        NavItem("nav.org_chart", "/org-chart", "core_hr.org.view", group="people", icon="building"),
+    ), ("/api/v1/ui/people",)),
+    ModuleDef("performance", (
+        NavItem("nav.performance", "/performance", any_of=("performance.goal.view", "performance.self.view", "performance.cycle.view"), group="people", icon="target"),
+        NavItem("nav.compensation", "/compensation", "compensation.planning.view", group="people", icon="money"),
+        NavItem("nav.succession", "/succession", "performance.succession.view", group="people", icon="trophy"),
+    ), ("/api/v1/performance", "/api/v1/ui/performance")),
+    ModuleDef("helpdesk", (NavItem("nav.helpdesk", "/helpdesk", any_of=("helpdesk.ticket.view", "helpdesk.self.view"), group="people", icon="ring_buoy"),),
               ("/api/v1/service-desk/tickets", "/api/v1/service-desk/me/tickets", "/api/v1/service-desk/kb", "/api/v1/service-desk/queues",
                "/api/v1/service-desk/sla-policies", "/api/v1/service-desk/calendars", "/api/v1/service-desk/assignment-rules", "/api/v1/service-desk/inbound")),
-    ModuleDef("assets", (), ("/api/v1/service-desk/assets", "/api/v1/service-desk/allocations", "/api/v1/service-desk/asset-requests",
-                             "/api/v1/service-desk/me/assets", "/api/v1/service-desk/me/asset-requests", "/api/v1/service-desk/me/allocations")),
-    ModuleDef("separation", (), ("/api/v1/service-desk/separations", "/api/v1/service-desk/separations-export", "/api/v1/service-desk/clearance-items",
-                                 "/api/v1/service-desk/me/resignation")),
-    ModuleDef("analytics", (), ("/api/v1/intelligence/datasets", "/api/v1/intelligence/reports", "/api/v1/intelligence/metrics",
-                                "/api/v1/intelligence/dashboards", "/api/v1/intelligence/predictive", "/api/v1/intelligence/warehouse-export")),
+    ModuleDef("assets", (NavItem("nav.assets", "/assets", any_of=("assets.asset.view", "assets.self.view"), group="people", icon="laptop"),),
+              ("/api/v1/service-desk/assets", "/api/v1/service-desk/allocations", "/api/v1/service-desk/asset-requests",
+               "/api/v1/service-desk/me/assets", "/api/v1/service-desk/me/asset-requests", "/api/v1/service-desk/me/allocations")),
+    ModuleDef("separation", (NavItem("nav.exits", "/exits", any_of=("separation.case.view", "separation.self.create"), group="people", icon="door"),),
+              ("/api/v1/service-desk/separations", "/api/v1/service-desk/separations-export", "/api/v1/service-desk/clearance-items",
+               "/api/v1/service-desk/me/resignation")),
+    ModuleDef("analytics", (NavItem("nav.analytics", "/analytics", "analytics.report.view", group="insights", icon="chart_up"),),
+              ("/api/v1/intelligence/datasets", "/api/v1/intelligence/reports", "/api/v1/intelligence/metrics",
+               "/api/v1/intelligence/dashboards", "/api/v1/intelligence/predictive", "/api/v1/intelligence/warehouse-export", "/api/v1/ui/insights")),
     ModuleDef("copilot", (), ("/api/v1/intelligence/copilot",)),
     ModuleDef("settings", (NavItem("nav.setup", "/setup", "platform.settings.configure", group="admin", icon="rocket"),
                            NavItem("nav.settings", "/settings", "platform.settings.view", group="admin", icon="gear")), always_on=True),
@@ -103,7 +118,8 @@ def nav_for(db, tenant, user, permissions: set[str]) -> list[dict]:
         if module.code not in on:
             continue
         for item in module.nav:
-            if item.permission is None or item.permission in permissions:
+            allowed = any(p in permissions for p in item.any_of) if item.any_of else (item.permission is None or item.permission in permissions)
+            if allowed:
                 items.append({"label_key": item.label_key, "path": item.path, "module": module.code, "group": item.group, "icon": item.icon})
     return items
 
