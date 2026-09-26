@@ -15,6 +15,33 @@ npx playwright install chromium`, set `SHOT_EMAIL` / `SHOT_PASSWORD`, run
 
 ---
 
+## 17.1 Raw text keys on screen
+
+**Wrong:**
+- The 15.6 pages called about 750 text keys that had no English text at all, and about 800 more lacked Hindi or Tamil.
+- The keys on the Approvals, People and Directory pages, among others, showed raw (e.g. "approvalsPage.title").
+- A key missing from English too was shown as-is.
+
+**Changed:**
+- New bundles `i18n/pages/{people,performance,insights,shell}.ts` and completed Hindi/Tamil in `agency.ts`. Every block has full en/hi/ta coverage.
+- Dynamic keys such as `people.status.${s}` were expanded into their real values.
+- Fallback (`i18n/index.tsx`): current language, then English, then readable words ("people.employees.title" becomes "Title", with a dev-console warning). A raw key never reaches the screen.
+- `npm run i18n:check` (`frontend/scripts/i18n-check.mjs`) scans every `t()`/`tr()` call and `labelKey`/`label_key` literal against en/hi/ta. A dynamic key passes when its fixed prefix exists. `npm run build` now runs it first and stops on any gap.
+
+**Verified:**
+```
+first run:  en 752 / hi 803 / ta 803 missing -> i18n:check FAILED -- 2358 missing
+now:        npm run build -> "i18n:check OK -- 2837 keys, 0 missing", vite built OK
+approvalsPage.title      en "My approvals" | hi "मेरी मंज़ूरियाँ" | ta "எனது ஒப்புதல்கள்"
+people.employees.title   en "Employees"    | hi "कर्मचारी"      | ta "பணியாளர்கள்"
+people.directory.title   en "Directory"    | hi "डायरेक्टरी"     | ta "அடைவு"
+(+ the three *.purpose keys, all present in en/hi/ta)
+```
+
+**Screenshot:** `approvals.png`, `employees.png`, `directory.png` -- **pending login proof**.
+
+---
+
 ## 17.2 Home -- "Where candidates go" funnel
 
 **Wrong:** a Sankey diagram, hard to read, with no period or job filter and no way to open the candidates behind a number.

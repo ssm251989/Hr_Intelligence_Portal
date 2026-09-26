@@ -2090,3 +2090,13 @@ NEXT: owner review of Part 15 (run the screenshot script with an admin login); t
   dependency override, no token/password). Screenshots of signed-in pages pending a login.
 
 NEXT: commit 17.1 (i18n) once the people/performance bundles land, then 17.3 maps.
+
+## Part 17.1 -- No raw text keys (2026-09-27)
+
+- 4 new i18n page bundles (people, performance, insights, shell) + agency hi/ta completed:
+  0 missing keys in en/hi/ta (was 752/803/803). Written by parallel agents, one file each;
+  guessed wordings noted: 9-box cell names, 5-point rating words, confidence levels, day 0 = Sunday.
+- Fallback: locale -> English -> readable last word; never the raw key.
+- `npm run i18n:check` added and wired into `npm run build` (fails the build on any gap).
+
+NEXT: 17.3 maps (geo service + cache + offline India table, shared Leaflet map, "Location not found" fix list).

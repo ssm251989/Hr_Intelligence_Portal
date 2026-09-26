@@ -40,13 +40,23 @@ function readStored(): Locale {
   }
 }
 
+// Part 17.1: a key missing from every bundle must never reach the screen as "a.b.c" --
+// show its last part as words ("people.employees.title" -> "Title") and warn in dev so
+// `npm run i18n:check` catches it before a build.
+function readable(key: string): string {
+  if (import.meta.env.DEV) console.warn(`[i18n] missing text for "${key}"`);
+  const last = key.split(".").pop() ?? key;
+  const words = last.replace(/_one$/, "").replace(/[_-]+/g, " ").trim();
+  return words ? words[0].toUpperCase() + words.slice(1) : key;
+}
+
 function build(locale: Locale, overrides: Record<string, string>): TFunction {
   const bundle = BUNDLES[locale];
   const lookup = (key: string): string | undefined =>
     overrides[key] ?? (bundle as Record<string, string>)[key] ?? (BUNDLES.en as Record<string, string>)[key];
   return (key, vars) => {
     const count = vars?.count;
-    let text = (count === 1 ? lookup(`${key}_one`) : undefined) ?? lookup(key) ?? key;
+    let text = (count === 1 ? lookup(`${key}_one`) : undefined) ?? lookup(key) ?? readable(key);
     if (vars) {
       const n = (v: string | number) => (typeof v === "number" ? v.toLocaleString(locale === "en" ? "en-IN" : `${locale}-IN`) : v);
       text = text.replace(/\{(\w+)\}/g, (m, name: string) => (name in vars ? String(n(vars[name])) : m));
