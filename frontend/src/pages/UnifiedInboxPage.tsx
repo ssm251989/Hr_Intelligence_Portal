@@ -19,6 +19,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 import { extractErrorMessage, workflowApi, type InboxRow } from "../api/client";
+import { t as tr } from "../i18n";
 import RefreshButton from "../components/RefreshButton";
 import InboxOtherItems from "../components/InboxOtherItems";
 
@@ -112,7 +113,7 @@ export default function UnifiedInboxPage() {
         <Table size="small">
           <TableHead>
             <TableRow>
-              <TableCell>Workflow</TableCell>
+              <TableCell>{tr("approvals.request_type")}</TableCell>
               <TableCell>Step</TableCell>
               <TableCell>Due</TableCell>
               <TableCell align="right">Actions</TableCell>

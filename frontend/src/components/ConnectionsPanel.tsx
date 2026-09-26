@@ -19,6 +19,13 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 import { connectorsApi, extractErrorMessage, type ConnectionRow, type ProviderCatalogEntry, type PurposeStatus } from "../api/client";
+import { t as tr } from "../i18n";
+
+// Part 15 C: people see what a connection is FOR in plain words, never the routing code.
+export function purposeLabel(code: string): string {
+  const text = tr(`purpose.${code}`);
+  return text === `purpose.${code}` ? code.split(".").slice(1).join(" ").replace(/_/g, " ") || code : text;
+}
 
 // Part 3 (docs/HRMS_COMPLETE_SPEC.txt section 7's UI, scoped down): a connections list +
 // a create dialog (provider picker -> plain key/value config & secret fields -> Test ->
@@ -141,14 +148,13 @@ export default function ConnectionsPanel() {
     <Card variant="outlined">
       <CardContent>
         <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
-          <Typography variant="h6">Connections</Typography>
+          <Typography variant="h6">{tr("settings.connections.title")}</Typography>
           <Button size="small" variant="contained" onClick={() => setDialogOpen(true)}>
-            New Connection
+            {tr("settings.connections.new")}
           </Button>
         </Stack>
         <Typography variant="body2" color="text.secondary" mb={2}>
-          Every external system (mailbox, AI model, ...) this tenant uses, with encrypted
-          credentials and purpose-based routing (Part 3's Connections Framework).
+          {tr("settings.connections.intro")}
         </Typography>
 
         {error && (
@@ -159,7 +165,7 @@ export default function ConnectionsPanel() {
 
         {unrouted.length > 0 && (
           <Alert severity="warning" sx={{ mb: 2 }}>
-            {unrouted.length} purpose(s) have no connection routed: {unrouted.map((p) => p.purpose).join(", ")}
+            {tr("settings.connections.missing", { count: unrouted.length, list: unrouted.map((p) => purposeLabel(p.purpose)).join(", ") })}
           </Alert>
         )}
 

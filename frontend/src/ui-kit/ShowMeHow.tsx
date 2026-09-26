@@ -8,6 +8,7 @@ import DialogTitle from "@mui/material/DialogTitle";
 import Typography from "@mui/material/Typography";
 
 import { mediaApi, type MediaItem } from "../api/client";
+import { useT } from "../i18n";
 import Emoji from "./Emoji";
 import Illustration from "./Illustration";
 import { useReducedMotion } from "./motion";
@@ -28,6 +29,7 @@ export function refreshMediaCache() {
 
 export default function ShowMeHow({ tourKey }: { tourKey: string }) {
   const reduced = useReducedMotion();
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [media, setMedia] = useState<MediaItem[]>([]);
 
@@ -41,29 +43,29 @@ export default function ShowMeHow({ tourKey }: { tourKey: string }) {
   return (
     <>
       <Button variant="outlined" onClick={() => setOpen(true)} startIcon={<Emoji name="clapper" size={16} />}>
-        Show me how
+        {t("howto.button")}
       </Button>
       <Dialog open={open} onClose={() => setOpen(false)} maxWidth="sm" fullWidth aria-labelledby="show-me-how-title">
-        <DialogTitle id="show-me-how-title">How this page works</DialogTitle>
+        <DialogTitle id="show-me-how-title">{t("howto.title")}</DialogTitle>
         <DialogContent>
           {video ? (
             <Box component="video" src={mediaApi.fileUrl(video.key)} autoPlay={!reduced} loop muted playsInline controls
               sx={{ width: "100%", borderRadius: "14px", bgcolor: "black", aspectRatio: "16 / 10" }}>
-              {gif && <img src={mediaApi.fileUrl(gif.key)} alt="How this page works" />}
+              {gif && <img src={mediaApi.fileUrl(gif.key)} alt={t("howto.title")} />}
             </Box>
           ) : gif ? (
-            <Box component="img" src={mediaApi.fileUrl(gif.key)} alt="How this page works" sx={{ width: "100%", borderRadius: "14px" }} />
+            <Box component="img" src={mediaApi.fileUrl(gif.key)} alt={t("howto.title")} sx={{ width: "100%", borderRadius: "14px" }} />
           ) : (
             <Box sx={{ textAlign: "center", py: 2 }}>
               <Illustration name="video-tutorial" height={130} />
-              <Typography sx={{ mt: 2, fontWeight: 600 }}>No how-to clip for this page yet.</Typography>
-              <Typography color="text.secondary">Take the quick tour instead -- it points at each part of the page.</Typography>
+              <Typography sx={{ mt: 2, fontWeight: 600 }}>{t("howto.none")}</Typography>
+              <Typography color="text.secondary">{t("howto.take_tour_hint")}</Typography>
             </Box>
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setOpen(false)}>Close</Button>
-          <Button variant="contained" onClick={() => { setOpen(false); startPageTour(tourKey); }}>Take the tour</Button>
+          <Button onClick={() => setOpen(false)}>{t("action.close")}</Button>
+          <Button variant="contained" onClick={() => { setOpen(false); startPageTour(tourKey); }}>{t("howto.take_tour")}</Button>
         </DialogActions>
       </Dialog>
     </>

@@ -17,6 +17,7 @@ import TableRow from "@mui/material/TableRow";
 import Typography from "@mui/material/Typography";
 
 import { extractErrorMessage, serviceDeskApi, type AssetRow, type SeparationSummary, type TicketRow } from "../api/client";
+import { t as tr } from "../i18n";
 import ListToolbar, { type ListColumn, type ListViewState } from "./ListToolbar";
 
 // Part 11 (docs/HRMS_COMPLETE_SPEC.txt): helpdesk queue with SLA state, asset register,
@@ -26,14 +27,14 @@ import ListToolbar, { type ListColumn, type ListViewState } from "./ListToolbar"
 
 const TICKET_COLUMNS: ListColumn[] = [
   { key: "number", label: "Ticket" }, { key: "subject", label: "Subject" }, { key: "category_code", label: "Category" },
-  { key: "priority", label: "Priority" }, { key: "status", label: "Status" }, { key: "sla", label: "SLA" },
+  { key: "priority", label: "Priority" }, { key: "status", label: "Status" }, { key: "sla", label: tr("helpdesk.response_time") },
 ];
 
 function SlaChip({ t }: { t: TicketRow }) {
   if (!t.sla?.has_sla) return null;
   return (
     <Chip size="small" color={t.sla.resolution_breached ? "error" : (t.sla.resolution_elapsed_pct ?? 0) >= 80 ? "warning" : "default"}
-      label={t.sla.resolution_breached ? "SLA breached" : `${Math.round(t.sla.resolution_elapsed_pct ?? 0)}% of SLA`} />
+      label={t.sla.resolution_breached ? tr("helpdesk.response_missed") : tr("helpdesk.response_used", { pct: Math.round(t.sla.resolution_elapsed_pct ?? 0) })} />
   );
 }
 
@@ -56,7 +57,7 @@ function TicketsTab() {
       <ListToolbar listKey="helpdesk.tickets" columns={TICKET_COLUMNS} state={view} onStateChange={setView}
         rows={rows as unknown as Record<string, unknown>[]} loading={loading} onRefresh={load} />
       {rows.length === 0 && !loading ? (
-        <Typography color="text.secondary">No tickets. Add ticket categories under Masters and an SLA policy to start the helpdesk.</Typography>
+        <Typography color="text.secondary">{tr("settings.helpdesk.empty")}</Typography>
       ) : (
         <Table size="small">
           <TableHead>

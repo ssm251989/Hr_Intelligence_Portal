@@ -28,6 +28,7 @@ import {
   type OutboundMessageRow,
   type SuppressionRow,
 } from "../api/client";
+import { t as tr } from "../i18n";
 
 // Part 4 (docs/HRMS_COMPLETE_SPEC.txt section 6's UI, scoped down the same way Part 2's
 // PlatformSettingsPanel / Part 3's ConnectionsPanel were): a plain list + publish/preview
@@ -434,11 +435,10 @@ export default function CommunicationsPanel() {
     <Card variant="outlined">
       <CardContent>
         <Typography variant="h6" mb={1}>
-          Communications
+          {tr("settings.comms.title")}
         </Typography>
         <Typography variant="body2" color="text.secondary" mb={2}>
-          Every email template, notification rule, and brand color this tenant uses (Part
-          4's Communication Engine) -- no wording, layout, or recipient list is in code.
+          {tr("settings.comms.intro")}
         </Typography>
         <Tabs value={tab} onChange={(_e, value) => setTab(value)} sx={{ mb: 2 }}>
           {TABS.map((t) => (

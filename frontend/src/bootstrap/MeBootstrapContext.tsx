@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 import { brandingApi, type BootstrapRead } from "../api/client";
+import { useI18n } from "../i18n";
 
 // Part 12/14 (docs/HRMS_COMPLETE_SPEC.txt): the signed-in user's GET /api/me/bootstrap --
 // permissions, nav and AI feature flags. Anything AI in the UI checks `aiFeature()` so a
@@ -29,6 +30,7 @@ export function useMeBootstrap() {
 export function MeBootstrapProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<BootstrapRead | null>(null);
   const [loading, setLoading] = useState(true);
+  const { setLocale, setOverrides } = useI18n();
 
   const load = () => {
     setLoading(true);
@@ -47,8 +49,10 @@ export function MeBootstrapProvider({ children }: { children: ReactNode }) {
     const root = document.documentElement;
     root.dir = data?.ux?.direction ?? "ltr";
     root.classList.toggle("reduce-motion", Boolean(data?.ux?.reduce_motion));
-    if (data?.locale) root.lang = data.locale;
-  }, [data]);
+    // Part 15 C: the user's language + the company's own renames drive every translated label.
+    if (data?.locale) setLocale(data.locale);
+    setOverrides(data?.custom_labels);
+  }, [data, setLocale, setOverrides]);
 
   const permissions = new Set(data?.permissions ?? []);
   const value: MeBootstrapValue = {

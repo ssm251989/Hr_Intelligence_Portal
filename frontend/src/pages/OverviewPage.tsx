@@ -15,6 +15,7 @@ import AdminHomeChecklist from "../components/AdminHomeChecklist";
 import RefreshButton from "../components/RefreshButton";
 import StatCard from "../components/StatCard";
 import StatusChip, { statusColor } from "../components/StatusChip";
+import { HomeGreeting } from "../ui-kit";
 import { JobSummaryView } from "./ReportsPage";
 
 function barColor(status: string) {
@@ -83,10 +84,7 @@ export default function OverviewPage() {
 
   return (
     <Box>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h4">Overview</Typography>
-        <RefreshButton loading={loading} onRefresh={loadOverview} />
-      </Stack>
+      <HomeGreeting extra={<RefreshButton loading={loading} onRefresh={loadOverview} />} />
 
       <AdminHomeChecklist />
 

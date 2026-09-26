@@ -15,6 +15,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 import { extractErrorMessage, superAdminApi, type ConsoleTenantRow } from "../api/client";
+import { t as tr } from "../i18n";
 
 // Part 13 section B (docs/HRMS_COMPLETE_SPEC.txt): the Super-Admin console -- a separate
 // route and a separate identity (platform admin + mandatory TOTP), never a tenant session.
@@ -106,13 +107,13 @@ export default function SuperAdminPage() {
           </CardContent>
         </Card>
       ) : tenants.length === 0 ? (
-        <Typography color="text.secondary">No tenants yet. Create one with <code>hrctl tenant create</code> (always with --dry-run first).</Typography>
+        <Typography color="text.secondary">{tr("superadmin.empty")}</Typography>
       ) : (
         <Box sx={{ overflowX: "auto" }}>
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>Tenant</TableCell>
+                <TableCell>{tr("superadmin.company")}</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell>Isolation</TableCell>
                 <TableCell>Region</TableCell>

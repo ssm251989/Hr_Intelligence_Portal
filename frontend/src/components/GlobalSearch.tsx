@@ -100,6 +100,7 @@ export default function GlobalSearch({ pages }: { pages: PageLink[] }) {
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Search (Ctrl+K)"
+        data-tour="global-search"
         sx={(theme) => ({
           flex: "1 1 280px", maxWidth: 460, minWidth: 0, display: "flex", alignItems: "center", gap: 1.25,
           bgcolor: theme.palette.fresh.surface, border: `1px solid ${theme.palette.fresh.line}`, borderRadius: "12px",

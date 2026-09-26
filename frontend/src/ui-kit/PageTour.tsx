@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { useTheme } from "@mui/material/styles";
 import type { EventData, Step } from "react-joyride";
 
+import { useT, type TFunction } from "../i18n";
 import { useReducedMotion } from "./motion";
 
 // Part 15 B / L-V4: a react-joyride spotlight tour the FIRST time someone opens a page
@@ -39,17 +40,18 @@ export interface TourStep {
   content: ReactNode;
 }
 
-const DEFAULT_STEPS: TourStep[] = [
-  { target: '[data-tour="page-title"]', title: "What this page is for", content: "The line under the title tells you what you can do here." },
-  { target: '[data-tour="page-primary"]', title: "Start here", content: "The main thing to do on this page is always this button." },
-  { target: '[aria-label="Search (Ctrl+K)"]', title: "Find anything", content: "Search people, jobs and requests from anywhere. Tip: press Ctrl + K." },
-  { target: 'nav[aria-label="Main"]', title: "Everything else", content: "The menu is grouped: Today, Hiring, People, Insights and Admin." },
+const defaultSteps = (t: TFunction): TourStep[] => [
+  { target: '[data-tour="page-title"]', title: t("tour.what_title"), content: t("tour.what_body") },
+  { target: '[data-tour="page-primary"]', title: t("tour.start_title"), content: t("tour.start_body") },
+  { target: '[data-tour="global-search"]', title: t("tour.search_title"), content: t("tour.search_body") },
+  { target: 'nav[aria-label="Main"]', title: t("tour.menu_title"), content: t("tour.menu_body") },
 ];
 
 export default function PageTour({ tourKey, steps, autoStart = true }: { tourKey: string; steps?: TourStep[]; autoStart?: boolean }) {
   const theme = useTheme();
   const t = theme.palette.fresh;
   const reduced = useReducedMotion();
+  const tt = useT();
   const [run, setRun] = useState(false);
 
   useEffect(() => {
@@ -66,7 +68,7 @@ export default function PageTour({ tourKey, steps, autoStart = true }: { tourKey
   }, [tourKey, autoStart]);
 
   if (!run) return null;
-  const available = (steps ?? DEFAULT_STEPS).filter((s) => document.querySelector(s.target));
+  const available = (steps ?? defaultSteps(tt)).filter((s) => document.querySelector(s.target));
   if (!available.length) return null;
 
   const joySteps: Step[] = available.map((s) => ({ target: s.target, title: s.title, content: s.content, skipBeacon: true }));
@@ -85,7 +87,7 @@ export default function PageTour({ tourKey, steps, autoStart = true }: { tourKey
         run
         continuous
         onEvent={onEvent}
-        locale={{ back: "Back", close: "Close", last: "Got it", next: "Next", skip: "Don't show again" }}
+        locale={{ back: tt("action.back"), close: tt("action.close"), last: tt("tour.got_it"), next: tt("action.next"), skip: tt("tour.dont_show") }}
         options={{
           primaryColor: t.brand, textColor: t.ink, backgroundColor: t.surface, arrowColor: t.surface, overlayColor: "rgba(14,20,18,0.45)",
           zIndex: theme.zIndex.modal + 10, showProgress: true, spotlightRadius: 14, scrollDuration: reduced ? 0 : 300,

@@ -1,6 +1,7 @@
 import Box from "@mui/material/Box";
 import { useTheme } from "@mui/material/styles";
 
+import { useT } from "../i18n";
 import Emoji from "./Emoji";
 
 // Part 15 B: a status is ALWAYS colour + emoji + word, never colour alone.
@@ -87,6 +88,10 @@ export default function StatusChip({ status, tone, emoji, label, size = "small" 
   const finalTone = tone ?? base.tone;
   const { bg, fg } = useToneColours(finalTone);
   const t = useTheme().palette.fresh;
+  const tt = useT();
+  const key = status ? `status.${status}` : "";
+  const translated = key ? tt(key) : "";
+  const text = label ?? (translated && translated !== key ? translated : base.label);
   return (
     <Box
       component="span"
@@ -97,7 +102,7 @@ export default function StatusChip({ status, tone, emoji, label, size = "small" 
       }}
     >
       <Emoji name={emoji ?? base.emoji} size={size === "small" ? 14 : 16} />
-      {label ?? base.label}
+      {text}
     </Box>
   );
 }

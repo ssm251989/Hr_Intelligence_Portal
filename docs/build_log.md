@@ -1843,3 +1843,41 @@ Decisions:
 
 Quick checks: `compileall -q app hrctl` OK, `tsc --noEmit -p tsconfig.app.json` exit 0,
 `npm run build` OK, `alembic upgrade head` at `e78fd7f330b5`.
+
+## Part 15.3 -- Plain language pass (2026-09-26)
+
+Built:
+- Frontend i18n (`frontend/src/i18n/`): `en.ts` (typed keys), `hi.ts`, `ta.ts`; `I18nProvider`,
+  `useT()`, and a plain `t()` for non-React code. Plurals via `<key>_one`, `{name}` placeholders,
+  numbers formatted per locale. Order of precedence: company renames (Settings -> Languages,
+  arriving as `bootstrap.custom_labels`) > chosen language > English.
+- Language: the signed-in user's `org.locale` from bootstrap; new Language picker in the profile
+  menu (English / हिन्दी / தமிழ்) saves it as the user's preference (`PUT /api/v1/me/preferences`)
+  so every device follows; pre-login pages use the language this browser last used.
+- Translated: the whole app shell (menu, groups, sub-pages, bell, profile menu, theme toggle,
+  skip link, log-out dialog), status chips (all 43 states), friendly errors, crash screen,
+  "Show me how", page tours, Settings -> Welcome video & tours, the greeting, count phrases.
+- Home greeting (`ui-kit/HomeGreeting`): "Good morning/afternoon/evening, <first name>" + waving
+  hand + "N things need you today" (N = the user's unified inbox) + a "See what needs me" button;
+  on the Overview page now, reused by the role homes in 15.5.
+- Errors: `explainError` now uses the server's own `fix` / `fix_path` (Part 14 envelope) and shows
+  an "Open the right setting" button; 429 gets its own wording.
+- Internal words removed from screens: Settings panels no longer say tenant / purpose-based
+  routing / "Part N's ... Engine" / IAM/RBAC / JSONLogic-style "sample context"; renamed to
+  Mailboxes & connections, Roles & access, Custom fields & lists, All settings, Hiring setup,
+  Approval steps, Emails & notifications. Connection purposes show plain names ("Hiring emails",
+  "AI match scores"...). Helpdesk "SLA" -> "Response time"; approvals "Workflow" -> "Request
+  type"; super-admin "Tenant" -> "Company"; role "scope" -> "Applies to".
+
+Decisions:
+- UI strings live in frontend bundles (not the backend `locales/*.json`): they ship with the
+  page, work before login and offline (PWA); the backend bundles stay for server-rendered text
+  (emails, letters, copilot). Company overrides still come from the one `i18n_overrides` table.
+- hi/ta are bundled statically (~25 KB) rather than lazy-loaded: no flash of English on switch.
+- The page area remounts on a language change (`<Outlet key={locale}>`) so text read through the
+  plain `t()` updates too; switching language is rare, losing unsaved page state there is fine
+  (forms autosave drafts).
+- Remaining English-only strings are in the existing module pages; they are converted page by
+  page in 15.4/15.6 as each page is restyled (same keys, all three languages).
+
+Quick checks: `tsc --noEmit -p tsconfig.app.json` exit 0, `npm run build` OK.

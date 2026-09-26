@@ -17,6 +17,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 import { extractErrorMessage, recruitmentApi, type JobRequisitionRow, type PipelineStageRow, type PipelineTemplateRow } from "../api/client";
+import { t as tr } from "../i18n";
 
 // Part 8 (docs/HRMS_COMPLETE_SPEC.txt): configurable pipeline, job requisitions,
 // interviewer availability, offer components -- scoped down the same way every other
@@ -252,11 +253,10 @@ export default function RecruitmentPanel() {
     <Card variant="outlined">
       <CardContent>
         <Typography variant="h6" mb={1}>
-          Recruitment
+          {tr("settings.hiring.title")}
         </Typography>
         <Typography variant="body2" color="text.secondary" mb={2}>
-          Hiring pipeline stages, job requisitions, interviewer availability, and offer CTC
-          components (Part 8).
+          {tr("settings.hiring.intro")}
         </Typography>
         <Tabs value={tab} onChange={(_e, value) => setTab(value)} sx={{ mb: 2 }}>
           {TABS.map((t) => (

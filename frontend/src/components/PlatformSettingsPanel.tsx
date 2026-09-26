@@ -19,6 +19,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 import { extractErrorMessage, platformSettingsApi, type SettingDefinition, type SettingHistoryEntry, type SettingValueRow } from "../api/client";
+import { t as tr } from "../i18n";
 
 // Part 2 (docs/HRMS_COMPLETE_SPEC.txt section 4's UI) + section L/A1-A3 (client decision,
 // added to the spec after this Part started -- WINS over Part 14's own UI wording):
@@ -243,12 +244,10 @@ export default function PlatformSettingsPanel() {
     <Card variant="outlined">
       <CardContent>
         <Typography variant="h6" gutterBottom>
-          Platform Settings
+          {tr("settings.all.title")}
         </Typography>
         <Typography variant="body2" color="text.secondary" mb={2}>
-          Tenant-wide configuration values (Part 2's Settings Registry). "platform default"
-          means nothing has been set for this tenant yet -- editing writes a tenant-scoped
-          override.
+          {tr("settings.all.intro")}
         </Typography>
 
         {error && (

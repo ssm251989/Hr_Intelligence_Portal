@@ -17,3 +17,4 @@ export { default as ShowMeHow, refreshMediaCache } from "./ShowMeHow";
 export { default as PageTour, startPageTour, type TourStep } from "./PageTour";
 export { celebrate } from "./celebrate";
 export { useReducedMotion, prefersReducedMotion } from "./motion";
+export { default as HomeGreeting, timeOfDay, firstName } from "./HomeGreeting";

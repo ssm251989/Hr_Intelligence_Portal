@@ -9,6 +9,7 @@ import { AppThemeProvider } from "./theme/ThemeModeContext";
 import ProtectedRoute from "./auth/ProtectedRoute";
 import ErrorBoundary from "./components/ErrorBoundary";
 import AppLayout from "./layout/AppLayout";
+import { I18nProvider } from "./i18n";
 
 // Part 14 section 12: one bundle chunk per page (route-level code splitting).
 const CareersApplyPage = lazy(() => import("./careers/CareersApplyPage"));
@@ -45,6 +46,7 @@ const PageLoading = () => <CircularProgress sx={{ m: 4 }} aria-label="Loading" /
 
 export default function App() {
   return (
+    <I18nProvider>
     <ErrorBoundary>
       <BootstrapProvider>
         <AppThemeProvider>
@@ -103,5 +105,6 @@ export default function App() {
         </AppThemeProvider>
       </BootstrapProvider>
     </ErrorBoundary>
+    </I18nProvider>
   );
 }

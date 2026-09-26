@@ -5,6 +5,8 @@ import AlertTitle from "@mui/material/AlertTitle";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 
+import { t } from "../i18n";
+
 interface Props {
   children: ReactNode;
 }
@@ -33,11 +35,15 @@ export default class ErrorBoundary extends Component<Props, State> {
       return (
         <Box display="flex" alignItems="center" justifyContent="center" minHeight="100vh" p={3}>
           <Alert severity="error" sx={{ maxWidth: 480 }}>
-            <AlertTitle>Something went wrong</AlertTitle>
-            This page hit an unexpected error and couldn't continue. Reloading usually fixes it.
-            <Box mt={2}>
-              <Button variant="outlined" size="small" onClick={this.handleReload}>
-                Reload page
+            {/* Part 15 C: what happened + how to fix + the button that fixes it. */}
+            <AlertTitle>{t("error.page_crashed")}</AlertTitle>
+            {t("error.page_crashed_fix")}
+            <Box mt={2} display="flex" gap={1}>
+              <Button variant="contained" size="small" onClick={this.handleReload}>
+                {t("action.reload")}
+              </Button>
+              <Button variant="outlined" size="small" href="/">
+                {t("action.go_home")}
               </Button>
             </Box>
           </Alert>

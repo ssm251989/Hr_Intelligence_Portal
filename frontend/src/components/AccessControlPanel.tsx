@@ -23,6 +23,7 @@ import Tabs from "@mui/material/Tabs";
 import Typography from "@mui/material/Typography";
 
 import { extractErrorMessage, iamApi, usersApi, type PermissionRow, type RoleRow } from "../api/client";
+import { t as tr } from "../i18n";
 import type { UserRead } from "../api/types";
 
 // Part 5A (docs/HRMS_COMPLETE_SPEC.txt section 4's UI, scoped down the same way every
@@ -248,7 +249,7 @@ function AssignmentsTab() {
               <List dense disablePadding>
                 {assignments.map((a) => (
                   <ListItem key={a.id} divider secondaryAction={<Button size="small" onClick={() => handleRevoke(a.id)}>Revoke</Button>}>
-                    <ListItemText primary={roles.find((r) => r.id === a.role_id)?.name ?? a.role_id} secondary={`scope: ${a.scope_type}`} />
+                    <ListItemText primary={roles.find((r) => r.id === a.role_id)?.name ?? a.role_id} secondary={tr("settings.access.applies_to", { what: a.scope_type.replace(/_/g, " ") })} />
                   </ListItem>
                 ))}
               </List>
@@ -330,12 +331,10 @@ export default function AccessControlPanel() {
     <Card variant="outlined">
       <CardContent>
         <Typography variant="h6" mb={1}>
-          Access Control
+          {tr("settings.access.title")}
         </Typography>
         <Typography variant="body2" color="text.secondary" mb={2}>
-          Roles, permissions, and who has access to what (Part 5A's IAM/RBAC) -- sits
-          alongside the existing recruiter/hiring_manager/interviewer/admin roles, not in
-          place of them.
+          {tr("settings.access.intro")}
         </Typography>
         <Tabs value={tab} onChange={(_e, value) => setTab(value)} sx={{ mb: 2 }}>
           {TABS.map((t) => (

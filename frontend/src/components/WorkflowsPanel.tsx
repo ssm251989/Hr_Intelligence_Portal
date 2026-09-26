@@ -17,6 +17,7 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
 import { extractErrorMessage, workflowApi, type WorkflowDefinitionRow } from "../api/client";
+import { t as tr } from "../i18n";
 
 // Part 5B (docs/HRMS_COMPLETE_SPEC.txt section 4's UI, scoped down the same way every
 // other part's admin surface has been): a read-only definitions list with a "simulate"
@@ -54,7 +55,7 @@ function SimulateDialog({ open, onClose, definition }: { open: boolean; onClose:
       <DialogContent>
         <Stack spacing={2} mt={1}>
           <Typography variant="body2" color="text.secondary">
-            Sample context (JSON) to dry-run the path this workflow would take.
+            {tr("settings.approvals.test")}
           </Typography>
           <textarea
             value={sampleJson}
@@ -105,11 +106,10 @@ export default function WorkflowsPanel() {
     <Card variant="outlined">
       <CardContent>
         <Typography variant="h6" mb={1}>
-          Workflows
+          {tr("settings.approvals.title")}
         </Typography>
         <Typography variant="body2" color="text.secondary" mb={2}>
-          Approval and process definitions (Part 5B's Workflow Engine) -- "When X happens,
-          route through these approval steps."
+          {tr("settings.approvals.intro")}
         </Typography>
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>

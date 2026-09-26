@@ -18,6 +18,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 import { coreHrApi, extractErrorMessage, type DepartmentRow, type EmployeeRow, type PositionRow } from "../api/client";
+import { t as tr } from "../i18n";
 
 // Part 7 (docs/HRMS_COMPLETE_SPEC.txt): org model + employee master, scoped down the same
 // way every other part's admin surface has been -- plain lists + simple create forms, a
@@ -240,8 +241,7 @@ export default function CoreHrPanel() {
           Core HR
         </Typography>
         <Typography variant="body2" color="text.secondary" mb={2}>
-          Employee master, org structure, and positions (Part 7). Identity documents and bank
-          details are encrypted at rest -- every reveal is audited.
+          {tr("settings.corehr.intro")}
         </Typography>
         <Tabs value={tab} onChange={(_e, value) => setTab(value)} sx={{ mb: 2 }}>
           {TABS.map((t) => (

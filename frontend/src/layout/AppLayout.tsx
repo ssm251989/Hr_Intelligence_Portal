@@ -9,6 +9,8 @@ import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
 import MenuIcon from "@mui/icons-material/Menu";
 import NotificationsOutlinedIcon from "@mui/icons-material/NotificationsOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
+import TranslateOutlinedIcon from "@mui/icons-material/TranslateOutlined";
+import CheckIcon from "@mui/icons-material/Check";
 import Avatar from "@mui/material/Avatar";
 import Badge from "@mui/material/Badge";
 import Box from "@mui/material/Box";
@@ -28,7 +30,7 @@ import useMediaQuery from "@mui/material/useMediaQuery";
 import { useTheme } from "@mui/material/styles";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
-import { brandingApi, reportsApi, type NavEntry, type NotificationGroup } from "../api/client";
+import { brandingApi, experienceApi, reportsApi, type NavEntry, type NotificationGroup } from "../api/client";
 import type { RecentActivityItem } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { useBootstrap } from "../bootstrap/BootstrapContext";
@@ -38,10 +40,11 @@ import CopilotWidget from "../components/CopilotWidget";
 import GlobalSearch from "../components/GlobalSearch";
 import ModuleTour from "../components/ModuleTour";
 import RecentActivityFeed from "../components/RecentActivityFeed";
+import { LOCALES, useI18n, useT } from "../i18n";
 import { useThemeMode } from "../theme/ThemeModeContext";
 import Emoji from "../ui-kit/Emoji";
 import {
-  FALLBACK_NAV, NAV_CHILDREN, NAV_GROUP_LABELS, NAV_GROUP_ORDER, NAV_LABELS, NOTIFICATION_MODULES, sectionOf, type NavGroup,
+  FALLBACK_NAV, NAV_CHILDREN, NAV_GROUP_ORDER, NOTIFICATION_MODULES, sectionOf, type NavGroup,
 } from "./navConfig";
 
 const SIDEBAR_WIDTH = 236;
@@ -80,17 +83,22 @@ interface ShellItem {
 
 function useShellNav(): ShellItem[] {
   const { data } = useMeBootstrap();
+  const t = useT();
   return useMemo(() => {
     const nav: NavEntry[] = data?.nav?.length ? data.nav : FALLBACK_NAV;
-    const label = (key: string) => data?.custom_labels?.[key] ?? NAV_LABELS[key] ?? key.replace(/^nav\./, "").replace(/_/g, " ");
+    // t() already layers the company's renames (bootstrap.custom_labels) over en/hi/ta.
+    const label = (key: string) => {
+      const text = t(key);
+      return text === key ? key.replace(/^nav\./, "").replace(/_/g, " ") : text;
+    };
     return nav.map((n) => ({
       label: label(n.label_key),
       path: n.path,
       icon: n.icon ?? "puzzle",
       group: n.group ?? "today",
-      children: NAV_CHILDREN[sectionOf(n.path)],
+      children: NAV_CHILDREN[sectionOf(n.path)]?.map((c) => ({ label: t(c.labelKey), path: c.path })),
     }));
-  }, [data]);
+  }, [data, t]);
 }
 
 function isActive(item: ShellItem, pathname: string, hash: string): boolean {
@@ -104,6 +112,7 @@ function isActive(item: ShellItem, pathname: string, hash: string): boolean {
 function Sidebar({ items, expanded, onToggle, onNavigate }: { items: ShellItem[]; expanded: boolean; onToggle?: () => void; onNavigate?: () => void }) {
   const theme = useTheme();
   const t = theme.palette.fresh;
+  const tr = useT();
   const location = useLocation();
   const { productName, logoMark } = useBootstrap();
   const activeSection = sectionOf(location.pathname);
@@ -150,7 +159,7 @@ function Sidebar({ items, expanded, onToggle, onNavigate }: { items: ShellItem[]
             <Box key={group} sx={{ display: "flex", flexDirection: "column", gap: 0.25 }}>
               {expanded ? (
                 <Typography component="div" sx={{ m: "12px 10px 4px", color: t.muted, fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>
-                  {NAV_GROUP_LABELS[group]}
+                  {tr(`nav.group.${group}`)}
                 </Typography>
               ) : (
                 <Divider sx={{ my: 1, mx: 1.5 }} />
@@ -200,8 +209,8 @@ function Sidebar({ items, expanded, onToggle, onNavigate }: { items: ShellItem[]
 
       {onToggle && (
         <Box sx={{ display: "flex", justifyContent: expanded ? "flex-end" : "center", pt: 1 }}>
-          <Tooltip title={expanded ? "Make the menu narrow" : "Show menu names"}>
-            <IconButton size="small" onClick={onToggle} aria-label={expanded ? "Collapse menu" : "Expand menu"}>
+          <Tooltip title={expanded ? tr("shell.menu_collapse") : tr("shell.menu_expand")}>
+            <IconButton size="small" onClick={onToggle} aria-label={expanded ? tr("shell.menu_collapse") : tr("shell.menu_expand")}>
               {expanded ? <ChevronLeftIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
             </IconButton>
           </Tooltip>
@@ -213,6 +222,7 @@ function Sidebar({ items, expanded, onToggle, onNavigate }: { items: ShellItem[]
 
 function NotificationsBell() {
   const t = useTheme().palette.fresh;
+  const tr = useT();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [groups, setGroups] = useState<NotificationGroup[]>([]);
   const [activity, setActivity] = useState<RecentActivityItem[]>([]);
@@ -236,8 +246,8 @@ function NotificationsBell() {
 
   return (
     <>
-      <Tooltip title="Notifications">
-        <IconButton onClick={open} aria-label={unread ? `Notifications, ${unread} new` : "Notifications"} sx={{ bgcolor: t.surface, border: `1px solid ${t.line}` }}>
+      <Tooltip title={tr("shell.notifications")}>
+        <IconButton onClick={open} aria-label={unread ? tr("shell.notifications_new", { count: unread }) : tr("shell.notifications")} sx={{ bgcolor: t.surface, border: `1px solid ${t.line}` }}>
           <Badge badgeContent={unread} color="secondary" max={9}>
             <NotificationsOutlinedIcon fontSize="small" />
           </Badge>
@@ -245,15 +255,15 @@ function NotificationsBell() {
       </Tooltip>
       <Popover open={Boolean(anchor)} anchorEl={anchor} onClose={() => setAnchor(null)} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
         <Box sx={{ width: { xs: "calc(100vw - 32px)", sm: 380 }, maxHeight: 520, overflowY: "auto", p: 2 }}>
-          <Typography sx={{ fontWeight: 800, fontSize: 16, mb: 1.5 }}>Notifications</Typography>
+          <Typography sx={{ fontWeight: 800, fontSize: 16, mb: 1.5 }}>{tr("shell.notifications")}</Typography>
           {groups.map((g) => {
             const meta = NOTIFICATION_MODULES[g.module] ?? NOTIFICATION_MODULES.general;
             return (
               <Box key={g.module} sx={{ mb: 2 }}>
                 <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
                   <Emoji name={meta.icon} size={16} />
-                  <Typography sx={{ fontWeight: 700, fontSize: 13, flex: 1 }}>{meta.label}</Typography>
-                  <Chip size="small" label={`${g.items.length} ${g.items.length === 1 ? "update" : "updates"}`} />
+                  <Typography sx={{ fontWeight: 700, fontSize: 13, flex: 1 }}>{tr(meta.labelKey)}</Typography>
+                  <Chip size="small" label={tr("shell.updates", { count: g.items.length })} />
                 </Stack>
                 <Stack spacing={0.75}>
                   {g.items.slice(0, 5).map((i) => (
@@ -268,7 +278,7 @@ function NotificationsBell() {
           })}
           <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
             <Emoji name="briefcase" size={16} />
-            <Typography sx={{ fontWeight: 700, fontSize: 13 }}>Hiring activity</Typography>
+            <Typography sx={{ fontWeight: 700, fontSize: 13 }}>{tr("shell.hiring_activity")}</Typography>
           </Stack>
           <RecentActivityFeed limit={8} dense />
         </Box>
@@ -279,15 +289,24 @@ function NotificationsBell() {
 
 function ProfileMenu({ onLogout }: { onLogout: () => void }) {
   const t = useTheme().palette.fresh;
+  const tr = useT();
+  const { locale, setLocale } = useI18n();
+  const { reload } = useMeBootstrap();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   if (!user) return null;
+  // K-B2: the user's own language, saved as their preference so every device follows it.
+  const chooseLanguage = (code: string) => {
+    setAnchor(null);
+    setLocale(code);
+    experienceApi.updatePreferences({ locale: code }).then(reload).catch(() => undefined);
+  };
   const name = user.full_name || user.email;
   return (
     <>
-      <Tooltip title="Your profile">
-        <IconButton onClick={(e) => setAnchor(e.currentTarget)} aria-label="Open your profile menu" aria-haspopup="menu" sx={{ p: 0.25 }}>
+      <Tooltip title={tr("shell.profile")}>
+        <IconButton onClick={(e) => setAnchor(e.currentTarget)} aria-label={tr("shell.profile_open")} aria-haspopup="menu" sx={{ p: 0.25 }}>
           <Avatar variant="rounded" sx={{ width: 38, height: 38, bgcolor: t.skySoft, color: t.sky, fontWeight: 800, fontSize: 14 }}>{initials(name)}</Avatar>
         </IconButton>
       </Tooltip>
@@ -298,11 +317,21 @@ function ProfileMenu({ onLogout }: { onLogout: () => void }) {
           <Chip size="small" color="primary" label={user.role} sx={{ mt: 0.75, textTransform: "capitalize" }} />
         </Box>
         <Divider sx={{ my: 0.5 }} />
+        <Stack direction="row" alignItems="center" spacing={1} sx={{ px: 2, pt: 0.5, pb: 0.25, color: t.muted }}>
+          <TranslateOutlinedIcon sx={{ fontSize: 16 }} />
+          <Typography variant="caption" sx={{ fontWeight: 700 }}>{tr("shell.language")}</Typography>
+        </Stack>
+        {LOCALES.map((l) => (
+          <MenuItem key={l.code} selected={locale === l.code} onClick={() => chooseLanguage(l.code)} lang={l.code}>
+            <ListItemIcon>{locale === l.code && <CheckIcon fontSize="small" />}</ListItemIcon>{l.label}
+          </MenuItem>
+        ))}
+        <Divider sx={{ my: 0.5 }} />
         <MenuItem onClick={() => { setAnchor(null); navigate("/settings"); }}>
-          <ListItemIcon><SettingsOutlinedIcon fontSize="small" /></ListItemIcon>Settings
+          <ListItemIcon><SettingsOutlinedIcon fontSize="small" /></ListItemIcon>{tr("shell.settings")}
         </MenuItem>
         <MenuItem onClick={() => { setAnchor(null); onLogout(); }}>
-          <ListItemIcon><LogoutOutlinedIcon fontSize="small" /></ListItemIcon>Log out
+          <ListItemIcon><LogoutOutlinedIcon fontSize="small" /></ListItemIcon>{tr("shell.logout")}
         </MenuItem>
       </Menu>
     </>
@@ -312,6 +341,8 @@ function ProfileMenu({ onLogout }: { onLogout: () => void }) {
 export default function AppLayout() {
   const theme = useTheme();
   const t = theme.palette.fresh;
+  const tr = useT();
+  const { locale } = useI18n();
   const isDesktop = useMediaQuery(theme.breakpoints.up("md"));
   const { logout } = useAuth();
   const { mode, toggleMode } = useThemeMode();
@@ -340,7 +371,7 @@ export default function AppLayout() {
     <Box sx={{ minHeight: "100vh", bgcolor: t.ground, px: 2 }}>
       {/* WCAG 2.4.1 bypass block: first focusable element on every page. */}
       <Box component="a" href="#main-content" sx={{ position: "absolute", left: -9999, top: 8, zIndex: 2000, p: 1, bgcolor: "background.paper", borderRadius: 1, "&:focus": { left: 8 } }}>
-        Skip to main content
+        {tr("shell.skip_to_content")}
       </Box>
       <Box
         sx={{
@@ -362,7 +393,7 @@ export default function AppLayout() {
         <Box sx={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2.25 }}>
           <Box component="header" sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.5 }}>
             {!isDesktop && (
-              <IconButton onClick={() => setMobileOpen(true)} aria-label="Open menu" sx={{ bgcolor: t.surface, border: `1px solid ${t.line}` }}>
+              <IconButton onClick={() => setMobileOpen(true)} aria-label={tr("shell.menu_open")} sx={{ bgcolor: t.surface, border: `1px solid ${t.line}` }}>
                 <MenuIcon fontSize="small" />
               </IconButton>
             )}
@@ -370,8 +401,8 @@ export default function AppLayout() {
             <GlobalSearch pages={searchPages} />
             <Stack direction="row" spacing={1} alignItems="center" sx={{ ml: "auto" }}>
               <ModuleTour />
-              <Tooltip title={mode === "dark" ? "Switch to light mode" : "Switch to dark mode"}>
-                <IconButton onClick={toggleMode} aria-label={mode === "dark" ? "Switch to light mode" : "Switch to dark mode"} sx={{ bgcolor: t.surface, border: `1px solid ${t.line}` }}>
+              <Tooltip title={mode === "dark" ? tr("shell.theme_light") : tr("shell.theme_dark")}>
+                <IconButton onClick={toggleMode} aria-label={mode === "dark" ? tr("shell.theme_light") : tr("shell.theme_dark")} sx={{ bgcolor: t.surface, border: `1px solid ${t.line}` }}>
                   {mode === "dark" ? <LightModeOutlinedIcon fontSize="small" /> : <DarkModeOutlinedIcon fontSize="small" />}
                 </IconButton>
               </Tooltip>
@@ -380,7 +411,8 @@ export default function AppLayout() {
             </Stack>
           </Box>
           <Box component="main" id="main-content" tabIndex={-1} sx={{ minWidth: 0, outline: "none" }}>
-            <Outlet />
+            {/* Remount the page on a language change so every label (hook or plain t()) re-renders. */}
+            <Outlet key={locale} />
           </Box>
         </Box>
       </Box>
@@ -388,9 +420,9 @@ export default function AppLayout() {
 
       <ConfirmDialog
         open={confirmLogoutOpen}
-        title="Log out?"
-        message="You'll need to sign in again to continue."
-        confirmLabel="Log out"
+        title={tr("shell.logout_title")}
+        message={tr("shell.logout_message")}
+        confirmLabel={tr("shell.logout")}
         destructive={false}
         onConfirm={handleLogout}
         onCancel={() => setConfirmLogoutOpen(false)}
