@@ -11,7 +11,7 @@ class User(Base, TenantOwned):
     __tablename__ = "users"
     __table_args__ = (
         CheckConstraint(
-            "role IN ('recruiter','hiring_manager','interviewer','admin','employee')",
+            "role IN ('recruiter','hiring_manager','interviewer','admin','employee','agency')",
             name="users_role_check",
         ),
     )

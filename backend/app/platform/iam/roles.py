@@ -105,6 +105,10 @@ _SYSTEM_ROLE_TEMPLATES: dict[str, str | list[tuple[str, set[str]]]] = {
         ("copilot.chat", {"view"}),
     ],
     "Candidate": [],
+    # Part 15.6: an outside recruitment agency's login -- nothing internal, only the portal.
+    "Agency Recruiter": [
+        ("agency", {"view", "create"}),
+    ],
     "Auditor": [
         ("recruitment", {"view", "view_sensitive", "export"}),
         ("onboarding", {"view"}),
@@ -135,6 +139,8 @@ _FLAT_ROLE_BRIDGE = {
     # Part 9: a converted new hire's own login (onboarding/conversion.py) -- never
     # self-registrable, never admin-creatable via AdminUserCreate's Literal.
     "employee": "Employee",
+    # Part 15.6: an agency user invited from the Agencies page (app/recruitment/agency_router.py).
+    "agency": "Agency Recruiter",
 }
 
 

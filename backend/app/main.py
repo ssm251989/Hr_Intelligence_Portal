@@ -203,6 +203,10 @@ app.include_router(ui_insights_router)
 from app.experience.ui_onboarding_router import public_router as ui_onboarding_public_router  # noqa: E402
 
 app.include_router(ui_onboarding_public_router)
+from app.recruitment.agency_router import portal_router as agency_portal_router, router as agency_router  # noqa: E402
+
+app.include_router(agency_router)
+app.include_router(agency_portal_router)
 install_friendly_errors(app)
 
 

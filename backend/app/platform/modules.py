@@ -26,6 +26,9 @@ class NavItem:
     # Part 15.6: pages that serve both staff and self-service (e.g. Helpdesk) show when the
     # user holds ANY of these; used instead of `permission` when set.
     any_of: tuple[str, ...] = ()
+    # Part 15.6: shown ONLY to users with this flat `users.role` (the agency portal), and such
+    # users see nothing else -- an agency login is not a member of staff.
+    only_flat_role: Optional[str] = None
     # Part 15 app shell: sidebar section (today/hiring/people/insights/admin) and the
     # Fluent emoji name shown beside the label.
     group: str = "today"
@@ -53,6 +56,8 @@ MODULES: tuple[ModuleDef, ...] = (
         NavItem("nav.salary", "/salary", group="hiring", icon="money"),
         NavItem("nav.bgv", "/bgv", group="hiring", icon="shield"),
         NavItem("nav.offers", "/offers", group="hiring", icon="envelope"),
+        NavItem("nav.agencies", "/agencies", "recruitment.agency.view", group="hiring", icon="handshake"),
+        NavItem("nav.agency_portal", "/agency", "agency.portal.view", group="today", icon="handshake", only_flat_role="agency"),
         # the original Reports page (13-module parity); the builder lives on it too
         NavItem("nav.reports", "/reports", group="insights", icon="bar_chart"),
     ), always_on=True),
@@ -118,6 +123,8 @@ def nav_for(db, tenant, user, permissions: set[str]) -> list[dict]:
         if module.code not in on:
             continue
         for item in module.nav:
+            if (item.only_flat_role or getattr(user, "role", None) == "agency") and item.only_flat_role != getattr(user, "role", None):
+                continue
             allowed = any(p in permissions for p in item.any_of) if item.any_of else (item.permission is None or item.permission in permissions)
             if allowed:
                 items.append({"label_key": item.label_key, "path": item.path, "module": module.code, "group": item.group, "icon": item.icon})
@@ -127,6 +134,8 @@ def nav_for(db, tenant, user, permissions: set[str]) -> list[dict]:
 def home_path(permissions: set[str]) -> str:
     """L-N2 role-based home: HR/recruiters land on the overview; an employee-only user on
     their approvals/tasks (pending items first, L-O1)."""
+    if "agency.portal.view" in permissions and not any(p.startswith("recruitment.") for p in permissions):
+        return "/agency"
     hr_like = any(p.startswith(("recruitment.", "core_hr.", "onboarding.", "helpdesk.ticket")) for p in permissions)
     return "/" if hr_like else "/approvals"
 

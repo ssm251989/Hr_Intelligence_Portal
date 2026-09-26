@@ -9,9 +9,9 @@ from app.platform.tenancy.mixins import TenantOwned
 # (bulk-selecting several resume files at once -- see app/candidates/router.py
 # upload_resume's source param). linkedin/naukri/indeed/monster/shine are defined now -- so
 # the column never needs a migration when those sourcing integrations go live -- but
-# nothing writes them yet.
+# nothing writes them yet. "agency" = sent in through the agency portal (Part 15.6).
 CANDIDATE_SOURCES = (
-    "career_portal", "manual", "local_import",
+    "career_portal", "manual", "local_import", "agency",
     "linkedin", "naukri", "indeed", "monster", "shine",
 )
 

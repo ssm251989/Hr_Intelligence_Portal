@@ -1,7 +1,7 @@
 import uuid
 from typing import Optional
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
 from sqlalchemy.orm import Session
@@ -13,6 +13,12 @@ from app.platform.tenancy.context import get_current_tenant
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
+# Part 15.6: an agency login (flat role "agency") belongs to an OUTSIDE company. Several
+# older endpoints only check "is signed in", so rather than trust each one, an agency user
+# is refused everywhere except these path prefixes: their own portal, their session, and
+# the app shell (menu/branding/notifications/preferences).
+AGENCY_ALLOWED_PREFIXES = ("/auth/", "/api/me/", "/api/v1/me/preferences", "/api/v1/agency-portal")
+
 
 def _unauthorized() -> HTTPException:
     return HTTPException(
@@ -23,6 +29,7 @@ def _unauthorized() -> HTTPException:
 
 
 def get_current_user(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> User:
@@ -71,17 +78,20 @@ def get_current_user(
     user = db.get(User, user_uuid)
     if user is None:
         raise _unauthorized()
+    if user.role == "agency" and not request.url.path.startswith(AGENCY_ALLOWED_PREFIXES):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Agency accounts can only use the agency portal")
     return user
 
 
 def get_current_user_optional(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> Optional[User]:
     if credentials is None:
         return None
     try:
-        return get_current_user(credentials=credentials, db=db)
+        return get_current_user(request=request, credentials=credentials, db=db)
     except HTTPException:
         return None
 

@@ -163,6 +163,12 @@ def register_all() -> None:
         register_permission("separation", "case", action)
     register_permission("separation", "clearance", "view")
     register_permission("separation", "clearance", "edit")
+    # Part 15.6 agency portal: HR manages agencies (recruitment.agency.*); an agency's own
+    # users only ever get agency.portal.* (their assigned jobs + their own submissions).
+    register_permission("recruitment", "agency", "view")
+    register_permission("recruitment", "agency", "edit")
+    register_permission("agency", "portal", "view")
+    register_permission("agency", "portal", "create")
     register_permission("separation", "self", "view")
     register_permission("separation", "self", "create")
 
