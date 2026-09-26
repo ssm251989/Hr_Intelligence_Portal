@@ -2122,3 +2122,27 @@ their query; one "People" nav item. Decision: directory hides personal contact d
 codes and dates from non-HR users (work email only).
 
 NEXT: 17.4 one scoring language, then 17.5 scoring rules, 17.6 auto-shortlisting, 17.7, 17.8, 17.10.
+
+## Part 17.4-17.6 -- backend (2026-09-27)
+
+- Scoring engine `app/recruitment/scoring/`: 14 factors (AI skills fit, must-have, nice-to-have,
+  experience min/ideal/max curve, similar-role experience, location km bands + relocation,
+  notice day bands, salary vs band, education level, certifications, job stability, recent
+  use of key skills, languages, custom field), knock-outs (flag only), 5 presets, weights must
+  total 100 (auto-balance), versioned rule sets (company + per job, revert = new version),
+  background recalculation with progress + old/new score in audit, "Why this score",
+  JSON/XLSX export/import. Migration `d9a4c1e7b2f5` (tables scoring_rule_sets, score_recalc_runs;
+  applications.score_breakdown/knocked_out/scored_at/scoring_rule_set_id; candidates CTC/notice/
+  relocation/languages; job_roles.shortlisting_json) + copies interview_min_score into the new
+  single `recruitment.scoring.shortlist_threshold` (ctd-techs: 22, its old interview mark).
+- Decisions: `composite_score` IS the one "Match score"; `match_score` stays as the AI factor;
+  being scored = Screened (never auto-rejected); unknown data = neutral 50 and says "not given";
+  the 7 old score/threshold settings are no longer registered (stored rows untouched).
+- 17.6: `autoshortlist.py` (company defaults `recruitment.shortlisting.*` + job
+  `shortlisting_json`), runs after scoring and after recalculation; undo is final; interview
+  scheduling starts only after the undo window (beat job `auto_shortlist_release`, 5 min);
+  bell notification to job owner/hiring manager, else admins.
+- Demo seed now adds "Demo - RPA Developer" + 3 demo candidates (scored) for review/proofs.
+- Fixed on the way: agency audit actor >50 chars; undo message when already undone.
+
+NEXT: 17.4-17.6 frontend (one-score labels, Scoring rules page + wizard steps, Why this score, shortlisting queue), then proofs + commits.

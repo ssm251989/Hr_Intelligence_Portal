@@ -59,6 +59,9 @@ class JobRole(Base, TenantOwned):
     pipeline_template_id = Column(UUID(as_uuid=True), ForeignKey("pipeline_templates.id"))
     # Part 8 section 3 -- career-site knockout questions: [{"question": str, "disqualify_on": str}].
     knockout_questions_json = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    # Part 17.6: per-job shortlisting rules {threshold, max_size, auto_shortlist, undo_hours,
+    # notify: [...]} -- empty = company defaults.
+    shortlisting_json = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
     # Set only when a real LinkedIn post was created via the API (see
     # app/jobs/router.py _try_post_to_linkedin) -- as opposed to posting_url_linkedin,
     # which is the manually-pasted fallback link used when there's no LinkedIn connection.

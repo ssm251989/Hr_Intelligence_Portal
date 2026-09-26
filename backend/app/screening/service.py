@@ -81,14 +81,12 @@ def describe_screening_audit_entry(action: str, details: dict) -> str:
     # Named explicitly, and never collapsed into one bare "score" -- a single unlabeled
     # number here is exactly what let Resume Match and the composite Screening Score get
     # confused for each other before (see frontend/src/utils/screeningScore.ts).
-    resume_match = details.get("resume_matcher_score")
     composite = details.get("composite_score")
-    scores = []
-    if resume_match is not None:
-        scores.append(f"Resume Match: {round(resume_match)}%")
-    if composite is not None:
-        scores.append(f"Screening: {round(composite)}%")
-    score_text = f" ({' | '.join(scores)})" if scores else ""
+    # Part 17.4: one score everywhere -- "Match score"
+    score_text = f" (Match score {round(composite)}/100)" if composite is not None else ""
+    if details.get("knocked_out"):
+        reasons = [k.get("reason") or k.get("label") for k in details.get("knockouts") or [] if not k.get("passed")]
+        score_text += f" -- knocked out: {'; '.join(r for r in reasons if r)}" if reasons else " -- knocked out"
 
     missing_required = details.get("missing_required_skills")
     missing_preferred = details.get("missing_preferred_skills")
@@ -139,43 +137,31 @@ def describe_interview_readiness(action: str, details: dict) -> str:
         return f"AI screening failed: {details.get('error') or 'unknown error'}"
 
     composite = details.get("composite_score")
-    score_text = f" (score {round(composite)})" if composite is not None else ""
-    interview_ready = details.get("interview_ready")
-    # None (key absent) means this entry predates Part F -- interview-readiness was never
-    # evaluated for it, which reads as a plain "Screened," not a false "Below threshold."
-    if interview_ready is None:
+    score_text = f" (Match score {round(composite)})" if composite is not None else ""
+    if details.get("knocked_out"):
+        return f"Knocked out{score_text}"
+    # Part 17.4: "above_threshold" (older entries: "interview_ready") against the one
+    # Shortlist threshold. Absent = predates thresholds -> plain "Screened".
+    above = details.get("above_threshold", details.get("interview_ready"))
+    if above is None:
         return f"Screened{score_text}"
-    if interview_ready:
-        return f"Interview ready{score_text}"
-    return f"Below interview threshold{score_text}"
+    if above:
+        return f"Above shortlist threshold{score_text}"
+    return f"Below shortlist threshold{score_text}"
 
 
 @dataclass
 class ScreeningThresholds:
-    """Replaces the old `ScreeningSettings` singleton row (Part 8 section 4 -- migrated
-    onto Part 2's Settings Registry, `recruitment.screening.*`, per docs/hardcode_
-    inventory.md's own target for this exact table). Same 4-field shape the old ORM row
-    had, so every existing caller below is unaffected beyond its import."""
+    """Part 17.4: one company-level threshold ("Shortlist threshold", 0-100 Match score).
+    Jobs may override it (app/recruitment/scoring/engine.threshold_for_job)."""
 
-    dashboard_min_score: float
-    dashboard_max_score: float
-    interview_min_score: float
-    interview_max_score: float
+    shortlist_threshold: float
 
 
 def get_screening_settings(db: Session) -> ScreeningThresholds:
-    """Reads the tenant's current thresholds fresh via SettingsService on every call --
-    same "never a value cached at some earlier point" guarantee the old singleton row
-    already had (SettingsService's own cache is invalidated synchronously on every write,
-    see its own module docstring)."""
-    ctx = SettingContext(tenant=require_current_tenant())
-    service = SettingsService(db)
-    return ScreeningThresholds(
-        dashboard_min_score=float(service.get("recruitment.screening.dashboard_min_score", ctx)),
-        dashboard_max_score=float(service.get("recruitment.screening.dashboard_max_score", ctx)),
-        interview_min_score=float(service.get("recruitment.screening.interview_min_score", ctx)),
-        interview_max_score=float(service.get("recruitment.screening.interview_max_score", ctx)),
-    )
+    from app.recruitment.scoring.engine import company_threshold
+
+    return ScreeningThresholds(shortlist_threshold=float(company_threshold(db, require_current_tenant())))
 
 
 def compute_experience_score(
@@ -525,8 +511,9 @@ def run_screening(db: Session, application: Application, job: JobRole, candidate
     Callers driving this automatically (as opposed to the manual button) should catch and
     swallow this exception; the manual endpoint lets it propagate into its existing 502.
     """
-    thresholds = get_screening_settings(db)
+    from app.recruitment.scoring.engine import rules_for_job, score_application, threshold_for_job
 
+    tenant = require_current_tenant()
     try:
         result = match_resume(job.jd_text, candidate.parsed_fields, candidate.location, job.location)
     except ResumeMatchError as exc:
@@ -536,11 +523,7 @@ def run_screening(db: Session, application: Application, job: JobRole, candidate
         )
         raise
 
-    candidate_years = (candidate.parsed_fields or {}).get("total_experience_years")
-    job_min_years = float(job.experience_min_years) if job.experience_min_years is not None else None
-    job_max_years = float(job.experience_max_years) if job.experience_max_years is not None else None
-    result["experience_score"] = compute_experience_score(candidate_years, job_min_years, job_max_years)
-
+    # Legacy detail kept for the Remarks text and the evidence panel (missing skills etc.).
     candidate_skills = (candidate.parsed_fields or {}).get("skills")
     candidate_certificates = (candidate.parsed_fields or {}).get("certificates")
     skills_result = compute_skills_score(
@@ -548,22 +531,21 @@ def run_screening(db: Session, application: Application, job: JobRole, candidate
         job.soft_skills_must_have, job.soft_skills_good_to_have,
         candidate_certificates=candidate_certificates,
     )
-    result["skill_match_pct"] = skills_result["score"]
-    result["missing_skills"] = skills_result["missing_required"] + skills_result["missing_preferred"]
-
     certificates_result = compute_certificates_score(candidate_certificates, job.preferred_certifications)
-    result["certificates_score"] = certificates_result["score"]
 
-    score = composite_score(result)
+    # Part 17.4/17.5: the ONE Match score, from the job's (or company's) scoring rules. The
+    # AI fit becomes one factor of it ("Skills match (AI)").
+    application.match_score = result["match_score"]
+    application.skill_match_pct = skills_result["score"]
+    application.missing_skills = skills_result["missing_required"] + skills_result["missing_preferred"]
+    rules, rule_set, _src = rules_for_job(db, tenant, job)
+    scored = score_application(db, tenant, application, job=job, candidate=candidate, rules=rules, rule_set=rule_set)
+    score = scored["score"]
+    threshold, threshold_from = threshold_for_job(db, tenant, job, rules)
+    above = score >= threshold and not scored["knocked_out"]
     previous_status = application.status
-    min_score = float(thresholds.dashboard_min_score)
-    max_score = float(thresholds.dashboard_max_score)
-    advance = score >= min_score
-    new_status = "screened" if advance else previous_status
-
-    interview_min_score = float(thresholds.interview_min_score)
-    interview_max_score = float(thresholds.interview_max_score)
-    interview_ready = score >= interview_min_score
+    # being scored = screened (never rejected; knocked-out candidates are flagged, not moved)
+    new_status = "screened" if previous_status == "received" else previous_status
 
     log_action(
         db,
@@ -572,36 +554,39 @@ def run_screening(db: Session, application: Application, job: JobRole, candidate
         "ai_screening_scored",
         actor,
         {
-            "skills_score": result["skill_match_pct"],
-            "experience_score": result["experience_score"],
-            "location_score": result["location_score"],
-            "certificates_score": result["certificates_score"],
-            "resume_matcher_score": result["match_score"],
             "composite_score": score,
-            "missing_skills": result["missing_skills"],
+            "factors": scored["factors"],
+            "knockouts": scored["knockouts"],
+            "knocked_out": scored["knocked_out"],
+            "rules_version": scored["rules_version"],
+            "rules_scope": scored["rules_scope"],
+            "shortlist_threshold": threshold,
+            "threshold_from": threshold_from,
+            "above_threshold": above,
+            "resume_matcher_score": result["match_score"],
+            "location_score": result.get("location_score"),
+            "skills_score": skills_result["score"],
+            "missing_skills": application.missing_skills,
             "missing_required_skills": skills_result["missing_required_technical"],
             "missing_preferred_skills": skills_result["missing_preferred_technical"],
             "missing_soft_skills": skills_result["missing_soft"],
             "missing_preferred_certifications": certificates_result["missing"],
             "recommendation": result["recommendation"],
-            "threshold_min": min_score,
-            "threshold_max": max_score,
             "previous_status": previous_status,
             "new_status": new_status,
-            "advanced": advance,
-            "interview_threshold_min": interview_min_score,
-            "interview_threshold_max": interview_max_score,
-            "interview_ready": interview_ready,
+            "advanced": new_status != previous_status,
         },
     )
 
-    application.match_score = result["match_score"]
-    application.skill_match_pct = result["skill_match_pct"]
-    application.missing_skills = result["missing_skills"]
-    application.composite_score = score
     application.status = new_status
     db.commit()
     db.refresh(application)
+    try:  # Part 17.6: may move it to Shortlisted (with an undo window) -- never blocks screening
+        from app.recruitment.scoring.autoshortlist import maybe_auto_shortlist
+
+        maybe_auto_shortlist(db, tenant, application, job=job, threshold=threshold, knocked_out=scored["knocked_out"], actor=actor)
+    except Exception as exc:  # noqa: BLE001
+        log_action(db, "application", application.id, "auto_shortlist_failed", "system", {"error": str(exc)[:300]})
     return application
 
 

@@ -136,29 +136,11 @@ def update_settings(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("recruiter", "hiring_manager", "admin")),
 ):
-    """Saving here takes effect immediately for every screening call from this point
-    forward -- new uploads (attempt_auto_screen), the manual Screen button, and Re-evaluate
-    All all read this same singleton row fresh each time (get_screening_settings), never a
-    value cached at some earlier point.
-
-    Partial update: only the pair(s) actually present in payload are written (see
-    ScreeningSettingsUpdate's validator) -- the Candidates Dashboard's threshold form sends
-    only dashboard_min/max_score, the Screening Dashboard's sends only interview_min/
-    max_score, and neither ever overwrites the other's pair. Writes land in Part 2's
-    Settings Registry at tenant scope (Part 8 migration -- see get_screening_settings's own
-    docstring)."""
+    """Part 17.4: saves the company's one Shortlist threshold (jobs can override it in their
+    shortlisting rules). Takes effect for every score from now on."""
     tenant = require_current_tenant()
-    service = SettingsService(db)
-
-    def _set(key: str, value: float) -> None:
-        service.set(key, value, scope_type="tenant", scope_id=None, actor=current_user.email, tenant=tenant)
-
-    if payload.dashboard_min_score is not None:
-        _set("recruitment.screening.dashboard_min_score", payload.dashboard_min_score)
-        _set("recruitment.screening.dashboard_max_score", payload.dashboard_max_score)
-    if payload.interview_min_score is not None:
-        _set("recruitment.screening.interview_min_score", payload.interview_min_score)
-        _set("recruitment.screening.interview_max_score", payload.interview_max_score)
+    SettingsService(db).set("recruitment.scoring.shortlist_threshold", int(round(payload.shortlist_threshold)),
+                            scope_type="tenant", scope_id=None, actor=current_user.email, tenant=tenant)
     return get_screening_settings(db)
 
 

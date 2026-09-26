@@ -52,6 +52,20 @@ TICKETS = (
 )
 ASSETS = (("DEMO-LAP-01", "Demo - Laptop 01", "kavya"), ("DEMO-LAP-02", "Demo - Laptop 02", None), ("DEMO-MON-01", "Demo - Monitor 01", None))
 AGENCY_NAME = "Demo - Bright Talent Partners"
+# Part 17: a demo job + candidates so the scoring / shortlisting / remove screens have data.
+JOB_TITLE = "Demo - RPA Developer"
+# full name, email, location, years, skills, certificates, degree, work history, notice days, expected CTC, AI fit
+CANDIDATES = (
+    ("Demo - Asha Verma", "demo.asha.verma@example.com", "Hyderabad", 6.0,
+     ["Automation Anywhere", "A360", "Control Room", "Python", "SQL", "Document Automation"], ["Automation Anywhere Certified Advanced RPA Professional"],
+     "B.Tech Computer Science", [("RPA Developer", "Demo Systems", "Jan 2021", "Present"), ("Software Engineer", "Demo Soft", "Jun 2018", "Dec 2020")], 30, 1400000, 88),
+    ("Demo - Karan Joshi", "demo.karan.joshi@example.com", "Pune", 4.0,
+     ["UiPath", "Automation Anywhere", "Excel automation", "VBA"], [],
+     "B.Sc Information Technology", [("Automation Engineer", "Demo Works", "Mar 2022", "Present"), ("Analyst", "Demo Data", "Jul 2020", "Feb 2022")], 60, 1100000, 71),
+    ("Demo - Nisha Pillai", "demo.nisha.pillai@example.com", "Chennai", 2.0,
+     ["Python", "Selenium", "Power Automate"], [],
+     "Diploma in Computer Engineering", [("QA Engineer", "Demo Labs", "Aug 2023", "Present"), ("Intern", "Demo Start", "Jan 2023", "Jul 2023")], 90, 900000, 54),
+)
 CYCLE_NAME = "Demo - 2026 annual review"
 DEMO_CATEGORIES = {"ticket_category": ("demo_it", "Demo - IT help"), "asset_category": ("demo_laptop", "Demo - Laptops")}
 
@@ -252,14 +266,50 @@ def seed(db, tenant, *, demo_categories: bool = False) -> dict:
         separations_service.generate_clearance(db, tenant, sep)
         bump("separations")
 
-    # -- agency, assigned to one published job
+    # -- a demo job with three scored candidates (Part 17)
+    from app.models.application import Application
+    from app.models.candidate import Candidate
+    from app.recruitment.scoring.engine import score_application
+
+    demo_job = db.query(JobRole).filter(JobRole.tenant_id == tid, JobRole.title == JOB_TITLE).first()
+    if demo_job is None:
+        demo_job = JobRole(tenant_id=tid, title=JOB_TITLE, department="Demo - Engineering", location="Hyderabad", status="published",
+                           experience_min_years=3, experience_max_years=8, salary_band_min=800000, salary_band_max=1500000,
+                           education_degree_level="Bachelor's", job_type="Full-time", positions_count=2,
+                           technical_skills_must_have=["Automation Anywhere", "Control Room", "Python"],
+                           technical_skills_good_to_have=["Document Automation", "SQL", "UiPath"],
+                           preferred_certifications=["Automation Anywhere Certified Advanced RPA Professional"],
+                           jd_text="Demo job for review: build and run Automation Anywhere bots (A360, Control Room) for finance and HR processes.")
+        db.add(demo_job)
+        db.commit()
+        bump("jobs")
+    for (name, email, loc, years, skills, certs, degree, history, notice, ctc, ai_fit) in CANDIDATES:
+        cand = db.query(Candidate).filter(Candidate.tenant_id == tid, Candidate.full_name == name).first()
+        if cand is None:
+            cand = Candidate(tenant_id=tid, full_name=name, email=email, location=loc, source="manual", notice_period_days=notice,
+                             expected_ctc=ctc, parsed_fields={
+                                 "full_name": name, "email": email, "location": loc, "total_experience_years": years, "skills": skills,
+                                 "certificates": certs, "education": [{"degree": degree, "institution": "Demo University", "year": 2018}],
+                                 "work_history": [{"title": t, "company": c, "start": a, "end": b} for (t, c, a, b) in history]})
+            db.add(cand)
+            db.commit()
+            bump("candidates")
+        app = db.query(Application).filter(Application.tenant_id == tid, Application.candidate_id == cand.id, Application.job_role_id == demo_job.id).first()
+        if app is None:
+            app = Application(tenant_id=tid, job_role_id=demo_job.id, candidate_id=cand.id, status="screened", match_score=ai_fit)
+            db.add(app)
+            db.commit()
+            score_application(db, tenant, app, job=demo_job, candidate=cand)
+            bump("applications")
+
+    # -- agency, assigned to the demo job (else the newest published job)
     agency = db.query(RecruitmentAgency).filter(RecruitmentAgency.tenant_id == tid, RecruitmentAgency.name == AGENCY_NAME).first()
     if agency is None:
         agency = RecruitmentAgency(tenant_id=tid, name=AGENCY_NAME, contact_email="demo.agency@example.com", notes="Demo agency for review.")
         db.add(agency)
         db.commit()
         bump("agencies")
-    job = db.query(JobRole).filter(JobRole.tenant_id == tid, JobRole.status == "published").order_by(JobRole.created_at.desc()).first()
+    job = demo_job or db.query(JobRole).filter(JobRole.tenant_id == tid, JobRole.status == "published").order_by(JobRole.created_at.desc()).first()
     if job is None:
         skipped.append("agency job: no published job to share with the demo agency")
     elif db.query(AgencyJobAssignment).filter(AgencyJobAssignment.tenant_id == tid, AgencyJobAssignment.agency_id == agency.id).first() is None:
@@ -315,10 +365,27 @@ def _groups(db, tenant) -> list[dict]:
     for c in db.query(ReviewCycle).filter(ReviewCycle.tenant_id == tid, ReviewCycle.name.like(like)).all():
         groups.append({"kind": "review_cycles", "label": c.name, "rows": [(Review, ids(Review, Review.cycle_id == c.id)), (ReviewCycle, [c.id])]})
 
+    from app.models.agency import AgencySubmission
+    from app.models.application import Application
+    from app.models.candidate import Candidate
+    from app.models.job_role import JobRole
+    from app.models.scoring import ScoreRecalcRun, ScoringRuleSet
+
+    for cand in db.query(Candidate).filter(Candidate.tenant_id == tid, Candidate.full_name.like(like)).all():
+        app_ids = ids(Application, Application.candidate_id == cand.id)
+        groups.append({"kind": "candidates", "label": cand.full_name, "rows": [
+            (AgencySubmission, ids(AgencySubmission, AgencySubmission.application_id.in_(app_ids)) if app_ids else []),
+            (Application, app_ids), (Candidate, [cand.id])]})
+
     for ag in db.query(RecruitmentAgency).filter(RecruitmentAgency.tenant_id == tid, RecruitmentAgency.name.like(like)).all():
         groups.append({"kind": "agencies", "label": ag.name, "rows": [
             (AgencyJobAssignment, ids(AgencyJobAssignment, AgencyJobAssignment.agency_id == ag.id)),
             (AgencyMember, ids(AgencyMember, AgencyMember.agency_id == ag.id)), (RecruitmentAgency, [ag.id])]})
+
+    for job in db.query(JobRole).filter(JobRole.tenant_id == tid, JobRole.title.like(like)).all():
+        groups.append({"kind": "jobs", "label": job.title, "rows": [
+            (ScoreRecalcRun, ids(ScoreRecalcRun, ScoreRecalcRun.job_role_id == job.id)),
+            (ScoringRuleSet, ids(ScoringRuleSet, ScoringRuleSet.job_role_id == job.id)), (JobRole, [job.id])]})
 
     # Employment records first as their own groups: they point at OTHER demo employees
     # (manager), so every one must go before any employee does.

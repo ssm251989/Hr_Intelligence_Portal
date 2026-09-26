@@ -1,4 +1,4 @@
-from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Numeric, Text, text
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Numeric, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from app.core.database import Base
@@ -44,6 +44,13 @@ class Application(Base, TenantOwned):
     # entry logged alongside it (action="ai_screening_scored"), which is what the
     # Candidates List's Remarks column reads from rather than a separately maintained field.
     composite_score = Column(Numeric)
+    # Part 17.4/17.5: composite_score IS the one "Match score (0-100)" (configurable, weighted);
+    # match_score is kept as the AI fit, now just one factor of it. The breakdown behind the
+    # latest score ("Why this score"), the knock-out result, when and with which rules.
+    score_breakdown = Column(JSONB)
+    knocked_out = Column(Boolean, nullable=False, server_default=text("false"))
+    scored_at = Column(DateTime(timezone=True))
+    scoring_rule_set_id = Column(UUID(as_uuid=True), ForeignKey("scoring_rule_sets.id", ondelete="SET NULL"))
     ranking_score = Column(Numeric)
     ranking_rationale = Column(Text)
     status = Column(Text, server_default=text("'received'"))

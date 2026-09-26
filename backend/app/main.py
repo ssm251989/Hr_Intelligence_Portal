@@ -210,6 +210,9 @@ app.include_router(agency_portal_router)
 from app.experience.geo_router import router as geo_router  # noqa: E402
 
 app.include_router(geo_router)
+from app.recruitment.scoring.api_router import router as scoring_router  # noqa: E402
+
+app.include_router(scoring_router)
 install_friendly_errors(app)
 
 

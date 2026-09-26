@@ -87,6 +87,12 @@ def _onboarding_chase(db, tenant):
         return 0
 
 
+def _auto_shortlist_release(db, tenant):
+    from app.recruitment.scoring.autoshortlist import release_due
+
+    return release_due(db, tenant)
+
+
 JOBS = {
     "workflow_timers": _workflow_timers,
     "ticket_escalations": _ticket_escalations,
@@ -95,6 +101,7 @@ JOBS = {
     "document_expiry": _document_expiry,
     "privacy_overdue": _privacy_overdue,
     "onboarding_chase": _onboarding_chase,
+    "auto_shortlist_release": _auto_shortlist_release,
 }
 
 
@@ -133,5 +140,6 @@ celery_app.conf.beat_schedule = {
     "document-expiry": {"task": "hrms.fan_out", "schedule": 86400.0, "args": ("document_expiry",)},
     "privacy-overdue": {"task": "hrms.fan_out", "schedule": 21600.0, "args": ("privacy_overdue",)},
     "onboarding-chase": {"task": "hrms.fan_out", "schedule": 86400.0, "args": ("onboarding_chase",)},
+    "auto-shortlist-release": {"task": "hrms.fan_out", "schedule": 300.0, "args": ("auto_shortlist_release",)},
 }
 celery_app.conf.timezone = "UTC"

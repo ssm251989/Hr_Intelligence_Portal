@@ -292,7 +292,7 @@ def _auto_shortlist_info(db: Session, application: Application) -> Optional[Auto
         undo_until=undo_until,
         can_undo=(not undone) and application.status == "hr_selected" and now < undo_until,
         recruiter_notified=bool(details.get("recruiter_notified") or details.get("notified_to")),
-        notified_to=details.get("notified_to"),
+        notified_to=", ".join(details["notified_to"]) if isinstance(details.get("notified_to"), list) else details.get("notified_to"),
         breakdown=_breakdown(details.get("breakdown") or details),
         undone=undone,
     )
@@ -425,6 +425,8 @@ def undo_auto_shortlist(
     info = _auto_shortlist_info(db, application)
     if info is None:
         raise HTTPException(status_code=400, detail="This candidate was shortlisted by a person, not automatically")
+    if info.undone:
+        raise HTTPException(status_code=409, detail="This was already undone")
     if not info.can_undo:
         raise HTTPException(status_code=409, detail="The undo window has closed for this candidate")
     previous = application.status

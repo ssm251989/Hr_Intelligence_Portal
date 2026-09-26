@@ -374,7 +374,7 @@ async def portal_submit(
     db.add(submission)
     db.commit()
 
-    actor = f"agency:{current_user.email}"
+    actor = f"agency:{current_user.email}"[:50]  # audit_log.actor is 50 chars
     details = {"source": "agency", "agency_id": str(agency.id), "agency_name": agency.name}
     log_action(db, "candidate", candidate.id, "candidate_uploaded", actor, {"resume_path": resume_path, **details})
     log_action(db, "application", application.id, "application_created", actor, {"status": application.status, "job_role_id": str(job.id), **details})

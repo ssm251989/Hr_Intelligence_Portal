@@ -58,23 +58,22 @@ def register_all() -> None:
     register(SettingDef("org.support_email", "email", "", module="org", group="Organisation"))
     register(SettingDef("org.legal_links", "json", [], module="org", group="Organisation"))
 
-    # recruitment.screening.* -- current defaults from app/screening/service.py's
-    # ScreeningSettings singleton row (see docs/hardcode_inventory.md).
-    register(SettingDef(
-        "recruitment.screening.weights", "json",
-        {"skills": 0.5, "experience": 0.3, "education": 0.2},
-        module="recruitment", group="Screening",
-    ))
-    register(SettingDef(
-        "recruitment.screening.composite_formula", "json",
-        {"expression": "skills*weights.skills + experience*weights.experience + education*weights.education"},
-        module="recruitment", group="Screening",
-    ))
-    register(SettingDef("recruitment.screening.dashboard_min_score", "int", 60, module="recruitment", group="Screening"))
-    register(SettingDef("recruitment.screening.dashboard_max_score", "int", 100, module="recruitment", group="Screening"))
-    register(SettingDef("recruitment.screening.interview_min_score", "int", 75, module="recruitment", group="Screening"))
-    register(SettingDef("recruitment.screening.interview_max_score", "int", 100, module="recruitment", group="Screening"))
-    register(SettingDef("recruitment.screening.auto_shortlist_threshold", "int", 75, module="recruitment", group="Screening"))
+    # Part 17.4: ONE threshold everywhere -- "Shortlist threshold" on the one "Match score
+    # (0-100)" (per job in the job's shortlisting rules; this is the company default). It
+    # replaces recruitment.screening.{dashboard,interview}_{min,max}_score,
+    # auto_shortlist_threshold, weights and composite_formula (the weights now live in the
+    # versioned scoring rules, app/recruitment/scoring/); the migration copied each
+    # company's interview-ready mark into it. Old stored rows are left untouched.
+    register(SettingDef("recruitment.scoring.shortlist_threshold", "int", 75, module="recruitment", group="Scoring",
+                        json_schema={"type": "integer", "minimum": 0, "maximum": 100}))
+    # Part 17.6: automated shortlisting -- company defaults, each job can override them
+    # (job_roles.shortlisting_json). Off by default: a company switches it on deliberately.
+    register(SettingDef("recruitment.shortlisting.auto_shortlist", "bool", False, module="recruitment", group="Shortlisting"))
+    register(SettingDef("recruitment.shortlisting.undo_hours", "int", 4, module="recruitment", group="Shortlisting",
+                        json_schema={"type": "integer", "minimum": 0, "maximum": 72}))
+    register(SettingDef("recruitment.shortlisting.max_size", "int", 0, module="recruitment", group="Shortlisting",
+                        json_schema={"type": "integer", "minimum": 0}))
+    register(SettingDef("recruitment.shortlisting.notify", "json", ["job_owner"], module="recruitment", group="Shortlisting"))
 
     # recruitment.negotiation.* -- current defaults from
     # app/interview_scheduling/negotiation.py's own module constants.

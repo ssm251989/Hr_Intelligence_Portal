@@ -1,4 +1,4 @@
-from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Numeric, String, Text, text
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Integer, Numeric, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from app.core.database import Base
@@ -45,4 +45,11 @@ class Candidate(Base, TenantOwned):
     # after a resume is parsed) finds at least one published job to compare against.
     suitable_job_id = Column(UUID(as_uuid=True), ForeignKey("job_roles.id"), nullable=True)
     suitable_job_score = Column(Numeric, nullable=True)
+    # Part 17.5/17.8: salary & joining details (careers form, resume, or the candidate's own
+    # "Salary & joining details" form) and what the scoring factors read.
+    current_ctc = Column(Numeric)
+    expected_ctc = Column(Numeric)
+    notice_period_days = Column(Integer)
+    willing_to_relocate = Column(Boolean)
+    languages = Column(JSONB)
     created_at = Column(DateTime(timezone=True), server_default=text("now()"))
