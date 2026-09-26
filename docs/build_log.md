@@ -2063,3 +2063,16 @@ locations 2; nothing kept. A dry run before seeding found nothing (no false matc
 Quick checks: `compileall -q app hrctl` OK.
 
 NEXT: Part 15.9 -- hand-over: build + tsc, Playwright light-mode screenshots per page to docs/ui/screens/, docs/ui/PAGES.md, then stop and report.
+
+## Part 15.9 -- Hand-over (2026-09-26)
+
+- `npm run build` OK, tsc exit 0 (after the agency frontend commit).
+- `docs/ui/PAGES.md`: every page -- URL, who sees it, what it does, screenshot file.
+- Screenshots (light mode, 1440x900, full page) in `docs/ui/screens/`: login, register,
+  set-password, careers, careers-job. Signed-in pages NOT captured: that needs a real login and
+  creating a session token from a script was refused in this session. The reusable script
+  `frontend/scripts/take_screenshots.mjs` signs in with SHOT_EMAIL / SHOT_PASSWORD (env vars,
+  never stored) and captures every page named in PAGES.md; Playwright is installed with
+  `npm i --no-save` so it never enters package.json.
+
+NEXT: owner review of Part 15 (run the screenshot script with an admin login); then Part 16 -- docs/PART16_POLISH_PROMPT.txt step 16.1.
