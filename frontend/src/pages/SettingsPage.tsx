@@ -28,6 +28,7 @@ import PerformancePanel from "../components/PerformancePanel";
 import ServiceDeskPanel from "../components/ServiceDeskPanel";
 import PrivacyPanel from "../components/PrivacyPanel";
 import MfaSettingsCard from "../components/MfaSettingsCard";
+import MediaSettingsPanel from "../components/MediaSettingsPanel";
 
 function IntegrationCard({
   title,
@@ -172,6 +173,7 @@ export default function SettingsPage() {
         {canManagePlatformSettings && <PerformancePanel />}
         {canManagePlatformSettings && <ServiceDeskPanel />}
         {canManagePlatformSettings && <PrivacyPanel />}
+        {canManagePlatformSettings && <MediaSettingsPanel />}
         {canManagePlatformSettings && <PlatformSettingsPanel />}
       </Stack>
     </Box>
