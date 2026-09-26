@@ -14,7 +14,9 @@ import ListItem from "@mui/material/ListItem";
 import ListItemText from "@mui/material/ListItemText";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
+import FormControlLabel from "@mui/material/FormControlLabel";
 import Stack from "@mui/material/Stack";
+import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
@@ -49,6 +51,7 @@ function parseEditValue(raw: string, type: string): unknown {
 }
 
 function SettingRow({
+  showKey,
   def,
   row,
   onSaved,
@@ -58,6 +61,7 @@ function SettingRow({
   row: SettingValueRow | undefined;
   onSaved: () => void;
   onError: (message: string) => void;
+  showKey?: boolean;
 }) {
   const currentValue = row ? row.value : def.default;
   const [editing, setEditing] = useState(false);
@@ -123,19 +127,21 @@ function SettingRow({
     >
       <ListItemText
         primary={
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Typography variant="body2" fontFamily="monospace">
-              {def.key}
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+            {/* Part 16.2: the plain sentence is the name; the key only shows under "Advanced". */}
+            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+              {def.help || friendlyName(def.key)}
             </Typography>
-            {isDefault && <Chip label="platform default" size="small" variant="outlined" />}
+            {isDefault && <Chip label={tr("settings.default_chip")} size="small" variant="outlined" />}
+            {showKey && <Typography variant="caption" fontFamily="monospace" color="text.secondary">{def.key}</Typography>}
           </Stack>
         }
         // Part 14 section 11: plain-language help + what the setting affects, always visible.
         primaryTypographyProps={{ component: "div" }}
         secondary={
-          !editing && def.help ? (
+          !editing && def.affects ? (
             <Typography variant="caption" color="text.secondary" component="span">
-              {def.help}{def.affects ? ` Affects: ${def.affects}.` : ""}
+              {tr("settings.affects", { what: def.affects })}
             </Typography>
           ) : editing ? (
             <Stack direction="row" spacing={1} alignItems="center" mt={1}>
@@ -198,7 +204,15 @@ function SettingRow({
   );
 }
 
-export default function PlatformSettingsPanel() {
+// "iam.auth.password_min_length" -> "Password min length" (only when no help text exists).
+function friendlyName(key: string): string {
+  const last = (key.split(".").pop() ?? key).replace(/_/g, " ");
+  return last.charAt(0).toUpperCase() + last.slice(1);
+}
+
+/** Part 16.3: `prefixes` limits the list to one area's settings (e.g. ["iam.auth."]); no prefixes = everything. */
+export default function PlatformSettingsPanel({ prefixes, title, intro }: { prefixes?: string[]; title?: string; intro?: string } = {}) {
+  const [showKeys, setShowKeys] = useState(false);
   const [definitions, setDefinitions] = useState<SettingDefinition[] | null>(null);
   const [values, setValues] = useState<SettingValueRow[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -223,31 +237,33 @@ export default function PlatformSettingsPanel() {
   const groups = useMemo(() => {
     if (!definitions) return [];
     const needle = search.trim().toLowerCase();
+    const scoped = prefixes?.length ? definitions.filter((def) => prefixes.some((p) => def.key.startsWith(p))) : definitions;
     const filtered = needle
-      ? definitions.filter(
+      ? scoped.filter(
           (def) =>
+            (def.help ?? "").toLowerCase().includes(needle) ||
+            (def.affects ?? "").toLowerCase().includes(needle) ||
             def.key.toLowerCase().includes(needle) ||
-            def.module.toLowerCase().includes(needle) ||
             def.group.toLowerCase().includes(needle),
         )
-      : definitions;
+      : scoped;
     const byGroup = new Map<string, SettingDefinition[]>();
     for (const def of filtered) {
-      const label = `${def.module} / ${def.group || "General"}`;
+      const label = def.group || tr("settings.group_general");
       if (!byGroup.has(label)) byGroup.set(label, []);
       byGroup.get(label)!.push(def);
     }
     return Array.from(byGroup.entries()).sort(([a], [b]) => a.localeCompare(b));
-  }, [definitions, search]);
+  }, [definitions, search, prefixes]);
 
   return (
     <Card variant="outlined">
       <CardContent>
         <Typography variant="h6" gutterBottom>
-          {tr("settings.all.title")}
+          {title ?? tr("settings.all.title")}
         </Typography>
         <Typography variant="body2" color="text.secondary" mb={2}>
-          {tr("settings.all.intro")}
+          {intro ?? tr("settings.all.intro")}
         </Typography>
 
         {error && (
@@ -256,19 +272,22 @@ export default function PlatformSettingsPanel() {
           </Alert>
         )}
 
-        <TextField
-          size="small"
-          placeholder="Search settings by key, module, or group"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          sx={{ mb: 2, minWidth: 320 }}
-        />
+        <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" sx={{ mb: 2, rowGap: 1 }}>
+          <TextField
+            size="small"
+            placeholder={tr("settings.search_example")}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            sx={{ minWidth: 320 }}
+          />
+          <FormControlLabel control={<Switch checked={showKeys} onChange={(e) => setShowKeys(e.target.checked)} />} label={tr("comms.advanced")} />
+        </Stack>
 
         {loading ? (
           <CircularProgress size={24} />
         ) : groups.length === 0 ? (
           <Typography variant="body2" color="text.secondary">
-            No settings match "{search}".
+            {tr("settings.no_match", { q: search })}
           </Typography>
         ) : (
           <Stack spacing={3}>
@@ -279,7 +298,7 @@ export default function PlatformSettingsPanel() {
                 </Typography>
                 <List dense disablePadding>
                   {defs.map((def) => (
-                    <SettingRow key={def.key} def={def} row={valuesByKey.get(def.key)} onSaved={load} onError={setError} />
+                    <SettingRow key={def.key} def={def} row={valuesByKey.get(def.key)} onSaved={load} onError={setError} showKey={showKeys} />
                   ))}
                 </List>
               </Box>

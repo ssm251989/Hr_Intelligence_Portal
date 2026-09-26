@@ -246,8 +246,9 @@ function AvailabilityAndCtcTab() {
 
 const TABS = ["Pipeline", "Requisitions", "Availability & CTC"] as const;
 
-export default function RecruitmentPanel() {
-  const [tab, setTab] = useState<(typeof TABS)[number]>("Pipeline");
+/** Part 16.3: `only` shows a single tab (one Settings sub-page) without the tab bar. */
+export default function RecruitmentPanel({ only }: { only?: (typeof TABS)[number] } = {}) {
+  const [tab, setTab] = useState<(typeof TABS)[number]>(only ?? "Pipeline");
 
   return (
     <Card variant="outlined">
@@ -258,11 +259,11 @@ export default function RecruitmentPanel() {
         <Typography variant="body2" color="text.secondary" mb={2}>
           {tr("settings.hiring.intro")}
         </Typography>
-        <Tabs value={tab} onChange={(_e, value) => setTab(value)} sx={{ mb: 2 }}>
+        {!only && (<Tabs value={tab} onChange={(_e, value) => setTab(value)} sx={{ mb: 2 }}>
           {TABS.map((t) => (
             <Tab key={t} label={t} value={t} />
           ))}
-        </Tabs>
+        </Tabs>)}
         {tab === "Pipeline" && <PipelineTab />}
         {tab === "Requisitions" && <RequisitionsTab />}
         {tab === "Availability & CTC" && <AvailabilityAndCtcTab />}

@@ -58,7 +58,7 @@ export default function AdminHomeChecklist() {
             <Typography variant="h6" gutterBottom>Configuration health</Typography>
             {issues.slice(0, 6).map((issue, i) => (
               <Alert key={`${issue.code}-${i}`} severity={issue.severity} sx={{ mb: 1 }}
-                action={issue.fix_path ? <Button size="small" component={RouterLink} to={issue.fix_path}>Fix</Button> : undefined}>
+                action={issue.fix_path ? <Button size="small" component={RouterLink} to={issue.fix_path} variant="contained">{issue.action_label ?? "Fix it"}</Button> : undefined}>
                 <strong>{issue.message}</strong> {issue.fix}
               </Alert>
             ))}

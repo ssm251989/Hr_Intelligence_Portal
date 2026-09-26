@@ -18,3 +18,4 @@ export { default as PageTour, startPageTour, type TourStep } from "./PageTour";
 export { celebrate } from "./celebrate";
 export { useReducedMotion, prefersReducedMotion } from "./motion";
 export { default as HomeGreeting, timeOfDay, firstName } from "./HomeGreeting";
+export { PageGrid, Cell } from "./PageGrid";

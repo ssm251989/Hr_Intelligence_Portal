@@ -1,55 +1,76 @@
-import { useState } from "react";
-import Alert from "@mui/material/Alert";
+import { useEffect, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import Chip from "@mui/material/Chip";
 import Drawer from "@mui/material/Drawer";
 import Fab from "@mui/material/Fab";
 import IconButton from "@mui/material/IconButton";
 import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
-import ChatOutlinedIcon from "@mui/icons-material/ChatOutlined";
+import { useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
+import SendRoundedIcon from "@mui/icons-material/SendRounded";
 
-import { extractErrorMessage, intelligenceApi, type CopilotAnswer } from "../api/client";
+import { intelligenceApi, type CopilotAnswer } from "../api/client";
+import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
+import { LOCALES, useI18n } from "../i18n";
+import { Emoji, FriendlyError, humanise, StatusChip } from "../ui-kit";
+import { useReducedMotion } from "../ui-kit/motion";
+
+// Part 12 section B + Part 15.6 R5-R7: the HR assistant, a floating button on every page.
+// Rendered only when the company has the `copilot.chat` AI feature on AND the user holds
+// copilot.chat.view. Every answer shows the SOURCES it came from; actions come back as
+// drafted cards the user must Confirm or Discard -- this widget never submits on its own.
 
 type UUID = string;
-import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
-
-// Part 12 section B (docs/HRMS_COMPLETE_SPEC.txt): the HR Copilot web widget. Rendered
-// only when the tenant has the `copilot.chat` AI feature on AND the user holds
-// copilot.chat.view. Policy answers always show their citations; actions come back as
-// drafts the user must confirm -- this widget never submits anything on its own.
 
 interface Turn {
   question: string;
   reply?: CopilotAnswer;
-  error?: string;
-  draftStatus?: string;
+  error?: unknown;
+  draft?: { state: "confirmed" | "discarded" | "failed"; text: string };
 }
 
-const LANGUAGES = [
-  { code: "en", label: "English" },
-  { code: "hi", label: "हिन्दी" },
-  { code: "ta", label: "தமிழ்" },
-];
+const EXAMPLES = ["assistant.eg1", "assistant.eg2", "assistant.eg3"];
+
+function friendlyValue(v: unknown): string {
+  if (v === null || v === undefined || v === "") return "—";
+  if (Array.isArray(v)) return v.map(friendlyValue).join(", ");
+  if (typeof v === "object") return Object.values(v as Record<string, unknown>).map(friendlyValue).join(", ");
+  if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v)) {
+    const d = new Date(v);
+    if (!Number.isNaN(d.getTime())) return d.toLocaleDateString();
+  }
+  return String(v);
+}
 
 export default function CopilotWidget() {
   const { can, aiFeature } = useMeBootstrap();
+  const { t, locale } = useI18n();
+  const f = useTheme().palette.fresh;
+  const reduced = useReducedMotion();
   const [open, setOpen] = useState(false);
   const [question, setQuestion] = useState("");
-  const [language, setLanguage] = useState("en");
+  const [language, setLanguage] = useState<string>(locale);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [conversationId, setConversationId] = useState<UUID | undefined>();
   const [busy, setBusy] = useState(false);
+  const endRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => setLanguage(locale), [locale]);
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "end" });
+  }, [turns, busy, reduced]);
 
   if (!aiFeature("copilot.chat") || !can("copilot.chat.view")) return null;
 
-  const ask = () => {
-    const q = question.trim();
-    if (!q) return;
+  const setTurn = (index: number, patch: Partial<Turn>) => setTurns((prev) => prev.map((x, i) => (i === index ? { ...x, ...patch } : x)));
+
+  const ask = (text?: string) => {
+    const q = (text ?? question).trim();
+    if (!q || busy) return;
     setBusy(true);
     setQuestion("");
     const index = turns.length;
@@ -58,89 +79,177 @@ export default function CopilotWidget() {
       .ask(q, language, conversationId)
       .then((reply) => {
         setConversationId(reply.conversation_id);
-        setTurns((prev) => prev.map((t, i) => (i === index ? { ...t, reply } : t)));
+        setTurn(index, { reply });
       })
-      .catch((err) => setTurns((prev) => prev.map((t, i) => (i === index ? { ...t, error: extractErrorMessage(err, "Copilot couldn't answer right now") } : t))))
+      .catch((error) => setTurn(index, { error }))
       .finally(() => setBusy(false));
   };
 
   const confirm = (index: number, draftId: UUID) =>
     intelligenceApi
       .confirmDraft(draftId)
-      .then((r) => setTurns((prev) => prev.map((t, i) => (i === index ? { ...t, draftStatus: r.status === "confirmed" ? `Submitted (${r.result})` : r.error || r.status } : t))))
-      .catch((err) => setTurns((prev) => prev.map((t, i) => (i === index ? { ...t, draftStatus: extractErrorMessage(err, "Could not submit") } : t))));
+      .then((r) =>
+        setTurn(index, r.status === "confirmed"
+          ? { draft: { state: "confirmed", text: r.result ? t("assistant.done_ref", { ref: r.result }) : t("assistant.done") } }
+          : { draft: { state: "failed", text: r.error || t("assistant.failed") } }))
+      .catch(() => setTurn(index, { draft: { state: "failed", text: t("assistant.failed") } }));
 
   const discard = (index: number, draftId: UUID) =>
-    intelligenceApi.discardDraft(draftId).then(() => setTurns((prev) => prev.map((t, i) => (i === index ? { ...t, draftStatus: "Discarded" } : t))));
+    intelligenceApi
+      .discardDraft(draftId)
+      .then(() => setTurn(index, { draft: { state: "discarded", text: t("assistant.discarded") } }))
+      .catch(() => setTurn(index, { draft: { state: "failed", text: t("assistant.failed") } }));
+
+  const actionName = (action: string) => {
+    const key = `assistant.action.${action}`;
+    const tr = t(key);
+    return tr !== key ? tr : humanise(action.split(".").slice(-2).join(" "));
+  };
+
+  const bubble = { px: 1.75, py: 1.25, borderRadius: "16px", maxWidth: "88%", whiteSpace: "pre-wrap" as const, wordBreak: "break-word" as const };
 
   return (
     <>
-      <Fab color="primary" aria-label="Open HR Copilot" onClick={() => setOpen(true)} sx={{ position: "fixed", bottom: 24, right: 24, zIndex: (t) => t.zIndex.drawer + 1 }}>
-        <ChatOutlinedIcon />
-      </Fab>
-      <Drawer anchor="right" open={open} onClose={() => setOpen(false)} PaperProps={{ sx: { width: { xs: "100%", sm: 420 }, p: 2 } }}>
-        <Stack direction="row" alignItems="center" justifyContent="space-between" mb={1}>
-          <Typography variant="h6">HR Copilot</Typography>
-          <IconButton aria-label="Close HR Copilot" onClick={() => setOpen(false)}>
+      <Tooltip title={t("assistant.open")} placement="left">
+        <Fab color="primary" aria-label={t("assistant.open")} onClick={() => setOpen(true)}
+          sx={{ position: "fixed", bottom: 24, right: 24, zIndex: (th) => th.zIndex.drawer + 1, boxShadow: f.shadowHover }}>
+          <Emoji name="robot" size={28} />
+        </Fab>
+      </Tooltip>
+      <Drawer anchor="right" open={open} onClose={() => setOpen(false)}
+        slotProps={{ paper: { sx: { width: { xs: "100%", sm: 440 }, display: "flex", flexDirection: "column", bgcolor: f.ground } } }}>
+        <Stack direction="row" alignItems="center" spacing={1.5} sx={{ px: 2, py: 1.75, bgcolor: f.surface, borderBottom: `1px solid ${f.line}` }}>
+          <Box sx={{ width: 40, height: 40, borderRadius: "12px", bgcolor: f.brandSoft, display: "grid", placeItems: "center" }}>
+            <Emoji name="robot" size={24} />
+          </Box>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography component="h2" sx={{ fontWeight: 800, fontSize: 17 }}>{t("assistant.title")}</Typography>
+            <Typography sx={{ color: f.muted, fontSize: 13 }}>{t("assistant.subtitle")}</Typography>
+          </Box>
+          <IconButton aria-label={t("assistant.close")} onClick={() => setOpen(false)}>
             <CloseIcon />
           </IconButton>
         </Stack>
-        <Box sx={{ flex: 1, overflowY: "auto" }} aria-live="polite">
+
+        <Box sx={{ flex: 1, overflowY: "auto", p: 2 }} aria-live="polite">
           {turns.length === 0 && (
-            <Typography color="text.secondary" variant="body2">
-              Ask about your organisation's policies, your assets, tickets or pending approvals. Answers cite the policy they come from.
-            </Typography>
+            <Box sx={{ textAlign: "center", pt: 3 }}>
+              <Emoji name="waving_hand" size={40} />
+              <Typography sx={{ fontWeight: 800, mt: 1 }}>{t("assistant.hello")}</Typography>
+              <Typography sx={{ color: f.muted, mt: 0.5, mb: 2 }}>{t("assistant.intro")}</Typography>
+              <Stack spacing={1} alignItems="stretch">
+                {EXAMPLES.map((k) => (
+                  <Button key={k} variant="outlined" onClick={() => ask(t(k))} sx={{ justifyContent: "flex-start", textAlign: "left", bgcolor: f.surface }}
+                    startIcon={<Emoji name="speech" size={16} />}>
+                    {t(k)}
+                  </Button>
+                ))}
+              </Stack>
+            </Box>
           )}
+
           {turns.map((turn, i) => (
-            <Box key={i} sx={{ mb: 2 }}>
-              <Typography variant="subtitle2">{turn.question}</Typography>
-              {turn.error && <Alert severity="warning" sx={{ mt: 1 }}>{turn.error}</Alert>}
-              {turn.reply && (
-                <Box sx={{ mt: 1 }}>
-                  <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>{turn.reply.answer}</Typography>
-                  {turn.reply.citations.length > 0 && (
-                    <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
-                      {turn.reply.citations.map((c) => (
-                        <Chip key={c.n} size="small" variant="outlined" label={`[${c.n}] ${c.title}${c.heading ? ` · ${c.heading}` : ""}`} title={c.excerpt} />
-                      ))}
-                    </Stack>
-                  )}
-                  {turn.reply.draft && !turn.draftStatus && (
-                    <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-                      <Button size="small" variant="contained" onClick={() => confirm(i, turn.reply!.draft!.id)}>Confirm & submit</Button>
-                      <Button size="small" onClick={() => discard(i, turn.reply!.draft!.id)}>Discard</Button>
-                    </Stack>
-                  )}
-                  {turn.draftStatus && <Typography variant="caption" color="text.secondary">{turn.draftStatus}</Typography>}
+            <Stack key={i} spacing={1} sx={{ mb: 2.5 }}>
+              <Box sx={{ ...bubble, alignSelf: "flex-end", bgcolor: f.brand, color: f.brandInk, borderBottomRightRadius: "4px" }}>
+                <Typography sx={{ fontSize: 14 }}>{turn.question}</Typography>
+              </Box>
+              {turn.error !== undefined && <FriendlyError error={turn.error} compact />}
+              {!turn.reply && turn.error === undefined && (
+                <Box sx={{ ...bubble, alignSelf: "flex-start", bgcolor: f.surface, border: `1px solid ${f.line}` }}>
+                  <Typography sx={{ color: f.muted, fontSize: 14 }}>{t("assistant.thinking")}</Typography>
                 </Box>
               )}
-            </Box>
+              {turn.reply && (
+                <Box sx={{ ...bubble, alignSelf: "flex-start", bgcolor: f.surface, border: `1px solid ${f.line}`, borderBottomLeftRadius: "4px" }}>
+                  <Typography sx={{ fontSize: 14 }}>{turn.reply.answer}</Typography>
+                  {turn.reply.handover && (
+                    <Box sx={{ mt: 1 }}><StatusChip tone="sky" emoji="people" label={t("assistant.handover")} /></Box>
+                  )}
+
+                  <Box sx={{ mt: 1.25, pt: 1, borderTop: `1px dashed ${f.line}` }}>
+                    <Typography sx={{ fontSize: 12, fontWeight: 800, color: f.muted, mb: 0.5, display: "flex", alignItems: "center", gap: 0.5 }}>
+                      <Emoji name="page" size={14} /> {t("assistant.sources")}
+                    </Typography>
+                    {turn.reply.citations.length === 0 ? (
+                      <Typography sx={{ fontSize: 12, color: f.muted }}>{t("assistant.no_sources")}</Typography>
+                    ) : (
+                      <Stack spacing={0.75}>
+                        {turn.reply.citations.map((c) => (
+                          <Box key={c.n} sx={{ p: "6px 10px", borderRadius: "10px", bgcolor: f.surface2, border: `1px solid ${f.line}` }}>
+                            <Typography sx={{ fontSize: 12, fontWeight: 700 }}>[{c.n}] {c.title}{c.heading ? ` · ${c.heading}` : ""}</Typography>
+                            {c.excerpt && <Typography sx={{ fontSize: 12, color: f.muted, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{c.excerpt}</Typography>}
+                          </Box>
+                        ))}
+                      </Stack>
+                    )}
+                  </Box>
+
+                  {turn.reply.draft && (
+                    <Box sx={{ mt: 1.5, p: 1.5, borderRadius: "14px", bgcolor: f.sunSoft, border: `1px solid ${f.line}` }} role="group" aria-label={t("assistant.draft_title")}>
+                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.75 }}>
+                        <Emoji name="memo" size={18} />
+                        <Typography sx={{ fontWeight: 800, fontSize: 14, flex: 1 }}>{actionName(turn.reply.draft.action)}</Typography>
+                        {turn.draft ? (
+                          <StatusChip status={turn.draft.state === "confirmed" ? "done" : turn.draft.state === "discarded" ? "cancelled" : "failed"} label={turn.draft.text} />
+                        ) : (
+                          <StatusChip tone="sun" emoji="hourglass" label={t("assistant.needs_ok")} />
+                        )}
+                      </Stack>
+                      <Box component="dl" sx={{ m: 0, display: "grid", gridTemplateColumns: "auto 1fr", columnGap: 1.5, rowGap: 0.25, fontSize: 13 }}>
+                        {Object.entries(turn.reply.draft.payload).filter(([k]) => !/(^|_)id$/.test(k)).map(([k, v]) => (
+                          <Box key={k} sx={{ display: "contents" }}>
+                            <Box component="dt" sx={{ color: f.muted }}>{humanise(k)}</Box>
+                            <Box component="dd" sx={{ m: 0, fontWeight: 600 }}>{friendlyValue(v)}</Box>
+                          </Box>
+                        ))}
+                      </Box>
+                      {!turn.draft && (
+                        <>
+                          <Typography sx={{ fontSize: 12, color: f.muted, mt: 1 }}>{t("assistant.draft_hint")}</Typography>
+                          <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+                            <Button size="small" variant="contained" onClick={() => confirm(i, turn.reply!.draft!.id)} startIcon={<Emoji name="check" size={14} />}>{t("assistant.confirm")}</Button>
+                            <Button size="small" variant="outlined" onClick={() => discard(i, turn.reply!.draft!.id)}>{t("assistant.discard")}</Button>
+                          </Stack>
+                        </>
+                      )}
+                    </Box>
+                  )}
+                </Box>
+              )}
+            </Stack>
           ))}
+          <div ref={endRef} />
         </Box>
-        <Stack direction="row" spacing={1} alignItems="flex-start" sx={{ mt: 1 }}>
-          <TextField select size="small" value={language} onChange={(e) => setLanguage(e.target.value)} aria-label="Answer language" sx={{ width: 110 }}>
-            {LANGUAGES.map((l) => (
-              <MenuItem key={l.code} value={l.code}>{l.label}</MenuItem>
-            ))}
-          </TextField>
-          <TextField
-            size="small"
-            fullWidth
-            multiline
-            maxRows={4}
-            placeholder="Ask a question"
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                ask();
-              }
-            }}
-            inputProps={{ "aria-label": "Question for HR Copilot" }}
-          />
-          <Button variant="contained" onClick={ask} disabled={busy || !question.trim()}>Ask</Button>
-        </Stack>
+
+        <Box component="form" onSubmit={(e) => { e.preventDefault(); ask(); }} sx={{ p: 1.5, bgcolor: f.surface, borderTop: `1px solid ${f.line}` }}>
+          <Stack direction="row" spacing={1} alignItems="flex-end">
+            <TextField
+              size="small" fullWidth multiline maxRows={4}
+              placeholder={t("assistant.placeholder")}
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  ask();
+                }
+              }}
+              slotProps={{ htmlInput: { "aria-label": t("assistant.question_label") } }}
+            />
+            <IconButton type="submit" color="primary" aria-label={t("assistant.send")} disabled={busy || !question.trim()}
+              sx={{ bgcolor: f.brandSoft, borderRadius: "11px" }}>
+              <SendRoundedIcon />
+            </IconButton>
+          </Stack>
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1 }}>
+            <Typography sx={{ fontSize: 12, color: f.muted }}>{t("assistant.answer_in")}</Typography>
+            <TextField select size="small" variant="standard" value={language} onChange={(e) => setLanguage(e.target.value)}
+              slotProps={{ htmlInput: { "aria-label": t("assistant.answer_in") } }} sx={{ minWidth: 90 }}>
+              {LOCALES.map((l) => <MenuItem key={l.code} value={l.code}>{l.label}</MenuItem>)}
+            </TextField>
+            <Typography sx={{ fontSize: 12, color: f.muted, ml: "auto !important" }}>{t("assistant.enter_hint")}</Typography>
+          </Stack>
+        </Box>
       </Drawer>
     </>
   );

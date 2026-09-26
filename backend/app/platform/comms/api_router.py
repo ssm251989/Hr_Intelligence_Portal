@@ -168,13 +168,31 @@ def preview_template_route(template_id: UUID, payload: PreviewRequest, db: Sessi
     if template is None:
         raise HTTPException(status_code=404, detail="Template not found")
     tenant = require_current_tenant()
-    sample = {key: f"[{key}]" for key in (template.variables_schema_json or {}).get("required", [])}
-    ctx = {**sample, **get_theme_and_org_context(db, tenant), **payload.sample_context}
+    # Part 16.2: previews read like a real email -- realistic samples, never "[job_title]" or {{ }}.
+    from app.platform.comms.catalog import VARIABLES, sample_context
+
+    theme_org = get_theme_and_org_context(db, tenant)
+    company = (theme_org.get("org") or {}).get("display_name")
+    samples = sample_context(company)
+    required = (template.variables_schema_json or {}).get("required", [])
+    extra = {key: VARIABLES.get(key, (key, key.replace("_", " ").capitalize()))[1] for key in required if key not in samples}
+    ctx = {**samples, **extra, **theme_org, **payload.sample_context}
     try:
         rendered = preview_template(template, ctx)
     except (VariablesValidationError, TemplateRenderError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return PreviewResponse(**rendered)
+
+
+@router.get("/template-catalog")
+def template_catalog(db: Session = Depends(get_db), current_user: User = Depends(require_roles("admin"))):
+    """Friendly name + one line per template key, and the placeholder picker (name + sample)."""
+    from app.platform.comms.catalog import TEMPLATES, describe_template, variable_catalog
+    from app.platform.comms.theme import get_theme_and_org_context
+
+    tenant = require_current_tenant()
+    company = (get_theme_and_org_context(db, tenant).get("org") or {}).get("display_name")
+    return {"templates": {key: describe_template(key) for key in TEMPLATES}, "variables": variable_catalog(company)}
 
 
 # ---- rules ----

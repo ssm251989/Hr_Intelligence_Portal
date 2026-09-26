@@ -182,6 +182,9 @@ app.include_router(ui_screening_router)
 from app.experience.ui_careers_router import router as ui_careers_router  # noqa: E402
 
 app.include_router(ui_careers_router)
+from app.experience.settings_home_router import router as settings_home_router  # noqa: E402
+
+app.include_router(settings_home_router)
 install_friendly_errors(app)
 
 

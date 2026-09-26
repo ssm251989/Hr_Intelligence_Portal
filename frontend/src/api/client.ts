@@ -1513,6 +1513,8 @@ export interface HealthIssue {
   message: string;
   fix: string;
   fix_path: string;
+  /** Part 16.2: the one-click fix button, e.g. "Connect mailbox". */
+  action_label?: string;
 }
 
 export interface InboxItem {

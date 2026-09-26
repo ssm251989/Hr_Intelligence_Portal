@@ -1,0 +1,33 @@
+RESUME AFTER A RESTART - read this whole file, then act.
+
+1. Run and quote briefly:
+   git branch --show-current
+   git status --short
+   git log --oneline -5
+   Then read the LAST 60 lines of docs/build_log.md.
+
+2. If there are uncommitted changes from before the restart:
+   make sure `npx tsc --noEmit -p tsconfig.app.json` (frontend) and
+   `python -m compileall -q app` (backend) pass, fix if needed, then
+   commit ("wip: resume after restart") and push.
+
+3. Continue from where docs/build_log.md says you stopped, in this order:
+   a) any unfinished STEP of docs/PART15_FULL_PROMPT.txt
+   b) then docs/PART16_POLISH_PROMPT.txt steps 16.1 -> 16.10
+   Re-read the prompt file for the step you are on before continuing.
+
+4. Standing rules (unchanged):
+   - NO test suites (backend or frontend). Only quick checks: tsc, compileall,
+     alembic upgrade, npm run build.
+   - Do not ask me questions: choose the best option, log it in
+     docs/build_log.md.
+   - Stop only for data deletion, overwriting main, pushing secrets or
+     anything irreversible.
+   - Commit + push after EVERY step (small commits - the machine restarts
+     often, so never keep a lot of uncommitted work).
+   - Write a one-line "NEXT:" entry at the end of docs/build_log.md after
+     each commit, saying exactly what comes next.
+   - Keep terminal output short.
+
+5. First reply: branch, last commit, and the "NEXT:" line you are resuming
+   from. Then continue without waiting.

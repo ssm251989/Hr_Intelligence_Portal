@@ -70,7 +70,7 @@ export default function SetupWizardPage() {
   const fail = (fallback: string) => (err: unknown) => setError(extractErrorMessage(err, fallback));
 
   return (
-    <Box sx={{ maxWidth: 960 }}>
+    <Box>
       <Typography variant="h5" component="h1" gutterBottom>Set up your organisation</Typography>
       {progress && (
         <Box sx={{ mb: 2 }}>

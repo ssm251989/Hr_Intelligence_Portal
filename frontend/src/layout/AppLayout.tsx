@@ -368,14 +368,15 @@ export default function AppLayout() {
   const sidebarWidth = expanded ? SIDEBAR_WIDTH : RAIL_WIDTH;
 
   return (
-    <Box sx={{ minHeight: "100vh", bgcolor: t.ground, px: 2 }}>
+    <Box sx={{ minHeight: "100vh", bgcolor: t.ground, px: { xs: 1.5, sm: 2, xl: 3 } }}>
       {/* WCAG 2.4.1 bypass block: first focusable element on every page. */}
       <Box component="a" href="#main-content" sx={{ position: "absolute", left: -9999, top: 8, zIndex: 2000, p: 1, bgcolor: "background.paper", borderRadius: 1, "&:focus": { left: 8 } }}>
         {tr("shell.skip_to_content")}
       </Box>
       <Box
         sx={{
-          maxWidth: 1480, mx: "auto", pt: 2, pb: 5, display: "grid", gap: 2.5, alignItems: "start",
+          // 16.1: no centred max-width -- sidebar on the left, content fills every remaining pixel.
+          width: "100%", pt: 2, pb: 5, display: "grid", gap: { xs: 2, lg: 2.5 }, alignItems: "start",
           gridTemplateColumns: { xs: "minmax(0,1fr)", md: `${sidebarWidth}px minmax(0,1fr)` },
           transition: "grid-template-columns 220ms ease",
         }}

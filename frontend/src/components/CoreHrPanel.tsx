@@ -231,8 +231,9 @@ function OrgTab() {
 
 const TABS = ["Employees", "Org"] as const;
 
-export default function CoreHrPanel() {
-  const [tab, setTab] = useState<(typeof TABS)[number]>("Employees");
+/** Part 16.3: `only` shows a single tab (one Settings sub-page) without the tab bar. */
+export default function CoreHrPanel({ only }: { only?: (typeof TABS)[number] } = {}) {
+  const [tab, setTab] = useState<(typeof TABS)[number]>(only ?? "Employees");
 
   return (
     <Card variant="outlined">
@@ -243,11 +244,11 @@ export default function CoreHrPanel() {
         <Typography variant="body2" color="text.secondary" mb={2}>
           {tr("settings.corehr.intro")}
         </Typography>
-        <Tabs value={tab} onChange={(_e, value) => setTab(value)} sx={{ mb: 2 }}>
+        {!only && (<Tabs value={tab} onChange={(_e, value) => setTab(value)} sx={{ mb: 2 }}>
           {TABS.map((t) => (
             <Tab key={t} label={t} value={t} />
           ))}
-        </Tabs>
+        </Tabs>)}
         {tab === "Employees" && <EmployeesTab />}
         {tab === "Org" && <OrgTab />}
       </CardContent>

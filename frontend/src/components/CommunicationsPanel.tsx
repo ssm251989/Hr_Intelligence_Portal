@@ -6,10 +6,6 @@ import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
-import Dialog from "@mui/material/Dialog";
-import DialogActions from "@mui/material/DialogActions";
-import DialogContent from "@mui/material/DialogContent";
-import DialogTitle from "@mui/material/DialogTitle";
 import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import ListItemText from "@mui/material/ListItemText";
@@ -23,131 +19,21 @@ import {
   commsApi,
   extractErrorMessage,
   type BrandThemeRow,
-  type MessageTemplateRow,
   type NotificationRuleRow,
   type OutboundMessageRow,
   type SuppressionRow,
 } from "../api/client";
 import { t as tr } from "../i18n";
-
-// Part 4 (docs/HRMS_COMPLETE_SPEC.txt section 6's UI, scoped down the same way Part 2's
-// PlatformSettingsPanel / Part 3's ConnectionsPanel were): a plain list + publish/preview
-// for templates, a read-only rules list with an enable/disable toggle, a single default
-// brand theme form, and a message log with resend. Deliberately NOT the full spec vision
-// (split-view code/visual template editor with device/dark-mode live preview, a drag-drop
-// "when X and Y send Z" rule builder, per-message delivery timelines, diff/versions UI) --
-// see docs/build_log.md's own Part 4 note.
+import EmailTemplates from "./comms/EmailTemplates";
 
 function TemplatesTab() {
-  const [templates, setTemplates] = useState<MessageTemplateRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [previewOpen, setPreviewOpen] = useState<MessageTemplateRow | null>(null);
-  const [previewResult, setPreviewResult] = useState<{ subject: string; html: string; text: string } | null>(null);
-  const [publishing, setPublishing] = useState<string | null>(null);
+  return <EmailTemplates />;
+}
 
-  const load = () => {
-    setLoading(true);
-    commsApi
-      .templates()
-      .then(setTemplates)
-      .catch((err) => setError(extractErrorMessage(err, "Failed to load templates")))
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(load, []);
-
-  const handlePublish = async (id: string) => {
-    setPublishing(id);
-    try {
-      await commsApi.publishTemplate(id);
-      load();
-    } catch (err) {
-      setError(extractErrorMessage(err, "Failed to publish template"));
-    } finally {
-      setPublishing(null);
-    }
-  };
-
-  const openPreview = async (template: MessageTemplateRow) => {
-    setPreviewOpen(template);
-    setPreviewResult(null);
-    try {
-      const sample = Object.fromEntries((template.variables_schema_json.required ?? []).map((key) => [key, `[${key}]`]));
-      const rendered = await commsApi.previewTemplate(template.id, sample);
-      setPreviewResult(rendered);
-    } catch (err) {
-      setError(extractErrorMessage(err, "Failed to render preview"));
-    }
-  };
-
-  return (
-    <Box>
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
-      {loading ? (
-        <CircularProgress size={24} />
-      ) : templates.length === 0 ? (
-        <Typography variant="body2" color="text.secondary">
-          No templates yet.
-        </Typography>
-      ) : (
-        <List dense disablePadding>
-          {templates.map((t) => (
-            <ListItem
-              key={t.id}
-              divider
-              secondaryAction={
-                <Stack direction="row" spacing={1}>
-                  <Button size="small" onClick={() => openPreview(t)}>
-                    Preview
-                  </Button>
-                  {t.status === "draft" && (
-                    <Button size="small" variant="contained" onClick={() => handlePublish(t.id)} disabled={publishing === t.id}>
-                      {publishing === t.id ? "Publishing..." : "Publish"}
-                    </Button>
-                  )}
-                </Stack>
-              }
-            >
-              <ListItemText
-                primary={
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <Typography variant="body2">{t.key}</Typography>
-                    <Chip label={`v${t.version}`} size="small" variant="outlined" />
-                    <Chip label={t.status} size="small" color={t.status === "published" ? "success" : "default"} />
-                  </Stack>
-                }
-                secondary={t.subject_tpl || "(no subject template)"}
-              />
-            </ListItem>
-          ))}
-        </List>
-      )}
-
-      <Dialog open={previewOpen !== null} onClose={() => setPreviewOpen(null)} maxWidth="sm" fullWidth>
-        <DialogTitle>Preview: {previewOpen?.key}</DialogTitle>
-        <DialogContent>
-          {previewResult === null ? (
-            <CircularProgress size={24} />
-          ) : (
-            <Stack spacing={2}>
-              <TextField size="small" label="Subject" value={previewResult.subject} InputProps={{ readOnly: true }} fullWidth />
-              <Box sx={{ border: 1, borderColor: "divider", borderRadius: 1, p: 2, maxHeight: 400, overflow: "auto" }}>
-                <div dangerouslySetInnerHTML={{ __html: previewResult.html }} />
-              </Box>
-            </Stack>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setPreviewOpen(null)}>Close</Button>
-        </DialogActions>
-      </Dialog>
-    </Box>
-  );
+// "recruitment.application.received" -> "application received" (no dotted keys on screen).
+function plainEvent(key: string): string {
+  const parts = key.split(".");
+  return (parts.length > 1 ? parts.slice(1) : parts).join(" ").replace(/_/g, " ");
 }
 
 function RulesTab() {
@@ -190,7 +76,7 @@ function RulesTab() {
         <CircularProgress size={24} />
       ) : rules.length === 0 ? (
         <Typography variant="body2" color="text.secondary">
-          No notification rules yet.
+          {tr("comms.rules_empty")}
         </Typography>
       ) : (
         <List dense disablePadding>
@@ -200,7 +86,7 @@ function RulesTab() {
               divider
               secondaryAction={
                 <Button size="small" onClick={() => handleToggle(r)} disabled={toggling === r.id}>
-                  {r.enabled ? "Disable" : "Enable"}
+                  {r.enabled ? tr("comms.rule_disable") : tr("comms.rule_enable")}
                 </Button>
               }
             >
@@ -208,10 +94,10 @@ function RulesTab() {
                 primary={
                   <Stack direction="row" spacing={1} alignItems="center">
                     <Typography variant="body2">{r.name}</Typography>
-                    <Chip label={r.enabled ? "enabled" : "disabled"} size="small" color={r.enabled ? "success" : "default"} />
+                    <Chip label={r.enabled ? tr("comms.rule_on") : tr("comms.rule_off")} size="small" color={r.enabled ? "success" : "default"} />
                   </Stack>
                 }
-                secondary={`When ${r.event_type} → send ${r.template_key} via ${r.channels.join(", ")}`}
+                secondary={tr("comms.rule_line", { event: plainEvent(r.event_type), template: plainEvent(r.template_key), channels: r.channels.map((c) => (c === "in_app" ? "app" : c)).join(", ") })}
               />
             </ListItem>
           ))}
@@ -426,10 +312,11 @@ function SuppressionTab() {
   );
 }
 
-const TABS = ["Templates", "Rules", "Brand theme", "Message log", "Suppression"] as const;
+const TABS = ["templates", "rules", "brand", "log", "suppression"] as const;
 
-export default function CommunicationsPanel() {
-  const [tab, setTab] = useState<(typeof TABS)[number]>("Templates");
+/** Part 16.3: `only` shows a single tab (one Settings sub-page) without the tab bar. */
+export default function CommunicationsPanel({ only }: { only?: (typeof TABS)[number] } = {}) {
+  const [tab, setTab] = useState<(typeof TABS)[number]>(only ?? "templates");
 
   return (
     <Card variant="outlined">
@@ -440,16 +327,16 @@ export default function CommunicationsPanel() {
         <Typography variant="body2" color="text.secondary" mb={2}>
           {tr("settings.comms.intro")}
         </Typography>
-        <Tabs value={tab} onChange={(_e, value) => setTab(value)} sx={{ mb: 2 }}>
+        {!only && (<Tabs value={tab} onChange={(_e, value) => setTab(value)} sx={{ mb: 2 }}>
           {TABS.map((t) => (
-            <Tab key={t} label={t} value={t} />
+            <Tab key={t} label={tr(`comms.tab.${t}`)} value={t} />
           ))}
-        </Tabs>
-        {tab === "Templates" && <TemplatesTab />}
-        {tab === "Rules" && <RulesTab />}
-        {tab === "Brand theme" && <BrandThemeTab />}
-        {tab === "Message log" && <MessageLogTab />}
-        {tab === "Suppression" && <SuppressionTab />}
+        </Tabs>)}
+        {tab === "templates" && <TemplatesTab />}
+        {tab === "rules" && <RulesTab />}
+        {tab === "brand" && <BrandThemeTab />}
+        {tab === "log" && <MessageLogTab />}
+        {tab === "suppression" && <SuppressionTab />}
       </CardContent>
     </Card>
   );
