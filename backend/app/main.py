@@ -217,6 +217,9 @@ from app.experience.ui_salary_router import public_router as salary_form_router,
 
 app.include_router(ui_salary_router)
 app.include_router(salary_form_router)
+from app.experience.ui_candidate_emails_router import router as candidate_emails_router  # noqa: E402
+
+app.include_router(candidate_emails_router)
 install_friendly_errors(app)
 
 

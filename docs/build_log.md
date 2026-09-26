@@ -2167,3 +2167,17 @@ NEXT: 17.4-17.6 frontend (one-score labels, Scoring rules page + wizard steps, W
   earlier stages only show the chip.
 
 NEXT: frontend of 17.4-17.6 and 17.8 (4 agents), then proofs, commits; then 17.7.
+
+## Part 17.7 -- backend (2026-09-27)
+
+- `hr_inbound_emails` gained topic / summary / summary_source / status / done_at / done_by
+  (migration `f5c8e1a3d7b9`). `app/hr_inbox/triage.py`: topic by keyword rules; one-line
+  summary from the AI (new governed feature `recruitment.email_summary`, purpose llm.judgment,
+  max 5 per page load) or the reply's first real sentence; automatic senders (no-reply,
+  newsletters, mailer-daemon, …) -> "Automatic email - not from a candidate", done.
+  Triage also runs when mail arrives (imap_poll) and the timeline entry carries the summary.
+- `GET /api/v1/ui/candidate-emails?tab=needs_action|linked|not_matched`, `POST …/{id}/done`.
+- Found: the connected mailbox currently holds only Google system mail (12 rows) -- all now
+  labelled automatic; no candidate replies yet.
+
+NEXT: 17.7 frontend (agent), then 17.10 setup checklist + templates, 17.11 settings save check, 17.12.

@@ -31,4 +31,11 @@ class HrInboundEmail(Base, TenantOwned):
     message_id = Column(Text, nullable=True, unique=True)
     matched_candidate_id = Column(UUID(as_uuid=True), ForeignKey("candidates.id"), nullable=True)
     matched_application_id = Column(UUID(as_uuid=True), ForeignKey("applications.id"), nullable=True)
+    # Part 17.7: what the reply is about + whether someone still has to act on it
+    topic = Column(Text)  # interview_time | documents | question | offer | withdrawal | other
+    summary = Column(Text)  # one line (AI when switched on, else taken from the email)
+    summary_source = Column(Text)  # ai | text
+    status = Column(Text, nullable=False, server_default=text("'needs_action'"))  # needs_action | done
+    done_at = Column(DateTime(timezone=True))
+    done_by = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=text("now()"))

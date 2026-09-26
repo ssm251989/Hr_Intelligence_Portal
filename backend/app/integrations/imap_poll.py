@@ -192,12 +192,20 @@ def poll_hr_inbox(db: Session, hr_integration: Optional[HrIntegration] = None) -
             db.commit()
             db.refresh(row)
             stored += 1
+            try:  # Part 17.7: what it's about, in one line (never blocks storing the mail)
+                from app.hr_inbox.triage import triage
+                from app.platform.tenancy.context import get_current_tenant
+
+                if get_current_tenant() is not None:
+                    triage(db, get_current_tenant(), row)
+            except Exception:  # noqa: BLE001
+                pass
 
             if candidate:
                 matched += 1
                 log_action(
                     db, "candidate", candidate.id, "inbound_email_received", parsed["from_address"],
-                    {"subject": parsed["subject"], "hr_inbound_email_id": str(row.id)},
+                    {"subject": parsed["subject"], "hr_inbound_email_id": str(row.id), "summary": row.summary, "topic": row.topic},
                 )
 
             max_uid_seen = uid if max_uid_seen is None else max(max_uid_seen, uid)
