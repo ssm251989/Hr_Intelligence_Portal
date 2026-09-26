@@ -23,6 +23,10 @@ class NavItem:
     label_key: str
     path: str
     permission: Optional[str] = None  # None = any signed-in user
+    # Part 15 app shell: sidebar section (today/hiring/people/insights/admin) and the
+    # Fluent emoji name shown beside the label.
+    group: str = "today"
+    icon: str = "house"
 
 
 @dataclass(frozen=True)
@@ -34,27 +38,36 @@ class ModuleDef:
 
 
 MODULES: tuple[ModuleDef, ...] = (
-    ModuleDef("home", (NavItem("nav.overview", "/"), NavItem("nav.approvals", "/approvals")), always_on=True),
+    ModuleDef("home", (NavItem("nav.overview", "/", group="today", icon="house"),
+                       NavItem("nav.approvals", "/approvals", group="today", icon="check")), always_on=True),
     ModuleDef("recruitment", (
-        NavItem("nav.jobs", "/jobs"), NavItem("nav.candidates", "/candidates/dashboard"), NavItem("nav.screening", "/screening/dashboard"),
-        NavItem("nav.shortlisting", "/shortlisting/dashboard"), NavItem("nav.interviews", "/interviews/dashboard"), NavItem("nav.hr_inbox", "/hr-inbox"),
-        NavItem("nav.salary", "/salary"), NavItem("nav.bgv", "/bgv"), NavItem("nav.offers", "/offers"),
-        NavItem("nav.reports", "/reports"),  # the original Reports page (13-module parity); the builder lives on it too
+        NavItem("nav.jobs", "/jobs", group="hiring", icon="briefcase"),
+        NavItem("nav.candidates", "/candidates/dashboard", group="hiring", icon="technologist"),
+        NavItem("nav.screening", "/screening/dashboard", group="hiring", icon="magnifier"),
+        NavItem("nav.shortlisting", "/shortlisting/dashboard", group="hiring", icon="star"),
+        NavItem("nav.interviews", "/interviews/dashboard", group="hiring", icon="calendar"),
+        NavItem("nav.hr_inbox", "/hr-inbox", group="hiring", icon="inbox"),
+        NavItem("nav.salary", "/salary", group="hiring", icon="money"),
+        NavItem("nav.bgv", "/bgv", group="hiring", icon="shield"),
+        NavItem("nav.offers", "/offers", group="hiring", icon="envelope"),
+        # the original Reports page (13-module parity); the builder lives on it too
+        NavItem("nav.reports", "/reports", group="insights", icon="bar_chart"),
     ), always_on=True),
-    ModuleDef("onboarding", (NavItem("nav.onboarding", "/settings#onboarding", "onboarding.preboarding.view"),), ("/api/v1/onboarding", "/api/v1/public/onboarding")),
-    ModuleDef("performance", (NavItem("nav.performance", "/settings#performance", "performance.cycle.view"),), ("/api/v1/performance",)),
-    ModuleDef("helpdesk", (NavItem("nav.helpdesk", "/settings#helpdesk", "helpdesk.ticket.view"),),
+    ModuleDef("onboarding", (NavItem("nav.onboarding", "/settings#onboarding", "onboarding.preboarding.view", group="people", icon="waving_hand"),),
+              ("/api/v1/onboarding", "/api/v1/public/onboarding")),
+    ModuleDef("performance", (NavItem("nav.performance", "/settings#performance", "performance.cycle.view", group="people", icon="target"),), ("/api/v1/performance",)),
+    ModuleDef("helpdesk", (NavItem("nav.helpdesk", "/settings#helpdesk", "helpdesk.ticket.view", group="people", icon="ring_buoy"),),
               ("/api/v1/service-desk/tickets", "/api/v1/service-desk/me/tickets", "/api/v1/service-desk/kb", "/api/v1/service-desk/queues",
                "/api/v1/service-desk/sla-policies", "/api/v1/service-desk/calendars", "/api/v1/service-desk/assignment-rules", "/api/v1/service-desk/inbound")),
     ModuleDef("assets", (), ("/api/v1/service-desk/assets", "/api/v1/service-desk/allocations", "/api/v1/service-desk/asset-requests",
                              "/api/v1/service-desk/me/assets", "/api/v1/service-desk/me/asset-requests", "/api/v1/service-desk/me/allocations")),
     ModuleDef("separation", (), ("/api/v1/service-desk/separations", "/api/v1/service-desk/separations-export", "/api/v1/service-desk/clearance-items",
                                  "/api/v1/service-desk/me/resignation")),
-    ModuleDef("analytics", (), ("/api/v1/intelligence/datasets", "/api/v1/intelligence/reports",
-                                                                                            "/api/v1/intelligence/metrics", "/api/v1/intelligence/dashboards",
-                                                                                            "/api/v1/intelligence/predictive", "/api/v1/intelligence/warehouse-export")),
+    ModuleDef("analytics", (), ("/api/v1/intelligence/datasets", "/api/v1/intelligence/reports", "/api/v1/intelligence/metrics",
+                                "/api/v1/intelligence/dashboards", "/api/v1/intelligence/predictive", "/api/v1/intelligence/warehouse-export")),
     ModuleDef("copilot", (), ("/api/v1/intelligence/copilot",)),
-    ModuleDef("settings", (NavItem("nav.setup", "/setup", "platform.settings.configure"), NavItem("nav.settings", "/settings", "platform.settings.view")), always_on=True),
+    ModuleDef("settings", (NavItem("nav.setup", "/setup", "platform.settings.configure", group="admin", icon="rocket"),
+                           NavItem("nav.settings", "/settings", "platform.settings.view", group="admin", icon="gear")), always_on=True),
 )
 _BY_CODE = {m.code: m for m in MODULES}
 
@@ -91,7 +104,7 @@ def nav_for(db, tenant, user, permissions: set[str]) -> list[dict]:
             continue
         for item in module.nav:
             if item.permission is None or item.permission in permissions:
-                items.append({"label_key": item.label_key, "path": item.path, "module": module.code})
+                items.append({"label_key": item.label_key, "path": item.path, "module": module.code, "group": item.group, "icon": item.icon})
     return items
 
 

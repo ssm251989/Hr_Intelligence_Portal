@@ -14,9 +14,9 @@
 
 frontend/src/components/InterviewTrackerSettingsCard.tsx:placeholder="e\.g\. /srv # UI placeholder example text shown in an empty text field, not a real configured path or a value the app ever reads/writes -- purely illustrates the expected format for the admin.
 
-backend/app/platform/comms/theme.py:"primary_color".*\x232563eb # Generic no-brand-configured-yet scaffold default (Part 4 section 5) -- not any specific tenant's chosen color; only used when a tenant has no brand_theme row. Same class of exclusion as frontend/src/theme's own neutral design-system palette.
-backend/app/platform/comms/theme.py:"gradient_from".*\x231e293b # Generic no-brand-configured-yet scaffold default -- see the primary_color entry above.
-backend/app/platform/comms/theme.py:"gradient_to".*\x232563eb # Generic no-brand-configured-yet scaffold default -- see the primary_color entry above.
+backend/app/platform/comms/theme.py:"primary_color".*\x230E7C66 # Generic no-brand-configured-yet scaffold default (Part 4 section 5) -- not any specific tenant's chosen color; only used when a tenant has no brand_theme row. Same class of exclusion as frontend/src/theme's own neutral design-system palette.
+backend/app/platform/comms/theme.py:"gradient_from".*\x230E7C66 # Generic no-brand-configured-yet scaffold default -- see the primary_color entry above.
+backend/app/platform/comms/theme.py:"gradient_to".*\x232F6FDE # Generic no-brand-configured-yet scaffold default -- see the primary_color entry above.
 backend/app/platform/comms/renderer.py:button_color = color or "\x232563eb" # Generic no-theme-passed scaffold fallback for the button() Jinja global -- not any specific tenant's brand; the real per-tenant color comes from the caller's {{ theme.primary_color }} argument.
 backend/app/platform/comms/renderer.py:color:\x23ffffff # Generic button label text color (white-on-brand-color) in the button() Jinja global -- not tenant-specific; the button's own background already comes from the caller's {{ theme.primary_color }} argument.
 frontend/src/utils/avatar.ts:jane@example\.com # Illustrative example in a docstring using the RFC 2606 reserved example.com domain -- not real or client-specific data.

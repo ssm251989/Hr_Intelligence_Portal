@@ -1041,6 +1041,22 @@ export interface BrandingRead {
   support_contact: string | null;
   legal_links: string[];
   custom_css: string | null;
+  // Part 15 A: company overrides of the default "Fresh" design tokens ({} = defaults).
+  theme_name?: string;
+  palette?: { light?: Record<string, string>; dark?: Record<string, string> };
+}
+
+export interface NavEntry {
+  label_key: string;
+  path: string;
+  module?: string;
+  group?: "today" | "hiring" | "people" | "insights" | "admin";
+  icon?: string;
+}
+
+export interface NotificationGroup {
+  module: string;
+  items: { id: string; title: string; entity_type: string | null; entity_id: string | null; created_at: string | null }[];
 }
 
 export interface BootstrapRead {
@@ -1050,7 +1066,7 @@ export interface BootstrapRead {
   tz: string;
   permissions: string[];
   feature_flags: Record<string, boolean>;
-  nav: { label_key: string; path: string }[];
+  nav: NavEntry[];
   custom_labels: Record<string, string>;
   ai?: { enabled: boolean; features: Record<string, boolean> };
   home_path?: string;
@@ -1062,6 +1078,7 @@ export const brandingApi = {
   // Public (no-auth) -- works pre-login, on the login page itself.
   public: () => get<BrandingRead>("/api/v1/public/branding"),
   meBootstrap: () => get<BootstrapRead>("/api/me/bootstrap"),
+  myNotifications: (limit = 30) => get<{ groups: NotificationGroup[]; total: number }>(`/api/me/notifications?limit=${limit}`),
   updateCustomCss: (customCss: string) => request<{ custom_css: string }>("/api/v1/branding/custom-css", { method: "PUT", body: JSON.stringify({ custom_css: customCss }) }),
 };
 

@@ -1748,3 +1748,47 @@ has been run since Part 8; the full end-to-end pass (backend + frontend suites i
 manual smoke test of all 13 original modules, `docker compose up`, `helm template`, real
 `hrctl tenant create`) happens after the owner's change requests. Merge to `main` remains gated on
 that pass (spec instruction 8).
+
+## Part 15.1 -- Design system "Fresh" + new app shell (2026-09-26)
+
+Built:
+- `frontend/src/theme/tokens.ts`: default "Fresh" tokens, light + dark exactly as
+  `docs/ui/reference_mockup.html` (brand/coral/sun/sky/ok + soft tints, ground/surface/surface-2,
+  ink/muted/line, two-layer shadow), radii (card 18, button 11, chip pill), 8px grid. Old token
+  exports kept as aliases so existing charts compile and pick up the new colours.
+- `createAppTheme.ts`: `resolveTokens()` merges company overrides (branding.primary_color +
+  branding.palette) over the defaults; `chartColors()` derives chart series from the theme and
+  nudges each until it has >= 3:1 contrast on cards (`theme.palette.chart`); full MUI overrides for
+  Button, IconButton, Card, Paper, Chip, Table*, Tabs/Tab (pill segmented tabs like the mockup),
+  Dialog, Backdrop, Drawer, OutlinedInput/TextField/Select, Menu/Popover, Tooltip, AppBar,
+  Snackbar, Alert, Stepper, LinearProgress (brand->sun gradient), Accordion, Switch, Skeleton.
+  Tokens are also mirrored to `:root` CSS variables (`--brand`, `--sun-soft`, ...) plus
+  `html[data-theme]` for plain-SVG widgets.
+- Font: `@fontsource/plus-jakarta-sans` 400-800, fallback system-ui; tabular numbers on tables,
+  `h4` (stat numbers), `.num`, `<time>`.
+- App shell (`layout/AppLayout.tsx`, `layout/navConfig.ts`): rounded sticky sidebar card, emoji +
+  label per item, grouped Today / Hiring / People / Insights / Admin, collapsible to an emoji rail
+  (N1), mobile drawer; top bar with Ctrl/Cmd+K search pill, "Show me how" tour, light/dark toggle,
+  notifications bell grouped by module, profile menu (settings, log out).
+- Backend: migration `a15f0c3d7e21` adds `brand_themes.palette_json` (per-company token overrides);
+  bootstrap `branding` now returns `theme_name` + a sanitised `palette` (only known token keys with
+  `#RRGGBB` values); nav entries carry `group` + `icon` (emoji name) from the module registry;
+  new `GET /api/me/notifications` groups the user's in-app messages by module for the bell.
+- `GENERIC_FALLBACK_THEME` (no brand row yet) is now the Fresh default (#0E7C66 -> #2F6FDE,
+  Plus Jakarta Sans stack); `hardcode_allowlist.txt` updated to match.
+
+Decisions:
+- Palette overrides live in one JSONB column rather than 20 colour columns -- tokens can grow
+  without migrations; the API whitelists keys/format so no arbitrary CSS reaches the browser.
+- A company that sets only `primary_color` gets it in light mode and a 30% lifted version in dark
+  mode (readable on the dark surface); brand-soft and on-brand text colour are derived.
+- Emoji rendered through `ui-kit/Emoji` by NAME (native glyph for now) so 15.2 can swap in the
+  local Fluent SVG assets in one place.
+- Profile/logout moved from the sidebar footer to a top-bar profile menu (mockup layout).
+
+Behaviour changes to watch in the test pass: `theme-from-bootstrap.test.tsx` expectations on the
+old blue default; backend tests that assert the old `#2563eb` fallback; nav entries have two new
+keys (`group`, `icon`).
+
+Migration `a15f0c3d7e21`: `alembic upgrade head` OK. Quick checks: `compileall -q app` OK,
+`npx tsc --noEmit -p tsconfig.app.json` exit 0, `npm run build` OK.

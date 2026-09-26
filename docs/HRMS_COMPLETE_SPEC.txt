@@ -196,6 +196,7 @@ PART 11  Helpdesk, assets, separation / exit
 PART 12  Analytics, report builder, HR Copilot & AI agents
 PART 13  Deployment (AWS, one installation per client), security, privacy
 PART 14  UX standards (apply to every screen in every part)
+PART 15  Visual redesign + screens for every module (see end of file)
 (Not built: payroll, attendance/leave, engagement, expense, learning -
 see sections J and K.)
 
@@ -1702,3 +1703,126 @@ and an employee can use it without training.
     affects" preview; in-app tours for new modules.
 12. Performance budget: list pages < 1.5s p95 on 10k rows (server-
     side pagination), bundle split per module.
+
+
+=====================================================================
+PART 15 - VISUAL REDESIGN + SCREENS FOR EVERY MODULE (owner request 2026-09-25)
+=====================================================================
+WHY: the owner still sees the old portal. Parts 7-14 added backend and
+APIs but App.tsx has NO pages for Employees, Org chart, Onboarding,
+Pre-joiner portal, Performance, Compensation, Succession, Helpdesk,
+Assets, Exits, Analytics/Report builder, Copilot, Agency portal, or
+the Settings sub-areas. The theme (theme/tokens.ts) is unchanged since
+before the build. This part fixes both.
+
+VISUAL REFERENCE (match it): docs/ui/reference_mockup.html
+Open it in a browser. It shows the target for HR home, candidate
+profile and new-joiner portal. Every other screen follows the same
+language.
+
+GOLDEN RULE: a person must understand every screen WITHOUT training or
+explanation. Test each page against these questions: What is this page?
+What should I do next? Is it done/OK? If any answer is unclear, fix it.
+
+A. DESIGN SYSTEM (frontend/src/theme/)
+ - Default theme "Fresh": brand #0E7C66, coral #F26B4B, sun #F2B233,
+   sky #2F6FDE, ground #F4F6F5, surface #FFFFFF, ink #15211D, muted
+   #5B6A65, line #E2E8E5 + dark-mode pairs exactly as in the mockup.
+   All come from tenant branding (brand_themes); these are only the
+   defaults. Chart colours derive from the brand (contrast-checked).
+ - Font: Plus Jakarta Sans (self-hosted via @fontsource, fallback
+   system-ui). Numbers use tabular figures.
+ - Shape: cards radius 18, buttons 11, chips pill; soft two-layer
+   shadow; 8px spacing grid; generous white space.
+ - Replace the MUI default look everywhere (theme overrides for Button,
+   Card, Chip, Table, Tabs, Dialog, TextField, Drawer, AppBar).
+
+B. FRIENDLY VISUAL LANGUAGE
+ - Emoji: consistent set, Microsoft Fluent Emoji (MIT) as local SVGs
+   (@lobehub/fluent-emoji or copied assets) so they look the same on
+   Windows/Mac/phone. One emoji per menu item, section, status and
+   empty state. Map: Home 🏠, Approvals ✅, Jobs 💼, Candidates 🧑‍💻,
+   Interviews 📅, Offers 📨, Onboarding 👋, Employees 👥,
+   Performance 🎯, Helpdesk 🛟, Assets 💻, Exits 🚪, Reports 📊,
+   Settings ⚙️. Status chips pair colour + emoji + word (never colour
+   alone): ✅ Done, ⏰ Due soon, 🔥 Overdue, 🆕 New, ⏸️ On hold.
+ - Illustrations: unDraw (free licence) SVGs recoloured with the brand
+   colour at build time; used on greetings, empty states, error pages,
+   login, wizard steps, portal welcome. Keep in frontend/src/assets/ill/.
+ - Animations: lottie-react with free LottieFiles animations stored
+   locally (success tick, confetti, waving hand, loading, empty box,
+   rocket for "setup complete"). canvas-confetti on offer signed /
+   marked joined (once per user per event).
+ - GIF / video: welcome video/GIF in pre-joiner portal (tenant upload,
+   S3/local storage); 20-40s how-to tour clips per module (MP4/WebM
+   loop, GIF fallback) shown in a "Show me how" button on each page;
+   react-joyride step tours on first visit (skippable, "don't show
+   again").
+ - Photos/avatars: real photo if present, else coloured initials tile.
+ - Motion subtle; everything off under prefers-reduced-motion and the
+   user "reduce motion" setting.
+
+C. PLAIN-LANGUAGE RULES (every page)
+ - Page header = emoji + title + one short line saying what you can do
+   here, + ONE primary button top-right (e.g. "＋ New job").
+ - Greeting on home: "Good morning/afternoon/evening, <first name> 👋"
+   + "N things need you today".
+ - No internal words in the UI: never show tenant, connection purpose,
+   workflow node, JSONLogic, SLA policy id, etc. Use: company, mailbox,
+   approval steps, rules, response time.
+ - Numbers always with a word ("12 open jobs", not "12").
+ - Every empty state: illustration + one sentence + the button that
+   fixes it ("No jobs yet. ＋ Create your first job").
+ - Every error: what happened + how to fix + button to the right page.
+ - Long forms become steps with a progress bar and autosave.
+ - Tooltips (i) on any field a new user might not understand.
+ - Hindi and Tamil translations for all new text (i18n keys).
+
+D. SCREENS TO BUILD (add routes, menu entries from /api/me/bootstrap)
+ Home (role-based): HR home as in the mockup; Manager home (team,
+   approvals, interviews to give feedback); Employee home (my tasks,
+   my tickets, my assets, my goals, letters).
+ Recruitment (restyle all 13 existing modules to the new look, same
+   behaviour): Overview, Jobs (table + stage counts, job wizard, JD
+   side-by-side AI editor), Candidates (two-column profile with radar,
+   score ring + evidence, timeline, stage stepper; Kanban/table
+   switch with drag between stages), Screening (slider with live
+   pass count), Shortlisting, Interviews (week calendar, My interviews
+   page, scorecard with AI questions inside), HR Inbox (3 panes),
+   Salary (band bar), BGV (checklist with status chips + timeline),
+   Offers (template editor + live preview, sent/viewed/signed
+   timeline), Reports, Settings, Careers portal (branded job list,
+   benefits, FAQ, short apply form, status tracking page).
+ New: Employees list + Employee profile (header card + tabs), People
+   directory, Org chart (zoomable tree with photos), Onboarding HR
+   dashboard (joiner cards by date, readiness ring), Pre-joiner
+   portal /welcome (as mockup: welcome video, progress bar, big step
+   cards, first-day agenda, buddy), Performance (goals tree, check-
+   ins, one-page review form, 9-box drag board, manager team table),
+   Compensation grid with budget meter, Succession, Helpdesk (raise
+   ticket with AI suggestion; agent queue with SLA countdown chips),
+   Assets (table + QR codes, catalogue, handover acknowledgement),
+   Exits (resignation form, clearance board by department, exit
+   interview, letters), Analytics dashboards (Sankey hiring flow,
+   maps: jobs, candidate heat-map, headcount by office, commute
+   band), Report builder (drag fields, live preview, export Excel/CSV/
+   PDF), HR assistant floating button on every page, Unified approvals
+   inbox, Agency portal, Settings sub-pages (Company & branding with
+   live preview, Mailboxes & connections, Email templates editor,
+   Approval steps builder, Custom fields, Roles & access, Languages,
+   Setup checklist), Super-admin console restyle.
+ Home widgets draggable (react-grid-layout), layout saved per user.
+
+E. LIBRARIES (approved by owner): react-grid-layout, @dnd-kit/core,
+ react-joyride, pdfjs-dist, d3-hierarchy + d3-zoom, leaflet.markercluster,
+ leaflet.heat, canvas-confetti, lottie-react, @fontsource/plus-jakarta-sans,
+ fluent emoji assets. Lazy-load heavy ones per route.
+
+F. DONE WHEN
+ - Every route above exists, is in the menu for the right roles, and
+   looks like the reference mockup in light and dark mode.
+ - Save one screenshot per page (light mode) to docs/ui/screens/ with
+   Playwright (executablePath from PLAYWRIGHT_BROWSERS_PATH if needed)
+   - screenshots only, do not run the test suites (testing rule 4).
+ - Write docs/ui/PAGES.md: a table of page name, URL, who sees it,
+   one line on what it does - so the owner can review screen by screen.

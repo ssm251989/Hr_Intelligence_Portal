@@ -1,27 +1,14 @@
-import { useEffect, useRef, useState } from "react";
-import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
+import { useEffect, useMemo, useState } from "react";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
-import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
-import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
-import EventOutlinedIcon from "@mui/icons-material/EventOutlined";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
-import InboxOutlinedIcon from "@mui/icons-material/InboxOutlined";
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined";
-import MailOutlineIcon from "@mui/icons-material/MailOutline";
+import MenuIcon from "@mui/icons-material/Menu";
 import NotificationsOutlinedIcon from "@mui/icons-material/NotificationsOutlined";
-import PaidOutlinedIcon from "@mui/icons-material/PaidOutlined";
-import PeopleAltOutlinedIcon from "@mui/icons-material/PeopleAltOutlined";
-import PlaylistAddCheckOutlinedIcon from "@mui/icons-material/PlaylistAddCheckOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
-import VerifiedUserOutlinedIcon from "@mui/icons-material/VerifiedUserOutlined";
-import WorkOutlineIcon from "@mui/icons-material/WorkOutline";
-import type { SvgIconComponent } from "@mui/icons-material";
-import AppBar from "@mui/material/AppBar";
 import Avatar from "@mui/material/Avatar";
 import Badge from "@mui/material/Badge";
 import Box from "@mui/material/Box";
@@ -30,215 +17,316 @@ import Collapse from "@mui/material/Collapse";
 import Divider from "@mui/material/Divider";
 import Drawer from "@mui/material/Drawer";
 import IconButton from "@mui/material/IconButton";
-import List from "@mui/material/List";
-import ListItemButton from "@mui/material/ListItemButton";
 import ListItemIcon from "@mui/material/ListItemIcon";
-import ListItemText from "@mui/material/ListItemText";
+import Menu from "@mui/material/Menu";
+import MenuItem from "@mui/material/MenuItem";
 import Popover from "@mui/material/Popover";
 import Stack from "@mui/material/Stack";
 import Tooltip from "@mui/material/Tooltip";
-import Toolbar from "@mui/material/Toolbar";
 import Typography from "@mui/material/Typography";
+import useMediaQuery from "@mui/material/useMediaQuery";
+import { useTheme } from "@mui/material/styles";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
-import { reportsApi } from "../api/client";
+import { brandingApi, reportsApi, type NavEntry, type NotificationGroup } from "../api/client";
 import type { RecentActivityItem } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { useBootstrap } from "../bootstrap/BootstrapContext";
+import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
 import ConfirmDialog from "../components/ConfirmDialog";
 import CopilotWidget from "../components/CopilotWidget";
 import GlobalSearch from "../components/GlobalSearch";
 import ModuleTour from "../components/ModuleTour";
-import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
-import AppsOutlinedIcon from "@mui/icons-material/AppsOutlined";
 import RecentActivityFeed from "../components/RecentActivityFeed";
 import { useThemeMode } from "../theme/ThemeModeContext";
+import Emoji from "../ui-kit/Emoji";
+import {
+  FALLBACK_NAV, NAV_CHILDREN, NAV_GROUP_LABELS, NAV_GROUP_ORDER, NAV_LABELS, NOTIFICATION_MODULES, sectionOf, type NavGroup,
+} from "./navConfig";
 
-const DRAWER_WIDTH = 200;
-const RAIL_WIDTH = 72;
+const SIDEBAR_WIDTH = 236;
+const RAIL_WIDTH = 76;
 const SIDEBAR_STORAGE_KEY = "hr-automation-sidebar-expanded";
-const ACTIVITY_LAST_SEEN_KEY = "hr-automation-activity-last-seen";
+const SEEN_KEY = "hr-automation-activity-last-seen";
 
-interface ModuleChild {
-  label: string;
-  path: string;
+function readStorage(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
 }
-
-interface ModuleLink {
-  label: string;
-  path: string;
-  icon: SvgIconComponent;
-  // Candidate Detail is a drill-down reached by clicking a row in the List sub-item, not
-  // a fourth entry here -- these three are the only real destinations under Candidates.
-  children?: ModuleChild[];
+function writeStorage(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // per-visit only
+  }
 }
-
-const MODULES: ModuleLink[] = [
-  { label: "Overview", path: "/", icon: DashboardOutlinedIcon },
-  { label: "Jobs", path: "/jobs", icon: WorkOutlineIcon },
-  {
-    label: "Candidates",
-    path: "/candidates",
-    icon: PeopleAltOutlinedIcon,
-    children: [
-      { label: "Dashboard", path: "/candidates/dashboard" },
-      { label: "Candidates List", path: "/candidates/list" },
-      { label: "Import from Source", path: "/candidates/import" },
-    ],
-  },
-  {
-    label: "Screening",
-    path: "/screening",
-    icon: FactCheckOutlinedIcon,
-    children: [
-      { label: "Dashboard", path: "/screening/dashboard" },
-      { label: "Screening List", path: "/screening/list" },
-    ],
-  },
-  {
-    label: "Shortlisting",
-    path: "/shortlisting",
-    icon: PlaylistAddCheckOutlinedIcon,
-    children: [
-      { label: "Dashboard", path: "/shortlisting/dashboard" },
-      { label: "Shortlisting List", path: "/shortlisting/list" },
-    ],
-  },
-  {
-    label: "Interviews",
-    path: "/interviews",
-    icon: EventOutlinedIcon,
-    children: [
-      { label: "Dashboard", path: "/interviews/dashboard" },
-      { label: "Interview List", path: "/interviews/list" },
-    ],
-  },
-  { label: "HR Inbox", path: "/hr-inbox", icon: MailOutlineIcon },
-  { label: "Approvals", path: "/approvals", icon: InboxOutlinedIcon },
-  { label: "Salary", path: "/salary", icon: PaidOutlinedIcon },
-  { label: "BGV", path: "/bgv", icon: VerifiedUserOutlinedIcon },
-  { label: "Offers", path: "/offers", icon: DescriptionOutlinedIcon },
-  { label: "Reports", path: "/reports", icon: AssessmentOutlinedIcon },
-  { label: "Settings", path: "/settings", icon: SettingsOutlinedIcon },
-];
-
-// Flattened for the "Jump to a module" search -- sub-items get a real, direct jump target
-// too, not just their parent.
-const SEARCHABLE_MODULES = MODULES.flatMap((module) => [
-  { label: module.label, path: module.path },
-  ...(module.children ?? []).map((child) => ({ label: `${module.label} — ${child.label}`, path: child.path })),
-]);
 
 function initials(nameOrEmail: string): string {
-  const trimmed = nameOrEmail.trim();
-  const parts = trimmed.split(/\s+/).filter(Boolean);
+  const parts = nameOrEmail.trim().split(/\s+/).filter(Boolean);
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-  return trimmed.slice(0, 2).toUpperCase();
+  return nameOrEmail.trim().slice(0, 2).toUpperCase();
 }
 
-// Part 14 section 3: the menu comes from GET /api/me/bootstrap (module enablement x permissions).
-// Until it loads (or if it fails) the original static list is shown, so the app is never menu-less.
-const NAV_LABELS: Record<string, string> = {
-  "nav.onboarding": "Onboarding", "nav.performance": "Performance", "nav.helpdesk": "Helpdesk", "nav.setup": "Setup", "nav.analytics": "Analytics",
-};
+interface ShellItem {
+  label: string;
+  path: string;
+  icon: string;
+  group: NavGroup;
+  children?: { label: string; path: string }[];
+}
 
-function useNavModules(): ModuleLink[] {
+function useShellNav(): ShellItem[] {
   const { data } = useMeBootstrap();
-  const nav = data?.nav;
-  if (!nav || nav.length === 0) return MODULES;
-  const covered = (m: ModuleLink, p: string) => p === m.path || p.startsWith(m.path + "/") || (m.children ?? []).some((c) => c.path === p);
-  const known = MODULES.filter((m) => nav.some((n) => covered(m, n.path)));
-  const extra = nav
-    .filter((n) => !MODULES.some((m) => covered(m, n.path)))
-    .map((n) => ({ label: data?.custom_labels?.[n.label_key] ?? NAV_LABELS[n.label_key] ?? n.label_key, path: n.path, icon: AppsOutlinedIcon }));
-  const settingsIndex = known.findIndex((m) => m.path === "/settings");
-  return settingsIndex >= 0 ? [...known.slice(0, settingsIndex), ...extra, ...known.slice(settingsIndex)] : [...known, ...extra];
+  return useMemo(() => {
+    const nav: NavEntry[] = data?.nav?.length ? data.nav : FALLBACK_NAV;
+    const label = (key: string) => data?.custom_labels?.[key] ?? NAV_LABELS[key] ?? key.replace(/^nav\./, "").replace(/_/g, " ");
+    return nav.map((n) => ({
+      label: label(n.label_key),
+      path: n.path,
+      icon: n.icon ?? "puzzle",
+      group: n.group ?? "today",
+      children: NAV_CHILDREN[sectionOf(n.path)],
+    }));
+  }, [data]);
+}
+
+function isActive(item: ShellItem, pathname: string, hash: string): boolean {
+  const [base, frag] = item.path.split("#");
+  if (frag) return pathname === base && hash === `#${frag}`;
+  if (item.path === "/") return pathname === "/";
+  const section = sectionOf(item.path);
+  return pathname === base || pathname.startsWith(section + "/") || pathname === section;
+}
+
+function Sidebar({ items, expanded, onToggle, onNavigate }: { items: ShellItem[]; expanded: boolean; onToggle?: () => void; onNavigate?: () => void }) {
+  const theme = useTheme();
+  const t = theme.palette.fresh;
+  const location = useLocation();
+  const { productName, logoMark } = useBootstrap();
+  const activeSection = sectionOf(location.pathname);
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+
+  // Entering a section opens its sub-pages; a manual collapse sticks while inside it.
+  useEffect(() => {
+    if (NAV_CHILDREN[activeSection]) setOpen((prev) => (prev[activeSection] === undefined ? { ...prev, [activeSection]: true } : prev));
+  }, [activeSection]);
+
+  const itemSx = (active: boolean) => ({
+    display: "flex", alignItems: "center", gap: 1.25, width: "100%", px: expanded ? 1.25 : 0, py: 1.1,
+    justifyContent: expanded ? "flex-start" : "center", borderRadius: "10px", color: active ? t.brand : t.ink,
+    bgcolor: active ? t.brandSoft : "transparent", fontWeight: active ? 700 : 500, fontSize: 14, textDecoration: "none",
+    border: 0, font: "inherit", cursor: "pointer", textAlign: "left" as const, transition: "background-color 160ms ease",
+    "&:hover": { bgcolor: active ? t.brandSoft : t.surface2 },
+    "&:focus-visible": { outline: `2px solid ${t.brand}`, outlineOffset: 2 },
+  });
+
+  return (
+    <Box
+      component="aside"
+      sx={{
+        bgcolor: t.surface, borderRadius: "18px", boxShadow: t.shadow, p: expanded ? "16px 12px" : "16px 8px",
+        display: "flex", flexDirection: "column", gap: 0.5, height: "100%", minHeight: 0,
+      }}
+    >
+      <Stack direction="row" alignItems="center" spacing={1.25} sx={{ px: expanded ? 1 : 0, pb: 1.5, justifyContent: expanded ? "flex-start" : "center" }}>
+        <Box sx={{ width: 34, height: 34, borderRadius: "10px", bgcolor: t.brand, color: t.brandInk, display: "grid", placeItems: "center", fontWeight: 800, fontSize: 13, flexShrink: 0 }}>
+          {logoMark}
+        </Box>
+        {expanded && (
+          <Typography noWrap sx={{ fontWeight: 800, fontSize: 16, flex: 1, minWidth: 0 }} title={productName}>
+            {productName}
+          </Typography>
+        )}
+      </Stack>
+
+      <Box component="nav" aria-label="Main" sx={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", display: "flex", flexDirection: "column", gap: 0.25 }}>
+        {NAV_GROUP_ORDER.map((group) => {
+          const groupItems = items.filter((i) => i.group === group);
+          if (!groupItems.length) return null;
+          return (
+            <Box key={group} sx={{ display: "flex", flexDirection: "column", gap: 0.25 }}>
+              {expanded ? (
+                <Typography component="div" sx={{ m: "12px 10px 4px", color: t.muted, fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                  {NAV_GROUP_LABELS[group]}
+                </Typography>
+              ) : (
+                <Divider sx={{ my: 1, mx: 1.5 }} />
+              )}
+              {groupItems.map((item) => {
+                const active = isActive(item, location.pathname, location.hash);
+                const section = sectionOf(item.path);
+                const hasChildren = Boolean(item.children) && expanded;
+                const isOpen = hasChildren && Boolean(open[section]);
+                const row = hasChildren ? (
+                  <Box component="button" type="button" aria-expanded={isOpen} onClick={() => setOpen((p) => ({ ...p, [section]: !p[section] }))} sx={itemSx(active)}>
+                    <Emoji name={item.icon} size={18} />
+                    <Box component="span" sx={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.label}</Box>
+                    {isOpen ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+                  </Box>
+                ) : (
+                  <Box component={NavLink} to={item.path} end={item.path === "/"} onClick={onNavigate} aria-current={active ? "page" : undefined} sx={itemSx(active)}>
+                    <Emoji name={item.icon} size={18} />
+                    {expanded && <Box component="span" sx={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.label}</Box>}
+                  </Box>
+                );
+                return (
+                  <Box key={item.path}>
+                    {expanded ? row : <Tooltip title={item.label} placement="right">{row}</Tooltip>}
+                    {hasChildren && (
+                      <Collapse in={isOpen} timeout="auto" unmountOnExit>
+                        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.25, py: 0.25, pl: 4.5 }}>
+                          {item.children!.map((child) => {
+                            const childActive = location.pathname === child.path;
+                            return (
+                              <Box key={child.path} component={NavLink} to={child.path} onClick={onNavigate} aria-current={childActive ? "page" : undefined}
+                                sx={{ ...itemSx(childActive), py: 0.75, fontSize: 13, bgcolor: childActive ? t.brandSoft : "transparent" }}>
+                                {child.label}
+                              </Box>
+                            );
+                          })}
+                        </Box>
+                      </Collapse>
+                    )}
+                  </Box>
+                );
+              })}
+            </Box>
+          );
+        })}
+      </Box>
+
+      {onToggle && (
+        <Box sx={{ display: "flex", justifyContent: expanded ? "flex-end" : "center", pt: 1 }}>
+          <Tooltip title={expanded ? "Make the menu narrow" : "Show menu names"}>
+            <IconButton size="small" onClick={onToggle} aria-label={expanded ? "Collapse menu" : "Expand menu"}>
+              {expanded ? <ChevronLeftIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
+            </IconButton>
+          </Tooltip>
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+function NotificationsBell() {
+  const t = useTheme().palette.fresh;
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const [groups, setGroups] = useState<NotificationGroup[]>([]);
+  const [activity, setActivity] = useState<RecentActivityItem[]>([]);
+  // Unread = anything newer than the last time the bell was opened (persisted per browser).
+  const [lastSeenAt, setLastSeenAt] = useState<number>(() => Number(readStorage(SEEN_KEY) ?? 0));
+
+  useEffect(() => {
+    brandingApi.myNotifications().then((r) => setGroups(r.groups)).catch(() => setGroups([]));
+    reportsApi.recentActivity(9).then((r) => setActivity(r.items)).catch(() => setActivity([]));
+  }, []);
+
+  const newer = (iso: string | null) => (iso ? new Date(iso).getTime() > lastSeenAt : false);
+  const unread = groups.reduce((n, g) => n + g.items.filter((i) => newer(i.created_at)).length, 0) + activity.filter((a) => newer(a.created_at)).length;
+
+  const open = (e: { currentTarget: HTMLElement }) => {
+    setAnchor(e.currentTarget);
+    const now = Date.now();
+    setLastSeenAt(now);
+    writeStorage(SEEN_KEY, String(now));
+  };
+
+  return (
+    <>
+      <Tooltip title="Notifications">
+        <IconButton onClick={open} aria-label={unread ? `Notifications, ${unread} new` : "Notifications"} sx={{ bgcolor: t.surface, border: `1px solid ${t.line}` }}>
+          <Badge badgeContent={unread} color="secondary" max={9}>
+            <NotificationsOutlinedIcon fontSize="small" />
+          </Badge>
+        </IconButton>
+      </Tooltip>
+      <Popover open={Boolean(anchor)} anchorEl={anchor} onClose={() => setAnchor(null)} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
+        <Box sx={{ width: { xs: "calc(100vw - 32px)", sm: 380 }, maxHeight: 520, overflowY: "auto", p: 2 }}>
+          <Typography sx={{ fontWeight: 800, fontSize: 16, mb: 1.5 }}>Notifications</Typography>
+          {groups.map((g) => {
+            const meta = NOTIFICATION_MODULES[g.module] ?? NOTIFICATION_MODULES.general;
+            return (
+              <Box key={g.module} sx={{ mb: 2 }}>
+                <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+                  <Emoji name={meta.icon} size={16} />
+                  <Typography sx={{ fontWeight: 700, fontSize: 13, flex: 1 }}>{meta.label}</Typography>
+                  <Chip size="small" label={`${g.items.length} ${g.items.length === 1 ? "update" : "updates"}`} />
+                </Stack>
+                <Stack spacing={0.75}>
+                  {g.items.slice(0, 5).map((i) => (
+                    <Box key={i.id} sx={{ p: "8px 10px", borderRadius: "10px", bgcolor: t.surface2, border: `1px solid ${t.line}` }}>
+                      <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{i.title}</Typography>
+                      {i.created_at && <Typography variant="caption">{new Date(i.created_at).toLocaleString()}</Typography>}
+                    </Box>
+                  ))}
+                </Stack>
+              </Box>
+            );
+          })}
+          <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+            <Emoji name="briefcase" size={16} />
+            <Typography sx={{ fontWeight: 700, fontSize: 13 }}>Hiring activity</Typography>
+          </Stack>
+          <RecentActivityFeed limit={8} dense />
+        </Box>
+      </Popover>
+    </>
+  );
+}
+
+function ProfileMenu({ onLogout }: { onLogout: () => void }) {
+  const t = useTheme().palette.fresh;
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  if (!user) return null;
+  const name = user.full_name || user.email;
+  return (
+    <>
+      <Tooltip title="Your profile">
+        <IconButton onClick={(e) => setAnchor(e.currentTarget)} aria-label="Open your profile menu" aria-haspopup="menu" sx={{ p: 0.25 }}>
+          <Avatar variant="rounded" sx={{ width: 38, height: 38, bgcolor: t.skySoft, color: t.sky, fontWeight: 800, fontSize: 14 }}>{initials(name)}</Avatar>
+        </IconButton>
+      </Tooltip>
+      <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
+        <Box sx={{ px: 2, py: 1.25, minWidth: 220 }}>
+          <Typography sx={{ fontWeight: 700 }} noWrap>{name}</Typography>
+          <Typography variant="caption" component="div" noWrap>{user.email}</Typography>
+          <Chip size="small" color="primary" label={user.role} sx={{ mt: 0.75, textTransform: "capitalize" }} />
+        </Box>
+        <Divider sx={{ my: 0.5 }} />
+        <MenuItem onClick={() => { setAnchor(null); navigate("/settings"); }}>
+          <ListItemIcon><SettingsOutlinedIcon fontSize="small" /></ListItemIcon>Settings
+        </MenuItem>
+        <MenuItem onClick={() => { setAnchor(null); onLogout(); }}>
+          <ListItemIcon><LogoutOutlinedIcon fontSize="small" /></ListItemIcon>Log out
+        </MenuItem>
+      </Menu>
+    </>
+  );
 }
 
 export default function AppLayout() {
-  const { user, logout } = useAuth();
+  const theme = useTheme();
+  const t = theme.palette.fresh;
+  const isDesktop = useMediaQuery(theme.breakpoints.up("md"));
+  const { logout } = useAuth();
   const { mode, toggleMode } = useThemeMode();
-  const { productName, logoMark } = useBootstrap();
   const navigate = useNavigate();
-  const location = useLocation();
+  const items = useShellNav();
   const [confirmLogoutOpen, setConfirmLogoutOpen] = useState(false);
-  const [activityAnchor, setActivityAnchor] = useState<HTMLElement | null>(null);
-  const [activityItems, setActivityItems] = useState<RecentActivityItem[]>([]);
-  // Real "unread" tracking: a timestamp (ms) of the last time the dropdown was opened,
-  // persisted so it survives a reload. Never opened before -> 0, which makes every
-  // currently-fetched item count as unread (same total the old static activityCount gave
-  // on first-ever load), not an arbitrary "nothing is unread" default.
-  const [lastSeenAt, setLastSeenAt] = useState<number>(() => {
-    const stored = window.localStorage.getItem(ACTIVITY_LAST_SEEN_KEY);
-    return stored ? Number(stored) : 0;
-  });
-  const [expanded, setExpanded] = useState(() => {
-    const stored = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
-    return stored === null ? true : stored === "true";
-  });
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [expanded, setExpanded] = useState(() => readStorage(SIDEBAR_STORAGE_KEY) !== "false");
 
-  // Real, independent open/closed state per parent module (keyed by its path) -- collapsed
-  // by default. This is intentionally separate from "which section's route is currently
-  // active": that's used only to decide *when to auto-expand*, never to compute the
-  // rendered open/closed state directly, so a manual collapse sticks while navigating
-  // between that section's own sub-pages.
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
-  const toggleSection = (path: string) =>
-    setOpenSections((prev) => ({ ...prev, [path]: !prev[path] }));
+  useEffect(() => writeStorage(SIDEBAR_STORAGE_KEY, String(expanded)), [expanded]);
 
-  // The parent module (if any) whose section the current route falls under -- null outside
-  // any such section. Moving between sibling sub-pages (e.g. Dashboard -> List) yields the
-  // same value here, so the auto-expand effect below only fires on actually *entering* or
-  // *leaving* a section, not on every in-section navigation.
-  const activeParentPath = MODULES.find((module) => module.children && location.pathname.startsWith(module.path))?.path ?? null;
-
-  // Previous render's activeParentPath -- lets the effect below tell "just entered/left a
-  // section" apart from "still inside the same section" (a sibling-to-sibling navigation,
-  // where activeParentPath doesn't change at all and the effect must NOT re-fire).
-  const prevActiveParentPathRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    const prev = prevActiveParentPathRef.current;
-    if (prev !== activeParentPath) {
-      setOpenSections((prevSections) => {
-        const next = { ...prevSections };
-        // Leaving a section entirely (including a full-page load that lands outside any
-        // section, where prev is already null) collapses it back down -- AppLayout never
-        // remounts on client-side navigation, so without this a section auto-expanded once
-        // stays stuck open in openSections for the rest of the SPA session even after
-        // browsing away to an unrelated module.
-        if (prev) next[prev] = false;
-        // Entering a section from outside it auto-expands it. Moving between that same
-        // section's own sub-pages never reaches this branch (prev === activeParentPath),
-        // so a manual collapse while already inside the section sticks.
-        if (activeParentPath) next[activeParentPath] = true;
-        return next;
-      });
-    }
-    prevActiveParentPathRef.current = activeParentPath;
-  }, [activeParentPath]);
-
-  useEffect(() => {
-    reportsApi
-      .recentActivity(9)
-      .then((res) => setActivityItems(res.items))
-      .catch(() => setActivityItems([]));
-  }, []);
-
-  const unreadActivityCount = activityItems.filter(
-    (item) => new Date(item.created_at).getTime() > lastSeenAt,
-  ).length;
-
-  const handleOpenActivity = (event: { currentTarget: HTMLElement }) => {
-    setActivityAnchor(event.currentTarget);
-    const now = Date.now();
-    setLastSeenAt(now);
-    window.localStorage.setItem(ACTIVITY_LAST_SEEN_KEY, String(now));
-  };
-
-  useEffect(() => {
-    window.localStorage.setItem(SIDEBAR_STORAGE_KEY, String(expanded));
-  }, [expanded]);
+  const searchPages = useMemo(
+    () => items.flatMap((i) => [{ label: i.label, path: i.path }, ...(i.children ?? []).map((c) => ({ label: `${i.label} — ${c.label}`, path: c.path }))]),
+    [items],
+  );
 
   const handleLogout = () => {
     setConfirmLogoutOpen(false);
@@ -246,229 +334,55 @@ export default function AppLayout() {
     navigate("/login", { replace: true });
   };
 
-  const drawerWidth = expanded ? DRAWER_WIDTH : RAIL_WIDTH;
-  const navModules = useNavModules();
+  const sidebarWidth = expanded ? SIDEBAR_WIDTH : RAIL_WIDTH;
 
   return (
-    <Box sx={{ display: "flex" }}>
+    <Box sx={{ minHeight: "100vh", bgcolor: t.ground, px: 2 }}>
       {/* WCAG 2.4.1 bypass block: first focusable element on every page. */}
-      <Box component="a" href="#main-content" sx={{ position: "absolute", left: -9999, top: 8, zIndex: 2000, p: 1, bgcolor: "background.paper", "&:focus": { left: 8 } }}>
+      <Box component="a" href="#main-content" sx={{ position: "absolute", left: -9999, top: 8, zIndex: 2000, p: 1, bgcolor: "background.paper", borderRadius: 1, "&:focus": { left: 8 } }}>
         Skip to main content
       </Box>
-      <AppBar
-        position="fixed"
-        color="default"
-        sx={{ zIndex: (theme) => theme.zIndex.drawer + 1, bgcolor: "background.paper" }}
-      >
-        <Toolbar sx={{ justifyContent: "space-between", gap: 2 }}>
-          <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexShrink: 0 }}>
-            <Box
-              sx={{
-                width: 32,
-                height: 32,
-                borderRadius: "10px",
-                bgcolor: "primary.main",
-                color: "primary.contrastText",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontWeight: 700,
-                fontSize: 13,
-                flexShrink: 0,
-              }}
-            >
-              {logoMark}
-            </Box>
-            <Box sx={{ display: { xs: "none", sm: "block" } }}>
-              <Typography variant="subtitle1" fontWeight={700} lineHeight={1.1}>
-                {productName}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" lineHeight={1}>
-                HR Automation
-              </Typography>
-            </Box>
-          </Stack>
-
-          {/* Part 14 section 3 / L-N3: Ctrl/Cmd+K global search (server-side, permission-scoped). */}
-          <GlobalSearch pages={SEARCHABLE_MODULES} />
-
-          <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
-            <ModuleTour />
-            <Tooltip title={mode === "dark" ? "Switch to light mode" : "Switch to dark mode"}>
-              <IconButton color="inherit" onClick={toggleMode} aria-label="Toggle color mode">
-                {mode === "dark" ? <LightModeOutlinedIcon /> : <DarkModeOutlinedIcon />}
-              </IconButton>
-            </Tooltip>
-            <IconButton color="inherit" onClick={handleOpenActivity} aria-label="Recent activity">
-              <Badge badgeContent={unreadActivityCount} color="secondary" max={9}>
-                <NotificationsOutlinedIcon />
-              </Badge>
-            </IconButton>
-          </Stack>
-        </Toolbar>
-      </AppBar>
-      <Drawer
-        variant="permanent"
+      <Box
         sx={{
-          width: drawerWidth,
-          flexShrink: 0,
-          whiteSpace: "nowrap",
-          [`& .MuiDrawer-paper`]: {
-            width: drawerWidth,
-            boxSizing: "border-box",
-            overflowX: "hidden",
-            transition: (theme) => theme.transitions.create("width", { duration: 220 }),
-            display: "flex",
-            flexDirection: "column",
-          },
+          maxWidth: 1480, mx: "auto", pt: 2, pb: 5, display: "grid", gap: 2.5, alignItems: "start",
+          gridTemplateColumns: { xs: "minmax(0,1fr)", md: `${sidebarWidth}px minmax(0,1fr)` },
+          transition: "grid-template-columns 220ms ease",
         }}
       >
-        <Toolbar />
-        <Box sx={{ display: "flex", justifyContent: expanded ? "flex-end" : "center", px: 1, py: 0.5 }}>
-          <Tooltip title={expanded ? "Collapse sidebar" : "Expand sidebar"}>
-            <IconButton size="small" onClick={() => setExpanded((prev) => !prev)}>
-              {expanded ? <ChevronLeftIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
-            </IconButton>
-          </Tooltip>
-        </Box>
-        <Divider />
-        <List sx={{ flexGrow: 1 }}>
-          {navModules.map(({ label, path, icon: Icon, children }) => {
-            const isSectionRoute = activeParentPath === path;
-            const isOpen = Boolean(children) && Boolean(openSections[path]);
-
-            // With children AND room to show them (rail expanded): the row is a pure
-            // disclosure toggle, not a navigation link -- there's no standalone page for
-            // "Candidates" itself to navigate to that would be distinct from expanding it.
-            // In the icon-only rail, there's no room to show sub-items at all, so it falls
-            // back to a normal NavLink (like every leaf item) so the icon still does
-            // something useful.
-            const activeSx = {
-              backgroundColor: "action.selected",
-              borderRight: "3px solid",
-              borderColor: "primary.main",
-            };
-            const item =
-              children && expanded ? (
-                <ListItemButton
-                  key={path}
-                  onClick={() => toggleSection(path)}
-                  sx={{
-                    justifyContent: "flex-start",
-                    px: 2,
-                    transition: "background-color 180ms ease",
-                    ...(isSectionRoute ? activeSx : {}),
-                  }}
-                >
-                  <ListItemIcon sx={{ minWidth: 40, justifyContent: "center" }}>
-                    <Icon />
-                  </ListItemIcon>
-                  <ListItemText primary={label} />
-                  {isOpen ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
-                </ListItemButton>
-              ) : (
-                <ListItemButton
-                  key={path}
-                  component={NavLink}
-                  to={path}
-                  end={path === "/"}
-                  sx={{
-                    justifyContent: expanded ? "flex-start" : "center",
-                    px: expanded ? 2 : 1.5,
-                    transition: "background-color 180ms ease",
-                    "&.active": activeSx,
-                  }}
-                >
-                  <ListItemIcon sx={{ minWidth: expanded ? 40 : "auto", justifyContent: "center" }}>
-                    <Icon />
-                  </ListItemIcon>
-                  {expanded && <ListItemText primary={label} />}
-                </ListItemButton>
-              );
-            const wrapped = expanded ? (
-              item
-            ) : (
-              <Tooltip key={path} title={label} placement="right">
-                <span>{item}</span>
-              </Tooltip>
-            );
-            if (!children) {
-              return wrapped;
-            }
-            return (
-              <Box key={path}>
-                {wrapped}
-                {expanded && (
-                  <Collapse in={isOpen} timeout="auto" unmountOnExit>
-                    <List disablePadding>
-                      {children.map((child) => (
-                        <ListItemButton
-                          key={child.path}
-                          component={NavLink}
-                          to={child.path}
-                          sx={{
-                            pl: 5,
-                            py: 0.75,
-                            "&.active": activeSx,
-                          }}
-                        >
-                          <ListItemText primary={child.label} slotProps={{ primary: { variant: "body2" } }} />
-                        </ListItemButton>
-                      ))}
-                    </List>
-                  </Collapse>
-                )}
-              </Box>
-            );
-          })}
-        </List>
-
-        {/* Sidebar user footer -- replaces the name/role/logout that used to live in the
-            top AppBar. Collapses to just an avatar (with the same info on hover, and
-            logout still one click away) when the rail is collapsed. */}
-        <Divider />
-        {user && (
-          <Box sx={{ p: expanded ? 1.5 : 1, py: 1.5 }}>
-            <Stack
-              direction="row"
-              spacing={1.25}
-              alignItems="center"
-              justifyContent={expanded ? "flex-start" : "center"}
-            >
-              <Tooltip title={expanded ? "" : `${user.full_name || user.email} (${user.role})`}>
-                <Avatar sx={{ width: 32, height: 32, bgcolor: "primary.main", fontSize: 13 }}>
-                  {initials(user.full_name || user.email)}
-                </Avatar>
-              </Tooltip>
-              {expanded && (
-                <>
-                  <Box sx={{ minWidth: 0, flexGrow: 1 }}>
-                    <Typography variant="body2" noWrap fontWeight={600}>
-                      {user.full_name || user.email}
-                    </Typography>
-                    <Chip label={user.role} size="small" sx={{ height: 18, fontSize: 11 }} />
-                  </Box>
-                  <Tooltip title="Log out">
-                    <IconButton size="small" onClick={() => setConfirmLogoutOpen(true)} aria-label="Log out">
-                      <LogoutOutlinedIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                </>
-              )}
-            </Stack>
-            {!expanded && (
-              <Stack alignItems="center" mt={0.5}>
-                <IconButton size="small" onClick={() => setConfirmLogoutOpen(true)} aria-label="Log out">
-                  <LogoutOutlinedIcon fontSize="small" />
-                </IconButton>
-              </Stack>
-            )}
+        {isDesktop ? (
+          <Box sx={{ position: "sticky", top: 16, height: "calc(100vh - 32px)" }}>
+            <Sidebar items={items} expanded={expanded} onToggle={() => setExpanded((e) => !e)} />
           </Box>
+        ) : (
+          <Drawer open={mobileOpen} onClose={() => setMobileOpen(false)} slotProps={{ paper: { sx: { width: 280, bgcolor: "transparent", boxShadow: "none", p: 1.5 } } }}>
+            <Sidebar items={items} expanded onNavigate={() => setMobileOpen(false)} />
+          </Drawer>
         )}
-      </Drawer>
-      <Box component="main" id="main-content" tabIndex={-1} sx={{ flexGrow: 1, p: 3, minWidth: 0, outline: "none" }}>
-        <Toolbar />
-        <Outlet />
+
+        <Box sx={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2.25 }}>
+          <Box component="header" sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.5 }}>
+            {!isDesktop && (
+              <IconButton onClick={() => setMobileOpen(true)} aria-label="Open menu" sx={{ bgcolor: t.surface, border: `1px solid ${t.line}` }}>
+                <MenuIcon fontSize="small" />
+              </IconButton>
+            )}
+            {/* L-N3: Ctrl/Cmd+K global search (server-side, permission-scoped). */}
+            <GlobalSearch pages={searchPages} />
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ ml: "auto" }}>
+              <ModuleTour />
+              <Tooltip title={mode === "dark" ? "Switch to light mode" : "Switch to dark mode"}>
+                <IconButton onClick={toggleMode} aria-label={mode === "dark" ? "Switch to light mode" : "Switch to dark mode"} sx={{ bgcolor: t.surface, border: `1px solid ${t.line}` }}>
+                  {mode === "dark" ? <LightModeOutlinedIcon fontSize="small" /> : <DarkModeOutlinedIcon fontSize="small" />}
+                </IconButton>
+              </Tooltip>
+              <NotificationsBell />
+              <ProfileMenu onLogout={() => setConfirmLogoutOpen(true)} />
+            </Stack>
+          </Box>
+          <Box component="main" id="main-content" tabIndex={-1} sx={{ minWidth: 0, outline: "none" }}>
+            <Outlet />
+          </Box>
+        </Box>
       </Box>
       <CopilotWidget />
 
@@ -476,26 +390,11 @@ export default function AppLayout() {
         open={confirmLogoutOpen}
         title="Log out?"
         message="You'll need to sign in again to continue."
-        confirmLabel="Logout"
+        confirmLabel="Log out"
         destructive={false}
         onConfirm={handleLogout}
         onCancel={() => setConfirmLogoutOpen(false)}
       />
-
-      <Popover
-        open={Boolean(activityAnchor)}
-        anchorEl={activityAnchor}
-        onClose={() => setActivityAnchor(null)}
-        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-        transformOrigin={{ vertical: "top", horizontal: "right" }}
-      >
-        <Box sx={{ width: 340, p: 2 }}>
-          <Typography variant="subtitle1" mb={1}>
-            Recent Activity
-          </Typography>
-          <RecentActivityFeed limit={10} dense />
-        </Box>
-      </Popover>
     </Box>
   );
 }

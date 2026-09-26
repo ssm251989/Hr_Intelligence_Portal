@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Box from "@mui/material/Box";
-import Button from "@mui/material/Button";
 import Dialog from "@mui/material/Dialog";
 import InputAdornment from "@mui/material/InputAdornment";
 import List from "@mui/material/List";
@@ -96,16 +95,25 @@ export default function GlobalSearch({ pages }: { pages: PageLink[] }) {
   let index = -1;
   return (
     <>
-      <Button
-        variant="outlined"
-        color="inherit"
+      <Box
+        component="button"
+        type="button"
         onClick={() => setOpen(true)}
-        startIcon={<SearchIcon fontSize="small" />}
-        sx={{ width: 260, justifyContent: "flex-start", color: "text.secondary", borderColor: "divider", display: { xs: "none", md: "inline-flex" } }}
         aria-label="Search (Ctrl+K)"
+        sx={(theme) => ({
+          flex: "1 1 280px", maxWidth: 460, minWidth: 0, display: "flex", alignItems: "center", gap: 1.25,
+          bgcolor: theme.palette.fresh.surface, border: `1px solid ${theme.palette.fresh.line}`, borderRadius: "12px",
+          px: 1.75, py: 1.1, color: theme.palette.fresh.muted, font: "inherit", fontSize: 14, cursor: "pointer", textAlign: "left",
+          "&:hover": { borderColor: theme.palette.fresh.brand },
+          "&:focus-visible": { outline: `2px solid ${theme.palette.fresh.brand}`, outlineOffset: 2 },
+        })}
       >
-        Search… <Box component="span" sx={{ ml: "auto", fontSize: 12, opacity: 0.7 }}>Ctrl K</Box>
-      </Button>
+        <SearchIcon fontSize="small" />
+        <Box component="span" sx={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Search people, jobs, requests…</Box>
+        <Box component="kbd" sx={(theme) => ({ font: "inherit", fontSize: 11, border: `1px solid ${theme.palette.fresh.line}`, borderRadius: "6px", px: 0.75, display: { xs: "none", sm: "inline" } })}>
+          Ctrl K
+        </Box>
+      </Box>
       <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="sm" aria-label="Global search">
         <Box sx={{ p: 2 }}>
           <TextField

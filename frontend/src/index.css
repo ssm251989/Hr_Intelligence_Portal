@@ -4,7 +4,12 @@
 
 body {
   margin: 0;
+  font-family: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
+
+/* Part 15 A: figures line up (tabular numbers) wherever a number is the point. */
+.num, table, time { font-variant-numeric: tabular-nums; }
 
 /* Part 14 section 9 / L-V8: motion off under the OS setting and the per-user preference. */
 @media (prefers-reduced-motion: reduce) {
@@ -14,4 +19,4 @@ body {
   animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important;
 }
 /* Keyboard-first: a visible focus ring everywhere (WCAG 2.4.7). */
-:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--brand, currentColor); outline-offset: 2px; }

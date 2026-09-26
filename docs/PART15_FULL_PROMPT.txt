@@ -1,0 +1,165 @@
+PART 15 - FULL PROMPT FOR CLAUDE CODE
+(Repo: C:\Users\Dell\Documents\hr-automation, branch hrms-platform)
+
+CONTEXT
+- Parts 1-14 are built and pushed on hrms-platform. Backend and APIs exist
+  for all modules, but the portal still LOOKS OLD: theme/tokens.ts is
+  unchanged and App.tsx has no pages for the new modules.
+- Your job now: make the portal look and feel like a modern, friendly,
+  premium HR product, and give every module real screens.
+- Look to match: docs/ui/reference_mockup.html (open it and study it).
+  Full written requirements: PART 15 at the end of docs/HRMS_COMPLETE_SPEC.txt,
+  plus sections K and L (they override anything else).
+
+STANDING RULES (unchanged)
+1. Do NOT run test suites (backend or frontend, full or single file).
+   Allowed quick checks only: npx tsc --noEmit -p tsconfig.app.json,
+   python -m compileall -q app, alembic upgrade head, npm run build.
+2. Do not ask me questions. Pick the best/recommended option, write the
+   decision + reason in docs/build_log.md, continue.
+3. Stop and ask ONLY if something would delete data, overwrite main, push
+   secrets, or cannot be undone.
+4. Commit + push after each step below ("part-15.N: <title>"). Keep
+   terminal output short. Never merge to main.
+5. Nothing client-specific in code: colours, logo, company name, texts
+   come from tenant branding/settings/i18n. The mockup colours are only
+   the DEFAULT theme.
+
+GOLDEN RULE
+A person must understand every screen without training. On every page,
+it must be obvious: what is this page, what should I do next, is it OK/done.
+
+STEP 15.1 - DESIGN SYSTEM
+- Default theme "Fresh": brand #0E7C66, coral #F26B4B, sun #F2B233,
+  sky #2F6FDE, ground #F4F6F5, surface #FFFFFF, ink #15211D, muted
+  #5B6A65, line #E2E8E5, plus the dark-mode values from the mockup.
+  Loaded from brand_themes (tenant can override); charts derive from it.
+- Font Plus Jakarta Sans via @fontsource/plus-jakarta-sans (fallback
+  system-ui); tabular numbers for figures.
+- Card radius 18, button radius 11, pill chips, soft two-layer shadow,
+  8px spacing grid, generous white space.
+- MUI theme overrides for Button, Card, Paper, Chip, Table, Tabs, Dialog,
+  Drawer, TextField, Select, Tooltip, AppBar, Snackbar, Stepper so the
+  MUI default look disappears everywhere.
+- New app shell like the mockup: rounded sidebar with emoji + label per
+  menu item grouped (Today / Hiring / People / Insights / Admin), top
+  bar with Ctrl/Cmd+K search, notifications bell (grouped by module),
+  profile menu, light/dark toggle. Menu built from /api/me/bootstrap.
+
+STEP 15.2 - FRIENDLY VISUAL KIT (frontend/src/ui-kit/)
+- Emoji: Microsoft Fluent Emoji (MIT) as local SVG assets so they look
+  the same on every device. Component <Emoji name="..."/>.
+  Menu: Home house, Approvals check, Jobs briefcase, Candidates
+  technologist, Interviews calendar, Offers envelope, Onboarding waving
+  hand, Employees people, Performance target, Helpdesk ring buoy,
+  Assets laptop, Exits door, Reports bar chart, Settings gear.
+- Status chips = colour + emoji + word, never colour alone:
+  Done (check), Due soon (alarm clock), Overdue (fire), New, On hold.
+- Illustrations: unDraw SVGs (free licence) recoloured to the brand
+  colour; used for greetings, empty states, errors, login, wizard steps,
+  pre-joiner welcome. Store in frontend/src/assets/ill/.
+- Animations: lottie-react with free LottieFiles animations stored
+  locally (success tick, confetti, waving hand, loader, empty box,
+  rocket). canvas-confetti when an offer is signed or someone is marked
+  joined (once per user per event).
+- GIF/video: tenant-uploaded welcome video/GIF in the pre-joiner portal;
+  "Show me how" button on each page playing a 20-40s loop (MP4/WebM,
+  GIF fallback); react-joyride first-visit tour per page (skip +
+  don't show again). Admin can upload/replace these in Settings.
+- Avatars: photo if present, else coloured initials tile.
+- Shared components: PageHeader (emoji + title + one-line purpose + ONE
+  primary button), StatTile (emoji, big number WITH a word, trend),
+  EmptyState (illustration + one sentence + fixing button), FriendlyError,
+  StepForm (steps + progress bar + autosave), ProgressRing, Timeline,
+  StageStepper, StatusChip, InfoTip.
+- Motion subtle; all motion off under prefers-reduced-motion and the
+  user's "reduce motion" setting.
+
+STEP 15.3 - PLAIN LANGUAGE PASS
+- Home greeting: "Good morning/afternoon/evening, <first name>" + waving
+  hand + "N things need you today".
+- Never show internal words (tenant, connection purpose, workflow node,
+  JSONLogic, SLA policy id, scope...). Use company, mailbox, approval
+  steps, rules, response time.
+- Numbers always with words ("12 open jobs").
+- Every error: what happened + how to fix + button to the right page.
+- InfoTip on every field a new user may not understand.
+- All new text through i18n with English, Hindi and Tamil.
+
+STEP 15.4 - RESTYLE THE 13 EXISTING MODULES (same behaviour, new look)
+Overview; Jobs (table with candidate counts per stage, step wizard, AI JD
+side-by-side editor, template library); Candidates (dashboard, list with
+Kanban/table switch and drag between stages, import, profile: two
+columns, score ring + evidence lines, radar chart vs job, commute band,
+stage stepper, activity timeline, PDF resume preview with pdfjs-dist);
+Screening (threshold slider with live pass count, compare up to 3);
+Shortlisting (one-click, undo window visible); Interviews (week calendar,
+"My interviews" page, scorecard with AI questions inside); HR Inbox
+(three panes); Salary (band bar); BGV (checklist with status chips +
+vendor timeline); Offers (template editor with live preview,
+sent/viewed/signed timeline); Reports; Settings; Careers portal (branded
+job list with filters, benefits, FAQ, short apply form, status page).
+
+STEP 15.5 - HOME SCREENS (match the mockup)
+- HR home: greeting hero with illustration, 4 stat tiles, "Where
+  candidates go" Sankey (recharts Sankey), To-do list sorted by urgency
+  with chips, People-by-office map, Heads-up alerts panel.
+- Manager home: my team, approvals, interviews needing feedback, goals.
+- Employee home: my tasks, tickets, assets, goals, letters.
+- Widgets draggable/resizable (react-grid-layout), layout saved per user,
+  admin sets default per role.
+
+STEP 15.6 - PAGES FOR THE NEW MODULES
+- Employees list + Employee profile (header card + tabs Personal / Job /
+  Documents / History, masked PAN/bank with reveal + audit, edit in place
+  with "pending approval" badge), People directory (filters: department,
+  location, skill), Org chart (zoomable tree with photos, d3-hierarchy +
+  d3-zoom).
+- Onboarding HR dashboard (joiner cards by joining date, readiness ring,
+  daily digest status) and Pre-joiner portal /welcome exactly like the
+  mockup (welcome video, progress bar, big step cards with emoji, phone
+  camera upload with auto-crop, first-day agenda, buddy card).
+- Performance: goals tree (company > team > me), monthly check-ins,
+  one-page review form with autosave, 9-box drag board (@dnd-kit),
+  manager team table; Compensation grid with budget meter; Succession.
+- Helpdesk: raise ticket (category first, AI suggested answer before
+  submit), agent queue with SLA countdown chips, one-click rating.
+- Assets: table with filters + QR code per asset + printable labels,
+  catalogue with approval, electronic handover acknowledgement.
+- Exits: employee resignation form, clearance board by department with
+  owners, exit interview form, auto relieving letter status.
+- Analytics: dashboards with Sankey, maps (jobs by location, candidate
+  heat-map with leaflet.heat, headcount by office with
+  leaflet.markercluster, commute band), report builder (drag fields,
+  live preview, export Excel/CSV/PDF), scheduled reports.
+- HR assistant: floating button on every page, answers with sources,
+  drafts actions the user confirms.
+- Unified approvals inbox; Agency portal; Super-admin console restyle.
+- Settings sub-pages: Company & branding (logo/colours with live
+  preview), Mailboxes & connections, Email templates editor with preview,
+  Approval steps builder, Custom fields, Roles & access, Languages,
+  Welcome video & tours upload, Setup checklist.
+
+STEP 15.7 - LIBRARIES (approved)
+react-grid-layout, @dnd-kit/core, react-joyride, pdfjs-dist,
+d3-hierarchy, d3-zoom, leaflet.markercluster, leaflet.heat,
+canvas-confetti, lottie-react, @fontsource/plus-jakarta-sans, Fluent
+Emoji SVG assets, qrcode. Use recharts' built-in Sankey and Radar.
+Lazy-load heavy libraries per route (React.lazy + Suspense).
+
+STEP 15.8 - SAMPLE DATA FOR REVIEW (safe)
+- Add `hrctl demo seed --tenant <slug>` that creates clearly marked demo
+  records (name prefix "Demo -") for the new modules so screens are not
+  empty during review, and `hrctl demo clear` that removes ONLY those
+  demo records (dry-run report first). Never touch real records.
+
+STEP 15.9 - HAND-OVER FOR REVIEW
+- npm run build must succeed; tsc check clean.
+- Save one light-mode screenshot per page to docs/ui/screens/ with
+  Playwright (screenshots only, no tests).
+- Write docs/ui/PAGES.md: page name | URL | who sees it | one line on
+  what it does | screenshot file.
+- Update docs/build_log.md, commit, push, then STOP and tell me:
+  (a) exact commands to start backend + frontend and seed demo data,
+  (b) which login to use to see every page,
+  (c) anything you could not finish.

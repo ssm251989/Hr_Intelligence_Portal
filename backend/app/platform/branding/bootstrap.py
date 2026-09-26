@@ -66,7 +66,25 @@ def build_branding(db: Session, tenant: TenantContext) -> dict:
         "support_contact": settings_service.get("org.support_email", ctx) or None,
         "legal_links": settings_service.get("org.legal_links", ctx) or [],
         "custom_css": custom_css,
+        # Part 15 A: tenant overrides of the default "Fresh" design tokens ({} = defaults).
+        "theme_name": (theme.name if theme else None) or "Fresh",
+        "palette": _clean_palette(theme.palette_json if theme else None),
     }
+
+
+_TOKEN_KEYS = {"brand", "coral", "sun", "sky", "ok", "ground", "surface", "surface2", "ink", "muted", "line"}
+
+
+def _clean_palette(raw) -> dict:
+    """Only known tokens with hex values reach the browser (never arbitrary CSS)."""
+    import re
+
+    out: dict = {}
+    for mode in ("light", "dark"):
+        values = (raw or {}).get(mode) or {}
+        if isinstance(values, dict):
+            out[mode] = {k: v for k, v in values.items() if k in _TOKEN_KEYS and isinstance(v, str) and re.fullmatch(r"#[0-9A-Fa-f]{6}", v)}
+    return out
 
 
 def build_bootstrap(db: Session, tenant: TenantContext, user: Optional[User], *, locale: Optional[str] = None) -> dict:

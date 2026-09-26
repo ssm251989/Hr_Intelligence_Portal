@@ -18,10 +18,11 @@ from app.platform.settings.resolver import SettingContext, SettingsService
 # templates.py's own publish-time sample context reuses this instead of duplicating the
 # hex values), so hardcode_allowlist.txt only needs to allow-list them once.
 GENERIC_FALLBACK_THEME = {
-    "primary_color": "#2563eb",  # allowlisted: generic-fallback
-    "gradient_from": "#1e293b",  # allowlisted: generic-fallback
-    "gradient_to": "#2563eb",  # allowlisted: generic-fallback
-    "font_family": "-apple-system, Segoe UI, Roboto, Arial, sans-serif",
+    # Part 15 A: the platform's default "Fresh" theme (brand green -> sky gradient).
+    "primary_color": "#0E7C66",  # allowlisted: generic-fallback
+    "gradient_from": "#0E7C66",  # allowlisted: generic-fallback
+    "gradient_to": "#2F6FDE",  # allowlisted: generic-fallback
+    "font_family": "Plus Jakarta Sans, system-ui, -apple-system, Segoe UI, Arial, sans-serif",
 }
 GENERIC_FALLBACK_ORG_DISPLAY_NAME = "HR Automation"
 

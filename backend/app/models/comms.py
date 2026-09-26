@@ -38,6 +38,9 @@ class BrandTheme(Base, TenantOwned):
     # tenant_feature_flags, Part 2), checked by the bootstrap endpoint before ever
     # including this value in a response, not by this column's mere presence.
     custom_css = Column(Text)
+    # Part 15 A: per-tenant overrides of the "Fresh" design tokens (light/dark maps of
+    # token -> hex). Empty = the platform's default theme.
+    palette_json = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
     legal_entity_id = Column(UUID(as_uuid=True))
 
 
