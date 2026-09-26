@@ -2018,3 +2018,48 @@ Quick checks: `alembic upgrade head` OK, `compileall` OK, `import app.main` OK, 
 `npm run build` OK.
 
 NEXT: Part 15.8 -- `hrctl demo seed --tenant <slug>` / `hrctl demo clear` (dry-run first, only "Demo -" records).
+
+## Part 15.8 -- Demo data (2026-09-26)
+
+`backend/hrctl/demo_data.py`, wired into `hrctl/demo.py` (existing `seed-two-tenants` unchanged):
+
+    cd backend
+    .venv/Scripts/python.exe -m hrctl.demo seed  --tenant <slug> [--demo-categories]
+    .venv/Scripts/python.exe -m hrctl.demo clear --tenant <slug>          # dry run: report only
+    .venv/Scripts/python.exe -m hrctl.demo clear --tenant <slug> --yes    # really remove
+
+Seeds (all visible names start "Demo - "; idempotent, looked up by that name): 2 departments,
+2 offices with lat/lng (Chennai, Bengaluru), 6 active employees in a manager tree with hire
+records + skills, 2 joiners (pre-hire + onboarding case, joining in 3 and 10 days, buddy +
+first-day agenda, @example.com emails), review cycle "Demo - 2026 annual review" (active,
+self + manager reviews for the demo people only -- NOT `launch_cycle`, which would add real
+employees), company > team > personal goals with 3 check-ins, one resignation with its
+clearance board, agency "Demo - Bright Talent Partners" shared with the newest published job.
+Services used: create_employee, PreboardingPortal.create_case, create_cycle, create_goal,
+check_in, create_ticket, register_asset/allocate, separations.initiate + generate_clearance.
+
+Decisions:
+- Real config is never changed. With no ticket/asset categories or onboarding plan template in
+  the company, tickets, assets and plans are skipped and reported. `--demo-categories` (opt-in)
+  adds "Demo - IT help" / "Demo - Laptops" categories (codes `demo_*`) so tickets + assets can
+  be seeded; clear removes them (unless a real ticket/asset uses that code).
+- Clear selects ONLY by the prefix + rows owned by those records (employment records, cases +
+  plans/tasks/documents, check-ins, reviews of the demo cycle, allocations of demo assets,
+  the separation + clearance + its workflow, agency jobs/members). It scans every foreign key
+  in the schema first: a demo record pointed at by any non-demo row (e.g. a real cycle's review
+  of a demo employee, an agency submission) is kept, with whatever it needs, and listed under
+  "kept_in_use_by_real_data". Each record is deleted in its own savepoint. Agency users
+  invited during review are not deleted (only their membership).
+
+Run on `ctd-techs`: seed created departments 2, locations 2, employees 6, employment_records 6,
+onboarding_cases 2, review_cycles 1, reviews 11, goals 5, goal_checkins 3, separations 1,
+agencies 1, agency_jobs 1; skipped plans/tickets/assets (no templates/categories). Second seed:
+nothing new. Dry-run clear: would remove employees 8 (6 + 2 joiners), employment_records 6,
+preboarding_cases 2, goals 5, goal_checkins 3, review_cycles 1, reviews 11, separations 1,
+clearance_items 5, recruitment_agencies 1, agency_job_assignments 1, departments 2,
+locations 2; nothing kept. A dry run before seeding found nothing (no false matches).
+`clear --yes` was NOT run -- the demo data stays for review.
+
+Quick checks: `compileall -q app hrctl` OK.
+
+NEXT: Part 15.9 -- hand-over: build + tsc, Playwright light-mode screenshots per page to docs/ui/screens/, docs/ui/PAGES.md, then stop and report.

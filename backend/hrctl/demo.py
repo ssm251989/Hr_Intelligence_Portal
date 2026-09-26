@@ -9,6 +9,11 @@ at the compose `mailpit` service with a distinct From address. It lives in hrctl
 imported by the app), which is why its literals don't trip the hardcode guard.
 
     python -m hrctl.demo seed-two-tenants [--mail-host mailpit] [--mail-port 1025]
+
+Part 15.8 review data ("Demo - " records for the new modules; see hrctl/demo_data.py):
+
+    python -m hrctl.demo seed  --tenant <slug> [--demo-categories]
+    python -m hrctl.demo clear --tenant <slug> [--yes]      # dry run unless --yes
 """
 
 import argparse
@@ -94,8 +99,23 @@ def main(argv=None) -> int:
     seed = sub.add_parser("seed-two-tenants")
     seed.add_argument("--mail-host", default="mailpit")
     seed.add_argument("--mail-port", type=int, default=1025)
+    demo_seed = sub.add_parser("seed", help="add clearly marked 'Demo - ' records for reviewing the screens")
+    demo_seed.add_argument("--tenant", required=True, help="tenant slug")
+    demo_seed.add_argument("--demo-categories", action="store_true", help="add 'Demo - ' ticket/asset categories if the company has none")
+    demo_clear = sub.add_parser("clear", help="remove ONLY the demo records (dry run unless --yes)")
+    demo_clear.add_argument("--tenant", required=True, help="tenant slug")
+    demo_clear.add_argument("--yes", action="store_true", help="actually delete (default: report only)")
     args = parser.parse_args(argv)
-    print(json.dumps(seed_two_tenants(args.mail_host, args.mail_port), indent=2))
+    if args.command == "seed":
+        from hrctl.demo_data import run_seed
+
+        print(json.dumps(run_seed(args.tenant, args.demo_categories), indent=2, default=str))
+    elif args.command == "clear":
+        from hrctl.demo_data import run_clear
+
+        print(json.dumps(run_clear(args.tenant, args.yes), indent=2, default=str))
+    else:
+        print(json.dumps(seed_two_tenants(args.mail_host, args.mail_port), indent=2))
     return 0
 
 
