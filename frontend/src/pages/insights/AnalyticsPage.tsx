@@ -1,6 +1,9 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Stack from "@mui/material/Stack";
+import ToggleButton from "@mui/material/ToggleButton";
+import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
 import { Link as RouterLink, useNavigate } from "react-router-dom";
@@ -18,6 +21,7 @@ import { useReducedMotion } from "../../ui-kit/motion";
 // people by office (clusters). Every place clicks through to the matching list.
 
 const HiringSankey = lazy(() => import("../../components/home/HiringSankey"));
+const HiringFunnel = lazy(() => import("../../components/home/HiringFunnel"));
 const JobsMap = lazy(() => import("../../components/insights/InsightsMaps").then((m) => ({ default: m.JobsMap })));
 const CandidateHeatMap = lazy(() => import("../../components/insights/InsightsMaps").then((m) => ({ default: m.CandidateHeatMap })));
 const HeadcountClusterMap = lazy(() => import("../../components/insights/InsightsMaps").then((m) => ({ default: m.HeadcountClusterMap })));
@@ -60,6 +64,8 @@ function JobsBar({ locations }: { locations: JobLocation[] }) {
 export default function AnalyticsPage() {
   const t = useT();
   const [flow, reloadFlow] = useLoaded(homeApi.hiringFlow);
+  // Part 17.2: the funnel is the default; the Sankey is kept as the optional "Flow view".
+  const [flowView, setFlowView] = useState(false);
   const [jobs, reloadJobs] = useLoaded(insightsApi.jobsByLocation);
   const [heat, reloadHeat] = useLoaded(insightsApi.candidateHeat);
   const [offices, reloadOffices] = useLoaded(homeApi.offices);
@@ -96,7 +102,17 @@ export default function AnalyticsPage() {
 
         <Cell span={{ xs: 12, lg: 7 }}>
           <InsightCard emoji="compass" title={t("analytics.flow.title")} sub={t("analytics.flow.sub")} dataTour="analytics-flow">
-            <Body value={flow} reload={reloadFlow} empty={(d) => d.total === 0}>{(d) => <HiringSankey flow={d} height={300} />}</Body>
+            <Stack direction="row" justifyContent="flex-end" sx={{ mb: 1 }}>
+              <ToggleButtonGroup size="small" exclusive value={flowView ? "flow" : "funnel"} onChange={(_e, v) => v && setFlowView(v === "flow")}>
+                <ToggleButton value="funnel" sx={{ textTransform: "none" }}>{t("home.funnel.funnel_view")}</ToggleButton>
+                <ToggleButton value="flow" sx={{ textTransform: "none" }}>{t("home.funnel.flow_view")}</ToggleButton>
+              </ToggleButtonGroup>
+            </Stack>
+            {flowView ? (
+              <Body value={flow} reload={reloadFlow} empty={(d) => d.total === 0}>{(d) => <HiringSankey flow={d} height={300} />}</Body>
+            ) : (
+              <Suspense fallback={null}><HiringFunnel /></Suspense>
+            )}
           </InsightCard>
         </Cell>
         <Cell span={{ xs: 12, lg: 5 }}>

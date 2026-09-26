@@ -20,6 +20,20 @@ export interface HiringFlow {
   total: number;
 }
 
+// Part 17.2 funnel (GET /api/v1/home/funnel).
+export type FunnelPeriod = "7d" | "30d" | "90d" | "year";
+export interface FunnelStage {
+  key: "applied" | "screened" | "shortlisted" | "interviewed" | "offered" | "joined";
+  label: string | null; // the company's own pipeline name, else the page's wording
+  count: number;
+  pct_of_previous: number | null;
+  statuses: string[];
+  drop: number; // did not reach the next stage
+  stopped: number; // ...of which were not selected
+  still_here: number; // ...of which are still waiting at this stage
+}
+export interface HiringFunnelData { period: FunnelPeriod; since: string; job_id: string | null; total: number; stages: FunnelStage[] }
+
 export interface HomeAlert { key: string; tone: "coral" | "sun" | "sky" | "ok"; emoji: string; count: number; path: string }
 export interface Office { id: string; name: string; lat: number | null; lng: number | null; count: number }
 export interface TeamMember { id: string; name: string; status: string; designation: string | null }
@@ -33,6 +47,8 @@ export const homeApi = {
   saveLayout: (kind: HomeKind, layout: LayoutItem[]) => http.put<{ ok: boolean }>("/api/v1/me/home/layout", { kind, layout }),
   resetLayout: (kind: HomeKind) => http.del<{ ok: boolean }>(`/api/v1/me/home/layout?kind=${kind}`),
   setCompanyDefault: (kind: HomeKind, layout: LayoutItem[]) => http.put<{ ok: boolean }>(`/api/v1/home/defaults/${kind}`, { kind, layout }),
+  funnel: (period: FunnelPeriod, jobId?: string, locale?: string) =>
+    http.get<HiringFunnelData>(`/api/v1/home/funnel?period=${period}${jobId ? `&job_id=${encodeURIComponent(jobId)}` : ""}${locale ? `&locale=${locale}` : ""}`),
   hiringFlow: () => http.get<HiringFlow>("/api/v1/home/hiring-flow"),
   alerts: () => http.get<{ alerts: HomeAlert[] }>("/api/v1/home/alerts"),
   offices: () => http.get<{ offices: Office[] }>("/api/v1/home/people-by-office"),

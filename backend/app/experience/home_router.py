@@ -197,6 +197,99 @@ def hiring_flow(job_id: Optional[str] = None, db: Session = Depends(get_db),
     return {"nodes": nodes, "links": links, "stages": stage_totals, "total": reached[0]}
 
 
+# ---- hiring funnel (Part 17.2) ----
+
+# Funnel stage -> the application statuses that count as "reached it" (at or past it), the
+# statuses that mean "stopped right after it", and the status whose pipeline-stage name
+# labels it. "Reached" is cumulative, so a candidate now at Offer also counts as Applied,
+# Screened, Shortlisted and Interviewed.
+_FUNNEL = (
+    ("applied", "received"),
+    ("screened", "screened"),
+    ("shortlisted", "hr_selected"),
+    ("interviewed", "interview_scheduled"),
+    ("offered", "offer_sent"),
+    ("joined", "onboarding_completed"),
+)
+_FUNNEL_RANK = {
+    "received": 0, "screened": 1, "hr_rejected": 1,
+    "hr_selected": 2, "on_hold": 2,
+    "interview_scheduled": 3, "interview_selected": 3, "interview_rejected": 3,
+    "salary_ok": 3, "salary_above_band": 3, "salary_approved": 3, "salary_rejected": 3,
+    "bgv_requested": 3, "bgv_pending": 3, "bgv_cleared": 3, "bgv_rejected": 3,
+    "offer_sent": 4, "onboarding_started": 4, "onboarding_completed": 5,
+}
+_FUNNEL_STOPPED = {"hr_rejected", "interview_rejected", "salary_rejected", "bgv_rejected"}
+FUNNEL_PERIODS = {"7d": 7, "30d": 30, "90d": 90}
+
+
+def _stage_names(db: Session, tenant, locale: str) -> dict[str, str]:
+    """The company's own names for the funnel's anchor statuses, from its default pipeline."""
+    from app.models.pipeline import PipelineStage, PipelineTemplate
+
+    template = (db.query(PipelineTemplate).filter(PipelineTemplate.tenant_id == tenant.tenant_id)
+                .order_by(PipelineTemplate.is_default.desc()).first())
+    if template is None:
+        return {}
+    names = {}
+    for stage in db.query(PipelineStage).filter(PipelineStage.tenant_id == tenant.tenant_id, PipelineStage.template_id == template.id).all():
+        i18n = stage.name_i18n or {}
+        name = i18n.get(locale) or i18n.get("en")
+        # the seeded default names are just the status code in words ("Hr Selected") -- only
+        # a name the company actually changed replaces the page's own plain wording
+        if name and name.strip().lower() != (stage.code or "").replace("_", " ").lower():
+            names[stage.code] = name
+    return names
+
+
+@router.get("/home/funnel")
+def hiring_funnel(period: str = "30d", job_id: Optional[str] = None, locale: str = "en", db: Session = Depends(get_db),
+                  current_user: User = Depends(require("recruitment.pipeline.view"))):
+    """Horizontal funnel: per stage the applications that reached it, % of the stage before,
+    and how many did not move on (split into "stopped here" = rejected, and "still here")."""
+    from app.models.application import Application
+
+    tenant = require_current_tenant()
+    today = datetime.now(timezone.utc)
+    if period == "year":
+        since = datetime(today.year, 1, 1, tzinfo=timezone.utc)
+    elif period in FUNNEL_PERIODS:
+        since = today - timedelta(days=FUNNEL_PERIODS[period])
+    else:
+        raise HTTPException(status_code=400, detail="period must be one of 7d, 30d, 90d, year")
+    q = (db.query(Application.status, func.count()).filter(Application.tenant_id == tenant.tenant_id, Application.created_at >= since))
+    if job_id:
+        q = q.filter(Application.job_role_id == job_id)
+    counts = {status or "received": n for status, n in q.group_by(Application.status).all()}
+
+    reached = [0] * len(_FUNNEL)
+    stopped = [0] * len(_FUNNEL)
+    for status, n in counts.items():
+        rank = _FUNNEL_RANK.get(status, 0)
+        for i in range(rank + 1):
+            reached[i] += n
+        if status in _FUNNEL_STOPPED:
+            stopped[rank] += n
+    names = _stage_names(db, tenant, locale.split("-")[0])
+    stages = []
+    for i, (key, anchor) in enumerate(_FUNNEL):
+        statuses = sorted(s for s, r in _FUNNEL_RANK.items() if r >= i)
+        prev = reached[i - 1] if i else None
+        not_next = reached[i] - reached[i + 1] if i + 1 < len(_FUNNEL) else 0
+        stages.append({
+            "key": key,
+            "label": names.get(anchor),  # None -> the page's own wording
+            "count": reached[i],
+            "pct_of_previous": None if i == 0 else (round(100 * reached[i] / prev) if prev else 0),
+            "statuses": statuses,
+            # between this stage and the next one
+            "drop": not_next,
+            "stopped": stopped[i],
+            "still_here": max(0, not_next - stopped[i]),
+        })
+    return {"period": period, "since": since.date().isoformat(), "job_id": job_id, "total": reached[0], "stages": stages}
+
+
 # ---- heads-up alerts ----
 
 

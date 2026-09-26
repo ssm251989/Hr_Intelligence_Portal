@@ -91,6 +91,10 @@ export default function CandidateFiltersPanel({
         sx={{ minWidth: 150 }}
       >
         <MenuItem value="">All statuses</MenuItem>
+        {/* Part 17.2: a funnel-stage link sets several statuses at once ("a,b,c"). */}
+        {filters.status.includes(",") && (
+          <MenuItem value={filters.status}>{filters.status.split(",").map(applicationStatusLabel).join(" / ")}</MenuItem>
+        )}
         {(statusOptions ?? APPLICATION_STATUSES.map((status) => ({ value: status, label: applicationStatusLabel(status) }))).map(
           (option) => (
             <MenuItem key={option.value} value={option.value}>

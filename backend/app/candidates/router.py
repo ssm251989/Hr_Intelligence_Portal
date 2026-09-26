@@ -298,7 +298,9 @@ def _filtered_candidate_applications_query(
     if job_role_id is not None:
         query = query.filter(Application.job_role_id == job_role_id)
     if status is not None:
-        query = query.filter(Application.status == status)
+        # Part 17.2: "a,b,c" = any of these (the Home funnel links one stage = several statuses).
+        statuses = [s.strip() for s in status.split(",") if s.strip()]
+        query = query.filter(Application.status.in_(statuses) if len(statuses) > 1 else Application.status == status.strip())
     if source is not None:
         query = query.filter(Candidate.source == source)
     if location is not None:

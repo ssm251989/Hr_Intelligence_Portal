@@ -33,7 +33,7 @@ import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { applicationsApi, candidatesApi, extractErrorMessage, jobsApi, shortlistingApi } from "../api/client";
 import { type CandidateApplicationRow, type JobRoleRead } from "../api/types";
@@ -101,7 +101,14 @@ export default function CandidatesListPage() {
   const [downloadingResumeFor, setDownloadingResumeFor] = useState<string | null>(null);
 
   const [viewMode, setViewModeState] = useState<ViewMode>(readViewMode);
-  const [filters, setFilters] = useState<CandidateFilters>(EMPTY_CANDIDATE_FILTERS);
+  // Part 17.2: links from the Home funnel / other pages pre-set filters (?status=a,b&job=&applied_after=).
+  const [urlParams] = useSearchParams();
+  const [filters, setFilters] = useState<CandidateFilters>(() => ({
+    ...EMPTY_CANDIDATE_FILTERS,
+    status: urlParams.get("status") ?? EMPTY_CANDIDATE_FILTERS.status,
+    jobRoleId: urlParams.get("job") ?? EMPTY_CANDIDATE_FILTERS.jobRoleId,
+    appliedAfter: urlParams.get("applied_after") ?? EMPTY_CANDIDATE_FILTERS.appliedAfter,
+  }));
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);

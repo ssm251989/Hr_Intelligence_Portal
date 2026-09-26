@@ -11,7 +11,7 @@ import { useTheme } from "@mui/material/styles";
 import { Link as RouterLink } from "react-router-dom";
 
 import { experienceApi, reportsApi, type InboxItem } from "../../api/client";
-import { homeApi, type FeedbackDue, type GoalRow, type HiringFlow, type HomeAlert, type MyAsset, type MyTicket, type Office, type TeamMember } from "../../api/homeApi";
+import { homeApi, type FeedbackDue, type GoalRow, type HomeAlert, type MyAsset, type MyTicket, type Office, type TeamMember } from "../../api/homeApi";
 import type { CandidatesDashboardStatsResponse, InterviewsDashboardStatsResponse, JobsDashboardStatsResponse } from "../../api/types";
 import { useT } from "../../i18n";
 import { EmptyState, Emoji, StatTile, StatusChip, UserAvatar } from "../../ui-kit";
@@ -20,8 +20,8 @@ import AdminHomeChecklist from "../AdminHomeChecklist";
 // Part 15.5: the boxes on the role-based home pages. Each widget loads its own data so one
 // slow or forbidden source never blanks the whole page.
 
-const HiringSankey = lazy(() => import("./HiringSankey"));
 const OfficeMap = lazy(() => import("./OfficeMap"));
+const HiringFunnel = lazy(() => import("./HiringFunnel"));
 
 /** Load once; `null` = still loading, `false` = failed/forbidden. */
 function useLoad<T>(fn: () => Promise<T>): T | null | false {
@@ -113,14 +113,11 @@ export function StatsWidget() {
 
 export function HiringFlowWidget({ editing }: { editing?: boolean }) {
   const t = useT();
-  const flow = useLoad<HiringFlow>(() => homeApi.hiringFlow());
+  // Part 17.2: a clear horizontal funnel replaces the Sankey here (the Sankey stays as the
+  // "Flow view" option on the Analytics page).
   return (
     <WidgetCard title={t("home.w.flow")} sub={t("home.w.flow_sub")} emoji="chart_up" editing={editing}>
-      {flow === null ? <Loading /> : flow === false ? <Failed /> : flow.total === 0 ? (
-        <EmptyState compact illustration="hiring" title={t("home.flow.empty")} />
-      ) : (
-        <Suspense fallback={<Loading />}><HiringSankey flow={flow} /></Suspense>
-      )}
+      <Suspense fallback={<Loading />}><HiringFunnel /></Suspense>
     </WidgetCard>
   );
 }

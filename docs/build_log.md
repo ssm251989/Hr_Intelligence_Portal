@@ -2076,3 +2076,17 @@ NEXT: Part 15.9 -- hand-over: build + tsc, Playwright light-mode screenshots per
   `npm i --no-save` so it never enters package.json.
 
 NEXT: owner review of Part 15 (run the screenshot script with an admin login); then Part 16 -- docs/PART16_POLISH_PROMPT.txt step 16.1.
+
+## Part 17.2 -- Home funnel (2026-09-27)
+
+- `GET /api/v1/home/funnel` + Home widget = horizontal funnel (6 stages, count, % of previous,
+  drop-off split into not selected / still waiting), period (7/30/90 days, this year) + job
+  filter, bar -> candidate list pre-filtered (list now reads ?status=a,b&job=&applied_after=;
+  API `status` accepts a comma list).
+- Decisions: stage names use the company's pipeline name only when it was renamed (seeded
+  defaults are the code in words, e.g. "Hr Selected"); "reached" is cumulative; Sankey kept as
+  "Flow view" toggle on the Analytics page (the reports dashboard) rather than the Reports list page.
+- Proof method for all of Part 17: `backend/scripts/probe.py` (in-process TestClient, user via
+  dependency override, no token/password). Screenshots of signed-in pages pending a login.
+
+NEXT: commit 17.1 (i18n) once the people/performance bundles land, then 17.3 maps.
