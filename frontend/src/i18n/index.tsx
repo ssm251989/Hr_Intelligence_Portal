@@ -15,7 +15,13 @@ export const LOCALES: { code: Locale; label: string }[] = [
   { code: "hi", label: "हिन्दी" },
   { code: "ta", label: "தமிழ்" },
 ];
-const BUNDLES: Record<Locale, Bundle> = { en, hi, ta };
+// Per-module bundles (i18n/pages/*.ts, each exporting en/hi/ta) merge in here, so a module's
+// pages add text without touching the shared files above.
+type PageBundle = Partial<Record<Locale, Record<string, string>>>;
+const PAGE_BUNDLES = Object.values(import.meta.glob("./pages/*.ts", { eager: true }) as Record<string, PageBundle>);
+const merge = (locale: Locale, base: Bundle): Bundle =>
+  Object.assign({}, ...PAGE_BUNDLES.map((m) => m[locale] ?? {}), base) as Bundle;
+const BUNDLES: Record<Locale, Bundle> = { en: merge("en", en), hi: merge("hi", hi), ta: merge("ta", ta) };
 const STORAGE_KEY = "hrms.locale";
 
 export type Vars = Record<string, string | number>;
@@ -37,7 +43,7 @@ function readStored(): Locale {
 function build(locale: Locale, overrides: Record<string, string>): TFunction {
   const bundle = BUNDLES[locale];
   const lookup = (key: string): string | undefined =>
-    overrides[key] ?? (bundle as Record<string, string>)[key] ?? (en as Record<string, string>)[key];
+    overrides[key] ?? (bundle as Record<string, string>)[key] ?? (BUNDLES.en as Record<string, string>)[key];
   return (key, vars) => {
     const count = vars?.count;
     let text = (count === 1 ? lookup(`${key}_one`) : undefined) ?? lookup(key) ?? key;

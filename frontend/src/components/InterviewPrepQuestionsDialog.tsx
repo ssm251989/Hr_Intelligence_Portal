@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
 import Dialog from "@mui/material/Dialog";
@@ -8,14 +7,17 @@ import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import { useTheme } from "@mui/material/styles";
 
-import { extractErrorMessage, schedulingApi } from "../api/client";
+import { schedulingApi } from "../api/client";
 import type { InterviewQuestionsResponse } from "../api/types";
+import { useT } from "../i18n";
+import Emoji from "../ui-kit/Emoji";
+import FriendlyError from "../ui-kit/FriendlyError";
+import { QuestionGroups } from "./interviews/AiQuestionsSection";
 
-// Generate Prep Questions, carried over from the old InterviewsPage so this capability
-// (POST /applications/{id}/interview-questions) doesn't quietly disappear from the UI in
-// the redesign -- same AI call, just reachable from the Interview List's row menu instead
-// of a per-job card.
+// AI question ideas for one candidate (POST /applications/{id}/interview-questions) -- the
+// Interview List's row action. The same questions also appear inside the scorecard.
 export default function InterviewPrepQuestionsDialog({
   applicationId,
   candidateLabel,
@@ -25,11 +27,13 @@ export default function InterviewPrepQuestionsDialog({
   candidateLabel: string;
   onClose: () => void;
 }) {
+  const t = useT();
+  const f = useTheme().palette.fresh;
   const [questions, setQuestions] = useState<InterviewQuestionsResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
-  useEffect(() => {
+  const load = () => {
     if (!applicationId) return;
     setQuestions(null);
     setError(null);
@@ -37,41 +41,41 @@ export default function InterviewPrepQuestionsDialog({
     schedulingApi
       .generateQuestions(applicationId)
       .then(setQuestions)
-      .catch((err) => setError(extractErrorMessage(err, "Failed to generate interview questions")))
+      .catch(setError)
       .finally(() => setLoading(false));
-  }, [applicationId]);
+  };
 
-  const renderList = (title: string, items: string[]) => (
-    <Stack spacing={0.5} mb={2}>
-      <Typography variant="subtitle2">{title}</Typography>
-      {items.map((q, idx) => (
-        <Typography variant="body2" key={idx}>
-          • {q}
-        </Typography>
-      ))}
-    </Stack>
-  );
+  useEffect(load, [applicationId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <Dialog open={applicationId != null} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>Interview Prep Questions — {candidateLabel}</DialogTitle>
+    <Dialog open={applicationId != null} onClose={onClose} fullWidth maxWidth="sm" aria-labelledby="prep-questions-title">
+      <DialogTitle id="prep-questions-title">
+        <Stack direction="row" spacing={1.25} alignItems="center">
+          <Emoji name="sparkles" size={24} />
+          <span>
+            {t("interviews.ai.dialog_title")}
+            <Typography component="span" sx={{ display: "block", color: f.muted, fontSize: 14, fontWeight: 500 }}>
+              {candidateLabel}
+            </Typography>
+          </span>
+        </Stack>
+      </DialogTitle>
       <DialogContent>
         {loading ? (
-          <Stack alignItems="center" py={4}>
+          <Stack alignItems="center" spacing={1.5} py={4} role="status">
             <CircularProgress size={28} />
+            <Typography sx={{ color: f.muted }}>{t("interviews.ai.loading")}</Typography>
           </Stack>
         ) : error ? (
-          <Alert severity="error">{error}</Alert>
+          <FriendlyError error={error} onRetry={load} compact />
         ) : questions ? (
           <Stack mt={1}>
-            {renderList("Technical Questions", questions.technical_questions)}
-            {renderList("Behavioral Questions", questions.behavioral_questions)}
-            {renderList("Questions to Probe Gaps", questions.questions_to_probe_gaps)}
+            <QuestionGroups questions={questions} />
           </Stack>
         ) : null}
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Close</Button>
+        <Button onClick={onClose}>{t("action.close")}</Button>
       </DialogActions>
     </Dialog>
   );

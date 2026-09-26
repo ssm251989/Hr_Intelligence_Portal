@@ -10,10 +10,13 @@ import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import { Link as RouterLink } from "react-router-dom";
 
 import { applicationsApi, candidatesApi, extractErrorMessage, jobsApi } from "../api/client";
-import type { CandidateRead, JobRoleRead } from "../api/types";
+import type { CandidateApplicationRow, CandidateRead, JobRoleRead } from "../api/types";
+import { useT } from "../i18n";
 import CandidateAvatar from "./CandidateAvatar";
+import { useFresh } from "./candidates/stages";
 
 // Manual single-candidate upload + link-to-job -- the only existing real functionality
 // from the old flat Candidates page, kept as a secondary action for attaching one resume
@@ -45,6 +48,12 @@ export default function UploadCandidateDialog({
   const [linking, setLinking] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Part 15.4 C3: after parsing, a best-effort look-up of someone already on file with the
+  // same email. There is no merge endpoint, so this only stops and offers their existing
+  // profile -- the recruiter can still carry on and link this upload.
+  const [possibleDuplicate, setPossibleDuplicate] = useState<CandidateApplicationRow | null>(null);
+  const t = useT();
+  const f = useFresh();
 
   useEffect(() => {
     if (!open) return;
@@ -56,6 +65,7 @@ export default function UploadCandidateDialog({
     setLinkJobId("");
     setLinkExpectedSalary("");
     setLinkError(null);
+    setPossibleDuplicate(null);
     jobsApi.list().then(setJobs).catch(() => setJobs([]));
   }, [open]);
 
@@ -85,6 +95,17 @@ export default function UploadCandidateDialog({
     try {
       const parsed = await candidatesApi.parseResume(created.id);
       setUploadedCandidate(parsed);
+      const email = parsed.email?.trim().toLowerCase();
+      if (email) {
+        try {
+          const page = await candidatesApi.listApplications({ search: email, pageSize: 5 });
+          setPossibleDuplicate(
+            page.items.find((row) => row.candidate_id !== parsed.id && row.candidate_email?.trim().toLowerCase() === email) ?? null,
+          );
+        } catch {
+          // Best-effort only -- never blocks linking.
+        }
+      }
     } catch {
       setParseFailed(true);
     } finally {
@@ -162,6 +183,22 @@ export default function UploadCandidateDialog({
                     Parsed: <strong>{uploadedCandidate.full_name || "Unnamed candidate"}</strong>
                   </Typography>
                 </Stack>
+              )}
+
+              {!parsing && possibleDuplicate && (
+                <Alert
+                  severity="warning"
+                  sx={{ bgcolor: f.sunSoft, color: f.ink }}
+                  action={
+                    <Button color="inherit" size="small" component={RouterLink} to={`/candidates/${possibleDuplicate.application_id}`} onClick={onClose}>
+                      {t("candidates.upload.open_existing")}
+                    </Button>
+                  }
+                >
+                  <strong>{t("candidates.upload.duplicate_title", { name: possibleDuplicate.candidate_name || possibleDuplicate.candidate_email || "" })}</strong>
+                  <br />
+                  {t("candidates.upload.duplicate_body", { job: possibleDuplicate.job_title })}
+                </Alert>
               )}
 
               {!parsing && parseFailed && (

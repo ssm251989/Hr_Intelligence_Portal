@@ -6,33 +6,36 @@ import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import Skeleton from "@mui/material/Skeleton";
 import Stack from "@mui/material/Stack";
-import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
-import { extractErrorMessage, screeningApi } from "../api/client";
+import { screeningApi } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
+import { useT } from "../i18n";
+import { Emoji, FriendlyError } from "../ui-kit";
+import { useScoreCounts } from "./screening/hooks";
+import ThresholdSlider from "./screening/ThresholdSlider";
 
 // Part F: the Screening Dashboard's own, independent threshold -- separate from Part D's
 // dashboard_min/max_score (Candidates Dashboard, received -> screened auto-advance). Saving
 // here only ever writes interview_min/max_score (see screeningApi.updateSettings' partial-
 // update contract) and never touches the dashboard pair. Purely descriptive: it drives the
 // Screening List's "Remarks" column ("Interview ready" / "Below interview threshold"), not
-// any status change -- advancing to interview_scheduled stays a human decision made via
-// shortlisting + scheduling elsewhere in the app. No "Re-evaluate All" button here: the one
-// on the Candidates Dashboard already recomputes both thresholds' outcomes together every
-// time it runs (see run_screening), so this panel only ever needs Save.
-export default function InterviewReadinessThresholdPanel() {
+// any status change. Part 15.4: the two number boxes became one range slider (S4) with a
+// live "N candidates pass" count.
+export default function InterviewReadinessThresholdPanel({ refreshSignal = 0 }: { refreshSignal?: number }) {
+  const t = useT();
   const { can } = useAuth();
   const canManage = can(ROLE_MATRIX.screeningDecisions);
 
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [minScore, setMinScore] = useState("");
-  const [maxScore, setMaxScore] = useState("");
+  const [loadError, setLoadError] = useState<unknown>(null);
+  const [range, setRange] = useState<[number, number]>([75, 100]);
+  const [savedRange, setSavedRange] = useState<[number, number]>([75, 100]);
   const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<unknown>(null);
   const [saved, setSaved] = useState(false);
+  const counts = useScoreCounts({ scope: "screening" }, refreshSignal);
 
   useEffect(() => {
     setLoading(true);
@@ -40,23 +43,17 @@ export default function InterviewReadinessThresholdPanel() {
     screeningApi
       .getSettings()
       .then((settings) => {
-        setMinScore(String(settings.interview_min_score));
-        setMaxScore(String(settings.interview_max_score));
+        const next: [number, number] = [Number(settings.interview_min_score), Number(settings.interview_max_score)];
+        setRange(next);
+        setSavedRange(next);
       })
-      .catch((err) => setLoadError(extractErrorMessage(err, "Failed to load screening settings")))
+      .catch(setLoadError)
       .finally(() => setLoading(false));
   }, []);
 
-  const minNum = Number(minScore);
-  const maxNum = Number(maxScore);
-  const valid =
-    minScore !== "" &&
-    maxScore !== "" &&
-    !Number.isNaN(minNum) &&
-    !Number.isNaN(maxNum) &&
-    minNum >= 0 &&
-    maxNum <= 100 &&
-    minNum <= maxNum;
+  const [minNum, maxNum] = range;
+  const valid = minNum >= 0 && maxNum <= 100 && minNum <= maxNum;
+  const dirty = minNum !== savedRange[0] || maxNum !== savedRange[1];
 
   const handleSave = () => {
     if (!valid) return;
@@ -65,14 +62,17 @@ export default function InterviewReadinessThresholdPanel() {
     setSaved(false);
     screeningApi
       .updateSettings({ interview_min_score: minNum, interview_max_score: maxNum })
-      .then(() => setSaved(true))
-      .catch((err) => setSaveError(extractErrorMessage(err, "Failed to save screening settings")))
+      .then(() => {
+        setSaved(true);
+        setSavedRange(range);
+      })
+      .catch(setSaveError)
       .finally(() => setSaving(false));
   };
 
   if (loading) {
     return (
-      <Card variant="outlined" sx={{ mb: 3 }}>
+      <Card sx={{ mb: 3 }}>
         <CardContent>
           <Skeleton variant="text" width="40%" height={32} sx={{ mb: 2 }} />
           <Skeleton variant="rounded" height={56} />
@@ -82,62 +82,45 @@ export default function InterviewReadinessThresholdPanel() {
   }
 
   return (
-    <Card variant="outlined" sx={{ mb: 3 }}>
+    <Card sx={{ mb: 3 }} data-tour="screening-threshold">
       <CardContent>
-        <Box mb={2}>
-          <Typography variant="h6">Interview Readiness Threshold</Typography>
-          <Typography variant="body2" color="text.secondary">
-            Applications scoring at or above the minimum show as "Interview ready" in the Screening List's Remarks
-            column -- a separate, independent threshold from the Candidates Dashboard's Screened threshold. Purely
-            informational: it never changes an application's status.
-          </Typography>
-        </Box>
+        <Stack direction="row" spacing={1.25} alignItems="center" mb={0.5}>
+          <Emoji name="target" size={22} />
+          <Typography variant="h6">{t("screening.ready.title")}</Typography>
+        </Stack>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: "80ch" }}>
+          {t("screening.ready.intro")}
+        </Typography>
 
-        {loadError && <Alert severity="error" sx={{ mb: 2 }}>{loadError}</Alert>}
-        {saveError && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setSaveError(null)}>{saveError}</Alert>}
+        {loadError != null && <Box mb={2}><FriendlyError error={loadError} compact /></Box>}
+        {saveError != null && <Box mb={2}><FriendlyError error={saveError} compact onRetry={handleSave} /></Box>}
         {saved && (
           <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSaved(false)}>
-            Threshold saved.
+            {t("screening.threshold.saved")}
           </Alert>
         )}
 
-        <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
-          <TextField
-            label="Min score"
-            type="number"
-            size="small"
-            value={minScore}
-            onChange={(e) => {
-              setMinScore(e.target.value);
-              setSaved(false);
-            }}
-            slotProps={{ htmlInput: { min: 0, max: 100 } }}
-            sx={{ width: 120 }}
-            disabled={!canManage}
-          />
-          <TextField
-            label="Max score"
-            type="number"
-            size="small"
-            value={maxScore}
-            onChange={(e) => {
-              setMaxScore(e.target.value);
-              setSaved(false);
-            }}
-            slotProps={{ htmlInput: { min: 0, max: 100 } }}
-            sx={{ width: 120 }}
-            disabled={!canManage}
-          />
-          {canManage && (
-            <Button variant="contained" onClick={handleSave} disabled={!valid || saving}>
-              {saving ? "Saving..." : "Save"}
+        <ThresholdSlider
+          id="interview-ready"
+          value={range}
+          onChange={(next) => {
+            setRange(next);
+            setSaved(false);
+          }}
+          counts={counts?.counts}
+          label={t("screening.ready.slider")}
+          info={t("screening.ready.info")}
+          disabled={!canManage}
+        />
+        {canManage && (
+          <Stack direction="row" spacing={1} justifyContent="flex-end" mt={1.5}>
+            {dirty && (
+              <Button onClick={() => setRange(savedRange)} disabled={saving}>{t("screening.threshold.reset")}</Button>
+            )}
+            <Button variant="contained" onClick={handleSave} disabled={!valid || saving || !dirty}>
+              {saving ? t("screening.saving") : t("screening.threshold.save")}
             </Button>
-          )}
-        </Stack>
-        {!valid && (
-          <Typography variant="caption" color="error" sx={{ display: "block", mt: 1 }}>
-            Both scores must be between 0 and 100, and Min score can't be greater than Max score.
-          </Typography>
+          </Stack>
         )}
       </CardContent>
     </Card>

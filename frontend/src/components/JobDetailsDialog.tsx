@@ -1,69 +1,98 @@
+import type { ReactNode } from "react";
 import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
-import Button from "@mui/material/Button";
-import Divider from "@mui/material/Divider";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import { useTheme } from "@mui/material/styles";
 
+import { PIPELINE_STAGES, type JobPipelineRow } from "../api/jobsExtra";
 import type { JobRoleRead } from "../api/types";
+import { useT } from "../i18n";
+import { Emoji, StatusChip } from "../ui-kit";
 import { formatExperienceRange } from "../utils/experience";
 import { categorizeSkills } from "../utils/skills";
+import AutoCloseNote from "./jobs/AutoCloseNote";
+import JdPreview from "./jobs/JdPreview";
+import { STAGE_STYLE } from "./jobs/jobStages";
+import JobTypeChip from "./JobTypeChip";
 import PostingLinksEditor from "./PostingLinksEditor";
-import StatusChip from "./StatusChip";
+
+function Fact({ label, children }: { label: string; children: ReactNode }) {
+  const f = useTheme().palette.fresh;
+  return (
+    <>
+      <Typography component="dt" sx={{ color: f.muted, fontSize: 13 }}>{label}</Typography>
+      <Typography component="dd" sx={{ m: 0, fontWeight: 600, fontSize: 13 }}>{children}</Typography>
+    </>
+  );
+}
 
 export default function JobDetailsDialog({
   job,
   canWrite,
   onClose,
   onUpdated,
+  pipeline,
 }: {
   job: JobRoleRead | null;
   canWrite: boolean;
   onClose: () => void;
   onUpdated: (job: JobRoleRead) => void;
+  pipeline?: JobPipelineRow;
 }) {
+  const t = useT();
+  const f = useTheme().palette.fresh;
   return (
-    <Dialog open={job !== null} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>Job Details</DialogTitle>
+    <Dialog open={job !== null} onClose={onClose} fullWidth maxWidth="md" aria-labelledby="job-details-title">
+      <DialogTitle id="job-details-title" sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        <Emoji name="briefcase" size={22} />
+        {t("jobs.det.title")}
+      </DialogTitle>
       <DialogContent>
         {job && (
-          <Stack spacing={1.5} mt={0.5}>
-            <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
-              <Typography variant="h6">{job.title}</Typography>
-              <StatusChip status={job.status} />
+          <Stack spacing={2} mt={0.5}>
+            <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1} flexWrap="wrap" useFlexGap>
+              <Box>
+                <Typography variant="h5" component="h3">{job.title}</Typography>
+                <Typography variant="body2" sx={{ color: f.muted, mt: 0.5 }}>
+                  {[job.department, job.location, formatExperienceRange(job.experience_min_years, job.experience_max_years)].filter(Boolean).join(" · ") || t("jobs.rev.no_details")}
+                </Typography>
+              </Box>
+              <Stack direction="row" spacing={0.75} alignItems="center">
+                <JobTypeChip jobType={job.job_type} />
+                <StatusChip status={job.status} />
+              </Stack>
             </Stack>
-            <Typography variant="body2" color="text.secondary">
-              {[
-                job.department,
-                job.location,
-                formatExperienceRange(job.experience_min_years, job.experience_max_years),
-                job.job_type,
-              ]
-                .filter(Boolean)
-                .join(" · ") || "No details set"}
-            </Typography>
-            {(job.education_degree_level || job.education_field) && (
-              <Typography variant="body2" color="text.secondary">
-                Education: {[job.education_degree_level, job.education_field].filter(Boolean).join(" in ")}
-              </Typography>
+            <AutoCloseNote row={pipeline} withTip />
+
+            {pipeline && (
+              <Box>
+                <Typography sx={{ fontWeight: 700, mb: 1 }}>{t("jobs.det.pipeline")}</Typography>
+                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                  {PIPELINE_STAGES.map((stage) => (
+                    <StatusChip key={stage} tone={pipeline.stages[stage] > 0 ? STAGE_STYLE[stage].tone : "muted"} emoji={STAGE_STYLE[stage].emoji}
+                      label={`${t(`jobs.stage.${stage}`)}: ${pipeline.stages[stage].toLocaleString()}`} />
+                  ))}
+                </Stack>
+              </Box>
             )}
 
-            <Divider />
-
-            <Typography variant="body2">
-              Openings: {job.positions_count}
-              {job.salary_band_min != null && job.salary_band_max != null
-                ? ` · Salary band: ${job.salary_band_min} - ${job.salary_band_max}`
-                : ""}
-            </Typography>
-            <Typography variant="body2">
-              Applications: {job.application_count}
-              {job.avg_time_to_hire_days != null ? ` · Avg time to hire: ${job.avg_time_to_hire_days}d` : ""}
-            </Typography>
+            <Box component="dl" sx={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "6px 16px", m: 0, p: 2, borderRadius: "12px", bgcolor: f.surface2, border: `1px solid ${f.line}` }}>
+              <Fact label={t("jobs.det.openings")}>{job.positions_count}</Fact>
+              {job.salary_band_min != null && job.salary_band_max != null && (
+                <Fact label={t("jobs.det.salary")}>{`${job.salary_band_min} – ${job.salary_band_max}`}</Fact>
+              )}
+              <Fact label={t("jobs.det.applications")}>{job.application_count}</Fact>
+              {job.avg_time_to_hire_days != null && <Fact label={t("jobs.det.avg")}>{t("jobs.days", { count: job.avg_time_to_hire_days })}</Fact>}
+              {(job.education_degree_level || job.education_field) && (
+                <Fact label={t("jobs.det.education")}>{[job.education_degree_level, job.education_field].filter(Boolean).join(" · ")}</Fact>
+              )}
+            </Box>
 
             {(() => {
               const { mustHave, goodToHave } = categorizeSkills(job);
@@ -72,22 +101,14 @@ export default function JobDetailsDialog({
                 <Stack spacing={0.75}>
                   {mustHave.length > 0 && (
                     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
-                      <Typography variant="caption" color="text.secondary">
-                        Must Have:
-                      </Typography>
-                      {mustHave.map((skill) => (
-                        <Chip key={`must-${skill}`} label={skill} size="small" />
-                      ))}
+                      <Typography variant="caption" sx={{ color: f.muted }}>{t("jobs.det.must")}:</Typography>
+                      {mustHave.map((skill) => <Chip key={`must-${skill}`} label={skill} size="small" color="primary" />)}
                     </Stack>
                   )}
                   {goodToHave.length > 0 && (
                     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
-                      <Typography variant="caption" color="text.secondary">
-                        Good to Have:
-                      </Typography>
-                      {goodToHave.map((skill) => (
-                        <Chip key={`good-${skill}`} label={skill} size="small" variant="outlined" />
-                      ))}
+                      <Typography variant="caption" sx={{ color: f.muted }}>{t("jobs.det.good")}:</Typography>
+                      {goodToHave.map((skill) => <Chip key={`good-${skill}`} label={skill} size="small" variant="outlined" />)}
                     </Stack>
                   )}
                 </Stack>
@@ -96,48 +117,30 @@ export default function JobDetailsDialog({
 
             {job.preferred_certifications && job.preferred_certifications.length > 0 && (
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
-                <Typography variant="caption" color="text.secondary">
-                  Preferred Certifications:
-                </Typography>
-                {job.preferred_certifications.map((cert) => (
-                  <Chip key={cert} label={cert} size="small" variant="outlined" />
-                ))}
+                <Typography variant="caption" sx={{ color: f.muted }}>{t("jobs.det.certs")}:</Typography>
+                {job.preferred_certifications.map((cert) => <Chip key={cert} label={cert} size="small" variant="outlined" />)}
               </Stack>
             )}
 
-            {job.key_responsibilities && (
-              <Typography variant="body2" color="text.secondary">
-                Key Responsibilities: {job.key_responsibilities}
-              </Typography>
-            )}
-            {job.benefits && (
-              <Typography variant="body2" color="text.secondary">
-                Benefits: {job.benefits}
-              </Typography>
-            )}
-            {job.additional_notes && (
-              <Typography variant="body2" color="text.secondary">
-                Notes: {job.additional_notes}
-              </Typography>
-            )}
+            {job.key_responsibilities && <Typography variant="body2" sx={{ color: f.muted }}>{t("jobs.rev.responsibilities")}: {job.key_responsibilities}</Typography>}
+            {job.benefits && <Typography variant="body2" sx={{ color: f.muted }}>{t("jobs.rev.benefits")}: {job.benefits}</Typography>}
+            {job.additional_notes && <Typography variant="body2" sx={{ color: f.muted }}>{t("jobs.rev.notes")}: {job.additional_notes}</Typography>}
 
             <PostingLinksEditor job={job} canWrite={canWrite} onUpdated={onUpdated} />
 
             {job.jd_text && (
-              <Box mt={1} p={1.5} bgcolor="action.hover" borderRadius={1}>
-                <Typography variant="subtitle2" gutterBottom>
-                  Job Description
+              <Box sx={{ p: 2.5, borderRadius: "12px", bgcolor: f.surface2, border: `1px solid ${f.line}` }}>
+                <Typography sx={{ fontWeight: 700, color: f.muted, fontSize: 13, textTransform: "uppercase", letterSpacing: ".06em", mb: 1 }}>
+                  {t("jobs.det.jd")}
                 </Typography>
-                <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", fontFamily: "monospace" }}>
-                  {job.jd_text}
-                </Typography>
+                <JdPreview text={job.jd_text} />
               </Box>
             )}
           </Stack>
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Close</Button>
+        <Button onClick={onClose}>{t("action.close")}</Button>
       </DialogActions>
     </Dialog>
   );

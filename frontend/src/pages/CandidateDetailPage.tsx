@@ -7,18 +7,15 @@ import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
-import CardContent from "@mui/material/CardContent";
-import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
-import Divider from "@mui/material/Divider";
-import Grid from "@mui/material/Grid";
 import IconButton from "@mui/material/IconButton";
 import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
+import Skeleton from "@mui/material/Skeleton";
 import Stack from "@mui/material/Stack";
 import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
@@ -27,19 +24,29 @@ import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 
-import { applicationsApi, candidatesApi, extractErrorMessage, integrationsApi, interviewSchedulingApi } from "../api/client";
-import { SHORTLIST_STATUS_LABELS, shortlistStatusOf, type AuditLogRead, type CandidateApplicationDetail } from "../api/types";
+import { applicationsApi, candidatesApi, extractErrorMessage, integrationsApi, interviewSchedulingApi, runNextAction } from "../api/client";
+import { candidatesExtraApi, type ApplicationEvidence } from "../api/candidatesExtra";
+import { SHORTLIST_STATUS_LABELS, shortlistStatusOf, type AuditLogRead, type CandidateApplicationDetail, type NextAction } from "../api/types";
 import CandidateAvatar from "../components/CandidateAvatar";
+import ConfirmDialog from "../components/ConfirmDialog";
 import ShortlistStatusPanel from "../components/ShortlistStatusPanel";
 import SourceChip from "../components/SourceChip";
-import StatusChip from "../components/StatusChip";
+import ActivityTimeline from "../components/candidates/ActivityTimeline";
+import ResumePreview from "../components/candidates/ResumePreview";
+import ScoreCard from "../components/candidates/ScoreCard";
+import { STEPPER_STAGES, stepperIndex, useFresh } from "../components/candidates/stages";
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
+import { useT } from "../i18n";
+import { EmptyState, FriendlyError, InfoTip, PageHeader, StageStepper, StatusChip } from "../ui-kit";
 import { downloadResume } from "../utils/resume";
 
-// Actions that belong to the Shortlisting Timeline -- the same audit-log-based rendering
-// idiom as the Activity tab (see TabPanel active={tab === 4} below), just filtered to the
-// subset of actions that are actually about a shortlisting decision.
+// Part 15.4 C1: the candidate profile in two columns (mockup "Candidate profile") --
+// details + stage stepper on the left; score ring with evidence and radar, then the tabbed
+// activity / resume / history on the right. Same data and actions as before.
+
+// Actions that belong to the Shortlisting Timeline -- the audit-log subset that is about a
+// shortlisting decision.
 const SHORTLISTING_TIMELINE_ACTIONS = new Set([
   "application_put_on_hold",
   "application_resumed_from_hold",
@@ -55,11 +62,9 @@ const SHORTLISTING_TIMELINE_ACTIONS = new Set([
   "interview_negotiation_stale_tokens_invalidated",
 ]);
 
-// The subset of the above that actually represents "what's the current state of this
-// application's negotiation" (latest-one-wins) -- mirrors backend app/interview_scheduling/
-// negotiation.py's own NEGOTIATION_STATUS_ACTIONS. Used only to decide whether "Retry
-// Scheduling" should show; retry_triggered/stale_tokens_invalidated are excluded because
-// they're always immediately followed by a real outcome action from this same set.
+// The subset of the above that represents "the current state of this application's
+// negotiation" (latest-one-wins) -- mirrors backend app/interview_scheduling/negotiation.py
+// NEGOTIATION_STATUS_ACTIONS. Used only to decide whether "Retry Scheduling" should show.
 const NEGOTIATION_STATUS_ACTIONS = new Set([
   "interview_negotiation_skipped",
   "interview_negotiation_interviewer_batch_started",
@@ -68,25 +73,23 @@ const NEGOTIATION_STATUS_ACTIONS = new Set([
   "interview_negotiation_manual_scheduling_required",
 ]);
 
-function TabPanel({ active, children }: { active: boolean; children: ReactNode }) {
-  if (!active) return null;
-  return <Box mt={3}>{children}</Box>;
+type TabKey = "activity" | "resume" | "experience" | "education" | "shortlisting";
+
+function Fact({ label, children, info }: { label: string; children: ReactNode; info?: string }) {
+  const f = useFresh();
+  return (
+    <>
+      <Box component="dt" sx={{ color: f.muted }}>
+        {label}
+        {info && <InfoTip text={info} />}
+      </Box>
+      <Box component="dd" sx={{ m: 0, fontWeight: 600, minWidth: 0, overflowWrap: "anywhere" }}>{children}</Box>
+    </>
+  );
 }
 
-function timeAgo(isoTimestamp: string): string {
-  const seconds = Math.max(0, (Date.now() - new Date(isoTimestamp).getTime()) / 1000);
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
-
-function humanizeAction(action: string | null | undefined): string {
-  const text = (action || "").replace(/_/g, " ").trim();
-  return text ? text[0].toUpperCase() + text.slice(1) : "Activity";
+function SectionTitle({ children }: { children: ReactNode }) {
+  return <Typography sx={{ fontWeight: 700, mb: 1 }}>{children}</Typography>;
 }
 
 export default function CandidateDetailPage() {
@@ -94,11 +97,14 @@ export default function CandidateDetailPage() {
   const navigate = useNavigate();
   const { can } = useAuth();
   const canWrite = can(ROLE_MATRIX.applicationsCreate);
+  const t = useT();
+  const f = useFresh();
 
   const [detail, setDetail] = useState<CandidateApplicationDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState(0);
+  const [error, setError] = useState<unknown>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [tab, setTab] = useState<TabKey>("activity");
 
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null);
 
@@ -112,6 +118,7 @@ export default function CandidateDetailPage() {
 
   const [timeline, setTimeline] = useState<AuditLogRead[] | null>(null);
   const [timelineError, setTimelineError] = useState<string | null>(null);
+  const [evidence, setEvidence] = useState<ApplicationEvidence | null>(null);
 
   const [retryingNegotiation, setRetryingNegotiation] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
@@ -121,6 +128,9 @@ export default function CandidateDetailPage() {
   const [resumeDownloading, setResumeDownloading] = useState(false);
   const [resumeError, setResumeError] = useState<string | null>(null);
 
+  const [pendingAction, setPendingAction] = useState<NextAction | null>(null);
+  const [runningAction, setRunningAction] = useState(false);
+
   const load = () => {
     if (!applicationId) return;
     setLoading(true);
@@ -128,7 +138,7 @@ export default function CandidateDetailPage() {
     applicationsApi
       .candidateDetail(applicationId)
       .then(setDetail)
-      .catch((err) => setError(extractErrorMessage(err, "Failed to load candidate")))
+      .catch((err) => setError(err))
       .finally(() => setLoading(false));
   };
 
@@ -144,19 +154,27 @@ export default function CandidateDetailPage() {
       .catch(() => setGoogleConnected(false));
   }, []);
 
+  // The profile now shows the activity timeline (and the score parts that live in it)
+  // straight away, so the audit trail loads with the page instead of on a tab click.
   useEffect(() => {
-    if ((tab !== 4 && tab !== 5) || !detail) return; // Activity tab or Shortlisting tab -- both read this same audit trail
+    if (!detail) return;
     setTimelineError(null);
     candidatesApi
       .timeline(detail.candidate.id)
       .then((res) => setTimeline(res.events))
-      .catch((err) => setTimelineError(extractErrorMessage(err, "Failed to load activity")));
-  }, [tab, detail]);
+      .catch((err) => setTimelineError(extractErrorMessage(err, t("candidates.detail.activity_failed"))));
+    candidatesExtraApi.evidence(detail.application.id).then(setEvidence);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail]);
 
   if (loading) {
     return (
-      <Box display="flex" justifyContent="center" py={6}>
-        <CircularProgress />
+      <Box>
+        <Skeleton variant="rounded" height={72} sx={{ mb: 2.5, borderRadius: "18px" }} />
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "340px 1fr" }, gap: 2.25 }}>
+          <Skeleton variant="rounded" height={420} sx={{ borderRadius: "18px" }} />
+          <Skeleton variant="rounded" height={420} sx={{ borderRadius: "18px" }} />
+        </Box>
       </Box>
     );
   }
@@ -165,9 +183,9 @@ export default function CandidateDetailPage() {
     return (
       <Box>
         <Button startIcon={<ArrowBackIcon />} onClick={() => navigate("/candidates/list")} sx={{ mb: 2 }}>
-          Back to List
+          {t("candidates.detail.back")}
         </Button>
-        <Alert severity="error">{error || "Candidate not found"}</Alert>
+        <FriendlyError error={error ?? undefined} what={error ? undefined : t("candidates.detail.not_found")} onRetry={load} />
       </Box>
     );
   }
@@ -175,6 +193,7 @@ export default function CandidateDetailPage() {
   const { application, candidate, job_title, next_actions, other_applications } = detail;
   const parsed = candidate.parsed_fields;
   const hasResume = Boolean(candidate.resume_path);
+  const name = candidate.full_name || t("candidates.unnamed");
 
   const handleDownloadResume = async () => {
     setResumeDownloading(true);
@@ -182,7 +201,7 @@ export default function CandidateDetailPage() {
     try {
       await downloadResume(candidate.id, candidate.resume_path, candidate.full_name);
     } catch (err) {
-      setResumeError(extractErrorMessage(err, "Failed to download resume"));
+      setResumeError(extractErrorMessage(err, t("candidates.resume.download_failed")));
     } finally {
       setResumeDownloading(false);
     }
@@ -204,7 +223,7 @@ export default function CandidateDetailPage() {
       const result = await applicationsApi.message(application.id, { subject: messageSubject, body: messageBody });
       setMessageSentTo(result.to);
     } catch (err) {
-      setMessageError(extractErrorMessage(err, "Failed to send message"));
+      setMessageError(extractErrorMessage(err, t("candidates.message.failed")));
     } finally {
       setMessageSending(false);
     }
@@ -216,7 +235,7 @@ export default function CandidateDetailPage() {
       await candidatesApi.parseResume(candidate.id);
       load();
     } catch (err) {
-      setError(extractErrorMessage(err, "Failed to parse resume"));
+      setActionError(extractErrorMessage(err, t("candidates.resume.parse_failed")));
     } finally {
       setParsing(false);
     }
@@ -230,501 +249,440 @@ export default function CandidateDetailPage() {
       const result = await interviewSchedulingApi.retryNegotiation(application.id);
       setRetryNotice(
         result.outcome === "started"
-          ? "A new interviewer offer has been sent."
+          ? t("candidates.retry.started")
           : result.reason
-            ? `Retry did not start a new negotiation: ${result.reason}`
-            : "Retry did not start a new negotiation -- check the timeline below or the Interview Log tracker for why.",
+            ? t("candidates.retry.not_started_reason", { reason: result.reason })
+            : t("candidates.retry.not_started"),
       );
       load();
     } catch (err) {
-      setRetryError(extractErrorMessage(err, "Failed to retry interview scheduling"));
+      setRetryError(extractErrorMessage(err, t("candidates.retry.failed")));
     } finally {
       setRetryingNegotiation(false);
     }
   };
 
+  const runAction = async (action: NextAction) => {
+    setPendingAction(null);
+    setRunningAction(true);
+    setActionError(null);
+    try {
+      await runNextAction(action);
+      load();
+    } catch (err) {
+      setActionError(extractErrorMessage(err, t("candidates.detail.action_failed")));
+    } finally {
+      setRunningAction(false);
+    }
+  };
+
+  // ---- score parts: the latest AI screening entry for THIS application ----
+  const applicationEvents = (timeline ?? []).filter((event) => event.entity_id === application.id);
+  const latestScreeningEntry = applicationEvents.filter((event) => event.action === "ai_screening_scored").at(-1);
+  const screeningDetails = (latestScreeningEntry?.details ?? {}) as Record<string, number | undefined>;
+  const score = application.composite_score ?? screeningDetails.composite_score ?? application.match_score ?? null;
+  const missingSkills = application.missing_skills ?? [];
+  const matchedSkills = (parsed?.skills ?? []).filter((skill: string) => !missingSkills.includes(skill));
+
+  // ---- shortlisting tab (unchanged logic) ----
+  const latestShortlistUpdate = applicationEvents.filter((event) => event.action === "shortlist_status_updated").at(-1);
+  const shortlistDetails = (latestShortlistUpdate?.details ?? {}) as { feedback?: string | null; reason?: string | null };
+  const currentShortlistStatus = shortlistStatusOf(application.status);
+  // Client-side mirror of backend check_retry_eligibility's coarsest condition plus "the
+  // last attempt actually failed" -- the backend stays the real authority.
+  const latestNegotiationEvent = applicationEvents.filter((event) => NEGOTIATION_STATUS_ACTIONS.has(event.action ?? "")).at(-1);
+  const negotiationRetryEligible = currentShortlistStatus === "shortlisted" && latestNegotiationEvent?.action === "interview_negotiation_skipped";
+
+  const stageNames = STEPPER_STAGES.map((s) => t(`candidates.stepper.${s}`));
+  const stageIndex = stepperIndex(application.status, application.previous_status);
+
+  const firstAction = next_actions[0];
+  const actionButton = (action: NextAction, variant: "contained" | "outlined" = "contained") =>
+    action.kind === "navigate" && action.route ? (
+      <Button key={action.key} variant={variant} component={RouterLink} to={action.route}>{action.label}</Button>
+    ) : (
+      <Button key={action.key} variant={variant} disabled={runningAction || !canWrite} onClick={() => (action.confirm ? setPendingAction(action) : runAction(action))}>
+        {action.label}
+      </Button>
+    );
+
+  const messageButton = (
+    <Tooltip title={googleConnected ? "" : t("candidates.message.connect_first")}>
+      <span>
+        <Button variant={firstAction ? "outlined" : "contained"} startIcon={<EmailOutlinedIcon />} onClick={openMessageDialog} disabled={!googleConnected || !candidate.email}>
+          {t("candidates.message.button")}
+        </Button>
+      </span>
+    </Tooltip>
+  );
+
   return (
     <Box>
-      <Button startIcon={<ArrowBackIcon />} onClick={() => navigate("/candidates/list")} sx={{ mb: 2 }}>
-        Back to List
-      </Button>
+      <PageHeader
+        emoji="technologist"
+        title={name}
+        purpose={t("candidates.detail.purpose", { job: job_title })}
+        tourKey="candidates"
+        primary={firstAction ? actionButton(firstAction) : messageButton}
+        extra={
+          <>
+            <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={() => navigate("/candidates/list")}>
+              {t("candidates.detail.back")}
+            </Button>
+            {firstAction && messageButton}
+            <IconButton aria-label={t("candidates.detail.more")} onClick={(e) => setMoreAnchor(e.currentTarget)}>
+              <MoreVertIcon />
+            </IconButton>
+            <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}>
+              <MenuItem
+                onClick={() => {
+                  navigator.clipboard?.writeText(candidate.id);
+                  setMoreAnchor(null);
+                }}
+              >
+                {t("candidates.detail.copy_id")}
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  setTab("activity");
+                  setMoreAnchor(null);
+                }}
+              >
+                {t("candidates.detail.view_activity")}
+              </MenuItem>
+            </Menu>
+          </>
+        }
+      />
 
-      <Card variant="outlined" sx={{ mb: 3 }}>
-        <CardContent>
-          <Stack direction="row" justifyContent="space-between" alignItems="flex-start" flexWrap="wrap" gap={2}>
-            <Stack direction="row" spacing={2} alignItems="center">
-              <CandidateAvatar
-                candidateId={candidate.id}
-                photoPath={candidate.photo_path}
-                name={candidate.full_name}
-                email={candidate.email}
-                sx={{ width: 56, height: 56, fontSize: 20 }}
-              />
-              <Box>
-                <Typography variant="h5">{candidate.full_name || "Unnamed candidate"}</Typography>
-                <Stack direction="row" spacing={1} alignItems="center" mt={0.5} flexWrap="wrap" useFlexGap>
-                  <Typography variant="body2" color="text.secondary">
-                    Applied for {job_title}
-                  </Typography>
-                  <StatusChip status={application.status} />
-                  <SourceChip source={candidate.source} />
-                </Stack>
+      {actionError && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setActionError(null)}>
+          {actionError}
+        </Alert>
+      )}
+
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "340px minmax(0, 1fr)" }, gap: 2.25, alignItems: "start" }}>
+        {/* ---------------- left: who they are ---------------- */}
+        <Stack spacing={2.25} sx={{ minWidth: 0 }}>
+          <Card sx={{ p: 2.25 }}>
+            <Stack direction="row" spacing={1.75} alignItems="center">
+              <CandidateAvatar candidateId={candidate.id} photoPath={candidate.photo_path} name={candidate.full_name} email={candidate.email} sx={{ width: 64, height: 64, fontSize: 22, borderRadius: "20px" }} />
+              <Box sx={{ minWidth: 0 }}>
+                <Typography sx={{ fontWeight: 800, fontSize: 20, lineHeight: 1.2 }}>{name}</Typography>
+                <Typography sx={{ color: f.muted, fontSize: 13 }}>{t("candidates.detail.applied_for", { job: job_title })}</Typography>
               </Box>
             </Stack>
-
-            <Stack direction="row" spacing={1}>
-              <Tooltip title={hasResume ? "" : "No resume on file"}>
-                <span>
-                  <Button
-                    variant="outlined"
-                    startIcon={<DescriptionOutlinedIcon />}
-                    onClick={handleDownloadResume}
-                    disabled={!hasResume || resumeDownloading}
-                  >
-                    {resumeDownloading ? "Downloading..." : "Download Resume"}
-                  </Button>
-                </span>
-              </Tooltip>
-              <Tooltip title={googleConnected ? "" : "Connect Google in Settings to send email"}>
-                <span>
-                  <Button
-                    variant="outlined"
-                    startIcon={<EmailOutlinedIcon />}
-                    onClick={openMessageDialog}
-                    disabled={!googleConnected || !candidate.email}
-                  >
-                    Message
-                  </Button>
-                </span>
-              </Tooltip>
-
-              <IconButton onClick={(e) => setMoreAnchor(e.currentTarget)}>
-                <MoreVertIcon />
-              </IconButton>
-              <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}>
-                <MenuItem
-                  onClick={() => {
-                    navigator.clipboard?.writeText(candidate.id);
-                    setMoreAnchor(null);
-                  }}
-                >
-                  Copy candidate ID
-                </MenuItem>
-                <MenuItem
-                  onClick={() => {
-                    setTab(4);
-                    setMoreAnchor(null);
-                  }}
-                >
-                  View activity log
-                </MenuItem>
-              </Menu>
+            <Stack direction="row" spacing={0.75} sx={{ mt: 1.5, flexWrap: "wrap", rowGap: 0.75 }}>
+              <StatusChip status={application.status} />
+              <SourceChip source={candidate.source} />
+              {score != null && <StatusChip tone="brand" emoji="star" label={t("candidates.score_short", { score: Math.round(score) })} />}
             </Stack>
-          </Stack>
-
-          {next_actions.length === 0 && (
-            <Alert severity="info" sx={{ mt: 2 }}>
-              {application.status === "on_hold"
-                ? "This application is on hold -- resume it from the Candidates List page to continue the pipeline."
-                : application.status.endsWith("_completed")
-                  ? "This application has completed the pipeline -- onboarding is done."
-                  : "This application is at a terminal stage -- no further pipeline action is available."}
-            </Alert>
-          )}
-          {resumeError && (
-            <Alert severity="error" sx={{ mt: 2 }} onClose={() => setResumeError(null)}>
-              {resumeError}
-            </Alert>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card variant="outlined">
-        <Tabs value={tab} onChange={(_e, value) => setTab(value)} sx={{ borderBottom: 1, borderColor: "divider" }}>
-          <Tab label="Overview" />
-          <Tab label="Resume" />
-          <Tab label="Experience" />
-          <Tab label="Education" />
-          <Tab label="Activity" />
-          <Tab label="Shortlisting" />
-        </Tabs>
-        <CardContent>
-          <TabPanel active={tab === 0}>
-            <Grid container spacing={3}>
-              <Grid size={{ xs: 12, md: 4 }}>
-                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                  Match Score
-                </Typography>
-                <Typography variant="h3" fontWeight={700}>
-                  {application.match_score != null ? `${Math.round(application.match_score)}%` : "—"}
-                </Typography>
-                {application.ranking_score != null && (
-                  <Typography variant="body2" color="text.secondary">
-                    Ranking score: {Math.round(application.ranking_score)}%
-                  </Typography>
-                )}
-                {application.ranking_rationale && (
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1, whiteSpace: "pre-wrap" }}>
-                    {application.ranking_rationale}
-                  </Typography>
-                )}
-              </Grid>
-              <Grid size={{ xs: 12, md: 8 }}>
-                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                  Profile
-                </Typography>
-                <Stack spacing={0.5} mb={2}>
-                  <Typography variant="body2">Email: {candidate.email || "—"}</Typography>
-                  <Typography variant="body2">Phone: {candidate.phone || "—"}</Typography>
-                  <Typography variant="body2">Location: {candidate.location || "—"}</Typography>
-                  <Typography variant="body2">Applied on: {new Date(application.created_at).toLocaleString()}</Typography>
-                </Stack>
-
-                {parsed && parsed.skills?.length > 0 && (
-                  <Box mb={2}>
-                    <Typography variant="subtitle2" gutterBottom>
-                      Skills
-                    </Typography>
-                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                      {parsed.skills.map((skill) => (
-                        <Chip key={skill} label={skill} size="small" variant="outlined" />
-                      ))}
-                    </Stack>
-                  </Box>
-                )}
-
-                {other_applications.length > 0 && (
-                  <Box>
-                    <Typography variant="subtitle2" gutterBottom>
-                      Other Applications
-                    </Typography>
-                    <Stack spacing={0.5}>
-                      {other_applications.map((other) => (
-                        <Stack
-                          key={other.application_id}
-                          component={RouterLink}
-                          to={`/candidates/${other.application_id}`}
-                          direction="row"
-                          spacing={1}
-                          alignItems="center"
-                          sx={{ textDecoration: "none", color: "text.primary" }}
-                        >
-                          <Typography variant="body2">{other.job_title}</Typography>
-                          <StatusChip status={other.status} />
-                        </Stack>
-                      ))}
-                    </Stack>
-                  </Box>
-                )}
-              </Grid>
-            </Grid>
-          </TabPanel>
-
-          <TabPanel active={tab === 1}>
-            {candidate.resume_path ? (
-              <Stack spacing={2} alignItems="flex-start">
-                <Button
-                  variant="contained"
-                  startIcon={<DescriptionOutlinedIcon />}
-                  onClick={handleDownloadResume}
-                  disabled={resumeDownloading}
-                >
-                  {resumeDownloading ? "Downloading..." : "Download Resume"}
-                </Button>
-                {canWrite && !parsed && (
-                  <Button variant="outlined" onClick={handleParseResume} disabled={parsing}>
-                    {parsing ? "Parsing..." : "Parse Resume"}
+            <Box component="dl" sx={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "6px 12px", m: 0, mt: 1.75, fontSize: 13 }}>
+              <Fact label={t("candidates.fact.email")}>{candidate.email || "—"}</Fact>
+              <Fact label={t("candidates.fact.phone")}>{candidate.phone || "—"}</Fact>
+              <Fact label={t("candidates.fact.location")}>{candidate.location || "—"}</Fact>
+              {parsed?.total_experience_years != null && (
+                <Fact label={t("candidates.fact.experience")}>{t("candidates.years", { count: parsed.total_experience_years })}</Fact>
+              )}
+              {application.expected_salary != null && (
+                <Fact label={t("candidates.fact.expected_salary")}>{application.expected_salary.toLocaleString()}</Fact>
+              )}
+              <Fact label={t("candidates.fact.applied_on")}>{new Date(application.created_at).toLocaleString()}</Fact>
+              {application.ranking_score != null && (
+                <Fact label={t("candidates.fact.ranking")} info={t("candidates.fact.ranking_info")}>{Math.round(application.ranking_score)}%</Fact>
+              )}
+            </Box>
+            <Box sx={{ mt: 2.25 }}>
+              <StageStepper stages={stageNames} current={stageIndex} />
+            </Box>
+            {next_actions.length === 0 && (
+              <Typography sx={{ mt: 1.75, fontSize: 13, color: f.muted, bgcolor: f.surface2, borderRadius: "10px", p: 1.25 }} role="status">
+                {application.status === "on_hold"
+                  ? t("candidates.detail.on_hold_note")
+                  : application.status.endsWith("_completed")
+                    ? t("candidates.detail.completed_note")
+                    : t("candidates.detail.final_note")}
+              </Typography>
+            )}
+            {next_actions.length > 1 && (
+              <Stack direction="row" spacing={1} sx={{ mt: 1.75, flexWrap: "wrap", rowGap: 1 }}>
+                {next_actions.slice(1).map((a) => actionButton(a, "outlined"))}
+              </Stack>
+            )}
+            <Stack direction="row" spacing={1} sx={{ mt: 1.75, flexWrap: "wrap", rowGap: 1 }}>
+              <Tooltip title={hasResume ? "" : t("candidates.resume.none")}>
+                <span>
+                  <Button variant="outlined" startIcon={<DescriptionOutlinedIcon />} onClick={handleDownloadResume} disabled={!hasResume || resumeDownloading}>
+                    {resumeDownloading ? t("candidates.resume.downloading") : t("candidates.resume.download")}
                   </Button>
-                )}
-              </Stack>
-            ) : (
-              <Typography color="text.secondary">No resume uploaded for this candidate.</Typography>
+                </span>
+              </Tooltip>
+            </Stack>
+            {resumeError && (
+              <Alert severity="error" sx={{ mt: 1.5 }} onClose={() => setResumeError(null)}>
+                {resumeError}
+              </Alert>
             )}
-          </TabPanel>
+          </Card>
 
-          <TabPanel active={tab === 2}>
-            {parsed && parsed.work_history?.length > 0 ? (
-              <Stack spacing={1.5} divider={<Divider />}>
-                {parsed.work_history.map((entry, idx) => (
-                  <Box key={idx}>
-                    <Typography variant="subtitle2">{[entry.title, entry.company].filter(Boolean).join(" at ")}</Typography>
-                    {(entry.start || entry.end) && (
-                      <Typography variant="body2" color="text.secondary">
-                        {entry.start ?? "?"} – {entry.end ?? "present"}
-                      </Typography>
-                    )}
-                  </Box>
+          <Card sx={{ p: 2.25 }}>
+            <SectionTitle>{t("candidates.detail.skills")}</SectionTitle>
+            {parsed && parsed.skills?.length > 0 ? (
+              <Stack direction="row" spacing={0.75} sx={{ flexWrap: "wrap", rowGap: 0.75 }}>
+                {parsed.skills.map((skill) => (
+                  <StatusChip key={skill} tone={missingSkills.includes(skill) ? "muted" : "sky"} emoji="label" label={skill} />
                 ))}
               </Stack>
             ) : (
-              <Typography color="text.secondary">No work history parsed yet.</Typography>
+              <Typography sx={{ color: f.muted, fontSize: 13 }}>{t("candidates.detail.no_skills")}</Typography>
             )}
-          </TabPanel>
-
-          <TabPanel active={tab === 3}>
-            {parsed && parsed.education?.length > 0 ? (
-              <Stack spacing={1.5} divider={<Divider />}>
-                {parsed.education.map((entry, idx) => (
-                  <Box key={idx}>
-                    <Typography variant="subtitle2">{entry.degree || "Degree"}</Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {[entry.institution, entry.year].filter(Boolean).join(" — ")}
-                    </Typography>
-                  </Box>
-                ))}
-              </Stack>
-            ) : (
-              <Typography color="text.secondary">No education parsed yet.</Typography>
-            )}
-          </TabPanel>
-
-          <TabPanel active={tab === 4}>
-            {timelineError ? (
-              <Alert severity="error">{timelineError}</Alert>
-            ) : timeline == null ? (
-              <CircularProgress size={20} />
-            ) : timeline.length === 0 ? (
-              <Typography color="text.secondary">No activity recorded yet.</Typography>
-            ) : (
-              <Stack spacing={1.5} divider={<Divider />}>
-                {timeline.map((event) => (
-                  <Box key={event.id}>
-                    <Typography variant="body2">
-                      {humanizeAction(event.action)}
-                      {event.actor && event.actor !== "system" ? ` — ${event.actor}` : ""}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {timeAgo(event.created_at)} · {new Date(event.created_at).toLocaleString()}
-                    </Typography>
-                  </Box>
-                ))}
-              </Stack>
-            )}
-          </TabPanel>
-
-          <TabPanel active={tab === 5}>
-            {(() => {
-              const applicationEvents = (timeline ?? []).filter((event) => event.entity_id === application.id);
-              const latestScreeningEntry = applicationEvents.filter((event) => event.action === "ai_screening_scored").at(-1);
-              const screeningDetails = (latestScreeningEntry?.details ?? {}) as Record<string, number | undefined>;
-              const missingSkills = application.missing_skills ?? [];
-              const matchedSkills = (parsed?.skills ?? []).filter((skill: string) => !missingSkills.includes(skill));
-              const latestShortlistUpdate = applicationEvents
-                .filter((event) => event.action === "shortlist_status_updated")
-                .at(-1);
-              const shortlistDetails = (latestShortlistUpdate?.details ?? {}) as {
-                feedback?: string | null;
-                reason?: string | null;
-              };
-              const shortlistTimeline = applicationEvents.filter((event) => SHORTLISTING_TIMELINE_ACTIONS.has(event.action ?? ""));
-              const currentShortlistStatus = shortlistStatusOf(application.status);
-              // Client-side mirror of backend check_retry_eligibility's first, coarsest
-              // condition plus "the last attempt actually failed" -- the backend is still
-              // the real authority (also checks for an existing Interview row and a batch
-              // genuinely mid-flight), surfaced via its own 409 detail text if this ever
-              // shows in a state the backend then rejects.
-              const latestNegotiationEvent = applicationEvents
-                .filter((event) => NEGOTIATION_STATUS_ACTIONS.has(event.action ?? ""))
-                .at(-1);
-              const negotiationRetryEligible =
-                currentShortlistStatus === "shortlisted" && latestNegotiationEvent?.action === "interview_negotiation_skipped";
-
-              return (
-                <Grid container spacing={3}>
-                  <Grid size={{ xs: 12, md: 5 }}>
-                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                      Match Score Breakdown
-                    </Typography>
-                    <Stack spacing={1} mb={3}>
-                      {[
-                        { label: "Skills", value: screeningDetails.skills_score },
-                        { label: "Experience", value: screeningDetails.experience_score },
-                        { label: "Qualification", value: screeningDetails.certificates_score },
-                        { label: "Overall Potential", value: screeningDetails.composite_score ?? application.composite_score },
-                      ].map((row) => (
-                        <Stack key={row.label} direction="row" justifyContent="space-between">
-                          <Typography variant="body2" color="text.secondary">
-                            {row.label}
-                          </Typography>
-                          <Typography variant="body2" fontWeight={600}>
-                            {row.value != null ? `${Math.round(row.value)}%` : "—"}
-                          </Typography>
-                        </Stack>
-                      ))}
+            {other_applications.length > 0 && (
+              <Box sx={{ mt: 2 }}>
+                <SectionTitle>{t("candidates.detail.other_applications")}</SectionTitle>
+                <Stack spacing={0.75}>
+                  {other_applications.map((other) => (
+                    <Stack key={other.application_id} component={RouterLink} to={`/candidates/${other.application_id}`} direction="row" spacing={1} alignItems="center" justifyContent="space-between"
+                      sx={{ textDecoration: "none", color: "text.primary", p: 1, borderRadius: "10px", bgcolor: f.surface2, border: `1px solid ${f.line}` }}>
+                      <Typography sx={{ fontSize: 13, fontWeight: 600 }} noWrap>{other.job_title}</Typography>
+                      <StatusChip status={other.status} />
                     </Stack>
+                  ))}
+                </Stack>
+              </Box>
+            )}
+          </Card>
+        </Stack>
 
-                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                      Top Matched Skills
-                    </Typography>
-                    {matchedSkills.length > 0 ? (
-                      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap mb={3}>
-                        {matchedSkills.map((skill: string) => (
-                          <Chip key={skill} label={skill} size="small" color="success" variant="outlined" />
-                        ))}
+        {/* ---------------- right: score, then activity / resume / history ---------------- */}
+        <Stack spacing={2.25} sx={{ minWidth: 0 }}>
+          <ScoreCard
+            score={score}
+            candidateName={name}
+            rationale={application.ranking_rationale}
+            evidence={evidence}
+            missingSkills={missingSkills}
+            parts={{
+              skills: screeningDetails.skills_score ?? application.skill_match_pct,
+              experience: screeningDetails.experience_score,
+              location: screeningDetails.location_score,
+              certificates: screeningDetails.certificates_score,
+              resumeMatch: screeningDetails.resume_matcher_score ?? application.match_score,
+              composite: screeningDetails.composite_score ?? application.composite_score,
+              jobNeeds: screeningDetails.interview_threshold_min ?? screeningDetails.threshold_min,
+            }}
+          />
+
+          <Card>
+            <Tabs value={tab} onChange={(_e, value: TabKey) => setTab(value)} variant="scrollable" allowScrollButtonsMobile sx={{ px: 1, borderBottom: `1px solid ${f.line}` }}>
+              <Tab value="activity" label={t("candidates.tab.activity")} />
+              <Tab value="resume" label={t("candidates.tab.resume")} />
+              <Tab value="experience" label={t("candidates.tab.experience")} />
+              <Tab value="education" label={t("candidates.tab.education")} />
+              <Tab value="shortlisting" label={t("candidates.tab.shortlisting")} />
+            </Tabs>
+            <Box sx={{ p: 2.25 }}>
+              {tab === "activity" &&
+                (timelineError ? (
+                  <FriendlyError compact what={timelineError} fix={t("candidates.detail.activity_fix")} />
+                ) : timeline == null ? (
+                  <CircularProgress size={20} />
+                ) : (
+                  <ActivityTimeline events={timeline} />
+                ))}
+
+              {tab === "resume" && (
+                <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "minmax(0, 1.4fr) minmax(0, 1fr)" }, gap: 2.25 }}>
+                  <ResumePreview candidateId={candidate.id} resumePath={candidate.resume_path} downloading={resumeDownloading} onDownload={handleDownloadResume} />
+                  <Box>
+                    <SectionTitle>{t("candidates.resume.parsed_title")}</SectionTitle>
+                    {parsed ? (
+                      <Stack spacing={1.5}>
+                        <Box component="dl" sx={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "6px 12px", m: 0, fontSize: 13 }}>
+                          <Fact label={t("candidates.fact.name")}>{parsed.full_name || "—"}</Fact>
+                          <Fact label={t("candidates.fact.email")}>{parsed.email || "—"}</Fact>
+                          <Fact label={t("candidates.fact.phone")}>{parsed.phone || "—"}</Fact>
+                          <Fact label={t("candidates.fact.experience")}>{parsed.total_experience_years != null ? t("candidates.years", { count: parsed.total_experience_years }) : "—"}</Fact>
+                        </Box>
+                        {parsed.work_history?.length > 0 && (
+                          <Box>
+                            <SectionTitle>{t("candidates.tab.experience")}</SectionTitle>
+                            {parsed.work_history.slice(0, 4).map((w, i) => (
+                              <Typography key={i} sx={{ fontSize: 13 }}>{[w.title, w.company].filter(Boolean).join(" · ")}</Typography>
+                            ))}
+                          </Box>
+                        )}
+                        {parsed.certificates?.length > 0 && (
+                          <Box>
+                            <SectionTitle>{t("candidates.resume.certificates")}</SectionTitle>
+                            <Stack direction="row" spacing={0.75} sx={{ flexWrap: "wrap", rowGap: 0.75 }}>
+                              {parsed.certificates.map((c) => <StatusChip key={c} tone="ok" emoji="graduation" label={c} />)}
+                            </Stack>
+                          </Box>
+                        )}
                       </Stack>
                     ) : (
-                      <Typography variant="body2" color="text.secondary" mb={3}>
-                        No matched skills recorded.
-                      </Typography>
-                    )}
-
-                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                      Shortlist Summary
-                    </Typography>
-                    <Typography variant="body2" sx={{ mb: 3 }}>
-                      {candidate.full_name || "This candidate"} scored{" "}
-                      {application.composite_score != null ? `${Math.round(application.composite_score)}%` : "an unscored"} overall
-                      for {job_title}
-                      {missingSkills.length > 0 ? `, missing ${missingSkills.join(", ")}` : ""}.
-                      {currentShortlistStatus
-                        ? ` Currently ${SHORTLIST_STATUS_LABELS[currentShortlistStatus]}.`
-                        : " Not currently in the shortlisting stage."}
-                    </Typography>
-
-                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                      Evaluator's Notes
-                    </Typography>
-                    {shortlistDetails.feedback || shortlistDetails.reason ? (
-                      <Box sx={{ mb: 1 }}>
-                        {shortlistDetails.reason && (
-                          <Chip label={shortlistDetails.reason} size="small" sx={{ mb: 1 }} />
+                      <Stack spacing={1.5} alignItems="flex-start">
+                        <Typography sx={{ color: f.muted, fontSize: 13 }}>{t("candidates.resume.not_parsed")}</Typography>
+                        {canWrite && hasResume && (
+                          <Button variant="contained" onClick={handleParseResume} disabled={parsing}>
+                            {parsing ? t("candidates.resume.parsing") : t("candidates.resume.parse")}
+                          </Button>
                         )}
-                        {shortlistDetails.feedback && (
-                          <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
-                            {shortlistDetails.feedback}
+                      </Stack>
+                    )}
+                  </Box>
+                </Box>
+              )}
+
+              {tab === "experience" &&
+                (parsed && parsed.work_history?.length > 0 ? (
+                  <Stack spacing={1.25}>
+                    {parsed.work_history.map((entry, idx) => (
+                      <Box key={idx} sx={{ p: 1.25, borderRadius: "12px", bgcolor: f.surface2, border: `1px solid ${f.line}` }}>
+                        <Typography sx={{ fontWeight: 700 }}>{[entry.title, entry.company].filter(Boolean).join(" · ")}</Typography>
+                        {(entry.start || entry.end) && (
+                          <Typography sx={{ fontSize: 12, color: f.muted }}>
+                            {entry.start ?? "?"} – {entry.end ?? t("candidates.detail.present")}
                           </Typography>
                         )}
+                      </Box>
+                    ))}
+                  </Stack>
+                ) : (
+                  <EmptyState compact illustration="resume" title={t("candidates.detail.no_work")} />
+                ))}
+
+              {tab === "education" &&
+                (parsed && parsed.education?.length > 0 ? (
+                  <Stack spacing={1.25}>
+                    {parsed.education.map((entry, idx) => (
+                      <Box key={idx} sx={{ p: 1.25, borderRadius: "12px", bgcolor: f.surface2, border: `1px solid ${f.line}` }}>
+                        <Typography sx={{ fontWeight: 700 }}>{entry.degree || t("candidates.detail.degree")}</Typography>
+                        <Typography sx={{ fontSize: 12, color: f.muted }}>{[entry.institution, entry.year].filter(Boolean).join(" · ")}</Typography>
+                      </Box>
+                    ))}
+                  </Stack>
+                ) : (
+                  <EmptyState compact illustration="resume" title={t("candidates.detail.no_education")} />
+                ))}
+
+              {tab === "shortlisting" && (
+                <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "5fr 7fr" }, gap: 3 }}>
+                  <Box>
+                    <SectionTitle>{t("candidates.shortlist.matched")}</SectionTitle>
+                    {matchedSkills.length > 0 ? (
+                      <Stack direction="row" spacing={0.75} sx={{ flexWrap: "wrap", rowGap: 0.75, mb: 2.5 }}>
+                        {matchedSkills.map((skill: string) => <StatusChip key={skill} tone="ok" emoji="check" label={skill} />)}
+                      </Stack>
+                    ) : (
+                      <Typography sx={{ color: f.muted, fontSize: 13, mb: 2.5 }}>{t("candidates.shortlist.no_matched")}</Typography>
+                    )}
+
+                    <SectionTitle>{t("candidates.shortlist.summary")}</SectionTitle>
+                    <Typography sx={{ fontSize: 13, mb: 2.5 }}>
+                      {t(score != null ? "candidates.shortlist.summary_scored" : "candidates.shortlist.summary_unscored", {
+                        name,
+                        score: application.composite_score != null ? Math.round(application.composite_score) : 0,
+                        job: job_title,
+                      })}
+                      {missingSkills.length > 0 ? ` ${t("candidates.shortlist.summary_missing", { skills: missingSkills.join(", ") })}` : ""}{" "}
+                      {currentShortlistStatus
+                        ? t("candidates.shortlist.summary_now", { status: SHORTLIST_STATUS_LABELS[currentShortlistStatus] })
+                        : t("candidates.shortlist.summary_not_in_stage")}
+                    </Typography>
+
+                    <SectionTitle>{t("candidates.shortlist.notes")}</SectionTitle>
+                    {shortlistDetails.feedback || shortlistDetails.reason ? (
+                      <Box sx={{ px: 1.25, py: 1, borderLeft: `3px solid ${f.brand}`, bgcolor: f.surface2, borderRadius: "0 8px 8px 0" }}>
+                        {shortlistDetails.reason && <Box sx={{ mb: 0.75 }}><StatusChip tone="sky" emoji="memo" label={shortlistDetails.reason} /></Box>}
+                        {shortlistDetails.feedback && <Typography sx={{ fontSize: 13, whiteSpace: "pre-wrap" }}>{shortlistDetails.feedback}</Typography>}
                         {latestShortlistUpdate && (
-                          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+                          <Typography sx={{ display: "block", mt: 0.5, fontSize: 12, color: f.muted }}>
                             {latestShortlistUpdate.actor} · {new Date(latestShortlistUpdate.created_at).toLocaleString()}
                           </Typography>
                         )}
                       </Box>
                     ) : (
-                      <Typography variant="body2" color="text.secondary">
-                        No evaluator notes yet.
-                      </Typography>
+                      <Typography sx={{ color: f.muted, fontSize: 13 }}>{t("candidates.shortlist.no_notes")}</Typography>
                     )}
-                  </Grid>
+                  </Box>
 
-                  <Grid size={{ xs: 12, md: 7 }}>
-                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                      Update Shortlist Status
-                    </Typography>
+                  <Box>
+                    <SectionTitle>{t("candidates.shortlist.update")}</SectionTitle>
                     <Box sx={{ mb: 3 }}>
                       {canWrite ? (
-                        <ShortlistStatusPanel
-                          applicationId={application.id}
-                          candidateName={candidate.full_name}
-                          currentApplicationStatus={application.status}
-                          onSaved={load}
-                        />
+                        <ShortlistStatusPanel applicationId={application.id} candidateName={candidate.full_name} currentApplicationStatus={application.status} onSaved={load} />
                       ) : (
-                        <Alert severity="info">You don't have permission to update the shortlist status.</Alert>
+                        <Alert severity="info">{t("candidates.shortlist.no_permission")}</Alert>
                       )}
                     </Box>
 
                     {negotiationRetryEligible && canWrite && (
                       <Box sx={{ mb: 3 }}>
-                        <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                          Interview Scheduling
-                        </Typography>
-                        <Alert severity="warning" sx={{ mb: 1 }}>
-                          The last automatic scheduling attempt for this application failed to send.
-                        </Alert>
-                        {retryError && (
-                          <Alert severity="error" sx={{ mb: 1 }}>
-                            {retryError}
-                          </Alert>
-                        )}
-                        {retryNotice && (
-                          <Alert severity="info" sx={{ mb: 1 }}>
-                            {retryNotice}
-                          </Alert>
-                        )}
-                        <Button
-                          size="small"
-                          variant="outlined"
-                          disabled={retryingNegotiation}
-                          onClick={handleRetryNegotiation}
-                        >
-                          {retryingNegotiation ? "Retrying…" : "Retry Scheduling"}
+                        <SectionTitle>{t("candidates.retry.title")}</SectionTitle>
+                        <Alert severity="warning" sx={{ mb: 1 }}>{t("candidates.retry.warning")}</Alert>
+                        {retryError && <Alert severity="error" sx={{ mb: 1 }}>{retryError}</Alert>}
+                        {retryNotice && <Alert severity="info" sx={{ mb: 1 }}>{retryNotice}</Alert>}
+                        <Button size="small" variant="outlined" disabled={retryingNegotiation} onClick={handleRetryNegotiation}>
+                          {retryingNegotiation ? t("candidates.retry.retrying") : t("candidates.retry.button")}
                         </Button>
                       </Box>
                     )}
 
-                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                      Shortlisting Timeline
-                    </Typography>
+                    <SectionTitle>{t("candidates.shortlist.timeline")}</SectionTitle>
                     {timelineError ? (
                       <Alert severity="error">{timelineError}</Alert>
                     ) : timeline == null ? (
                       <CircularProgress size={20} />
-                    ) : shortlistTimeline.length === 0 ? (
-                      <Typography color="text.secondary" variant="body2">
-                        No shortlisting activity recorded yet.
-                      </Typography>
                     ) : (
-                      <Stack spacing={1.5} divider={<Divider />}>
-                        {shortlistTimeline.map((event) => (
-                          <Box key={event.id}>
-                            <Typography variant="body2">
-                              {humanizeAction(event.action)}
-                              {event.actor && event.actor !== "system" ? ` — ${event.actor}` : ""}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              {timeAgo(event.created_at)} · {new Date(event.created_at).toLocaleString()}
-                            </Typography>
-                          </Box>
-                        ))}
-                      </Stack>
+                      <ActivityTimeline events={applicationEvents} filter={(e) => SHORTLISTING_TIMELINE_ACTIONS.has(e.action ?? "")} />
                     )}
-                  </Grid>
-                </Grid>
-              );
-            })()}
-          </TabPanel>
-        </CardContent>
-      </Card>
+                  </Box>
+                </Box>
+              )}
+            </Box>
+          </Card>
+        </Stack>
+      </Box>
 
       <Dialog open={messageOpen} onClose={() => setMessageOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle>Message {candidate.full_name || "Candidate"}</DialogTitle>
+        <DialogTitle>{t("candidates.message.title", { name })}</DialogTitle>
         <DialogContent>
           <Stack spacing={2} mt={1}>
             {messageError && <Alert severity="error">{messageError}</Alert>}
             {messageSentTo ? (
-              <Alert severity="success">Email sent to {messageSentTo} via your connected Gmail.</Alert>
+              <Alert severity="success">{t("candidates.message.sent", { email: messageSentTo })}</Alert>
             ) : (
               <>
-                <TextField label="Subject" value={messageSubject} onChange={(e) => setMessageSubject(e.target.value)} fullWidth />
-                <TextField
-                  label="Message"
-                  value={messageBody}
-                  onChange={(e) => setMessageBody(e.target.value)}
-                  fullWidth
-                  multiline
-                  minRows={5}
-                />
+                <TextField label={t("candidates.message.subject")} value={messageSubject} onChange={(e) => setMessageSubject(e.target.value)} fullWidth />
+                <TextField label={t("candidates.message.body")} value={messageBody} onChange={(e) => setMessageBody(e.target.value)} fullWidth multiline minRows={5} />
                 <Typography variant="caption" color="text.secondary">
-                  Sends a real email to {candidate.email} via your connected Gmail account.
+                  {t("candidates.message.hint", { email: candidate.email ?? "" })}
                 </Typography>
               </>
             )}
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setMessageOpen(false)}>{messageSentTo ? "Close" : "Cancel"}</Button>
+          <Button onClick={() => setMessageOpen(false)}>{messageSentTo ? t("action.close") : t("action.cancel")}</Button>
           {!messageSentTo && (
-            <Button
-              variant="contained"
-              onClick={handleSendMessage}
-              disabled={messageSending || !messageSubject.trim() || !messageBody.trim()}
-            >
-              {messageSending ? "Sending..." : "Send"}
+            <Button variant="contained" onClick={handleSendMessage} disabled={messageSending || !messageSubject.trim() || !messageBody.trim()}>
+              {messageSending ? t("candidates.message.sending") : t("candidates.message.send")}
             </Button>
           )}
         </DialogActions>
       </Dialog>
+
+      <ConfirmDialog
+        open={Boolean(pendingAction)}
+        title={pendingAction?.label ?? ""}
+        message={pendingAction?.description || t("candidates.detail.confirm_action", { name })}
+        confirmLabel={pendingAction?.label ?? t("action.done")}
+        confirming={runningAction}
+        destructive={false}
+        onConfirm={() => pendingAction && runAction(pendingAction)}
+        onCancel={() => setPendingAction(null)}
+      />
     </Box>
   );
 }

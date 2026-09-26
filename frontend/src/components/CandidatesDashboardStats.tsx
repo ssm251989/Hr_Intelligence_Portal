@@ -1,15 +1,7 @@
-import { useEffect, useState } from "react";
-import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
-import LanguageOutlinedIcon from "@mui/icons-material/LanguageOutlined";
-import PercentOutlinedIcon from "@mui/icons-material/PercentOutlined";
-import PersonAddAltOutlinedIcon from "@mui/icons-material/PersonAddAltOutlined";
-import UploadFileOutlinedIcon from "@mui/icons-material/UploadFileOutlined";
-import Alert from "@mui/material/Alert";
+import { useEffect, useState, type ReactNode } from "react";
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
-import CardContent from "@mui/material/CardContent";
 import FormControl from "@mui/material/FormControl";
-import Grid from "@mui/material/Grid";
 import InputLabel from "@mui/material/InputLabel";
 import Link from "@mui/material/Link";
 import MenuItem from "@mui/material/MenuItem";
@@ -18,34 +10,27 @@ import Skeleton from "@mui/material/Skeleton";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
-import { extractErrorMessage, reportsApi } from "../api/client";
-import { candidateSourceLabel, type CandidatesDashboardStatsResponse } from "../api/types";
+import { reportsApi } from "../api/client";
+import { candidateSourceLabel, type CandidatesDashboardStatsResponse, type StatTrend } from "../api/types";
+import { useT, type TFunction } from "../i18n";
+import { FriendlyError, InfoTip, StatTile } from "../ui-kit";
 import { formatMonthKey, pastMonthKeys } from "../utils/datetime";
 import AllSkillsDialog from "./AllSkillsDialog";
 import DataSourcesPanel from "./DataSourcesPanel";
-import LabeledDonutChart from "./LabeledDonutChart";
 import MatchScoreDistributionChart from "./MatchScoreDistributionChart";
 import RecentCandidatesTable from "./RecentCandidatesTable";
-import StatCard, { StatCardSkeleton } from "./StatCard";
 import TopSkillsBarChart from "./TopSkillsBarChart";
+import SourceDonut from "./candidates/SourceDonut";
+import { useFresh } from "./candidates/stages";
+
+// Part 15.4 Candidates dashboard: StatTiles (every number with its word + a trend line),
+// charts coloured from theme.palette.chart, same data (reportsApi.candidatesDashboardStats)
+// and the same "compare with" month picker as before.
 
 const LAST_MONTH_SENTINEL = "last_month";
-const COMPARE_OPTIONS = [
-  { value: LAST_MONTH_SENTINEL, label: "vs last month" },
-  ...pastMonthKeys(12).map((key) => ({ value: key, label: `vs ${formatMonthKey(key)}` })),
-];
 
-const BLUE = "#2a78d6";
-const ORANGE = "#eb6834";
-const AQUA = "#1baf7a";
-const YELLOW = "#eda100";
-const MAGENTA = "#e87ba4";
-
-// refreshSignal is optional -- the Dashboard now lives on its own route (/candidates/dashboard),
-// so navigating to it after an import on the separate Import page already remounts this
-// component and refetches; nothing external needs to force a re-fetch anymore.
-// onLoadingChange is likewise optional -- purely so the page's own RefreshButton can show
-// an accurate in-flight spinner for this fetch; nothing here changes because of it.
+// refreshSignal/onLoadingChange are optional -- the page's Refresh button bumps the first
+// and reads the second for its spinner.
 export default function CandidatesDashboardStats({
   refreshSignal = 0,
   onLoadingChange,
@@ -53,11 +38,19 @@ export default function CandidatesDashboardStats({
   refreshSignal?: number;
   onLoadingChange?: (loading: boolean) => void;
 }) {
+  const t = useT();
+  const f = useFresh();
   const [stats, setStats] = useState<CandidatesDashboardStatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [compareMonth, setCompareMonth] = useState(LAST_MONTH_SENTINEL);
   const [allSkillsOpen, setAllSkillsOpen] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
+
+  const compareOptions = [
+    { value: LAST_MONTH_SENTINEL, label: t("candidates.dash.vs_last_month") },
+    ...pastMonthKeys(12).map((key) => ({ value: key, label: t("candidates.dash.vs_month", { month: formatMonthKey(key) }) })),
+  ];
 
   useEffect(() => {
     setLoading(true);
@@ -66,15 +59,28 @@ export default function CandidatesDashboardStats({
     reportsApi
       .candidatesDashboardStats(compareMonth === LAST_MONTH_SENTINEL ? undefined : compareMonth)
       .then(setStats)
-      .catch((err) => setError(extractErrorMessage(err, "Failed to load candidates dashboard")))
+      .catch((err) => setError(err))
       .finally(() => {
         setLoading(false);
         onLoadingChange?.(false);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshSignal, compareMonth]);
+  }, [refreshSignal, compareMonth, retryKey]);
 
   const handleCompareMonthChange = (event: SelectChangeEvent) => setCompareMonth(event.target.value);
+
+  const panel = (title: string, children: ReactNode, info?: string, footer?: ReactNode) => (
+    <Card sx={{ p: 2.25, height: "100%", display: "flex", flexDirection: "column" }}>
+      <Typography variant="h6" component="h2" sx={{ fontWeight: 700, fontSize: 16, mb: 1.5 }}>
+        {title}
+        {info && <InfoTip text={info} />}
+      </Typography>
+      <Box sx={{ flex: 1, minWidth: 0 }}>{children}</Box>
+      {footer}
+    </Card>
+  );
+
+  const tileGrid = { display: "grid", gap: 1.75, gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", md: "repeat(3, minmax(0, 1fr))", lg: "repeat(5, minmax(0, 1fr))" }, mb: 2.25 };
 
   if (loading) {
     return (
@@ -82,53 +88,18 @@ export default function CandidatesDashboardStats({
         <Stack direction="row" justifyContent="flex-end" mb={1.5}>
           <Skeleton variant="rounded" width={200} height={40} />
         </Stack>
-        <Grid container spacing={2} mb={3}>
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Grid key={i} size={{ xs: 12, sm: 6, md: 2.4 }}>
-              <StatCardSkeleton variant="compact" />
-            </Grid>
-          ))}
-        </Grid>
-        <Grid container spacing={3} mb={3}>
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Grid key={i} size={{ xs: 12, md: 4 }}>
-              <Card variant="outlined" sx={{ height: "100%" }}>
-                <CardContent>
-                  <Skeleton variant="text" width="50%" height={32} sx={{ mb: 2 }} />
-                  <Skeleton variant="rounded" height={140} />
-                </CardContent>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
-        <Grid container spacing={3}>
-          <Grid size={{ xs: 12, md: 8.5 }}>
-            <Card variant="outlined" sx={{ height: "100%" }}>
-              <CardContent>
-                <Skeleton variant="text" width="30%" height={32} sx={{ mb: 2 }} />
-                <Skeleton variant="rounded" height={220} />
-              </CardContent>
-            </Card>
-          </Grid>
-          <Grid size={{ xs: 12, md: 3.5 }}>
-            <Card variant="outlined" sx={{ height: "100%" }}>
-              <CardContent>
-                <Skeleton variant="text" width="50%" height={32} sx={{ mb: 2 }} />
-                <Skeleton variant="rounded" height={220} />
-              </CardContent>
-            </Card>
-          </Grid>
-        </Grid>
+        <Box sx={tileGrid}>
+          {Array.from({ length: 5 }).map((_, i) => <StatTile key={i} emoji="technologist" value="" label="" loading />)}
+        </Box>
+        <Box sx={{ display: "grid", gap: 2.25, gridTemplateColumns: { xs: "1fr", md: "repeat(3, minmax(0, 1fr))" } }}>
+          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} variant="rounded" height={240} sx={{ borderRadius: "18px" }} />)}
+        </Box>
       </Box>
     );
   }
 
   if (error) {
-    return (
-      <Alert severity="error" sx={{ mb: 3 }}>
-        {error}
-      </Alert>
-    );
+    return <Box mb={3}><FriendlyError error={error} onRetry={() => setRetryKey((k) => k + 1)} /></Box>;
   }
 
   if (!stats) {
@@ -141,134 +112,61 @@ export default function CandidatesDashboardStats({
     <Box mb={3}>
       <Stack direction="row" justifyContent="flex-end" mb={1.5}>
         <FormControl size="small" sx={{ minWidth: 200 }}>
-          <InputLabel id="candidates-dashboard-compare-month-label">Compare</InputLabel>
-          <Select
-            labelId="candidates-dashboard-compare-month-label"
-            label="Compare"
-            value={compareMonth}
-            onChange={handleCompareMonthChange}
-          >
-            {COMPARE_OPTIONS.map((option) => (
-              <MenuItem key={option.value} value={option.value}>
-                {option.label}
-              </MenuItem>
+          <InputLabel id="candidates-dashboard-compare-month-label">{t("candidates.dash.compare")}</InputLabel>
+          <Select labelId="candidates-dashboard-compare-month-label" label={t("candidates.dash.compare")} value={compareMonth} onChange={handleCompareMonthChange}>
+            {compareOptions.map((option) => (
+              <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
             ))}
           </Select>
         </FormControl>
       </Stack>
 
-      <Grid container spacing={2} mb={3}>
-        <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
-          <StatCard
-            variant="compact"
-            label="Total Candidates"
-            value={stats.total_candidates}
-            icon={GroupsOutlinedIcon}
-            color={BLUE}
-            trend={stats.total_candidates_trend}
-          />
-        </Grid>
-        <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
-          <StatCard
-            variant="compact"
-            label="New This Month"
-            value={stats.new_this_month}
-            icon={PersonAddAltOutlinedIcon}
-            color={ORANGE}
-            trend={stats.new_this_month_trend}
-          />
-        </Grid>
-        <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
-          <StatCard
-            variant="compact"
-            label="From Career Portals"
-            value={stats.from_career_portal}
-            icon={LanguageOutlinedIcon}
-            color={AQUA}
-            trend={stats.from_career_portal_trend}
-          />
-        </Grid>
-        <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
-          <StatCard
-            variant="compact"
-            label="Manually Added"
-            value={stats.manually_added}
-            icon={UploadFileOutlinedIcon}
-            color={YELLOW}
-            trend={stats.manually_added_trend}
-          />
-        </Grid>
-        <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
-          <StatCard
-            variant="compact"
-            label="Avg Match Score"
-            value={stats.avg_match_score != null ? `${Math.round(stats.avg_match_score)}%` : "—"}
-            icon={PercentOutlinedIcon}
-            color={MAGENTA}
-            trend={stats.avg_match_score_trend}
-          />
-        </Grid>
-      </Grid>
+      <Box sx={tileGrid}>
+        <StatTile emoji="people" tone="sky" value={stats.total_candidates} label={t("candidates.dash.total")} {...trendProps(t, stats.total_candidates_trend)} to="/candidates/list" />
+        <StatTile emoji="new" tone="coral" value={stats.new_this_month} label={t("candidates.dash.new_month")} {...trendProps(t, stats.new_this_month_trend)} />
+        <StatTile emoji="globe" tone="brand" value={stats.from_career_portal} label={t("candidates.dash.career_portal")} {...trendProps(t, stats.from_career_portal_trend)} />
+        <StatTile emoji="inbox" tone="sun" value={stats.manually_added} label={t("candidates.dash.manual")} {...trendProps(t, stats.manually_added_trend)} />
+        <StatTile
+          emoji="star"
+          tone="ok"
+          value={stats.avg_match_score != null ? `${Math.round(stats.avg_match_score)}%` : "—"}
+          label={t("candidates.dash.avg_match")}
+          {...trendProps(t, stats.avg_match_score_trend)}
+        />
+      </Box>
 
-      <Grid container spacing={3} mb={3}>
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Card variant="outlined" sx={{ height: "100%" }}>
-            <CardContent>
-              <LabeledDonutChart title="Candidates by Source" rows={sourceRows} />
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Card variant="outlined" sx={{ height: "100%" }}>
-            <CardContent>
-              <Typography variant="h6" mb={2}>
-                Top Skills
-              </Typography>
-              <TopSkillsBarChart rows={stats.top_skills} />
-              {stats.top_skills.length > 0 && (
-                <Link component="button" variant="body2" onClick={() => setAllSkillsOpen(true)} sx={{ mt: 1.5, display: "inline-block" }}>
-                  View all skills
-                </Link>
-              )}
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Card variant="outlined" sx={{ height: "100%" }}>
-            <CardContent>
-              <Typography variant="h6" mb={2}>
-                Match Score Distribution
-              </Typography>
-              <MatchScoreDistributionChart rows={stats.match_score_distribution} />
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
+      <Box sx={{ display: "grid", gap: 2.25, gridTemplateColumns: { xs: "1fr", md: "repeat(3, minmax(0, 1fr))" }, mb: 2.25 }}>
+        {panel(t("candidates.dash.by_source"), <SourceDonut rows={sourceRows} />)}
+        {panel(
+          t("candidates.dash.top_skills"),
+          <TopSkillsBarChart rows={stats.top_skills} emptyMessage={t("candidates.dash.no_skills")} />,
+          undefined,
+          stats.top_skills.length > 0 ? (
+            <Link component="button" variant="body2" onClick={() => setAllSkillsOpen(true)} sx={{ mt: 1.5, alignSelf: "flex-start", fontWeight: 700 }}>
+              {t("candidates.dash.all_skills")}
+            </Link>
+          ) : undefined,
+        )}
+        {panel(t("candidates.dash.match_distribution"), <MatchScoreDistributionChart rows={stats.match_score_distribution} />, t("candidates.dash.match_info"))}
+      </Box>
 
       <AllSkillsDialog open={allSkillsOpen} onClose={() => setAllSkillsOpen(false)} />
 
-      <Grid container spacing={3}>
-        <Grid size={{ xs: 12, md: 8.5 }}>
-          <Card variant="outlined" sx={{ height: "100%" }}>
-            <CardContent>
-              <Typography variant="h6" mb={1}>
-                Recent Candidates
-              </Typography>
-              <RecentCandidatesTable rows={stats.recent_candidates} />
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid size={{ xs: 12, md: 3.5 }}>
-          <Card variant="outlined" sx={{ height: "100%" }}>
-            <CardContent>
-              <Typography variant="h6" mb={2}>
-                Data Sources
-              </Typography>
-              <DataSourcesPanel rows={stats.data_sources} />
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
+      <Box sx={{ display: "grid", gap: 2.25, gridTemplateColumns: { xs: "1fr", md: "minmax(0, 2.4fr) minmax(0, 1fr)" } }}>
+        {panel(t("candidates.dash.recent"), <RecentCandidatesTable rows={stats.recent_candidates} />)}
+        {panel(t("candidates.dash.data_sources"), <DataSourcesPanel rows={stats.data_sources} />, t("candidates.dash.data_sources_info"))}
+      </Box>
+      <Typography sx={{ color: f.muted, fontSize: 12, mt: 1.5 }}>{t("candidates.dash.active", { count: stats.active_candidates })}</Typography>
     </Box>
   );
+}
+
+function trendProps(t: TFunction, trend: StatTrend | undefined): { trend?: string; trendDirection?: "up" | "down" | "flat" } {
+  if (!trend || trend.pct_change == null) return {};
+  const pct = Math.round(trend.pct_change);
+  const month = formatMonthKey(trend.compare_month);
+  return {
+    trend: t(trend.is_approximate ? "candidates.dash.trend_approx" : "candidates.dash.trend", { pct: Math.abs(pct), month }),
+    trendDirection: pct > 0 ? "up" : pct < 0 ? "down" : "flat",
+  };
 }

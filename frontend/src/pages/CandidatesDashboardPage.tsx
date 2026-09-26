@@ -3,8 +3,6 @@ import PersonAddAltOutlinedIcon from "@mui/icons-material/PersonAddAltOutlined";
 import UploadFileOutlinedIcon from "@mui/icons-material/UploadFileOutlined";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import Stack from "@mui/material/Stack";
-import Typography from "@mui/material/Typography";
 import { Link as RouterLink } from "react-router-dom";
 
 import CandidatesDashboardStats from "../components/CandidatesDashboardStats";
@@ -13,10 +11,16 @@ import ScreeningThresholdPanel from "../components/ScreeningThresholdPanel";
 import UploadCandidateDialog from "../components/UploadCandidateDialog";
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
+import { useT } from "../i18n";
+import { PageHeader } from "../ui-kit";
 
+// Part 15.4: Candidates dashboard in the new look -- PageHeader with ONE main button
+// ("Add a candidate" for people who may add them, otherwise "Import candidates"), stat
+// tiles and themed charts below. Same data, dialogs and permissions as before.
 export default function CandidatesDashboardPage() {
   const { can } = useAuth();
   const canWrite = can(ROLE_MATRIX.candidatesWrite);
+  const t = useT();
   const [addOpen, setAddOpen] = useState(false);
   // Bumped whenever the "Add Candidate" dialog links a new candidate to a job, or the
   // Refresh button is clicked, so the stats below (which own their own data fetch) refetch
@@ -24,37 +28,41 @@ export default function CandidatesDashboardPage() {
   const [refreshSignal, setRefreshSignal] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
 
+  const importButton = (variant: "contained" | "outlined") => (
+    <Button variant={variant} startIcon={<UploadFileOutlinedIcon />} component={RouterLink} to="/candidates/import">
+      {t("candidates.import_button")}
+    </Button>
+  );
+
   return (
     <Box>
-      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" mb={3} flexWrap="wrap" gap={2}>
-        <Box>
-          <Typography variant="h4">Candidates Dashboard</Typography>
-          <Typography variant="body2" color="text.secondary">
-            Overview of all candidates and data
-          </Typography>
-        </Box>
-        <Stack direction="row" spacing={2} alignItems="center">
-          <Button variant="outlined" startIcon={<UploadFileOutlinedIcon />} component={RouterLink} to="/candidates/import">
-            Import Candidates
-          </Button>
-          {canWrite && (
+      <PageHeader
+        emoji="technologist"
+        title={t("candidates.dash.title")}
+        purpose={t("candidates.dash.purpose")}
+        tourKey="candidates"
+        primary={
+          canWrite ? (
             <Button variant="contained" startIcon={<PersonAddAltOutlinedIcon />} onClick={() => setAddOpen(true)}>
-              Add Candidate
+              {t("candidates.add_button")}
             </Button>
-          )}
-          <RefreshButton loading={refreshing} onRefresh={() => setRefreshSignal((s) => s + 1)} />
-        </Stack>
-      </Stack>
+          ) : (
+            importButton("contained")
+          )
+        }
+        extra={
+          <>
+            {canWrite && importButton("outlined")}
+            <RefreshButton loading={refreshing} onRefresh={() => setRefreshSignal((s) => s + 1)} />
+          </>
+        }
+      />
 
       <ScreeningThresholdPanel />
 
       <CandidatesDashboardStats refreshSignal={refreshSignal} onLoadingChange={setRefreshing} />
 
-      <UploadCandidateDialog
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-        onLinked={() => setRefreshSignal((s) => s + 1)}
-      />
+      <UploadCandidateDialog open={addOpen} onClose={() => setAddOpen(false)} onLinked={() => setRefreshSignal((s) => s + 1)} />
     </Box>
   );
 }

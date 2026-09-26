@@ -1881,3 +1881,49 @@ Decisions:
   page in 15.4/15.6 as each page is restyled (same keys, all three languages).
 
 Quick checks: `tsc --noEmit -p tsconfig.app.json` exit 0, `npm run build` OK.
+
+## Part 15.4 -- Restyle of the 13 existing modules (2026-09-26)
+
+Done in six parallel work packages (strict file ownership; per-module i18n bundles in
+`frontend/src/i18n/pages/*.ts`, en/hi/ta; per-module API wrappers `api/*Extra.ts` over the new
+exported `http` helpers; read-only helper routers `backend/app/experience/ui_*_router.py`).
+Every page: PageHeader (emoji + title + one-line purpose + ONE primary button + Show me how),
+StatTile / EmptyState / FriendlyError / StatusChip / InfoTip, theme tokens only, same behaviour.
+
+- Jobs: step wizard in StepForm look with server-side draft autosave ("Carry on / Start fresh");
+  template library = copy of an earlier job (no template store exists); AI JD side-by-side editor
+  + live preview (only when AI feature on); job table with a count per stage, ListToolbar, 25 rows;
+  auto-close chips ("Closes in N days", "N openings left"), close-when-filled (checked on read,
+  audited `job_auto_closed_positions_filled`), Reopen dialog (`POST /api/v1/ui/jobs/{id}/reopen`).
+- Candidates: dashboard tiles/charts on theme chart colours; table <-> Kanban (remembered),
+  drag between stages with @dnd-kit (only moves the app supports; others snap back with a
+  message; "Move to stage" menu for keyboard); two-column profile, stage stepper, activity
+  timeline, score ring + hover breakdown, radar vs job, evidence lines, pdf.js resume preview;
+  duplicate check by email at upload (offer to open the existing profile, no merge).
+- Screening/Shortlisting: one score + breakdown, highest first, threshold slider with live
+  "N of M pass", compare up to 3, one-click shortlist, reject reason required from the
+  `rejection_reason` master list, AI auto-shortlist chips + visible undo window (4 business hours).
+- Interviews/HR Inbox: table <-> week calendar, new "My interviews" page (`/interviews/my`),
+  scorecard (3 competency stars + one comment) with AI questions inside, panel feedback hidden
+  until you submit; HR Inbox three panes, "Assign to candidate" queue, reply snippets.
+- Salary/BGV/Offers: band bar, one-click approve/decline; BGV checklist with chips, name/DOB
+  mismatch "Needs a look", vendor timeline; offer template editor with sandboxed live preview,
+  sent -> viewed -> signed timeline, expiry chip, confetti once on signed.
+- Reports/Settings/Careers/Login: reports on brand chart colours + CSV / print-to-PDF / saved
+  report Excel export; Settings = category tree + search + `/settings#<id>` deep links (old
+  fix_path anchors aliased); careers job list with search/filters, benefits + FAQ (company
+  settings `careers.site.intro|benefits|faq`, empty = hidden), short apply form; split-layout
+  login / register / set-password with illustration and language picker.
+
+Decisions / gaps to review:
+- H3 conflict: spec says BGV runs after the offer; the backend only allows an offer after BGV is
+  cleared. Kept the code's order, the page says so -- owner to decide.
+- Not built (no backend data): commute band, free tags, delayed rejection email (S8), interview
+  reminders / reschedule counts (I4/I5), candidate status tracking page (A7 needs an unguessable
+  token column + migration), offer "viewed" event, offer expiry setting (fixed 7 days).
+- "Undo" of an auto-shortlist resets to Screened only; there is no auto-shortlist step yet.
+- Removed the Jobs "Quick actions" panel (only disabled "coming soon" buttons) and tile sparklines.
+- AI affordances (JD generate, interview question ideas) are now hidden when AI is off.
+
+Quick checks: `tsc --noEmit -p tsconfig.app.json` exit 0, `npm run build` OK, `compileall -q app`
+OK, `import app.main` OK.

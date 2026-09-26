@@ -1,16 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
-import CardContent from "@mui/material/CardContent";
 import CircularProgress from "@mui/material/CircularProgress";
-import Divider from "@mui/material/Divider";
+import Collapse from "@mui/material/Collapse";
+import Grid from "@mui/material/Grid";
 import MuiLink from "@mui/material/Link";
-import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import { useTheme } from "@mui/material/styles";
 import { Link as RouterLink, useSearchParams } from "react-router-dom";
 
 import { ApiError, applicationsApi, candidatesApi, extractErrorMessage, integrationsApi, jobsApi, offersApi } from "../api/client";
@@ -18,8 +18,12 @@ import type { ApplicationRead, CandidateRead, JobRoleRead, OfferGenerateRequest,
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
 import ConfirmDialog from "../components/ConfirmDialog";
+import OfferTemplateEditor from "../components/offers/OfferTemplateEditor";
+import OfferTimeline from "../components/offers/OfferTimeline";
 import RefreshButton from "../components/RefreshButton";
-import StatusChip from "../components/StatusChip";
+import { Inset, JobPickerCard, PersonHeader, useOffersContext, useWhen } from "../components/offers/shared";
+import { useT } from "../i18n";
+import { celebrate, EmptyState, Emoji, FriendlyError, InfoTip, PageHeader, StatTile, useReducedMotion } from "../ui-kit";
 
 const RELEVANT_STATUSES = ["bgv_cleared", "offer_sent", "onboarding_started", "onboarding_completed"];
 
@@ -33,6 +37,10 @@ function OfferGenerateForm({
   candidateEmail?: string | null;
 }) {
   const { can } = useAuth();
+  const t = useT();
+  const f = useTheme().palette.fresh;
+  const when = useWhen();
+  const { offer_expiry_days: expiryDays } = useOffersContext();
   const canEdit = can(ROLE_MATRIX.offersWrite);
   const [startDate, setStartDate] = useState("");
   const [reportingManagerName, setReportingManagerName] = useState("");
@@ -45,7 +53,7 @@ function OfferGenerateForm({
 
   const handleSubmit = async () => {
     if (!startDate) {
-      setError("Pick a start date");
+      setError(t("offers.generate.need_date"));
       return;
     }
     setSaving(true);
@@ -53,14 +61,16 @@ function OfferGenerateForm({
     try {
       await onSubmit({ start_date: startDate, reporting_manager_name: reportingManagerName || null });
     } catch (err) {
-      setError(extractErrorMessage(err, "Failed to generate offer"));
+      setError(extractErrorMessage(err, t("offers.error.generate")));
     } finally {
       setSaving(false);
     }
   };
 
+  const expiresOn = new Date(Date.now() + expiryDays * 86_400_000).toISOString().slice(0, 10);
+
   return (
-    <Box mt={2}>
+    <Inset title={<><Emoji name="envelope" size={16} /> {t("offers.generate.title")}</>}>
       {error && (
         <Alert severity="error" sx={{ mb: 1.5 }}>
           {error}
@@ -68,28 +78,25 @@ function OfferGenerateForm({
       )}
       {docusignConnected === true && candidateEmail && (
         <Alert severity="info" sx={{ mb: 1.5 }}>
-          DocuSign is connected — a real signature envelope will be sent to {candidateEmail} once this offer
-          is generated.
+          {t("offers.esign.will_send", { email: candidateEmail })}
         </Alert>
       )}
       {docusignConnected === true && !candidateEmail && (
         <Alert severity="warning" sx={{ mb: 1.5 }}>
-          DocuSign is connected, but this candidate has no email on file, so a real envelope can't be sent —
-          this offer will need to be marked as signed manually.
+          {t("offers.esign.no_email")}
         </Alert>
       )}
       {docusignConnected === false && (
         <Alert severity="info" sx={{ mb: 1.5 }}>
-          DocuSign isn't connected for your account, so this offer will need to be marked as signed manually.{" "}
+          {t("offers.esign.not_connected")}{" "}
           <MuiLink component={RouterLink} to="/settings">
-            Connect DocuSign
+            {t("offers.esign.connect")}
           </MuiLink>
-          .
         </Alert>
       )}
-      <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ xs: "stretch", sm: "center" }} flexWrap="wrap" useFlexGap>
         <TextField
-          label="Start date"
+          label={t("offers.generate.start_date")}
           type="date"
           required
           value={startDate}
@@ -98,22 +105,30 @@ function OfferGenerateForm({
           size="small"
         />
         <TextField
-          label="Reporting manager (optional)"
+          label={t("offers.generate.manager")}
           value={reportingManagerName}
           onChange={(e) => setReportingManagerName(e.target.value)}
           size="small"
-          sx={{ minWidth: 220 }}
+          sx={{ minWidth: 240 }}
         />
-        <Button size="small" variant="contained" onClick={handleSubmit} disabled={saving}>
-          {saving ? "Generating..." : "Generate Offer"}
+        <Button variant="contained" onClick={handleSubmit} disabled={saving} startIcon={<Emoji name="envelope" size={16} />}>
+          {saving ? t("offers.generate.generating") : t("offers.generate.button")}
         </Button>
       </Stack>
-    </Box>
+      <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mt: 1.25 }}>
+        <Emoji name="alarm_clock" size={14} />
+        <Typography sx={{ fontSize: 13, color: f.muted }}>
+          {t("offers.generate.expiry_note", { count: expiryDays, date: when(expiresOn, false) })}
+        </Typography>
+      </Stack>
+    </Inset>
   );
 }
 
 function MarkSignedForm({ onSubmit }: { onSubmit: (envelopeId: string | null) => Promise<void> }) {
   const { can } = useAuth();
+  const t = useT();
+  const f = useTheme().palette.fresh;
   const canEdit = can(ROLE_MATRIX.offersWrite);
   const [envelopeId, setEnvelopeId] = useState("");
   const [saving, setSaving] = useState(false);
@@ -131,57 +146,52 @@ function MarkSignedForm({ onSubmit }: { onSubmit: (envelopeId: string | null) =>
     try {
       await onSubmit(envelopeId || null);
     } catch (err) {
-      setError(extractErrorMessage(err, "Failed to mark offer signed"));
+      setError(extractErrorMessage(err, t("offers.error.mark_signed")));
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <Box mt={2}>
+    <Inset title={<><Emoji name="writing_hand" size={16} /> {t("offers.manual.title")}</>}>
       {error && (
         <Alert severity="error" sx={{ mb: 1.5 }}>
           {error}
         </Alert>
       )}
-      <Typography variant="caption" color="text.secondary" display="block" mb={1}>
-        No real DocuSign envelope was sent for this offer — paste an envelope ID here manually if one exists
-        from whatever channel collected the signature, or leave blank.
-      </Typography>
-      <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
+      <Typography sx={{ fontSize: 13, color: f.muted, mb: 1.5 }}>{t("offers.manual.intro")}</Typography>
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ xs: "stretch", sm: "center" }} flexWrap="wrap" useFlexGap>
         <TextField
-          label="DocuSign envelope ID (optional)"
+          label={t("offers.manual.reference")}
           value={envelopeId}
           onChange={(e) => setEnvelopeId(e.target.value)}
           size="small"
-          sx={{ minWidth: 240 }}
+          sx={{ minWidth: 260 }}
+          InputProps={{ endAdornment: <InfoTip text={t("offers.manual.reference_tip")} /> }}
         />
-        <Button size="small" variant="contained" onClick={() => setConfirmOpen(true)} disabled={saving}>
-          {saving ? "Saving..." : "Mark Signed"}
+        <Button variant="contained" onClick={() => setConfirmOpen(true)} disabled={saving}>
+          {saving ? t("offers.manual.saving") : t("offers.manual.button")}
         </Button>
       </Stack>
 
       <ConfirmDialog
         open={confirmOpen}
-        title="Mark offer as signed?"
-        message="This manually records the offer as signed without verifying a real signature. Only do this if you've confirmed the candidate signed through some other channel."
-        confirmLabel="Mark Signed"
+        title={t("offers.manual.confirm_title")}
+        message={t("offers.manual.confirm_message")}
+        confirmLabel={t("offers.manual.button")}
+        cancelLabel={t("action.cancel")}
         confirming={saving}
         onConfirm={handleSubmit}
         onCancel={() => setConfirmOpen(false)}
       />
-    </Box>
+    </Inset>
   );
 }
 
-function CheckSigningStatusButton({
-  envelopeId,
-  onCheck,
-}: {
-  envelopeId: string | null | undefined;
-  onCheck: () => Promise<void>;
-}) {
+function CheckSigningStatusButton({ onCheck }: { onCheck: () => Promise<void> }) {
   const { can } = useAuth();
+  const t = useT();
+  const f = useTheme().palette.fresh;
   const canEdit = can(ROLE_MATRIX.offersWrite);
   const [checking, setChecking] = useState(false);
   const [message, setMessage] = useState<{ severity: "info" | "error"; text: string } | null>(null);
@@ -198,11 +208,11 @@ function CheckSigningStatusButton({
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         // Envelope exists but isn't fully signed yet -- an expected, non-error outcome.
-        setMessage({ severity: "info", text: extractErrorMessage(err, "Envelope is not yet signed") });
+        setMessage({ severity: "info", text: t("offers.esign.not_yet") });
       } else {
         setMessage({
           severity: "error",
-          text: extractErrorMessage(err, "Failed to check signing status"),
+          text: extractErrorMessage(err, t("offers.error.check")),
         });
       }
     } finally {
@@ -211,25 +221,42 @@ function CheckSigningStatusButton({
   };
 
   return (
-    <Box mt={2}>
+    <Inset title={<><Emoji name="writing_hand" size={16} /> {t("offers.esign.title")}</>}>
       {message && (
         <Alert severity={message.severity} sx={{ mb: 1.5 }}>
           {message.text}
         </Alert>
       )}
-      <Typography variant="caption" color="text.secondary" display="block" mb={1}>
-        A real DocuSign envelope ({envelopeId}) was sent for signature — check its live status via DocuSign
-        instead of marking this signed manually.
-      </Typography>
-      <Button size="small" variant="contained" onClick={handleCheck} disabled={checking}>
-        {checking ? "Checking..." : "Check Signing Status"}
+      <Typography sx={{ fontSize: 13, color: f.muted, mb: 1.5 }}>{t("offers.esign.sent_intro")}</Typography>
+      <Button variant="contained" onClick={handleCheck} disabled={checking} startIcon={<Emoji name="magnifier" size={16} />}>
+        {checking ? t("offers.esign.checking") : t("offers.esign.check")}
       </Button>
+    </Inset>
+  );
+}
+
+function OfferLetter({ text }: { text: string }) {
+  const t = useT();
+  const f = useTheme().palette.fresh;
+  const reduced = useReducedMotion();
+  const [open, setOpen] = useState(false);
+  return (
+    <Box sx={{ mt: 2 }}>
+      <Button size="small" onClick={() => setOpen((o) => !o)} aria-expanded={open} startIcon={<Emoji name="page" size={16} />}>
+        {open ? t("offers.letter.hide") : t("offers.letter.show")}
+      </Button>
+      <Collapse in={open} timeout={reduced ? 0 : "auto"}>
+        <Box sx={{ mt: 1, p: 2.5, borderRadius: "12px", bgcolor: f.surface, border: `1px solid ${f.line}`, boxShadow: f.shadow, maxHeight: 420, overflow: "auto" }}>
+          <Typography sx={{ whiteSpace: "pre-wrap", fontSize: 14, lineHeight: 1.7 }}>{text}</Typography>
+        </Box>
+      </Collapse>
     </Box>
   );
 }
 
 export default function OffersPage() {
   const { can } = useAuth();
+  const t = useT();
   const canWrite = can(ROLE_MATRIX.offersWrite);
   const [searchParams] = useSearchParams();
   const [jobs, setJobs] = useState<JobRoleRead[]>([]);
@@ -244,12 +271,14 @@ export default function OffersPage() {
   const [candidatesLoadFailed, setCandidatesLoadFailed] = useState(false);
   const [docusignStatusLoadFailed, setDocusignStatusLoadFailed] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const celebrated = useRef(new Set<string>());
 
   const loadInitial = () => {
     const jobsPromise = jobsApi
       .list()
       .then(setJobs)
-      .catch((err) => setError(extractErrorMessage(err, "Failed to load jobs")));
+      .catch((err) => setError(extractErrorMessage(err, t("offers.error.jobs"))));
     const candidatesPromise = candidatesApi
       .list()
       .then((data) => setCandidates(Object.fromEntries(data.map((c) => [c.id, c]))))
@@ -268,6 +297,19 @@ export default function OffersPage() {
     loadInitial();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // L-V3: confetti when an offer is signed -- celebrate() itself makes sure each person
+  // sees it once per offer (and never under reduced motion). Only offers signed and not
+  // yet joined count as "new news" here.
+  useEffect(() => {
+    applications.forEach((app) => {
+      const offer = offers[app.id];
+      if (offer?.signed && app.status === "onboarding_started" && !celebrated.current.has(offer.id)) {
+        celebrated.current.add(offer.id);
+        void celebrate(`offer.signed:${offer.id}`);
+      }
+    });
+  }, [applications, offers]);
 
   // No filters/search/pagination on this page to reset (its only real "filter" is which
   // job is selected, deliberately left alone -- clearing it would drop the recruiter out
@@ -300,7 +342,7 @@ export default function OffersPage() {
       });
       setOffers(byApplication);
     } catch (err) {
-      setError(extractErrorMessage(err, "Failed to load offer data"));
+      setError(extractErrorMessage(err, t("offers.error.load")));
     } finally {
       setLoading(false);
     }
@@ -345,7 +387,7 @@ export default function OffersPage() {
       setOffers((prev) => ({ ...prev, [applicationId]: offer }));
       await loadJobData(selectedJobId);
     } catch (err) {
-      setError(extractErrorMessage(err, "Failed to complete onboarding"));
+      setError(extractErrorMessage(err, t("offers.error.onboarding")));
     } finally {
       setActionId(null);
     }
@@ -353,62 +395,80 @@ export default function OffersPage() {
 
   const candidateLabel = (candidateId: string) => {
     const candidate = candidates[candidateId];
-    return candidate?.parsed_fields?.full_name || candidate?.full_name || `Candidate ${candidateId.slice(0, 8)}`;
+    return candidate?.parsed_fields?.full_name || candidate?.full_name || t("offers.shared.candidate_fallback", { id: candidateId.slice(0, 8) });
   };
+
+  const count = (s: string) => applications.filter((a) => a.status === s).length;
+  const stats = [
+    { emoji: "clipboard", value: count("bgv_cleared"), key: "offers.stat.ready", tone: "sky" as const },
+    { emoji: "envelope", value: count("offer_sent"), key: "offers.stat.sent", tone: "sun" as const },
+    { emoji: "writing_hand", value: count("onboarding_started"), key: "offers.stat.signed", tone: "ok" as const },
+    { emoji: "party", value: count("onboarding_completed"), key: "offers.stat.joined", tone: "brand" as const },
+  ];
 
   return (
     <Box>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h4">Offers & Onboarding</Typography>
-        <RefreshButton loading={refreshing} onRefresh={handleRefresh} />
-      </Stack>
+      <PageHeader
+        emoji="envelope"
+        title={t("offers.title")}
+        purpose={t("offers.purpose")}
+        tourKey="offers"
+        extra={<RefreshButton loading={refreshing} onRefresh={handleRefresh} label={t("offers.shared.refresh")} />}
+        primary={
+          canWrite ? (
+            <Button variant="contained" onClick={() => setEditorOpen(true)} startIcon={<Emoji name="memo" size={16} />}>
+              {t("offers.edit_template")}
+            </Button>
+          ) : undefined
+        }
+      />
+      {canWrite && <OfferTemplateEditor open={editorOpen} onClose={() => setEditorOpen(false)} />}
 
-      <Card variant="outlined" sx={{ mb: 3 }}>
-        <CardContent>
-          <TextField select label="Select Job" value={selectedJobId} onChange={(e) => handleJobChange(e.target.value)} fullWidth>
-            {jobs.length === 0 && <MenuItem disabled value="">No jobs available</MenuItem>}
-            {jobs.map((job) => (
-              <MenuItem key={job.id} value={job.id}>
-                {job.title}
-              </MenuItem>
-            ))}
-          </TextField>
-        </CardContent>
-      </Card>
+      <JobPickerCard jobs={jobs} value={selectedJobId} onChange={handleJobChange} hint={t("offers.pick_hint")} />
 
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
+        <Box sx={{ mb: 2 }}>
+          <FriendlyError compact what={error} fix={t("offers.error.fix")} onRetry={selectedJobId ? () => loadJobData(selectedJobId) : handleRefresh} />
+        </Box>
       )}
       {candidatesLoadFailed && (
         <Alert severity="warning" sx={{ mb: 2 }}>
-          Couldn't load candidate names — candidates below may show as raw IDs.
+          {t("offers.shared.names_failed")}
         </Alert>
       )}
       {docusignStatusLoadFailed && (
         <Alert severity="warning" sx={{ mb: 2 }}>
-          Couldn't verify your DocuSign connection status — the guidance shown below may be inaccurate.
+          {t("offers.esign.status_failed")}
         </Alert>
       )}
 
       {!selectedJobId ? (
-        <Typography color="text.secondary">Select a job to manage offers and onboarding.</Typography>
+        <Card>
+          <EmptyState illustration="job-offers" title={t("offers.empty.no_job")} hint={t("offers.empty.no_job_hint")} />
+        </Card>
       ) : loading ? (
-        <CircularProgress />
+        <Box sx={{ display: "grid", placeItems: "center", py: 6 }} role="status" aria-label={t("offers.shared.loading")}>
+          <CircularProgress />
+        </Box>
       ) : applications.length === 0 ? (
-        <Typography color="text.secondary">No applications in the offer/onboarding pipeline for this job.</Typography>
+        <Card>
+          <EmptyState illustration="empty" title={t("offers.empty.none")} hint={t("offers.empty.none_hint")} />
+        </Card>
       ) : (
-        <Stack spacing={2}>
-          {applications.map((app) => {
-            const offer = offers[app.id];
-            return (
-              <Card key={app.id} variant="outlined">
-                <CardContent>
-                  <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
-                    <Typography variant="h6">{candidateLabel(app.candidate_id)}</Typography>
-                    <StatusChip status={app.status} />
-                  </Stack>
+        <>
+          <Grid container spacing={2} sx={{ mb: 2.5 }}>
+            {stats.map((s) => (
+              <Grid key={s.key} size={{ xs: 6, md: 3 }}>
+                <StatTile emoji={s.emoji} value={s.value} label={t(s.key, { count: s.value })} tone={s.tone} />
+              </Grid>
+            ))}
+          </Grid>
+          <Stack spacing={2}>
+            {applications.map((app) => {
+              const offer = offers[app.id];
+              return (
+                <Card key={app.id} sx={{ p: 2.5 }}>
+                  <PersonHeader name={candidateLabel(app.candidate_id)} status={app.status} />
 
                   {app.status === "bgv_cleared" && (
                     <OfferGenerateForm
@@ -419,54 +479,42 @@ export default function OffersPage() {
                   )}
 
                   {offer && (
-                    <Box mt={2}>
-                      <Divider sx={{ mb: 1.5 }} />
-                      <Typography variant="body2" color="text.secondary">
-                        Signed: {offer.signed ? "yes" : "no"}
-                        {offer.docusign_envelope_id &&
-                          ` · Envelope: ${offer.docusign_envelope_id} (${offer.docusign_sender_id ? "DocuSign" : "manual"})`}
-                        {" · "}Onboarding: {offer.onboarding_status}
-                      </Typography>
-                      {offer.offer_letter_text && (
-                        <Box mt={1.5} p={1.5} bgcolor="action.hover" borderRadius={1}>
-                          <Typography variant="subtitle2" gutterBottom>
-                            Offer Letter
-                          </Typography>
-                          <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", fontFamily: "monospace" }}>
-                            {offer.offer_letter_text}
-                          </Typography>
-                        </Box>
-                      )}
-                    </Box>
+                    <Inset title={<><Emoji name="compass" size={16} /> {t("offers.tl.title")}</>}>
+                      <OfferTimeline
+                        applicationId={app.id}
+                        status={app.status}
+                        signed={offer.signed}
+                        reloadKey={`${app.status}:${offer.signed}:${offer.onboarding_status}`}
+                      />
+                      {offer.offer_letter_text && <OfferLetter text={offer.offer_letter_text} />}
+                    </Inset>
                   )}
 
                   {app.status === "offer_sent" && offer?.docusign_sender_id && (
-                    <CheckSigningStatusButton
-                      envelopeId={offer.docusign_envelope_id}
-                      onCheck={() => handleMarkSigned(app.id, null)}
-                    />
+                    <CheckSigningStatusButton onCheck={() => handleMarkSigned(app.id, null)} />
                   )}
                   {app.status === "offer_sent" && !offer?.docusign_sender_id && (
                     <MarkSignedForm onSubmit={(envelopeId) => handleMarkSigned(app.id, envelopeId)} />
                   )}
 
                   {canWrite && app.status === "onboarding_started" && (
-                    <Box mt={2}>
+                    <Stack direction="row" spacing={1.5} alignItems="center" mt={2} flexWrap="wrap" useFlexGap>
                       <Button
-                        size="small"
                         variant="contained"
                         onClick={() => handleCompleteOnboarding(app.id)}
                         disabled={actionId === app.id}
+                        startIcon={<Emoji name="party" size={16} />}
                       >
-                        {actionId === app.id ? "Completing..." : "Complete Onboarding"}
+                        {actionId === app.id ? t("offers.onboarding.completing") : t("offers.onboarding.complete")}
                       </Button>
-                    </Box>
+                      <Typography sx={{ fontSize: 13 }} color="text.secondary">{t("offers.onboarding.hint")}</Typography>
+                    </Stack>
                   )}
-                </CardContent>
-              </Card>
-            );
-          })}
-        </Stack>
+                </Card>
+              );
+            })}
+          </Stack>
+        </>
       )}
     </Box>
   );

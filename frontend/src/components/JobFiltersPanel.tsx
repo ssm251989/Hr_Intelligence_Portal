@@ -8,6 +8,8 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 import type { JobRoleRead } from "../api/types";
+import { useT } from "../i18n";
+import { statusStyle } from "../ui-kit";
 
 export interface JobFilters {
   status: string;
@@ -50,6 +52,7 @@ export default function JobFiltersPanel({
   filters: JobFilters;
   onChange: (filters: JobFilters) => void;
 }) {
+  const t = useT();
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
 
   const statuses = useMemo(() => distinctSorted(jobs.map((j) => j.status)), [jobs]);
@@ -59,11 +62,16 @@ export default function JobFiltersPanel({
   const activeCount = Object.values(filters).filter(Boolean).length;
 
   const set = (key: keyof JobFilters, value: string) => onChange({ ...filters, [key]: value });
+  const statusLabel = (status: string) => {
+    const key = `status.${status}`;
+    const translated = t(key);
+    return translated !== key ? translated : statusStyle(status).label;
+  };
 
   return (
     <>
-      <Button variant="outlined" startIcon={<FilterListIcon />} onClick={(e) => setAnchorEl(e.currentTarget)}>
-        Filters{activeCount > 0 ? ` (${activeCount})` : ""}
+      <Button variant="outlined" size="small" startIcon={<FilterListIcon />} onClick={(e) => setAnchorEl(e.currentTarget)} aria-haspopup="dialog">
+        {activeCount > 0 ? t("jobs.flt.button_n", { count: activeCount }) : t("jobs.flt.button")}
       </Button>
       <Popover
         open={Boolean(anchorEl)}
@@ -71,38 +79,26 @@ export default function JobFiltersPanel({
         onClose={() => setAnchorEl(null)}
         anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
       >
-        <Stack spacing={2} p={2} sx={{ width: 280 }}>
-          <Typography variant="subtitle2">Filter jobs</Typography>
-          <TextField select label="Status" size="small" value={filters.status} onChange={(e) => set("status", e.target.value)}>
-            <MenuItem value="">All</MenuItem>
+        <Stack spacing={2} p={2.5} sx={{ width: 300 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{t("jobs.flt.title")}</Typography>
+          <TextField select label={t("jobs.flt.status")} size="small" value={filters.status} onChange={(e) => set("status", e.target.value)}>
+            <MenuItem value="">{t("jobs.flt.all")}</MenuItem>
             {statuses.map((status) => (
               <MenuItem key={status} value={status}>
-                {status}
+                {statusLabel(status)}
               </MenuItem>
             ))}
           </TextField>
-          <TextField
-            select
-            label="Department"
-            size="small"
-            value={filters.department}
-            onChange={(e) => set("department", e.target.value)}
-          >
-            <MenuItem value="">All</MenuItem>
+          <TextField select label={t("jobs.flt.dept")} size="small" value={filters.department} onChange={(e) => set("department", e.target.value)}>
+            <MenuItem value="">{t("jobs.flt.all")}</MenuItem>
             {departments.map((dept) => (
               <MenuItem key={dept} value={dept}>
                 {dept}
               </MenuItem>
             ))}
           </TextField>
-          <TextField
-            select
-            label="Location"
-            size="small"
-            value={filters.location}
-            onChange={(e) => set("location", e.target.value)}
-          >
-            <MenuItem value="">All</MenuItem>
+          <TextField select label={t("jobs.flt.loc")} size="small" value={filters.location} onChange={(e) => set("location", e.target.value)}>
+            <MenuItem value="">{t("jobs.flt.all")}</MenuItem>
             {locations.map((loc) => (
               <MenuItem key={loc} value={loc}>
                 {loc}
@@ -110,27 +106,13 @@ export default function JobFiltersPanel({
             ))}
           </TextField>
           <Stack direction="row" spacing={1}>
-            <TextField
-              label="Created from"
-              type="date"
-              size="small"
-              value={filters.dateFrom}
-              onChange={(e) => set("dateFrom", e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              fullWidth
-            />
-            <TextField
-              label="Created to"
-              type="date"
-              size="small"
-              value={filters.dateTo}
-              onChange={(e) => set("dateTo", e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              fullWidth
-            />
+            <TextField label={t("jobs.flt.from")} type="date" size="small" value={filters.dateFrom} onChange={(e) => set("dateFrom", e.target.value)}
+              slotProps={{ inputLabel: { shrink: true } }} fullWidth />
+            <TextField label={t("jobs.flt.to")} type="date" size="small" value={filters.dateTo} onChange={(e) => set("dateTo", e.target.value)}
+              slotProps={{ inputLabel: { shrink: true } }} fullWidth />
           </Stack>
           <Button size="small" onClick={() => onChange(EMPTY_JOB_FILTERS)} disabled={activeCount === 0}>
-            Clear filters
+            {t("jobs.flt.clear")}
           </Button>
         </Stack>
       </Popover>

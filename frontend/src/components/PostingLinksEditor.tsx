@@ -7,9 +7,12 @@ import MuiLink from "@mui/material/Link";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import { useTheme } from "@mui/material/styles";
 
-import { extractErrorMessage, jobsApi } from "../api/client";
+import { jobsApi } from "../api/client";
 import type { JobRoleRead } from "../api/types";
+import { useT } from "../i18n";
+import { Emoji, explainError } from "../ui-kit";
 
 interface PlatformRowProps {
   label: string;
@@ -19,6 +22,8 @@ interface PlatformRowProps {
 }
 
 function PlatformRow({ label, url, canWrite, onSave }: PlatformRowProps) {
+  const t = useT();
+  const f = useTheme().palette.fresh;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(url || "");
   const [saving, setSaving] = useState(false);
@@ -31,7 +36,7 @@ function PlatformRow({ label, url, canWrite, onSave }: PlatformRowProps) {
       await onSave(draft.trim());
       setEditing(false);
     } catch (err) {
-      setError(extractErrorMessage(err, "Failed to save posting URL"));
+      setError(`${t("jobs.links.error")} ${explainError(err).fix}`);
     } finally {
       setSaving(false);
     }
@@ -39,21 +44,22 @@ function PlatformRow({ label, url, canWrite, onSave }: PlatformRowProps) {
 
   if (!editing) {
     return (
-      <Stack direction="row" spacing={0.5} alignItems="center">
-        <Typography variant="body2" color="text.secondary">
+      <Stack direction="row" spacing={0.75} alignItems="center">
+        <Emoji name="link" size={16} />
+        <Typography variant="body2" sx={{ color: f.muted }}>
           {label}:
         </Typography>
         {url ? (
           <MuiLink href={url} target="_blank" rel="noopener noreferrer" variant="body2">
-            view posting
+            {t("jobs.links.view")}
           </MuiLink>
         ) : (
-          <Typography variant="body2" color="text.secondary" fontStyle="italic">
-            not posted yet
+          <Typography variant="body2" sx={{ color: f.muted, fontStyle: "italic" }}>
+            {t("jobs.links.none")}
           </Typography>
         )}
         {canWrite && (
-          <IconButton size="small" onClick={() => setEditing(true)} aria-label={`Edit ${label} posting URL`}>
+          <IconButton size="small" onClick={() => setEditing(true)} aria-label={`Edit ${label} posting URL`} title={t("jobs.links.edit", { platform: label })}>
             <EditOutlinedIcon fontSize="inherit" />
           </IconButton>
         )}
@@ -64,19 +70,13 @@ function PlatformRow({ label, url, canWrite, onSave }: PlatformRowProps) {
   return (
     <Stack spacing={0.5}>
       <Stack direction="row" spacing={1} alignItems="center">
-        <TextField
-          size="small"
-          label={`${label} posting URL`}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          fullWidth
-        />
-        <IconButton size="small" onClick={handleSave} disabled={saving} aria-label="Save">
+        <TextField size="small" label={t("jobs.links.label", { platform: label })} value={draft} onChange={(e) => setDraft(e.target.value)} fullWidth />
+        <IconButton size="small" onClick={handleSave} disabled={saving} aria-label={t("jobs.links.save")}>
           <CheckIcon fontSize="inherit" />
         </IconButton>
       </Stack>
       {error && (
-        <Typography variant="caption" color="error">
+        <Typography variant="caption" role="alert" sx={{ color: f.coral }}>
           {error}
         </Typography>
       )}
@@ -107,20 +107,10 @@ export default function PostingLinksEditor({
     <Box mt={1}>
       <Stack spacing={0.5}>
         {platforms.naukri && (
-          <PlatformRow
-            label="Naukri.com"
-            url={job.posting_url_naukri}
-            canWrite={canWrite}
-            onSave={(url) => save("posting_url_naukri", url)}
-          />
+          <PlatformRow label="Naukri.com" url={job.posting_url_naukri} canWrite={canWrite} onSave={(url) => save("posting_url_naukri", url)} />
         )}
         {platforms.linkedin && (
-          <PlatformRow
-            label="LinkedIn"
-            url={job.posting_url_linkedin}
-            canWrite={canWrite}
-            onSave={(url) => save("posting_url_linkedin", url)}
-          />
+          <PlatformRow label="LinkedIn" url={job.posting_url_linkedin} canWrite={canWrite} onSave={(url) => save("posting_url_linkedin", url)} />
         )}
       </Stack>
     </Box>

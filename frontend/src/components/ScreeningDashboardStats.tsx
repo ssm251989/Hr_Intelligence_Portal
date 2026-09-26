@@ -1,10 +1,4 @@
 import { useEffect, useState } from "react";
-import ErrorOutlineOutlinedIcon from "@mui/icons-material/ErrorOutlineOutlined";
-import LeaderboardOutlinedIcon from "@mui/icons-material/LeaderboardOutlined";
-import PendingActionsOutlinedIcon from "@mui/icons-material/PendingActionsOutlined";
-import SpeedOutlinedIcon from "@mui/icons-material/SpeedOutlined";
-import TrendingUpOutlinedIcon from "@mui/icons-material/TrendingUpOutlined";
-import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
@@ -17,27 +11,28 @@ import Skeleton from "@mui/material/Skeleton";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
-import { extractErrorMessage, reportsApi } from "../api/client";
+import { reportsApi } from "../api/client";
 import type { ScreeningDashboardStatsResponse } from "../api/types";
+import { useT } from "../i18n";
+import { EmptyState, FriendlyError, StatTile } from "../ui-kit";
 import { formatMonthKey, pastMonthKeys } from "../utils/datetime";
 import LabeledDonutChart from "./LabeledDonutChart";
 import MatchScoreDistributionChart from "./MatchScoreDistributionChart";
-import StatCard, { StatCardSkeleton } from "./StatCard";
 import TopSkillsBarChart from "./TopSkillsBarChart";
+import { trendProps } from "./screening/trend";
 
 const LAST_MONTH_SENTINEL = "last_month";
-const COMPARE_OPTIONS = [
-  { value: LAST_MONTH_SENTINEL, label: "vs last month" },
-  ...pastMonthKeys(12).map((key) => ({ value: key, label: `vs ${formatMonthKey(key)}` })),
-];
 
-// Same 5-color palette as CandidatesDashboardStats -- one visual language across every
-// dashboard in the app, not a per-module color scheme.
-const BLUE = "#2a78d6";
-const ORANGE = "#eb6834";
-const AQUA = "#1baf7a";
-const YELLOW = "#eda100";
-const MAGENTA = "#e87ba4";
+function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <Card sx={{ height: "100%" }}>
+      <CardContent>
+        <Typography variant="h6" mb={2}>{title}</Typography>
+        {children}
+      </CardContent>
+    </Card>
+  );
+}
 
 // onLoadingChange is optional -- purely so the page's own RefreshButton can show an
 // accurate in-flight spinner for this fetch; nothing here changes because of it.
@@ -48,10 +43,17 @@ export default function ScreeningDashboardStats({
   refreshSignal?: number;
   onLoadingChange?: (loading: boolean) => void;
 }) {
+  const t = useT();
   const [stats, setStats] = useState<ScreeningDashboardStatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [compareMonth, setCompareMonth] = useState(LAST_MONTH_SENTINEL);
+  const [retryKey, setRetryKey] = useState(0);
+
+  const compareOptions = [
+    { value: LAST_MONTH_SENTINEL, label: t("screening.compare.last_month") },
+    ...pastMonthKeys(12).map((key) => ({ value: key, label: t("screening.compare.vs", { month: formatMonthKey(key) }) })),
+  ];
 
   useEffect(() => {
     setLoading(true);
@@ -60,38 +62,30 @@ export default function ScreeningDashboardStats({
     reportsApi
       .screeningDashboardStats(compareMonth === LAST_MONTH_SENTINEL ? undefined : compareMonth)
       .then(setStats)
-      .catch((err) => setError(extractErrorMessage(err, "Failed to load screening dashboard")))
+      .catch(setError)
       .finally(() => {
         setLoading(false);
         onLoadingChange?.(false);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshSignal, compareMonth]);
+  }, [refreshSignal, compareMonth, retryKey]);
 
   const handleCompareMonthChange = (event: SelectChangeEvent) => setCompareMonth(event.target.value);
 
   if (loading) {
     return (
       <Box mb={4}>
-        <Stack direction="row" justifyContent="flex-end" mb={1.5}>
-          <Skeleton variant="rounded" width={200} height={40} />
-        </Stack>
         <Grid container spacing={2} mb={3}>
           {Array.from({ length: 5 }).map((_, i) => (
             <Grid key={i} size={{ xs: 12, sm: 6, md: 2.4 }}>
-              <StatCardSkeleton variant="compact" />
+              <Skeleton variant="rounded" height={150} sx={{ borderRadius: "18px" }} />
             </Grid>
           ))}
         </Grid>
         <Grid container spacing={3}>
           {Array.from({ length: 3 }).map((_, i) => (
             <Grid key={i} size={{ xs: 12, md: 4 }}>
-              <Card variant="outlined" sx={{ height: "100%" }}>
-                <CardContent>
-                  <Skeleton variant="text" width="50%" height={32} sx={{ mb: 2 }} />
-                  <Skeleton variant="rounded" height={140} />
-                </CardContent>
-              </Card>
+              <Skeleton variant="rounded" height={240} sx={{ borderRadius: "18px" }} />
             </Grid>
           ))}
         </Grid>
@@ -99,30 +93,28 @@ export default function ScreeningDashboardStats({
     );
   }
 
-  if (error) {
-    return (
-      <Alert severity="error" sx={{ mb: 3 }}>
-        {error}
-      </Alert>
-    );
+  if (error != null) {
+    return <Box mb={3}><FriendlyError error={error} onRetry={() => setRetryKey((k) => k + 1)} /></Box>;
   }
 
   if (!stats) {
     return null;
   }
 
+  const avg = stats.avg_composite_score != null ? t("screening.points", { n: Math.round(stats.avg_composite_score) }) : "—";
+
   return (
     <Box mb={3}>
       <Stack direction="row" justifyContent="flex-end" mb={1.5}>
         <FormControl size="small" sx={{ minWidth: 200 }}>
-          <InputLabel id="screening-dashboard-compare-month-label">Compare</InputLabel>
+          <InputLabel id="screening-dashboard-compare-month-label">{t("screening.compare.label")}</InputLabel>
           <Select
             labelId="screening-dashboard-compare-month-label"
-            label="Compare"
+            label={t("screening.compare.label")}
             value={compareMonth}
             onChange={handleCompareMonthChange}
           >
-            {COMPARE_OPTIONS.map((option) => (
+            {compareOptions.map((option) => (
               <MenuItem key={option.value} value={option.value}>
                 {option.label}
               </MenuItem>
@@ -133,83 +125,45 @@ export default function ScreeningDashboardStats({
 
       <Grid container spacing={2} mb={3}>
         <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
-          <StatCard
-            variant="compact"
-            label="Awaiting Screening"
-            value={stats.awaiting_screening}
-            icon={PendingActionsOutlinedIcon}
-            color={BLUE}
-          />
+          <StatTile emoji="hourglass" tone="sky" value={stats.awaiting_screening} label={t("screening.stat.awaiting_screening")} to="/screening/list" />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
-          <StatCard
-            variant="compact"
-            label="Awaiting Ranking"
-            value={stats.awaiting_ranking}
-            icon={LeaderboardOutlinedIcon}
-            color={ORANGE}
-          />
+          <StatTile emoji="bar_chart" tone="sun" value={stats.awaiting_ranking} label={t("screening.stat.awaiting_ranking")} to="/screening/list" />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
-          <StatCard
-            variant="compact"
-            label="Auto-Advanced This Month"
-            value={stats.auto_advanced_this_month}
-            icon={TrendingUpOutlinedIcon}
-            color={AQUA}
-            trend={stats.auto_advanced_this_month_trend}
-          />
+          <StatTile emoji="rocket" tone="ok" value={stats.auto_advanced_this_month} label={t("screening.stat.auto_advanced")} {...trendProps(stats.auto_advanced_this_month_trend, t)} />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
-          <StatCard
-            variant="compact"
-            label="Failed This Month"
-            value={stats.failed_this_month}
-            icon={ErrorOutlineOutlinedIcon}
-            color={YELLOW}
-            trend={stats.failed_this_month_trend}
-            higherIsBetter={false}
-          />
+          <StatTile emoji="warning" tone="coral" value={stats.failed_this_month} label={t("screening.stat.failed")} {...trendProps(stats.failed_this_month_trend, t, false)} />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
-          <StatCard
-            variant="compact"
-            label="Avg Composite Score"
-            value={stats.avg_composite_score != null ? `${Math.round(stats.avg_composite_score)}%` : "—"}
-            icon={SpeedOutlinedIcon}
-            color={MAGENTA}
-            trend={stats.avg_composite_score_trend}
-          />
+          <StatTile emoji="target" tone="brand" value={avg} label={t("screening.stat.avg_score")} {...trendProps(stats.avg_composite_score_trend, t)} />
         </Grid>
       </Grid>
 
       <Grid container spacing={3}>
         <Grid size={{ xs: 12, md: 4 }}>
-          <Card variant="outlined" sx={{ height: "100%" }}>
-            <CardContent>
-              <LabeledDonutChart title="Recommendation Breakdown" rows={stats.recommendation_breakdown} />
-            </CardContent>
-          </Card>
+          <ChartCard title={t("screening.chart.recommendation")}>
+            {stats.recommendation_breakdown.length === 0 ? (
+              <EmptyState compact illustration="no-data" title={t("screening.chart.empty")} />
+            ) : (
+              <LabeledDonutChart title="" rows={stats.recommendation_breakdown} />
+            )}
+          </ChartCard>
         </Grid>
         <Grid size={{ xs: 12, md: 4 }}>
-          <Card variant="outlined" sx={{ height: "100%" }}>
-            <CardContent>
-              <Typography variant="h6" mb={2}>
-                Composite Score Distribution
-              </Typography>
-              <MatchScoreDistributionChart rows={stats.composite_score_distribution} />
-            </CardContent>
-          </Card>
+          <ChartCard title={t("screening.chart.distribution")}>
+            <MatchScoreDistributionChart rows={stats.composite_score_distribution} />
+          </ChartCard>
         </Grid>
         <Grid size={{ xs: 12, md: 4 }}>
-          <Card variant="outlined" sx={{ height: "100%" }}>
-            <CardContent>
-              <Typography variant="h6" mb={2}>
-                Top Missing Skills
-              </Typography>
+          <ChartCard title={t("screening.chart.missing_skills")}>
+            {stats.top_missing_skills.length === 0 ? (
+              <EmptyState compact illustration="done" title={t("screening.chart.no_missing")} />
+            ) : (
               <TopSkillsBarChart rows={stats.top_missing_skills} />
-            </CardContent>
-          </Card>
+            )}
+          </ChartCard>
         </Grid>
       </Grid>
     </Box>

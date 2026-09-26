@@ -5,8 +5,11 @@ import { CircleMarker, MapContainer, TileLayer, Tooltip as LeafletTooltip, useMa
 import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import { useTheme } from "@mui/material/styles";
 
 import type { LabeledCount } from "../api/types";
+import { useT } from "../i18n";
+import { EmptyState } from "../ui-kit";
 
 // India's approximate bounding box -- keeps the map (and the user's panning/zooming)
 // scoped to the one country this app's data lives in, per the India-only lookup table
@@ -121,10 +124,8 @@ const CITY_COORDINATES: Record<string, [number, number]> = {
   panaji: [15.4909, 73.8278],
 };
 
-// Categorical slot 7 (violet) -- deliberately distinct from the blue used for the
-// donut/legend's first slot, since bubble size (not color) is what carries meaning here;
-// a single consistent accent for every bubble keeps size comparisons the only variable.
-const BUBBLE_VIOLET = "#4a3aa7";
+// One consistent accent for every bubble (the theme's sky token, so it follows the
+// company's palette and dark mode) -- bubble size, not colour, carries the meaning here.
 
 // Radius still scales with a location's share of the busiest location's count, but the
 // min/max band is deliberately tight (was 8-24px) -- a high-count city's bubble should
@@ -138,6 +139,8 @@ function resolveCoordinates(location: string): [number, number] | null {
 }
 
 export default function JobsLocationMap({ rows }: { rows: LabeledCount[] }) {
+  const t = useT();
+  const bubble = useTheme().palette.fresh.sky;
   const resolved = rows
     .map((row) => ({ ...row, coords: resolveCoordinates(row.label) }))
     .filter((row): row is LabeledCount & { coords: [number, number] } => row.coords !== null);
@@ -146,15 +149,13 @@ export default function JobsLocationMap({ rows }: { rows: LabeledCount[] }) {
 
   if (rows.length === 0) {
     return (
-      <Typography color="text.secondary" variant="body2">
-        No jobs yet.
-      </Typography>
+      <EmptyState compact illustration="map" title={t("jobs.map.empty")} />
     );
   }
 
   return (
     <Box>
-      <Box sx={{ height: 280, borderRadius: 1, overflow: "hidden" }}>
+      <Box sx={{ height: 280, borderRadius: "12px", overflow: "hidden" }}>
         <MapContainer
           center={[22.5, 80]}
           zoom={5}
@@ -174,10 +175,10 @@ export default function JobsLocationMap({ rows }: { rows: LabeledCount[] }) {
               key={row.label}
               center={row.coords}
               radius={MIN_MARKER_RADIUS + (row.count / maxCount) * (MAX_MARKER_RADIUS - MIN_MARKER_RADIUS)}
-              pathOptions={{ color: BUBBLE_VIOLET, fillColor: BUBBLE_VIOLET, fillOpacity: 0.4, weight: 1.5 }}
+              pathOptions={{ color: bubble, fillColor: bubble, fillOpacity: 0.4, weight: 1.5 }}
             >
               <LeafletTooltip>
-                {row.label}: {row.count} {row.count === 1 ? "job" : "jobs"}
+                {t("jobs.map.tip", { place: row.label, count: row.count })}
               </LeafletTooltip>
             </CircleMarker>
           ))}
@@ -186,7 +187,7 @@ export default function JobsLocationMap({ rows }: { rows: LabeledCount[] }) {
       {unresolved.length > 0 && (
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap mt={1}>
           <Typography variant="caption" color="text.secondary">
-            Not shown on map (unrecognized location):
+            {t("jobs.map.unknown")}
           </Typography>
           {unresolved.map((row) => (
             <Typography key={row.label} variant="caption" color="text.secondary">

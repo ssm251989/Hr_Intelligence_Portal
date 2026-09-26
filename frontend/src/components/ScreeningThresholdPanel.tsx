@@ -7,37 +7,41 @@ import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import Skeleton from "@mui/material/Skeleton";
 import Stack from "@mui/material/Stack";
-import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
-import { extractErrorMessage, screeningApi } from "../api/client";
+import { screeningApi } from "../api/client";
 import type { ReEvaluateAllResult } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
+import { useT } from "../i18n";
+import { Emoji, FriendlyError } from "../ui-kit";
 import ConfirmDialog from "./ConfirmDialog";
+import { useScoreCounts } from "./screening/hooks";
+import ThresholdSlider from "./screening/ThresholdSlider";
 
 // Part D: the Candidates Dashboard's configurable auto-advance-to-'screened' threshold
-// (app/models/screening_settings.py's singleton row) plus its bulk "Re-evaluate All"
-// action. Saving the threshold here takes effect immediately for every future screening
-// call -- new uploads and the manual Screen button alike, since run_screening always
-// reads the current settings row rather than a value cached at some earlier point.
-// Re-evaluate All is the only way to apply a changed threshold to *existing* candidates.
+// plus its bulk "Re-evaluate All" action. Saving the threshold takes effect immediately for
+// every future screening call; Re-evaluate All is the only way to apply a changed threshold
+// to *existing* candidates. Part 15.4: range slider with a live pass count (S4).
 export default function ScreeningThresholdPanel() {
+  const t = useT();
   const { can } = useAuth();
   const canManage = can(ROLE_MATRIX.screeningDecisions);
 
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [minScore, setMinScore] = useState("");
-  const [maxScore, setMaxScore] = useState("");
+  const [loadError, setLoadError] = useState<unknown>(null);
+  const [range, setRange] = useState<[number, number]>([60, 100]);
+  const [savedRange, setSavedRange] = useState<[number, number]>([60, 100]);
   const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<unknown>(null);
   const [saved, setSaved] = useState(false);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [reEvaluating, setReEvaluating] = useState(false);
   const [reEvalResult, setReEvalResult] = useState<ReEvaluateAllResult | null>(null);
-  const [reEvalError, setReEvalError] = useState<string | null>(null);
+  const [reEvalError, setReEvalError] = useState<unknown>(null);
+  const [countsKey, setCountsKey] = useState(0);
+  const counts = useScoreCounts({ scope: "screening" }, countsKey);
 
   useEffect(() => {
     setLoading(true);
@@ -45,23 +49,17 @@ export default function ScreeningThresholdPanel() {
     screeningApi
       .getSettings()
       .then((settings) => {
-        setMinScore(String(settings.dashboard_min_score));
-        setMaxScore(String(settings.dashboard_max_score));
+        const next: [number, number] = [Number(settings.dashboard_min_score), Number(settings.dashboard_max_score)];
+        setRange(next);
+        setSavedRange(next);
       })
-      .catch((err) => setLoadError(extractErrorMessage(err, "Failed to load screening settings")))
+      .catch(setLoadError)
       .finally(() => setLoading(false));
   }, []);
 
-  const minNum = Number(minScore);
-  const maxNum = Number(maxScore);
-  const valid =
-    minScore !== "" &&
-    maxScore !== "" &&
-    !Number.isNaN(minNum) &&
-    !Number.isNaN(maxNum) &&
-    minNum >= 0 &&
-    maxNum <= 100 &&
-    minNum <= maxNum;
+  const [minNum, maxNum] = range;
+  const valid = minNum >= 0 && maxNum <= 100 && minNum <= maxNum;
+  const dirty = minNum !== savedRange[0] || maxNum !== savedRange[1];
 
   const handleSave = () => {
     if (!valid) return;
@@ -70,8 +68,11 @@ export default function ScreeningThresholdPanel() {
     setSaved(false);
     screeningApi
       .updateSettings({ dashboard_min_score: minNum, dashboard_max_score: maxNum })
-      .then(() => setSaved(true))
-      .catch((err) => setSaveError(extractErrorMessage(err, "Failed to save screening settings")))
+      .then(() => {
+        setSaved(true);
+        setSavedRange(range);
+      })
+      .catch(setSaveError)
       .finally(() => setSaving(false));
   };
 
@@ -82,14 +83,17 @@ export default function ScreeningThresholdPanel() {
     setReEvalResult(null);
     screeningApi
       .reEvaluateAll()
-      .then(setReEvalResult)
-      .catch((err) => setReEvalError(extractErrorMessage(err, "Failed to re-evaluate candidates")))
+      .then((result) => {
+        setReEvalResult(result);
+        setCountsKey((k) => k + 1);
+      })
+      .catch(setReEvalError)
       .finally(() => setReEvaluating(false));
   };
 
   if (loading) {
     return (
-      <Card variant="outlined" sx={{ mb: 3 }}>
+      <Card sx={{ mb: 3 }}>
         <CardContent>
           <Skeleton variant="text" width="40%" height={32} sx={{ mb: 2 }} />
           <Skeleton variant="rounded" height={56} />
@@ -99,94 +103,72 @@ export default function ScreeningThresholdPanel() {
   }
 
   return (
-    <Card variant="outlined" sx={{ mb: 3 }}>
+    <Card sx={{ mb: 3 }}>
       <CardContent>
-        <Box mb={2}>
-          <Typography variant="h6">Auto-Screening Threshold</Typography>
-          <Typography variant="body2" color="text.secondary">
-            Applications scoring at or above the minimum automatically advance to "Screened." Changes apply to new
-            uploads right away -- use Re-evaluate All to apply the new threshold to existing candidates too.
-          </Typography>
-        </Box>
+        <Stack direction="row" spacing={1.25} alignItems="center" mb={0.5}>
+          <Emoji name="magnifier" size={22} />
+          <Typography variant="h6">{t("screening.auto.title")}</Typography>
+        </Stack>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2, maxWidth: "80ch" }}>
+          {t("screening.auto.intro")}
+        </Typography>
 
-        {loadError && <Alert severity="error" sx={{ mb: 2 }}>{loadError}</Alert>}
-        {saveError && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setSaveError(null)}>{saveError}</Alert>}
+        {loadError != null && <Box mb={2}><FriendlyError error={loadError} compact /></Box>}
+        {saveError != null && <Box mb={2}><FriendlyError error={saveError} compact onRetry={handleSave} /></Box>}
         {saved && (
           <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSaved(false)}>
-            Threshold saved.
+            {t("screening.threshold.saved")}
           </Alert>
         )}
-        {reEvalError && (
-          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setReEvalError(null)}>
-            {reEvalError}
-          </Alert>
-        )}
+        {reEvalError != null && <Box mb={2}><FriendlyError error={reEvalError} compact onRetry={handleReEvaluateAll} /></Box>}
         {reEvalResult && (
           <Alert severity="success" sx={{ mb: 2 }} onClose={() => setReEvalResult(null)}>
-            Re-evaluated {reEvalResult.updated} of {reEvalResult.considered} eligible application
-            {reEvalResult.considered === 1 ? "" : "s"} -- {reEvalResult.advanced_to_screened} newly advanced to
-            Screened. Skipped {reEvalResult.skipped_already_decided} candidate
-            {reEvalResult.skipped_already_decided === 1 ? "" : "s"} already past a decision (or on hold).
-            {reEvalResult.failed > 0 ? ` ${reEvalResult.failed} couldn't be re-screened and were left untouched.` : ""}
+            {t("screening.auto.result", {
+              updated: reEvalResult.updated,
+              count: reEvalResult.considered,
+              advanced: reEvalResult.advanced_to_screened,
+              skipped: reEvalResult.skipped_already_decided,
+            })}
+            {reEvalResult.failed > 0 ? ` ${t("screening.auto.result_failed", { count: reEvalResult.failed })}` : ""}
           </Alert>
         )}
 
-        <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
-          <TextField
-            label="Min score"
-            type="number"
-            size="small"
-            value={minScore}
-            onChange={(e) => {
-              setMinScore(e.target.value);
-              setSaved(false);
-            }}
-            slotProps={{ htmlInput: { min: 0, max: 100 } }}
-            sx={{ width: 120 }}
-            disabled={!canManage}
-          />
-          <TextField
-            label="Max score"
-            type="number"
-            size="small"
-            value={maxScore}
-            onChange={(e) => {
-              setMaxScore(e.target.value);
-              setSaved(false);
-            }}
-            slotProps={{ htmlInput: { min: 0, max: 100 } }}
-            sx={{ width: 120 }}
-            disabled={!canManage}
-          />
-          {canManage && (
-            <Button variant="contained" onClick={handleSave} disabled={!valid || saving}>
-              {saving ? "Saving..." : "Save"}
-            </Button>
-          )}
-          {canManage && (
+        <ThresholdSlider
+          id="auto-screen"
+          value={range}
+          onChange={(next) => {
+            setRange(next);
+            setSaved(false);
+          }}
+          counts={counts?.counts}
+          label={t("screening.auto.slider")}
+          info={t("screening.auto.info")}
+          disabled={!canManage}
+        />
+        {canManage && (
+          <Stack direction="row" spacing={1} justifyContent="flex-end" mt={1.5} flexWrap="wrap" useFlexGap>
             <Button
               variant="outlined"
               startIcon={<RefreshOutlinedIcon />}
               onClick={() => setConfirmOpen(true)}
               disabled={reEvaluating}
-              sx={{ ml: { sm: "auto" } }}
+              sx={{ mr: { sm: "auto" } }}
             >
-              {reEvaluating ? "Re-evaluating..." : "Re-evaluate All"}
+              {reEvaluating ? t("screening.auto.rechecking") : t("screening.auto.recheck")}
             </Button>
-          )}
-        </Stack>
-        {!valid && (
-          <Typography variant="caption" color="error" sx={{ display: "block", mt: 1 }}>
-            Both scores must be between 0 and 100, and Min score can't be greater than Max score.
-          </Typography>
+            {dirty && <Button onClick={() => setRange(savedRange)} disabled={saving}>{t("screening.threshold.reset")}</Button>}
+            <Button variant="contained" onClick={handleSave} disabled={!valid || saving || !dirty}>
+              {saving ? t("screening.saving") : t("screening.threshold.save")}
+            </Button>
+          </Stack>
         )}
       </CardContent>
 
       <ConfirmDialog
         open={confirmOpen}
-        title="Re-evaluate all candidates?"
-        message="Re-runs screening against the current threshold for every application still awaiting a decision (status Received or Screened). Candidates already past that stage, or on hold, are left completely untouched -- this never overwrites a human decision."
-        confirmLabel="Re-evaluate All"
+        title={t("screening.auto.confirm_title")}
+        message={t("screening.auto.confirm_body")}
+        confirmLabel={t("screening.auto.recheck")}
         confirming={reEvaluating}
         destructive={false}
         onConfirm={handleReEvaluateAll}

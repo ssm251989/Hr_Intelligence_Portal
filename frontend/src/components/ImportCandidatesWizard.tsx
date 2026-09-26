@@ -23,13 +23,24 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import Button from "@mui/material/Button";
+import LinearProgress from "@mui/material/LinearProgress";
 
 import { candidatesApi, extractErrorMessage, localImportApi } from "../api/client";
 import { candidateSourceLabel, CONNECTED_CANDIDATE_SOURCES, type CandidateSource } from "../api/types";
 import type { LocalImportSettingsSaveResult } from "../api/types";
 import { CANDIDATE_SOURCE_COLOR, CANDIDATE_SOURCE_ICON } from "../utils/candidateSourceIcons";
+import { useT } from "../i18n";
+import Emoji from "../ui-kit/Emoji";
+import { useFresh } from "./candidates/stages";
 
 const STEPS = ["Select Source", "Configure", "Import & Review", "Complete"];
+// Part 15.4 page look (StepForm style): one emoji + translated title per step.
+const STEP_META = [
+  { emoji: "compass", key: "candidates.import.step_source" },
+  { emoji: "gear", key: "candidates.import.step_configure" },
+  { emoji: "eyes", key: "candidates.import.step_review" },
+  { emoji: "party", key: "candidates.import.step_done" },
+];
 
 // "manual" is the existing single-resume-upload flow elsewhere in the app, not a bulk
 // import source -- excluded here on purpose. Icon/color for the five named platforms come
@@ -54,9 +65,13 @@ interface Props {
   onClose: () => void;
   onImported: () => void;
   initialSource?: CandidateSource | null;
+  /** "page" renders in place on the Import page (step-form look); default stays a dialog. */
+  variant?: "dialog" | "page";
 }
 
-export default function ImportCandidatesWizard({ open, onClose, onImported, initialSource }: Props) {
+export default function ImportCandidatesWizard({ open, onClose, onImported, initialSource, variant = "dialog" }: Props) {
+  const t = useT();
+  const f = useFresh();
   const [activeStep, setActiveStep] = useState(0);
   const [selectedSource, setSelectedSource] = useState<CandidateSource | "">("");
   const [careerPortalCount, setCareerPortalCount] = useState<number | null>(null);
@@ -182,8 +197,9 @@ export default function ImportCandidatesWizard({ open, onClose, onImported, init
               // the grid layout.
               sx={{
                 border: "2px solid",
-                borderColor: isSelected ? "primary.main" : "divider",
-                bgcolor: isSelected ? "action.selected" : "transparent",
+                borderColor: isSelected ? f.brand : f.line,
+                bgcolor: isSelected ? f.brandSoft : f.surface,
+                boxShadow: "none",
                 height: "100%",
                 transition: "border-color 120ms ease, background-color 120ms ease",
               }}
@@ -392,6 +408,64 @@ export default function ImportCandidatesWizard({ open, onClose, onImported, init
     handleClose();
   };
 
+  const actions = isLastStep ? (
+    <Button variant="contained" onClick={handleDone}>
+      {t("action.done")}
+    </Button>
+  ) : (
+    <>
+      <Button onClick={handleClose}>{t("action.cancel")}</Button>
+      <Button onClick={handleBack} disabled={activeStep === 0 || savingLocalImportSettings}>
+        {t("action.back")}
+      </Button>
+      <Button variant="contained" onClick={handleNext} disabled={savingLocalImportSettings}>
+        {savingLocalImportSettings ? t("candidates.saving") : t("action.next")}
+      </Button>
+    </>
+  );
+
+  if (variant === "page") {
+    const pct = Math.round(((activeStep + 1) / STEPS.length) * 100);
+    return (
+      <Card sx={{ p: { xs: 2, sm: 3 } }}>
+        <Typography sx={{ fontWeight: 700, mb: 1 }}>
+          {t("candidates.import.step_of", { step: activeStep + 1, count: STEPS.length })}
+        </Typography>
+        <LinearProgress variant="determinate" value={pct} aria-label={t("candidates.import.progress", { pct })} />
+        <Stack direction="row" spacing={1} sx={{ mt: 2, flexWrap: "wrap", rowGap: 1 }} role="list" aria-label={t("candidates.import.steps")}>
+          {STEP_META.map((meta, i) => (
+            <Box
+              key={meta.key}
+              role="listitem"
+              aria-current={i === activeStep ? "step" : undefined}
+              sx={{
+                display: "inline-flex", alignItems: "center", gap: 0.75, px: 1.25, py: 0.5, borderRadius: 999, fontSize: 12, fontWeight: 700,
+                bgcolor: i === activeStep ? f.brandSoft : i < activeStep ? f.okSoft : f.surface2,
+                color: i === activeStep ? f.brand : i < activeStep ? f.ok : f.muted,
+              }}
+            >
+              <Emoji name={i < activeStep ? "check" : meta.emoji} size={14} />
+              {t(meta.key)}
+            </Box>
+          ))}
+        </Stack>
+        <Box sx={{ mt: 3 }}>
+          <Typography variant="h5" component="h2">{t(STEP_META[activeStep].key)}</Typography>
+          <Typography sx={{ color: f.muted, mt: 0.5 }}>{t(`${STEP_META[activeStep].key}_hint`)}</Typography>
+        </Box>
+        {stepError && (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            {stepError}
+          </Alert>
+        )}
+        <Box>{renderStep()}</Box>
+        <Stack direction="row" spacing={1} justifyContent="flex-end" sx={{ mt: 3 }}>
+          {actions}
+        </Stack>
+      </Card>
+    );
+  }
+
   return (
     <Dialog open={open} onClose={handleClose} fullWidth maxWidth="md">
       <DialogTitle>Import from Source</DialogTitle>
@@ -412,23 +486,7 @@ export default function ImportCandidatesWizard({ open, onClose, onImported, init
 
         <Box>{renderStep()}</Box>
       </DialogContent>
-      <DialogActions>
-        {isLastStep ? (
-          <Button variant="contained" onClick={handleDone}>
-            Done
-          </Button>
-        ) : (
-          <>
-            <Button onClick={handleClose}>Cancel</Button>
-            <Button onClick={handleBack} disabled={activeStep === 0 || savingLocalImportSettings}>
-              Back
-            </Button>
-            <Button variant="contained" onClick={handleNext} disabled={savingLocalImportSettings}>
-              {savingLocalImportSettings ? "Saving..." : "Next"}
-            </Button>
-          </>
-        )}
-      </DialogActions>
+      <DialogActions>{actions}</DialogActions>
     </Dialog>
   );
 }

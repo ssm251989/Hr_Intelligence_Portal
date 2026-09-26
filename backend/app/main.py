@@ -161,6 +161,24 @@ app.include_router(experience_router)
 from app.experience.media_router import router as media_router  # noqa: E402
 
 app.include_router(media_router)
+from app.experience.ui_offers_router import router as ui_offers_router  # noqa: E402
+
+app.include_router(ui_offers_router)
+from app.experience.ui_interviews_router import router as ui_interviews_router  # noqa: E402
+
+app.include_router(ui_interviews_router)
+from app.experience.ui_jobs_router import router as ui_jobs_router  # noqa: E402
+
+app.include_router(ui_jobs_router)
+from app.experience.ui_candidates_router import router as ui_candidates_router  # noqa: E402
+
+app.include_router(ui_candidates_router)
+from app.experience.ui_screening_router import router as ui_screening_router  # noqa: E402
+
+app.include_router(ui_screening_router)
+from app.experience.ui_careers_router import router as ui_careers_router  # noqa: E402
+
+app.include_router(ui_careers_router)
 install_friendly_errors(app)
 
 

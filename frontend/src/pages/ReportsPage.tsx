@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
-import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
-import CardContent from "@mui/material/CardContent";
-import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
+import GlobalStyles from "@mui/material/GlobalStyles";
+import Grid from "@mui/material/Grid";
 import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
 import Tab from "@mui/material/Tab";
@@ -18,59 +17,37 @@ import TableRow from "@mui/material/TableRow";
 import Tabs from "@mui/material/Tabs";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import { useTheme } from "@mui/material/styles";
 
-import { extractErrorMessage, jobsApi, reportsApi } from "../api/client";
+import { jobsApi, reportsApi } from "../api/client";
 import type { AuditLogPage, ApplicationTimelineResponse, JobRoleRead, JobSummaryResponse, PipelineResponse } from "../api/types";
 import AnalyticsPanel from "../components/AnalyticsPanel";
 import RefreshButton from "../components/RefreshButton";
+import ExportBar from "../components/reports/ExportBar";
+import SavedReportsCard from "../components/reports/SavedReportsCard";
+import StatusBreakdown from "../components/reports/StatusBreakdown";
+import { downloadCsv, fileSlug } from "../components/reports/reportExport";
+import { useT } from "../i18n";
+import { EmptyState, Emoji, FriendlyError, InfoTip, PageHeader, StatTile, Timeline, humanise } from "../ui-kit";
 
 const AUDIT_PAGE_SIZE = 20;
 
-function StatusBarTable({ total, byStatus }: { total: number; byStatus: { status: string; count: number }[] }) {
+const words = (s?: string | null) => (s ? humanise(s) : "—");
+
+function Loading() {
   return (
-    <TableContainer>
-      <Table size="small">
-        <TableHead>
-          <TableRow>
-            <TableCell>Status</TableCell>
-            <TableCell align="right">Count</TableCell>
-            <TableCell>Share</TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {byStatus.map((row) => (
-            <TableRow key={row.status}>
-              <TableCell>{row.status}</TableCell>
-              <TableCell align="right">{row.count}</TableCell>
-              <TableCell sx={{ width: "40%" }}>
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                  <Box
-                    sx={{
-                      height: 8,
-                      borderRadius: 1,
-                      bgcolor: "primary.main",
-                      width: total > 0 ? `${(row.count / total) * 100}%` : "0%",
-                      minWidth: row.count > 0 ? 4 : 0,
-                    }}
-                  />
-                  <Typography variant="caption" color="text.secondary">
-                    {total > 0 ? `${Math.round((row.count / total) * 100)}%` : "0%"}
-                  </Typography>
-                </Box>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </TableContainer>
+    <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
+      <CircularProgress aria-label="Loading" />
+    </Box>
   );
 }
 
 function PipelineView({ jobs }: { jobs: JobRoleRead[] }) {
+  const t = useT();
   const [jobId, setJobId] = useState("");
   const [data, setData] = useState<PipelineResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   const load = async (selectedJobId: string) => {
     setLoading(true);
@@ -79,7 +56,7 @@ function PipelineView({ jobs }: { jobs: JobRoleRead[] }) {
       const result = await reportsApi.pipeline(selectedJobId || undefined);
       setData(result);
     } catch (err) {
-      setError(extractErrorMessage(err, "Failed to load pipeline"));
+      setError(err);
     } finally {
       setLoading(false);
     }
@@ -95,10 +72,13 @@ function PipelineView({ jobs }: { jobs: JobRoleRead[] }) {
     load(value);
   };
 
+  const jobTitle = jobs.find((j) => j.id === jobId)?.title;
+  const stagesInUse = data ? data.by_status.filter((r) => r.count > 0).length : 0;
+
   return (
-    <Box>
-      <TextField select label="Filter by job (optional)" value={jobId} onChange={(e) => handleJobChange(e.target.value)} sx={{ minWidth: 260, mb: 2 }}>
-        <MenuItem value="">All jobs</MenuItem>
+    <Stack spacing={2.5}>
+      <TextField select label={t("reports.pipeline.filter")} value={jobId} onChange={(e) => handleJobChange(e.target.value)} sx={{ minWidth: 260, maxWidth: 420 }} data-print-hide>
+        <MenuItem value="">{t("reports.pipeline.all_jobs")}</MenuItem>
         {jobs.map((job) => (
           <MenuItem key={job.id} value={job.id}>
             {job.title}
@@ -106,35 +86,38 @@ function PipelineView({ jobs }: { jobs: JobRoleRead[] }) {
         ))}
       </TextField>
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
+      {error !== null && <FriendlyError error={error} onRetry={() => load(jobId)} compact />}
 
       {loading ? (
-        <CircularProgress />
+        <Loading />
       ) : data ? (
         <>
-          <Typography variant="body2" color="text.secondary" mb={1.5}>
-            Total applications: {data.total}
-          </Typography>
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <StatTile emoji="inbox" tone="brand" value={data.total} label={t("reports.stat.applications", { count: data.total })} />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <StatTile emoji="compass" tone="sky" value={stagesInUse} label={t("reports.stat.stages", { count: stagesInUse })} />
+            </Grid>
+          </Grid>
           {data.by_status.length === 0 ? (
-            <Typography color="text.secondary">No applications yet.</Typography>
+            <EmptyState compact illustration="no-data" title={t("reports.pipeline.empty")} hint={t("reports.pipeline.empty_hint")} />
           ) : (
-            <StatusBarTable total={data.total} byStatus={data.by_status} />
+            <StatusBreakdown total={data.total} byStatus={data.by_status} exportName={`${t("reports.tab.pipeline")} ${jobTitle ?? t("reports.pipeline.all_jobs")}`} />
           )}
         </>
       ) : null}
-    </Box>
+    </Stack>
   );
 }
 
+// Also shown on the Overview page -- keep the `jobs` prop and default export shape.
 export function JobSummaryView({ jobs }: { jobs: JobRoleRead[] }) {
+  const t = useT();
   const [jobId, setJobId] = useState("");
   const [data, setData] = useState<JobSummaryResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   const handleJobChange = async (value: string) => {
     setJobId(value);
@@ -146,16 +129,19 @@ export function JobSummaryView({ jobs }: { jobs: JobRoleRead[] }) {
       const result = await reportsApi.jobSummary(value);
       setData(result);
     } catch (err) {
-      setError(extractErrorMessage(err, "Failed to load job summary"));
+      setError(err);
     } finally {
       setLoading(false);
     }
   };
 
+  const score = (v: number | null | undefined) => (v != null ? v.toFixed(1) : "—");
+  const jobTitle = jobs.find((j) => j.id === jobId)?.title ?? "";
+
   return (
-    <Box>
-      <TextField select label="Select job" value={jobId} onChange={(e) => handleJobChange(e.target.value)} sx={{ minWidth: 260, mb: 2 }}>
-        {jobs.length === 0 && <MenuItem disabled value="">No jobs available</MenuItem>}
+    <Stack spacing={2.5}>
+      <TextField select label={t("reports.summary.pick")} value={jobId} onChange={(e) => handleJobChange(e.target.value)} sx={{ minWidth: 260, maxWidth: 420 }} data-print-hide>
+        {jobs.length === 0 && <MenuItem disabled value="">{t("reports.summary.no_jobs")}</MenuItem>}
         {jobs.map((job) => (
           <MenuItem key={job.id} value={job.id}>
             {job.title}
@@ -163,46 +149,46 @@ export function JobSummaryView({ jobs }: { jobs: JobRoleRead[] }) {
         ))}
       </TextField>
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
+      {error !== null && <FriendlyError error={error} onRetry={() => handleJobChange(jobId)} compact />}
 
       {!jobId ? (
-        <Typography color="text.secondary">Select a job to see its summary.</Typography>
+        <EmptyState compact illustration="report" title={t("reports.summary.pick_first")} />
       ) : loading ? (
-        <CircularProgress />
+        <Loading />
       ) : data ? (
         <>
-          <Stack direction="row" spacing={3} mb={2}>
-            <Typography variant="body2">Total applications: {data.total_applications}</Typography>
-            <Typography variant="body2">
-              Avg match score: {data.average_match_score != null ? data.average_match_score.toFixed(1) : "—"}
-            </Typography>
-            <Typography variant="body2">
-              Avg ranking score: {data.average_ranking_score != null ? data.average_ranking_score.toFixed(1) : "—"}
-            </Typography>
-          </Stack>
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <StatTile emoji="inbox" tone="brand" value={data.total_applications} label={t("reports.stat.applications", { count: data.total_applications })} />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <StatTile emoji="target" tone="sky" value={score(data.average_match_score)} label={t("reports.stat.avg_match")} />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <StatTile emoji="trophy" tone="sun" value={score(data.average_ranking_score)} label={t("reports.stat.avg_rank")} />
+            </Grid>
+          </Grid>
           {data.by_status.length === 0 ? (
-            <Typography color="text.secondary">No applications yet for this job.</Typography>
+            <EmptyState compact illustration="no-data" title={t("reports.summary.empty")} />
           ) : (
-            <StatusBarTable total={data.total_applications} byStatus={data.by_status} />
+            <StatusBreakdown total={data.total_applications} byStatus={data.by_status} exportName={`${t("reports.tab.summary")} ${jobTitle}`} />
           )}
         </>
       ) : null}
-    </Box>
+    </Stack>
   );
 }
 
 function AuditTrailView() {
+  const t = useT();
+  const f = useTheme().palette.fresh;
   const [entityType, setEntityType] = useState("");
   const [entityId, setEntityId] = useState("");
   const [action, setAction] = useState("");
   const [offset, setOffset] = useState(0);
   const [data, setData] = useState<AuditLogPage | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   const load = async (nextOffset: number) => {
     setLoading(true);
@@ -218,7 +204,7 @@ function AuditTrailView() {
       setData(result);
       setOffset(nextOffset);
     } catch (err) {
-      setError(extractErrorMessage(err, "Failed to load audit trail"));
+      setError(err);
     } finally {
       setLoading(false);
     }
@@ -231,172 +217,209 @@ function AuditTrailView() {
 
   const handleFilter = () => load(0);
 
-  return (
-    <Box>
-      <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap mb={2}>
-        <TextField label="Entity type" value={entityType} onChange={(e) => setEntityType(e.target.value)} size="small" placeholder="application" />
-        <TextField label="Entity ID" value={entityId} onChange={(e) => setEntityId(e.target.value)} size="small" sx={{ minWidth: 240 }} />
-        <TextField label="Action" value={action} onChange={(e) => setAction(e.target.value)} size="small" placeholder="salary_validated" />
-        <Button variant="outlined" size="small" onClick={handleFilter} disabled={loading}>
-          Filter
-        </Button>
-      </Stack>
+  const exportCsv = () =>
+    data &&
+    downloadCsv(
+      fileSlug(t("reports.tab.audit")),
+      [t("reports.audit.col_when"), t("reports.audit.col_type"), t("reports.audit.col_id"), t("reports.audit.col_action"), t("reports.audit.col_who")],
+      data.items.map((i) => [new Date(i.created_at).toLocaleString(), words(i.entity_type), i.entity_id, words(i.action), i.actor]),
+    );
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
+  return (
+    <Stack spacing={2.5}>
+      <Box
+        component="form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleFilter();
+        }}
+        data-print-hide
+        sx={{ display: "flex", flexWrap: "wrap", gap: 1.5, alignItems: "center" }}
+      >
+        <TextField label={t("reports.audit.type")} value={entityType} onChange={(e) => setEntityType(e.target.value)} size="small" placeholder="application" />
+        <TextField label={t("reports.audit.id")} value={entityId} onChange={(e) => setEntityId(e.target.value)} size="small" sx={{ minWidth: 240 }} />
+        <TextField label={t("reports.audit.action")} value={action} onChange={(e) => setAction(e.target.value)} size="small" placeholder="salary_validated" />
+        <InfoTip text={t("reports.audit.filter_help")} label={t("reports.info_label")} />
+        <Button type="submit" variant="outlined" size="small" disabled={loading}>
+          {t("reports.audit.filter")}
+        </Button>
+      </Box>
+
+      {error !== null && <FriendlyError error={error} onRetry={() => load(offset)} compact />}
 
       {loading ? (
-        <CircularProgress />
+        <Loading />
       ) : data ? (
         <>
           <TableContainer>
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>Created At</TableCell>
-                  <TableCell>Entity Type</TableCell>
-                  <TableCell>Entity ID</TableCell>
-                  <TableCell>Action</TableCell>
-                  <TableCell>Actor</TableCell>
+                  <TableCell>{t("reports.audit.col_when")}</TableCell>
+                  <TableCell>{t("reports.audit.col_type")}</TableCell>
+                  <TableCell>{t("reports.audit.col_id")}</TableCell>
+                  <TableCell>{t("reports.audit.col_action")}</TableCell>
+                  <TableCell>{t("reports.audit.col_who")}</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {data.items.map((item) => (
                   <TableRow key={item.id}>
-                    <TableCell>{new Date(item.created_at).toLocaleString()}</TableCell>
-                    <TableCell>{item.entity_type}</TableCell>
-                    <TableCell sx={{ fontFamily: "monospace", fontSize: 12 }}>{item.entity_id}</TableCell>
-                    <TableCell>{item.action}</TableCell>
+                    <TableCell sx={{ whiteSpace: "nowrap" }}>{new Date(item.created_at).toLocaleString()}</TableCell>
+                    <TableCell>{words(item.entity_type)}</TableCell>
+                    <TableCell sx={{ fontFamily: "monospace", fontSize: 12, color: f.muted }}>{item.entity_id}</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>{words(item.action)}</TableCell>
                     <TableCell>{item.actor}</TableCell>
                   </TableRow>
                 ))}
-                {data.items.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={5}>
-                      <Typography color="text.secondary">No matching audit events.</Typography>
-                    </TableCell>
-                  </TableRow>
-                )}
               </TableBody>
             </Table>
           </TableContainer>
-          <Stack direction="row" spacing={2} alignItems="center" mt={2}>
-            <Button size="small" disabled={offset === 0 || loading} onClick={() => load(Math.max(0, offset - AUDIT_PAGE_SIZE))}>
-              Previous
+          {data.items.length === 0 && <EmptyState compact illustration="search" title={t("reports.audit.empty")} hint={t("reports.audit.empty_hint")} />}
+          <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexWrap: "wrap", rowGap: 1 }} data-print-hide>
+            <Button size="small" variant="outlined" disabled={offset === 0 || loading} onClick={() => load(Math.max(0, offset - AUDIT_PAGE_SIZE))}>
+              {t("reports.audit.prev")}
             </Button>
-            <Button
-              size="small"
-              disabled={loading || offset + AUDIT_PAGE_SIZE >= data.total}
-              onClick={() => load(offset + AUDIT_PAGE_SIZE)}
-            >
-              Next
+            <Button size="small" variant="outlined" disabled={loading || offset + AUDIT_PAGE_SIZE >= data.total} onClick={() => load(offset + AUDIT_PAGE_SIZE)}>
+              {t("reports.audit.next")}
             </Button>
-            <Typography variant="body2" color="text.secondary">
-              {data.total === 0 ? "0" : `${offset + 1}-${Math.min(offset + AUDIT_PAGE_SIZE, data.total)}`} of {data.total}
+            <Typography variant="body2" sx={{ color: f.muted }}>
+              {data.total === 0
+                ? t("reports.audit.range_none")
+                : t("reports.audit.range", { from: offset + 1, to: Math.min(offset + AUDIT_PAGE_SIZE, data.total), count: data.total })}
             </Typography>
+            <Box sx={{ flex: 1 }} />
+            <ExportBar onCsv={exportCsv} disabled={data.items.length === 0} />
           </Stack>
         </>
       ) : null}
-    </Box>
+    </Stack>
   );
 }
 
+function eventEmoji(action?: string | null): string {
+  const a = (action ?? "").toLowerCase();
+  if (a.includes("interview")) return "calendar";
+  if (a.includes("offer")) return "envelope";
+  if (a.includes("salary")) return "money";
+  if (a.includes("bgv") || a.includes("background")) return "shield";
+  if (a.includes("reject") || a.includes("disqualif")) return "cross";
+  if (a.includes("select") || a.includes("shortlist") || a.includes("approv")) return "check";
+  if (a.includes("screen") || a.includes("score")) return "magnifier";
+  if (a.includes("created") || a.includes("upload")) return "inbox";
+  if (a.includes("email") || a.includes("mail")) return "mail";
+  return "memo";
+}
+
 function TimelineView() {
+  const t = useT();
   const [applicationId, setApplicationId] = useState("");
   const [data, setData] = useState<ApplicationTimelineResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const [missingId, setMissingId] = useState(false);
 
   const handleLoad = async () => {
     if (!applicationId) {
-      setError("Enter an application ID");
+      setMissingId(true);
       return;
     }
+    setMissingId(false);
     setLoading(true);
     setError(null);
     try {
       const result = await reportsApi.applicationTimeline(applicationId);
       setData(result);
     } catch (err) {
-      setError(extractErrorMessage(err, "Failed to load timeline"));
+      setError(err);
       setData(null);
     } finally {
       setLoading(false);
     }
   };
 
+  const exportCsv = () =>
+    data &&
+    downloadCsv(
+      fileSlug(`${t("reports.tab.timeline")} ${applicationId}`),
+      [t("reports.audit.col_when"), t("reports.audit.col_action"), t("reports.audit.col_who")],
+      data.events.map((e) => [new Date(e.created_at).toLocaleString(), words(e.action), e.actor]),
+    );
+
   return (
-    <Box>
-      <Stack direction="row" spacing={2} mb={2}>
+    <Stack spacing={2.5}>
+      <Box
+        component="form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleLoad();
+        }}
+        data-print-hide
+        sx={{ display: "flex", flexWrap: "wrap", gap: 1.5, alignItems: "flex-start" }}
+      >
         <TextField
-          label="Application ID"
+          label={t("reports.timeline.id")}
           value={applicationId}
           onChange={(e) => setApplicationId(e.target.value)}
           size="small"
           sx={{ minWidth: 320 }}
+          error={missingId}
+          helperText={missingId ? t("reports.timeline.id_missing") : t("reports.timeline.id_help")}
         />
-        <Button variant="outlined" onClick={handleLoad} disabled={loading}>
-          {loading ? "Loading..." : "Load Timeline"}
+        <Button type="submit" variant="contained" disabled={loading}>
+          {loading ? t("reports.loading") : t("reports.timeline.load")}
         </Button>
-      </Stack>
+      </Box>
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
+      {error !== null && <FriendlyError error={error} onRetry={handleLoad} compact />}
 
-      {data && (
-        data.events.length === 0 ? (
-          <Typography color="text.secondary">No events recorded for this application.</Typography>
+      {data &&
+        (data.events.length === 0 ? (
+          <EmptyState compact illustration="empty" title={t("reports.timeline.empty")} />
         ) : (
-          <Stack spacing={1.5}>
-            {data.events.map((event) => (
-              <Card key={event.id} variant="outlined">
-                <CardContent sx={{ py: 1.5, "&:last-child": { pb: 1.5 } }}>
-                  <Stack direction="row" justifyContent="space-between" alignItems="center">
-                    <Typography variant="body2" fontWeight="bold">
-                      {event.action}
-                    </Typography>
-                    <Chip label={event.actor} size="small" />
-                  </Stack>
-                  <Typography variant="caption" color="text.secondary">
-                    {new Date(event.created_at).toLocaleString()}
-                  </Typography>
-                </CardContent>
-              </Card>
-            ))}
-          </Stack>
-        )
-      )}
-    </Box>
+          <>
+            <Timeline
+              items={data.events.map((event) => ({
+                id: event.id,
+                emoji: eventEmoji(event.action),
+                title: words(event.action),
+                meta: t("reports.timeline.meta", { when: new Date(event.created_at).toLocaleString(), who: event.actor ?? "—" }),
+              }))}
+            />
+            <ExportBar onCsv={exportCsv} />
+          </>
+        ))}
+      {!data && !error && <EmptyState compact illustration="to-do-list" title={t("reports.timeline.start")} />}
+    </Stack>
   );
 }
 
 export default function ReportsPage() {
+  const t = useT();
   const [tab, setTab] = useState(0);
   const [jobs, setJobs] = useState<JobRoleRead[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   // `refreshing` tracks only this page's own jobs fetch (always runs, always resolves) --
   // not any of the 4 tab views' own fetches below, two of which (Job Summary before a job
   // is picked, Timeline before an ID is entered) never auto-fetch at all, so gating the
   // button on them could leave it disabled forever. Each tab already shows its own
-  // CircularProgress while its own fetch is in flight, unaffected by this.
+  // spinner while its own fetch is in flight, unaffected by this.
   const [refreshing, setRefreshing] = useState(false);
   // Bumped on Refresh and used as each tab view's `key` -- remounting resets that view's
   // own internal filter state (job selection, audit filters, timeline application id) back
   // to its defaults and re-runs whatever fetch it does on mount, without needing to lift
   // any of those 4 views' state up into this page.
   const [resetKey, setResetKey] = useState(0);
+  const [savedTick, setSavedTick] = useState(0);
 
   const loadJobs = () =>
     jobsApi
       .list()
-      .then(setJobs)
-      .catch((err) => setError(extractErrorMessage(err, "Failed to load jobs")));
+      .then((rows) => {
+        setJobs(rows);
+        setError(null);
+      })
+      .catch((err) => setError(err));
 
   useEffect(() => {
     loadJobs();
@@ -413,34 +436,62 @@ export default function ReportsPage() {
     }
   };
 
+  const tabs = [
+    { emoji: "compass", label: t("reports.tab.pipeline") },
+    { emoji: "briefcase", label: t("reports.tab.summary") },
+    { emoji: "clipboard", label: t("reports.tab.audit") },
+    { emoji: "hourglass", label: t("reports.tab.timeline") },
+  ];
+
   return (
     <Box>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h4">Reports & Status</Typography>
-        <RefreshButton loading={refreshing} onRefresh={handleRefresh} />
-      </Stack>
+      {/* "Save as PDF" prints just the report: hide the menu and page controls. */}
+      <GlobalStyles styles={{ "@media print": { "aside, nav, [data-print-hide]": { display: "none !important" } } }} />
+      <PageHeader
+        emoji="bar_chart"
+        title={t("reports.title")}
+        purpose={t("reports.purpose")}
+        tourKey="reports"
+        extra={
+          <Box data-print-hide>
+            <RefreshButton loading={refreshing} onRefresh={handleRefresh} label={t("reports.refresh")} />
+          </Box>
+        }
+      />
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
+      {error !== null && (
+        <Box sx={{ mb: 2 }}>
+          <FriendlyError error={error} onRetry={loadJobs} compact />
+        </Box>
       )}
 
-      <Card variant="outlined">
-        <Tabs value={tab} onChange={(_e, value) => setTab(value)} sx={{ borderBottom: 1, borderColor: "divider" }}>
-          <Tab label="Pipeline" />
-          <Tab label="Job Summary" />
-          <Tab label="Audit Trail" />
-          <Tab label="Timeline" />
-        </Tabs>
-        <CardContent>
-          {tab === 0 && <PipelineView key={resetKey} jobs={jobs} />}
-          {tab === 1 && <JobSummaryView key={resetKey} jobs={jobs} />}
-          {tab === 2 && <AuditTrailView key={resetKey} />}
-          {tab === 3 && <TimelineView key={resetKey} />}
-        </CardContent>
-      </Card>
-      <AnalyticsPanel />
+      <Stack spacing={3}>
+        <Card>
+          <Tabs
+            value={tab}
+            onChange={(_e, value) => setTab(value)}
+            variant="scrollable"
+            allowScrollButtonsMobile
+            aria-label={t("reports.tabs_label")}
+            sx={{ px: 1.5, pt: 1, borderBottom: 1, borderColor: "divider" }}
+            data-print-hide
+          >
+            {tabs.map((x) => (
+              <Tab key={x.label} label={x.label} icon={<Emoji name={x.emoji} size={18} />} iconPosition="start" sx={{ minHeight: 48 }} />
+            ))}
+          </Tabs>
+          <Box sx={{ p: { xs: 2, sm: 3 } }}>
+            {tab === 0 && <PipelineView key={resetKey} jobs={jobs} />}
+            {tab === 1 && <JobSummaryView key={resetKey} jobs={jobs} />}
+            {tab === 2 && <AuditTrailView key={resetKey} />}
+            {tab === 3 && <TimelineView key={resetKey} />}
+          </Box>
+        </Card>
+        <SavedReportsCard reloadKey={resetKey + savedTick} />
+        <Box data-print-hide>
+          <AnalyticsPanel onSaved={() => setSavedTick((n) => n + 1)} />
+        </Box>
+      </Stack>
     </Box>
   );
 }

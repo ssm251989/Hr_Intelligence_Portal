@@ -1,26 +1,28 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link as RouterLink, useLocation, useNavigate } from "react-router-dom";
-import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import Card from "@mui/material/Card";
-import CardContent from "@mui/material/CardContent";
 import Link from "@mui/material/Link";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
-import { extractErrorMessage } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { useBootstrap } from "../bootstrap/BootstrapContext";
+import PublicAuthLayout from "../components/careers/PublicAuthLayout";
+import { useT } from "../i18n";
+import { FriendlyError } from "../ui-kit";
 
 export default function LoginPage() {
   const { login } = useAuth();
+  const { productName } = useBootstrap();
+  const t = useT();
   const navigate = useNavigate();
   const location = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(false);
 
   const from = (location.state as { from?: string } | null)?.from || "/";
@@ -33,58 +35,32 @@ export default function LoginPage() {
       await login(email, password);
       navigate(from, { replace: true });
     } catch (err) {
-      setError(extractErrorMessage(err, "Failed to log in"));
+      setError(err);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Box
-      display="flex"
-      alignItems="center"
-      justifyContent="center"
-      minHeight="100vh"
-      bgcolor="background.default"
-    >
-      <Card variant="outlined" sx={{ width: 400 }}>
-        <CardContent>
-          <Typography variant="h5" mb={3}>
-            HR Automation — Sign In
+    <PublicAuthLayout illustration="secure-login" headline={t("login.headline", { name: productName })} tagline={t("login.tagline")}>
+      <Typography variant="h1" component="h1" sx={{ fontSize: 26 }}>{t("login.title")}</Typography>
+      <Typography sx={{ color: "text.secondary", mt: 0.5, mb: 3 }}>{t("login.subtitle", { name: productName })}</Typography>
+      <Box component="form" onSubmit={handleSubmit} noValidate={false}>
+        <Stack spacing={2}>
+          {error !== null && <FriendlyError error={error} what={t("login.failed")} fix={t("login.failed_fix")} compact />}
+          <TextField label={t("login.email")} type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} fullWidth autoFocus />
+          <TextField label={t("login.password")} type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} fullWidth />
+          <Button type="submit" variant="contained" size="large" disabled={loading} fullWidth>
+            {loading ? t("login.signing_in") : t("login.submit")}
+          </Button>
+          <Typography variant="body2" textAlign="center">
+            {t("login.no_account")}{" "}
+            <Link component={RouterLink} to="/register">
+              {t("login.register_link")}
+            </Link>
           </Typography>
-          <Box component="form" onSubmit={handleSubmit}>
-            <Stack spacing={2}>
-              {error && <Alert severity="error">{error}</Alert>}
-              <TextField
-                label="Email"
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                fullWidth
-                autoFocus
-              />
-              <TextField
-                label="Password"
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                fullWidth
-              />
-              <Button type="submit" variant="contained" disabled={loading} fullWidth>
-                {loading ? "Signing in..." : "Sign In"}
-              </Button>
-              <Typography variant="body2" textAlign="center">
-                No account?{" "}
-                <Link component={RouterLink} to="/register">
-                  Register
-                </Link>
-              </Typography>
-            </Stack>
-          </Box>
-        </CardContent>
-      </Card>
-    </Box>
+        </Stack>
+      </Box>
+    </PublicAuthLayout>
   );
 }

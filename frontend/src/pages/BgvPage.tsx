@@ -4,28 +4,35 @@ import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
-import CardContent from "@mui/material/CardContent";
 import CircularProgress from "@mui/material/CircularProgress";
-import Divider from "@mui/material/Divider";
+import Grid from "@mui/material/Grid";
 import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import { useTheme } from "@mui/material/styles";
 
 import { applicationsApi, bgvApi, candidatesApi, extractErrorMessage, jobsApi } from "../api/client";
 import type { ApplicationRead, BgvClearRequest, BgvDocumentRead, CandidateRead, JobRoleRead } from "../api/types";
 import { BGV_DOC_TYPES } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
+import BgvChecklist, { mismatchFlags } from "../components/bgv/BgvChecklist";
+import BgvTimeline from "../components/bgv/BgvTimeline";
 import ConfirmDialog from "../components/ConfirmDialog";
 import RefreshButton from "../components/RefreshButton";
-import StatusChip from "../components/StatusChip";
+import { Inset, JobPickerCard, PersonHeader } from "../components/offers/shared";
+import { useT } from "../i18n";
+import { EmptyState, Emoji, FriendlyError, InfoTip, PageHeader, StageStepper, StatTile, useReducedMotion } from "../ui-kit";
 
 const RELEVANT_STATUSES = ["salary_approved", "bgv_requested", "bgv_pending", "bgv_cleared", "bgv_rejected"];
 const IN_PROGRESS_STATUSES = ["bgv_requested", "bgv_pending"];
+const STAGE_INDEX: Record<string, number> = { salary_approved: 0, bgv_requested: 1, bgv_pending: 2, bgv_cleared: 3, bgv_rejected: 3 };
 
 function BgvUploadForm({ onUpload }: { onUpload: (docType: string, file: File) => Promise<void> }) {
   const { can } = useAuth();
+  const t = useT();
+  const f = useTheme().palette.fresh;
   const canEdit = can(ROLE_MATRIX.bgvWrite);
   const [docType, setDocType] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -39,7 +46,7 @@ function BgvUploadForm({ onUpload }: { onUpload: (docType: string, file: File) =
 
   const handleUpload = async () => {
     if (!docType || !file) {
-      setError("Choose a document type and a file");
+      setError(t("bgv.upload.need_both"));
       return;
     }
     setUploading(true);
@@ -49,43 +56,52 @@ function BgvUploadForm({ onUpload }: { onUpload: (docType: string, file: File) =
       setFile(null);
       if (inputRef.current) inputRef.current.value = "";
     } catch (err) {
-      setError(extractErrorMessage(err, "Failed to upload document"));
+      setError(extractErrorMessage(err, t("bgv.error.upload")));
     } finally {
       setUploading(false);
     }
   };
 
   return (
-    <Box>
+    <Inset title={<><Emoji name="page" size={16} /> {t("bgv.upload.title")}</>}>
       {error && (
         <Alert severity="error" sx={{ mb: 1.5 }}>
           {error}
         </Alert>
       )}
-      <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
-        <TextField select label="Document type" value={docType} onChange={(e) => setDocType(e.target.value)} size="small" sx={{ minWidth: 160 }}>
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ xs: "stretch", sm: "center" }} flexWrap="wrap" useFlexGap>
+        <TextField select label={t("bgv.upload.type")} value={docType} onChange={(e) => setDocType(e.target.value)} size="small" sx={{ minWidth: 200 }}>
           {BGV_DOC_TYPES.map((type) => (
             <MenuItem key={type} value={type}>
-              {type}
+              {t(`bgv.doc.${type}`)}
             </MenuItem>
           ))}
         </TextField>
-        <input
-          ref={inputRef}
-          type="file"
-          accept=".pdf,.docx,.jpg,.jpeg,.png"
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-        />
-        <Button size="small" variant="outlined" onClick={handleUpload} disabled={uploading}>
-          {uploading ? "Uploading..." : "Upload Document"}
+        <Button component="label" variant="outlined" startIcon={<Emoji name="file_folder" size={16} />}>
+          {file ? t("bgv.upload.change_file") : t("bgv.upload.choose_file")}
+          <input
+            ref={inputRef}
+            type="file"
+            hidden
+            accept=".pdf,.docx,.jpg,.jpeg,.png"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          />
+        </Button>
+        <Typography sx={{ fontSize: 13, color: f.muted, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {file ? file.name : t("bgv.upload.file_types")}
+        </Typography>
+        <Button variant="contained" onClick={handleUpload} disabled={uploading}>
+          {uploading ? t("bgv.upload.uploading") : t("bgv.upload.button")}
         </Button>
       </Stack>
-    </Box>
+    </Inset>
   );
 }
 
 function BgvClearForm({ onSubmit }: { onSubmit: (payload: BgvClearRequest) => Promise<void> }) {
   const { can } = useAuth();
+  const t = useT();
+  const f = useTheme().palette.fresh;
   const canEdit = can(ROLE_MATRIX.bgvWrite);
   const [decision, setDecision] = useState<"clear" | "reject" | "">("");
   const [notes, setNotes] = useState("");
@@ -103,17 +119,15 @@ function BgvClearForm({ onSubmit }: { onSubmit: (payload: BgvClearRequest) => Pr
     try {
       await onSubmit({ decision: decision as "clear" | "reject", notes: notes || null });
     } catch (err) {
-      setError(extractErrorMessage(err, "Failed to record BGV decision"));
+      setError(extractErrorMessage(err, t("bgv.error.decision")));
     } finally {
       setSaving(false);
     }
   };
 
-  const handleSubmit = () => {
-    if (!decision) {
-      setError("Choose clear or reject");
-      return;
-    }
+  // One click picks the decision; the confirm step stays, exactly as before.
+  const ask = (d: "clear" | "reject") => {
+    setDecision(d);
     setConfirmOpen(true);
   };
 
@@ -123,52 +137,43 @@ function BgvClearForm({ onSubmit }: { onSubmit: (payload: BgvClearRequest) => Pr
   };
 
   return (
-    <Box mt={2}>
-      <Divider sx={{ mb: 1.5 }} />
+    <Inset title={<><Emoji name="writing_hand" size={16} /> {t("bgv.decide.title")}</>}>
+      <Typography sx={{ fontSize: 14, color: f.muted, mb: 1.5 }}>{t("bgv.decide.intro")}</Typography>
       {error && (
         <Alert severity="error" sx={{ mb: 1.5 }}>
           {error}
         </Alert>
       )}
-      <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
-        <TextField
-          select
-          label="Decision"
-          value={decision}
-          onChange={(e) => setDecision(e.target.value as "clear" | "reject" | "")}
-          size="small"
-          sx={{ minWidth: 140 }}
-        >
-          <MenuItem value="">—</MenuItem>
-          <MenuItem value="clear">Clear</MenuItem>
-          <MenuItem value="reject">Reject</MenuItem>
-        </TextField>
-        <TextField label="Notes (optional)" value={notes} onChange={(e) => setNotes(e.target.value)} size="small" sx={{ minWidth: 220 }} />
-        <Button size="small" variant="contained" onClick={handleSubmit} disabled={saving}>
-          {saving ? "Saving..." : "Submit Decision"}
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ xs: "stretch", sm: "center" }} flexWrap="wrap" useFlexGap>
+        <TextField label={t("bgv.decide.notes")} value={notes} onChange={(e) => setNotes(e.target.value)} size="small" sx={{ minWidth: 260 }} />
+        <Button variant="contained" onClick={() => ask("clear")} disabled={saving} startIcon={<Emoji name="shield" size={16} />}>
+          {saving && decision === "clear" ? t("bgv.decide.saving") : t("bgv.decide.clear")}
+        </Button>
+        <Button variant="outlined" color="error" onClick={() => ask("reject")} disabled={saving}>
+          {saving && decision === "reject" ? t("bgv.decide.saving") : t("bgv.decide.reject")}
         </Button>
       </Stack>
 
       <ConfirmDialog
         open={confirmOpen}
-        title={decision === "reject" ? "Reject BGV?" : "Clear BGV?"}
-        message={
-          decision === "reject"
-            ? "Reject this candidate's background verification? This cannot be undone."
-            : "Clear this candidate's background verification? This moves them forward to offer generation and cannot be undone."
-        }
-        confirmLabel={decision === "reject" ? "Reject" : "Clear"}
+        title={decision === "reject" ? t("bgv.decide.reject_title") : t("bgv.decide.clear_title")}
+        message={decision === "reject" ? t("bgv.decide.reject_message") : t("bgv.decide.clear_message")}
+        confirmLabel={decision === "reject" ? t("bgv.decide.reject") : t("bgv.decide.clear")}
+        cancelLabel={t("action.cancel")}
         destructive={decision === "reject"}
         confirming={saving}
         onConfirm={handleConfirm}
         onCancel={() => setConfirmOpen(false)}
       />
-    </Box>
+    </Inset>
   );
 }
 
 export default function BgvPage() {
   const { can } = useAuth();
+  const t = useT();
+  const f = useTheme().palette.fresh;
+  const reduced = useReducedMotion();
   const canWrite = can(ROLE_MATRIX.bgvWrite);
   const [searchParams] = useSearchParams();
   const [jobs, setJobs] = useState<JobRoleRead[]>([]);
@@ -186,7 +191,7 @@ export default function BgvPage() {
     const jobsPromise = jobsApi
       .list()
       .then(setJobs)
-      .catch((err) => setError(extractErrorMessage(err, "Failed to load jobs")));
+      .catch((err) => setError(extractErrorMessage(err, t("bgv.error.jobs"))));
     const candidatesPromise = candidatesApi
       .list()
       .then((data) => setCandidates(Object.fromEntries(data.map((c) => [c.id, c]))))
@@ -229,7 +234,7 @@ export default function BgvPage() {
       });
       setDocuments(byApplication);
     } catch (err) {
-      setError(extractErrorMessage(err, "Failed to load BGV data"));
+      setError(extractErrorMessage(err, t("bgv.error.load")));
     } finally {
       setLoading(false);
     }
@@ -262,7 +267,7 @@ export default function BgvPage() {
       setApplications((prev) => prev.map((app) => (app.id === applicationId ? updated : app)));
       setDocuments((prev) => ({ ...prev, [applicationId]: [] }));
     } catch (err) {
-      setError(extractErrorMessage(err, "Failed to request BGV"));
+      setError(extractErrorMessage(err, t("bgv.error.request")));
     } finally {
       setActionId(null);
     }
@@ -285,7 +290,7 @@ export default function BgvPage() {
         [applicationId]: (prev[applicationId] || []).map((doc) => (doc.id === docId ? updated : doc)),
       }));
     } catch (err) {
-      setError(extractErrorMessage(err, "Failed to validate document"));
+      setError(extractErrorMessage(err, t("bgv.error.validate")));
     } finally {
       setActionId(null);
     }
@@ -298,143 +303,142 @@ export default function BgvPage() {
 
   const candidateLabel = (candidateId: string) => {
     const candidate = candidates[candidateId];
-    return candidate?.parsed_fields?.full_name || candidate?.full_name || `Candidate ${candidateId.slice(0, 8)}`;
+    return candidate?.parsed_fields?.full_name || candidate?.full_name || t("offers.shared.candidate_fallback", { id: candidateId.slice(0, 8) });
   };
+
+  const needsLook = (app: ApplicationRead) =>
+    IN_PROGRESS_STATUSES.includes(app.status) &&
+    (documents[app.id] || []).some((d) => d.validation_status === "needs_review" || mismatchFlags(d, candidateLabel(app.candidate_id), t).length > 0);
+  const lookCount = applications.filter(needsLook).length;
+  const firstToLook = applications.find(needsLook) ?? applications.find((a) => IN_PROGRESS_STATUSES.includes(a.status) || a.status === "salary_approved");
+
+  const jumpTo = (id: string) => {
+    const el = document.getElementById(`bgv-card-${id}`);
+    el?.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
+    el?.focus({ preventScroll: true });
+  };
+
+  const stages = [t("bgv.stage.salary"), t("bgv.stage.requested"), t("bgv.stage.in_progress"), t("bgv.stage.done")];
+  const stats = [
+    { emoji: "clipboard", value: applications.filter((a) => a.status === "salary_approved").length, key: "bgv.stat.ready", tone: "sky" as const },
+    { emoji: "hourglass", value: applications.filter((a) => IN_PROGRESS_STATUSES.includes(a.status)).length, key: "bgv.stat.running", tone: "sun" as const },
+    { emoji: "eyes", value: lookCount, key: "bgv.stat.look", tone: "coral" as const },
+    { emoji: "shield", value: applications.filter((a) => a.status === "bgv_cleared").length, key: "bgv.stat.cleared", tone: "ok" as const },
+  ];
 
   return (
     <Box>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h4">Background Verification</Typography>
-        <RefreshButton loading={refreshing} onRefresh={handleRefresh} />
-      </Stack>
+      <PageHeader
+        emoji="shield"
+        title={t("bgv.title")}
+        purpose={t("bgv.purpose")}
+        tourKey="bgv"
+        extra={<RefreshButton loading={refreshing} onRefresh={handleRefresh} label={t("offers.shared.refresh")} />}
+        primary={
+          <Button variant="contained" onClick={() => firstToLook && jumpTo(firstToLook.id)} disabled={!firstToLook} startIcon={<Emoji name="eyes" size={16} />}>
+            {lookCount > 0 ? t("bgv.next_look", { count: lookCount }) : t("bgv.next_work")}
+          </Button>
+        }
+        below={
+          <Stack direction="row" spacing={1} alignItems="flex-start" sx={{ p: 1.5, borderRadius: "12px", bgcolor: f.skySoft }}>
+            <Emoji name="light_bulb" size={18} />
+            <Typography sx={{ fontSize: 14 }}>{t("bgv.when_explained")}</Typography>
+          </Stack>
+        }
+      />
 
-      <Card variant="outlined" sx={{ mb: 3 }}>
-        <CardContent>
-          <TextField select label="Select Job" value={selectedJobId} onChange={(e) => handleJobChange(e.target.value)} fullWidth>
-            {jobs.length === 0 && <MenuItem disabled value="">No jobs available</MenuItem>}
-            {jobs.map((job) => (
-              <MenuItem key={job.id} value={job.id}>
-                {job.title}
-              </MenuItem>
-            ))}
-          </TextField>
-        </CardContent>
-      </Card>
+      <JobPickerCard jobs={jobs} value={selectedJobId} onChange={handleJobChange} hint={t("bgv.pick_hint")} />
 
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
+        <Box sx={{ mb: 2 }}>
+          <FriendlyError compact what={error} fix={t("bgv.error.fix")} onRetry={selectedJobId ? () => loadJobData(selectedJobId) : handleRefresh} />
+        </Box>
       )}
       {candidatesLoadFailed && (
         <Alert severity="warning" sx={{ mb: 2 }}>
-          Couldn't load candidate names — candidates below may show as raw IDs.
+          {t("offers.shared.names_failed")}
         </Alert>
       )}
 
       {!selectedJobId ? (
-        <Typography color="text.secondary">Select a job to manage background verification.</Typography>
+        <Card>
+          <EmptyState illustration="personal-information" title={t("bgv.empty.no_job")} hint={t("bgv.empty.no_job_hint")} />
+        </Card>
       ) : loading ? (
-        <CircularProgress />
+        <Box sx={{ display: "grid", placeItems: "center", py: 6 }} role="status" aria-label={t("offers.shared.loading")}>
+          <CircularProgress />
+        </Box>
       ) : applications.length === 0 ? (
-        <Typography color="text.secondary">No applications in the BGV pipeline for this job.</Typography>
+        <Card>
+          <EmptyState illustration="empty" title={t("bgv.empty.none")} hint={t("bgv.empty.none_hint")} />
+        </Card>
       ) : (
-        <Stack spacing={2}>
-          {applications.map((app) => {
-            const docs = documents[app.id] || [];
-            return (
-              <Card key={app.id} variant="outlined">
-                <CardContent>
-                  <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
-                    <Typography variant="h6">{candidateLabel(app.candidate_id)}</Typography>
-                    <StatusChip status={app.status} />
-                  </Stack>
+        <>
+          <Grid container spacing={2} sx={{ mb: 2.5 }}>
+            {stats.map((s) => (
+              <Grid key={s.key} size={{ xs: 6, md: 3 }}>
+                <StatTile emoji={s.emoji} value={s.value} label={t(s.key, { count: s.value })} tone={s.tone} />
+              </Grid>
+            ))}
+          </Grid>
+          <Stack spacing={2}>
+            {applications.map((app) => {
+              const docs = documents[app.id] || [];
+              const name = candidateLabel(app.candidate_id);
+              const showDocs = IN_PROGRESS_STATUSES.includes(app.status) || app.status === "bgv_cleared" || app.status === "bgv_rejected";
+              return (
+                <Card key={app.id} id={`bgv-card-${app.id}`} tabIndex={-1} sx={{ p: 2.5, outline: "none", scrollMarginTop: 80, "&:focus-visible": { boxShadow: `0 0 0 3px ${f.brand}` } }}>
+                  <PersonHeader name={name} status={app.status} subtitle={t("bgv.docs_count", { count: docs.length })} />
+                  <Box sx={{ mt: 2 }}>
+                    <StageStepper stages={stages} current={STAGE_INDEX[app.status] ?? 0} />
+                  </Box>
 
                   {canWrite && app.status === "salary_approved" && (
-                    <Box mt={2}>
+                    <Stack direction="row" spacing={1.5} alignItems="center" mt={2} flexWrap="wrap" useFlexGap>
                       <Button
-                        size="small"
                         variant="contained"
                         onClick={() => handleRequestBgv(app.id)}
                         disabled={actionId === app.id}
+                        startIcon={<Emoji name="shield" size={16} />}
                       >
-                        {actionId === app.id ? "Requesting..." : "Request BGV"}
+                        {actionId === app.id ? t("bgv.requesting") : t("bgv.request")}
                       </Button>
-                    </Box>
+                      <Typography sx={{ fontSize: 13, color: f.muted }}>{t("bgv.request_hint")}</Typography>
+                    </Stack>
                   )}
 
-                  {(IN_PROGRESS_STATUSES.includes(app.status) || app.status === "bgv_cleared" || app.status === "bgv_rejected") && (
-                    <Box mt={2}>
-                      <Divider sx={{ mb: 1.5 }} />
-                      {IN_PROGRESS_STATUSES.includes(app.status) && (
-                        <Box mb={2}>
+                  {showDocs && (
+                    <Grid container spacing={2} sx={{ mt: 0 }}>
+                      <Grid size={{ xs: 12, md: 7 }}>
+                        <Inset title={<>{t("bgv.checklist.title")}<InfoTip text={t("bgv.checklist.tip")} /></>}>
+                          <BgvChecklist
+                            docs={docs}
+                            candidateName={name}
+                            canValidate={canWrite && IN_PROGRESS_STATUSES.includes(app.status)}
+                            busyId={actionId}
+                            onValidate={(docId) => handleValidateDoc(app.id, docId)}
+                          />
+                        </Inset>
+                        {IN_PROGRESS_STATUSES.includes(app.status) && (
                           <BgvUploadForm onUpload={(docType, file) => handleUpload(app.id, docType, file)} />
-                        </Box>
-                      )}
-
-                      {docs.length === 0 ? (
-                        <Typography variant="body2" color="text.secondary">
-                          No documents uploaded yet.
-                        </Typography>
-                      ) : (
-                        <Stack spacing={1.5}>
-                          {docs.map((doc) => (
-                            <Box key={doc.id} p={1.5} bgcolor="action.hover" borderRadius={1}>
-                              <Stack direction="row" justifyContent="space-between" alignItems="center">
-                                <Typography variant="body2" fontWeight="bold">
-                                  {doc.doc_type}
-                                </Typography>
-                                <Stack direction="row" spacing={1} alignItems="center">
-                                  <StatusChip status={doc.validation_status} />
-                                  {canWrite && IN_PROGRESS_STATUSES.includes(app.status) && (
-                                    <Button
-                                      size="small"
-                                      variant="outlined"
-                                      onClick={() => handleValidateDoc(app.id, doc.id)}
-                                      disabled={actionId === doc.id}
-                                    >
-                                      {actionId === doc.id ? "Validating..." : "Validate"}
-                                    </Button>
-                                  )}
-                                </Stack>
-                              </Stack>
-                              {doc.validator_output && (
-                                <Box mt={1}>
-                                  <Typography variant="caption" color="text.secondary">
-                                    Detected: {doc.validator_output.doc_type_detected} · Matches expected:{" "}
-                                    {doc.validator_output.matches_expected_type ? "yes" : "no"}
-                                  </Typography>
-                                  <Typography variant="body2">
-                                    {[
-                                      doc.validator_output.extracted_fields.name,
-                                      doc.validator_output.extracted_fields.id_number,
-                                      doc.validator_output.extracted_fields.date,
-                                    ]
-                                      .filter(Boolean)
-                                      .join(" · ") || "No fields extracted"}
-                                  </Typography>
-                                  {doc.validator_output.issues.length > 0 && (
-                                    <Typography variant="body2" color="warning.main">
-                                      Issues: {doc.validator_output.issues.join("; ")}
-                                    </Typography>
-                                  )}
-                                </Box>
-                              )}
-                            </Box>
-                          ))}
-                        </Stack>
-                      )}
-
-                      {IN_PROGRESS_STATUSES.includes(app.status) && (
-                        <BgvClearForm onSubmit={(payload) => handleClear(app.id, payload)} />
-                      )}
-                    </Box>
+                        )}
+                      </Grid>
+                      <Grid size={{ xs: 12, md: 5 }}>
+                        <Inset title={t("bgv.timeline.title")}>
+                          <BgvTimeline applicationId={app.id} reloadKey={`${app.status}:${docs.map((d) => `${d.id}${d.validation_status}`).join(",")}`} />
+                        </Inset>
+                      </Grid>
+                    </Grid>
                   )}
-                </CardContent>
-              </Card>
-            );
-          })}
-        </Stack>
+
+                  {IN_PROGRESS_STATUSES.includes(app.status) && (
+                    <BgvClearForm onSubmit={(payload) => handleClear(app.id, payload)} />
+                  )}
+                </Card>
+              );
+            })}
+          </Stack>
+        </>
       )}
     </Box>
   );

@@ -1,26 +1,32 @@
 import { useState } from "react";
 import Box from "@mui/material/Box";
-import Stack from "@mui/material/Stack";
-import Typography from "@mui/material/Typography";
+import Button from "@mui/material/Button";
+import { Link as RouterLink } from "react-router-dom";
 
 import RefreshButton from "../components/RefreshButton";
 import ShortlistingDashboardStats from "../components/ShortlistingDashboardStats";
+import { useT } from "../i18n";
+import { PageHeader } from "../ui-kit";
 
 export default function ShortlistingDashboardPage() {
+  const t = useT();
   const [refreshSignal, setRefreshSignal] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
 
   return (
     <Box>
-      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" mb={3} flexWrap="wrap" gap={2}>
-        <Box>
-          <Typography variant="h4">Shortlisting Dashboard</Typography>
-          <Typography variant="body2" color="text.secondary">
-            Overview of shortlisting decisions across every screened application
-          </Typography>
-        </Box>
-        <RefreshButton loading={refreshing} onRefresh={() => setRefreshSignal((s) => s + 1)} />
-      </Stack>
+      <PageHeader
+        emoji="star"
+        title={t("shortlisting.dashboard.title")}
+        purpose={t("shortlisting.dashboard.purpose")}
+        tourKey="shortlisting"
+        primary={
+          <Button variant="contained" component={RouterLink} to="/shortlisting/list?shortlist_status=under_review">
+            {t("shortlisting.dashboard.primary")}
+          </Button>
+        }
+        extra={<RefreshButton loading={refreshing} onRefresh={() => setRefreshSignal((s) => s + 1)} label={t("screening.refresh")} />}
+      />
 
       <ShortlistingDashboardStats refreshSignal={refreshSignal} onLoadingChange={setRefreshing} />
     </Box>

@@ -12,6 +12,9 @@ import TextField from "@mui/material/TextField";
 
 import { candidatesApi, extractErrorMessage, integrationsApi, schedulingApi, usersApi } from "../api/client";
 import type { CandidateApplicationRow, InterviewRead, UserRead } from "../api/types";
+import { useT } from "../i18n";
+import Emoji from "../ui-kit/Emoji";
+import { humanise } from "../ui-kit/StatusChip";
 import { istLocalInputToUtcIso } from "../utils/datetime";
 
 // The manual "Schedule Interview" flow, extracted out of the old InterviewsPage so both
@@ -30,6 +33,7 @@ export default function ScheduleInterviewDialog({
   onClose: () => void;
   onScheduled: (interview: InterviewRead) => void;
 }) {
+  const t = useT();
   const [candidateOptions, setCandidateOptions] = useState<CandidateApplicationRow[]>([]);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [selectedApplication, setSelectedApplication] = useState<CandidateApplicationRow | null>(null);
@@ -86,16 +90,16 @@ export default function ScheduleInterviewDialog({
 
   const interviewerLabel = (id: string) => {
     const interviewer = interviewers.find((u) => u.id === id);
-    return interviewer?.full_name || interviewer?.email || `Interviewer ${id.slice(0, 8)}`;
+    return interviewer?.full_name || interviewer?.email || t("interviews.schedule.someone");
   };
 
   const handleSchedule = async () => {
     if (!selectedApplication) {
-      setError("Pick a candidate to schedule");
+      setError(t("interviews.schedule.pick_candidate"));
       return;
     }
     if (!scheduledAt) {
-      setError("Pick a date and time");
+      setError(t("interviews.schedule.pick_time"));
       return;
     }
     setScheduling(true);
@@ -108,15 +112,20 @@ export default function ScheduleInterviewDialog({
       });
       onScheduled(interview);
     } catch (err) {
-      setError(extractErrorMessage(err, "Failed to schedule interview"));
+      setError(extractErrorMessage(err, t("interviews.schedule.failed")));
     } finally {
       setScheduling(false);
     }
   };
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>Schedule Interview</DialogTitle>
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" aria-labelledby="schedule-interview-title">
+      <DialogTitle id="schedule-interview-title">
+        <Stack direction="row" spacing={1.25} alignItems="center">
+          <Emoji name="calendar" size={24} />
+          <span>{t("interviews.schedule.title")}</span>
+        </Stack>
+      </DialogTitle>
       <DialogContent>
         <Stack spacing={2} mt={1}>
           {error && <Alert severity="error">{error}</Alert>}
@@ -126,15 +135,15 @@ export default function ScheduleInterviewDialog({
             loading={loadingCandidates}
             value={selectedApplication}
             onChange={(_event, value) => setSelectedApplication(value)}
-            getOptionLabel={(option) => `${option.candidate_name || "Unnamed candidate"} — ${option.job_title}`}
+            getOptionLabel={(option) => `${option.candidate_name || t("interviews.unnamed")} — ${option.job_title}`}
             isOptionEqualToValue={(option, value) => option.application_id === value.application_id}
             renderInput={(params) => (
-              <TextField {...params} label="Candidate (HR-selected, awaiting scheduling)" required />
+              <TextField {...params} label={t("interviews.schedule.candidate")} helperText={t("interviews.schedule.candidate_hint")} required />
             )}
           />
 
           <TextField
-            label="Date & Time (IST)"
+            label={t("interviews.schedule.when")}
             type="datetime-local"
             required
             value={scheduledAt}
@@ -144,42 +153,39 @@ export default function ScheduleInterviewDialog({
           />
           <TextField
             select
-            label="Interviewer (optional)"
+            label={t("interviews.schedule.interviewer")}
             value={interviewerId}
             onChange={(e) => setInterviewerId(e.target.value)}
             fullWidth
           >
-            <MenuItem value="">— Unassigned —</MenuItem>
+            <MenuItem value="">{t("interviews.schedule.no_interviewer")}</MenuItem>
             {interviewers.map((interviewer) => (
               <MenuItem key={interviewer.id} value={interviewer.id}>
-                {interviewer.full_name || interviewer.email} ({interviewer.role})
+                {interviewer.full_name || interviewer.email} ({humanise(interviewer.role)})
               </MenuItem>
             ))}
           </TextField>
           {interviewerId &&
             (checkingInterviewerCalendar ? (
               <Alert severity="info" icon={false}>
-                Checking {interviewerLabel(interviewerId)}'s Google Calendar connection...
+                {t("interviews.schedule.cal_checking", { name: interviewerLabel(interviewerId) })}
               </Alert>
             ) : calendarStatusCheckFailed ? (
               <Alert severity="warning">
-                Couldn't verify {interviewerLabel(interviewerId)}'s Google Calendar connection — assuming the
-                manual meeting link below will be used.
+                {t("interviews.schedule.cal_unknown", { name: interviewerLabel(interviewerId) })}
               </Alert>
             ) : interviewerCalendarConnected ? (
               <Alert severity="success">
-                {interviewerLabel(interviewerId)} has Google Calendar connected — a real Calendar event with an
-                invite will be created automatically.
+                {t("interviews.schedule.cal_connected", { name: interviewerLabel(interviewerId) })}
               </Alert>
             ) : (
               <Alert severity="info">
-                {interviewerLabel(interviewerId)} hasn't connected Google Calendar — the manual meeting link below
-                will be used instead.
+                {t("interviews.schedule.cal_missing", { name: interviewerLabel(interviewerId) })}
               </Alert>
             ))}
           <TextField
-            label="Meeting link (optional)"
-            helperText="Used as a fallback if the interviewer hasn't connected Google Calendar"
+            label={t("interviews.schedule.link")}
+            helperText={t("interviews.schedule.link_hint")}
             value={meetingLink}
             onChange={(e) => setMeetingLink(e.target.value)}
             fullWidth
@@ -187,9 +193,9 @@ export default function ScheduleInterviewDialog({
         </Stack>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
+        <Button onClick={onClose}>{t("action.cancel")}</Button>
         <Button variant="contained" onClick={handleSchedule} disabled={scheduling}>
-          {scheduling ? "Scheduling..." : "Schedule"}
+          {scheduling ? t("interviews.schedule.saving") : t("interviews.schedule.save")}
         </Button>
       </DialogActions>
     </Dialog>

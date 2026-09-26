@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
-import Alert from "@mui/material/Alert";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Autocomplete from "@mui/material/Autocomplete";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Card from "@mui/material/Card";
 import Chip from "@mui/material/Chip";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
@@ -13,41 +13,51 @@ import FormControlLabel from "@mui/material/FormControlLabel";
 import MuiLink from "@mui/material/Link";
 import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
-import Step from "@mui/material/Step";
-import StepLabel from "@mui/material/StepLabel";
-import Stepper from "@mui/material/Stepper";
 import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import { useTheme } from "@mui/material/styles";
 
-import { extractErrorMessage, integrationsApi, jobsApi } from "../api/client";
+import { experienceApi, integrationsApi, jobsApi } from "../api/client";
 import { EDUCATION_DEGREE_LEVELS } from "../api/types";
 import type { JobFieldSuggestionsResponse, JobRoleRead } from "../api/types";
+import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
+import { useT } from "../i18n";
+import { Emoji, FriendlyAnimation, FriendlyError, InfoTip } from "../ui-kit";
 import { formatExperienceRange } from "../utils/experience";
+import JdSideBySide from "./jobs/JdSideBySide";
+import WizardProgress from "./jobs/WizardProgress";
 
 const EMPTY_SUGGESTIONS: JobFieldSuggestionsResponse = {
   departments: [], locations: [], skills: [], certifications: [],
 };
 
-// JD generation moved to step 4 (after Requirements/Salary/Additional Info, not
-// immediately after Job Details) specifically so the AI has skills, salary band,
-// benefits, and additional notes to draw on -- see app/ai_services/jd_generator.py.
+// JD generation sits at step 5 (after Requirements/Salary/Additional Info, not right after
+// Job Details) specifically so the AI has skills, salary band, benefits and additional
+// notes to draw on -- see app/ai_services/jd_generator.py.
 const STEPS = [
-  "Job Details",
-  "Requirements",
-  "Salary & Benefits",
-  "Additional Info",
-  "Job Description",
-  "Review & Publish",
+  { key: "details", emoji: "briefcase" },
+  { key: "requirements", emoji: "tools" },
+  { key: "salary", emoji: "money" },
+  { key: "extra", emoji: "memo" },
+  { key: "jd", emoji: "page" },
+  { key: "publish", emoji: "rocket" },
 ];
 
-const JOB_TYPES = ["Full-time", "Part-time", "Contract"];
+const JOB_TYPES = [
+  { value: "Full-time", key: "jobs.type.full_time" },
+  { value: "Part-time", key: "jobs.type.part_time" },
+  { value: "Contract", key: "jobs.type.contract" },
+];
+
+// Autosaved, server-side wizard draft (Part 14 drafts API) -- so a half-typed job follows
+// the user across devices and survives closing the dialog.
+const DRAFT_FORM_KEY = "jobs.wizard";
+const DRAFT_REF = "new";
 
 // Same cross-category rule as the backend's JobRoleBase/JobRoleUpdate validators (see
 // backend/app/schemas/job.py _find_skill_in_multiple_categories) -- checked client-side
-// too so the wizard can flag it before a save round-trip. A skill repeated within the
-// SAME category is left alone; only a skill appearing under more than one of the 4
-// fields is a contradiction.
+// too so the wizard can flag it before a save round-trip.
 function findSkillInMultipleCategories(categories: string[][]): string | null {
   const seenInCategory = new Map<string, number>();
   for (let i = 0; i < categories.length; i++) {
@@ -90,11 +100,18 @@ const EMPTY_STATE = {
   emailNotifications: false,
   applicationDeadline: "",
 };
+type WizardForm = typeof EMPTY_STATE;
+
+interface WizardDraft {
+  form: WizardForm;
+  jobId: string | null;
+  step: number;
+}
 
 // Converts an existing job back into the wizard's flat form shape, for the jobs table's
-// "Edit" action -- reopens this same wizard (rather than a separate edit screen) pre-filled
-// so every step's existing save-as-you-go logic (jobId set -> update, not create) just works.
-function formFromJob(job: JobRoleRead): typeof EMPTY_STATE {
+// "Edit" action -- reopens this same wizard pre-filled so every step's existing
+// save-as-you-go logic (jobId set -> update, not create) just works.
+function formFromJob(job: JobRoleRead): WizardForm {
   const platforms = job.published_platforms as Record<string, boolean>;
   const settings = job.publish_settings as Record<string, unknown>;
   return {
@@ -129,6 +146,21 @@ function formFromJob(job: JobRoleRead): typeof EMPTY_STATE {
   };
 }
 
+// J2: a template is a job posted before -- copy what describes the ROLE, not where/when it
+// was posted (platforms, links, closing date start fresh).
+export function formFromTemplate(job: JobRoleRead): WizardForm {
+  return {
+    ...formFromJob(job),
+    naukri: false,
+    linkedin: false,
+    careerPortal: true,
+    postingUrlNaukri: "",
+    postingUrlLinkedin: "",
+    emailNotifications: false,
+    applicationDeadline: "",
+  };
+}
+
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -136,21 +168,51 @@ interface Props {
   // When set, the wizard opens pre-filled for this existing job (the jobs table's "Edit"
   // action) instead of starting a new one.
   initialJob?: JobRoleRead | null;
+  // J2: start a NEW job pre-filled from this one (template library).
+  template?: JobRoleRead | null;
+  // Jobs offered in step 1's "copy details from" picker.
+  templates?: JobRoleRead[];
 }
 
-export default function CreateJobWizard({ open, onClose, onPublished, initialJob }: Props) {
+// A field with an (i) next to it -- the tip stays outside the input so it is its own
+// keyboard stop and never fights the field for clicks.
+function WithTip({ tip, children }: { tip: string; children: ReactNode }) {
+  return (
+    <Stack direction="row" spacing={0.5} alignItems="flex-start">
+      <Box sx={{ flex: 1, minWidth: 0 }}>{children}</Box>
+      <Box sx={{ pt: 1.5 }}>
+        <InfoTip text={tip} />
+      </Box>
+    </Stack>
+  );
+}
+
+export default function CreateJobWizard({ open, onClose, onPublished, initialJob, template, templates = [] }: Props) {
+  const t = useT();
+  const f = useTheme().palette.fresh;
+  const { aiFeature } = useMeBootstrap();
+  const aiEnabled = aiFeature("recruitment.jd_generation");
   const [activeStep, setActiveStep] = useState(0);
   const [jobId, setJobId] = useState<string | null>(null);
   const [job, setJob] = useState<JobRoleRead | null>(null);
-  const [form, setForm] = useState(EMPTY_STATE);
+  const [form, setForm] = useState<WizardForm>(EMPTY_STATE);
   const [saving, setSaving] = useState(false);
   const [generatingJd, setGeneratingJd] = useState(false);
   const [stepError, setStepError] = useState<string | null>(null);
+  const [apiError, setApiError] = useState<{ what: string; error: unknown } | null>(null);
   const [published, setPublished] = useState<JobRoleRead | null>(null);
   const [googleConnected, setGoogleConnected] = useState<boolean | null>(null);
   const [linkedinConnected, setLinkedinConnected] = useState<boolean | null>(null);
   const [linkedinExpired, setLinkedinExpired] = useState(false);
   const [suggestions, setSuggestions] = useState<JobFieldSuggestionsResponse>(EMPTY_SUGGESTIONS);
+  const [copiedFrom, setCopiedFrom] = useState<string | null>(null);
+  // autosave
+  const [draftOffer, setDraftOffer] = useState<{ draft: WizardDraft; at: string | null } | null>(null);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+  const touched = useRef(false);
+  const saveTimer = useRef<number | undefined>(undefined);
+
+  const draftsOn = open && !initialJob && !published;
 
   useEffect(() => {
     if (!open) return;
@@ -158,6 +220,18 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
       setJobId(initialJob.id);
       setJob(initialJob);
       setForm(formFromJob(initialJob));
+    } else if (template) {
+      setForm(formFromTemplate(template));
+      setCopiedFrom(template.title);
+      touched.current = true;
+    } else {
+      experienceApi
+        .getDraft(DRAFT_FORM_KEY, DRAFT_REF)
+        .then((r) => {
+          const d = r.data as unknown as WizardDraft | null;
+          if (d && d.form && typeof d.form === "object") setDraftOffer({ draft: d, at: r.updated_at });
+        })
+        .catch(() => undefined);
     }
     integrationsApi
       .googleStatus()
@@ -175,18 +249,75 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
       .then(setSuggestions)
       .catch(() => setSuggestions(EMPTY_SUGGESTIONS));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, initialJob]);
+  }, [open, initialJob, template]);
 
-  const set = <K extends keyof typeof EMPTY_STATE>(key: K, value: (typeof EMPTY_STATE)[K]) =>
+  // Debounced autosave of the whole wizard (form + which job it created + which step).
+  useEffect(() => {
+    if (!draftsOn || draftOffer || !touched.current) return;
+    window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => {
+      const payload: WizardDraft = { form, jobId, step: activeStep };
+      experienceApi
+        .saveDraft(DRAFT_FORM_KEY, payload as unknown as Record<string, unknown>, DRAFT_REF)
+        .then((r) => setSavedAt(r.updated_at))
+        .catch(() => undefined);
+    }, 1500);
+    return () => window.clearTimeout(saveTimer.current);
+  }, [draftsOn, draftOffer, form, jobId, activeStep]);
+
+  const discardDraft = () => experienceApi.discardDraft(DRAFT_FORM_KEY, DRAFT_REF).catch(() => undefined);
+
+  const restoreDraft = async () => {
+    if (!draftOffer) return;
+    const { draft } = draftOffer;
+    setForm({ ...EMPTY_STATE, ...draft.form });
+    touched.current = true;
+    if (draft.jobId) {
+      try {
+        const existing = await jobsApi.get(draft.jobId);
+        setJobId(existing.id);
+        setJob(existing);
+        setActiveStep(Math.min(Math.max(draft.step ?? 0, 0), STEPS.length - 1));
+      } catch {
+        setJobId(null);
+        setJob(null);
+        setActiveStep(0);
+      }
+    }
+    setSavedAt(draftOffer.at);
+    setDraftOffer(null);
+  };
+
+  const startFresh = () => {
+    discardDraft();
+    setDraftOffer(null);
+  };
+
+  const set = <K extends keyof WizardForm>(key: K, value: WizardForm[K]) => {
+    touched.current = true;
     setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const applyTemplate = (source: JobRoleRead | null) => {
+    if (!source) return;
+    touched.current = true;
+    setForm(formFromTemplate(source));
+    setCopiedFrom(source.title);
+  };
 
   const reset = () => {
+    window.clearTimeout(saveTimer.current);
+    touched.current = false;
     setActiveStep(0);
     setJobId(null);
     setJob(null);
     setForm(EMPTY_STATE);
     setStepError(null);
+    setApiError(null);
     setPublished(null);
+    setDraftOffer(null);
+    setSavedAt(null);
+    setCopiedFrom(null);
   };
 
   const handleClose = () => {
@@ -196,42 +327,35 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
 
   const validateStep = (step: number): string | null => {
     if (step === 0) {
-      if (!form.title.trim()) return "Title is required";
+      if (!form.title.trim()) return t("jobs.v.title");
       const positions = Number(form.positionsCount);
-      if (!Number.isFinite(positions) || positions < 1) return "Positions must be at least 1";
+      if (!Number.isFinite(positions) || positions < 1) return t("jobs.v.positions");
       if (form.experienceMinYears.trim()) {
         const min = Number(form.experienceMinYears);
-        if (!Number.isFinite(min) || min < 0) return "Min experience must be 0 or greater";
+        if (!Number.isFinite(min) || min < 0) return t("jobs.v.exp_min");
       }
       if (form.experienceMaxYears.trim()) {
         const max = Number(form.experienceMaxYears);
-        if (!Number.isFinite(max) || max < 0) return "Max experience must be 0 or greater";
+        if (!Number.isFinite(max) || max < 0) return t("jobs.v.exp_max");
       }
       if (form.experienceMinYears.trim() && form.experienceMaxYears.trim()) {
-        if (Number(form.experienceMaxYears) < Number(form.experienceMinYears)) {
-          return "Max experience must be greater than or equal to min experience";
-        }
+        if (Number(form.experienceMaxYears) < Number(form.experienceMinYears)) return t("jobs.v.exp_order");
       }
       return null;
     }
     if (step === 1) {
-      const categories = [
-        form.technicalSkillsMustHave, form.technicalSkillsGoodToHave,
-        form.softSkillsMustHave, form.softSkillsGoodToHave,
-      ];
-      if (categories.every((category) => category.length === 0)) return "Add at least one skill";
+      const categories = [form.technicalSkillsMustHave, form.technicalSkillsGoodToHave, form.softSkillsMustHave, form.softSkillsGoodToHave];
+      if (categories.every((category) => category.length === 0)) return t("jobs.v.skills");
       const duplicate = findSkillInMultipleCategories(categories);
-      if (duplicate) return `"${duplicate}" cannot be in more than one skill category`;
+      if (duplicate) return t("jobs.v.skill_dup", { skill: duplicate });
       return null;
     }
     if (step === 2) {
-      if (form.salaryMin && form.salaryMax && Number(form.salaryMax) < Number(form.salaryMin)) {
-        return "Salary max must be greater than or equal to salary min";
-      }
+      if (form.salaryMin && form.salaryMax && Number(form.salaryMax) < Number(form.salaryMin)) return t("jobs.v.salary");
       return null;
     }
     if (step === 4) {
-      if (!form.jdText.trim()) return "Generate or write a job description before continuing";
+      if (!form.jdText.trim()) return t(aiEnabled ? "jobs.v.jd_ai" : "jobs.v.jd");
       return null;
     }
     return null;
@@ -239,42 +363,28 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
 
   // freeSolo + multiple normally adds whatever was typed/pasted as a single chip verbatim
   // -- "createOption" fires with the raw text as the newest entry in `newValue`, and
-  // "blur" (via the Autocomplete's autoSelect prop below) fires the same way when focus
-  // leaves without pressing Enter first. Splitting only on those two reasons -- never on
-  // "selectOption"/"removeOption"/"clear" -- leaves picking a dropdown suggestion or
-  // removing a chip completely untouched.
+  // "blur" (via autoSelect) fires the same way when focus leaves without Enter. Splitting
+  // only on those two reasons leaves picking a suggestion or removing a chip untouched.
   const handleSkillsChange = (
-    key:
-      | "technicalSkillsMustHave" | "technicalSkillsGoodToHave"
-      | "softSkillsMustHave" | "softSkillsGoodToHave"
-      | "preferredCertifications",
+    key: "technicalSkillsMustHave" | "technicalSkillsGoodToHave" | "softSkillsMustHave" | "softSkillsGoodToHave" | "preferredCertifications",
     newValue: string[],
     reason: string,
   ) => {
     const committedNewText = reason === "createOption" || reason === "blur";
     const raw = newValue[newValue.length - 1];
     if (committedNewText && typeof raw === "string" && raw.includes(",")) {
-      const segments = raw
-        .split(",")
-        .map((segment) => segment.trim())
-        .filter(Boolean);
+      const segments = raw.split(",").map((segment) => segment.trim()).filter(Boolean);
       set(key, Array.from(new Set([...newValue.slice(0, -1), ...segments])));
       return;
     }
     set(key, newValue);
   };
 
-  // One instance of the same creatable-autocomplete pattern the single "Skills" field
-  // used to be, reused 4x for technical/soft x must-have/good-to-have and a 5th time for
-  // Preferred Certifications (its own suggestions pool, see options below).
   const renderSkillsField = (
-    key:
-      | "technicalSkillsMustHave" | "technicalSkillsGoodToHave"
-      | "softSkillsMustHave" | "softSkillsGoodToHave"
-      | "preferredCertifications",
+    key: "technicalSkillsMustHave" | "technicalSkillsGoodToHave" | "softSkillsMustHave" | "softSkillsGoodToHave" | "preferredCertifications",
     label: string,
     options: string[] = suggestions.skills,
-    helperText = "Pick an existing skill, or type one (or several, comma-separated) and press Enter",
+    helperText = t("jobs.f.skills_help"),
   ) => (
     <Autocomplete
       multiple
@@ -289,26 +399,23 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
           return <Chip key={tagKey} label={skill} size="small" {...tagProps} />;
         })
       }
-      renderInput={(params) => (
-        <TextField
-          {...params}
-          label={label}
-          helperText={helperText}
-        />
-      )}
+      renderInput={(params) => <TextField {...params} label={label} helperText={helperText} />}
     />
   );
 
-  const handleGenerateJd = async () => {
-    if (!jobId) return;
+  const handleGenerateJd = async (): Promise<string | null> => {
+    if (!jobId) return null;
     setGeneratingJd(true);
     setStepError(null);
+    setApiError(null);
     try {
       const updated = await jobsApi.generateJd(jobId);
       setJob(updated);
       set("jdText", updated.jd_text || "");
+      return updated.jd_text || "";
     } catch (err) {
-      setStepError(extractErrorMessage(err, "Failed to generate job description"));
+      setApiError({ what: t("jobs.err.ai"), error: err });
+      return null;
     } finally {
       setGeneratingJd(false);
     }
@@ -321,6 +428,7 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
       return;
     }
     setStepError(null);
+    setApiError(null);
     setSaving(true);
     try {
       if (activeStep === 0) {
@@ -368,7 +476,7 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
       }
       setActiveStep((s) => s + 1);
     } catch (err) {
-      setStepError(extractErrorMessage(err, "Failed to save this step"));
+      setApiError({ what: t("jobs.err.save_step"), error: err });
     } finally {
       setSaving(false);
     }
@@ -376,15 +484,17 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
 
   const handleBack = () => {
     setStepError(null);
+    setApiError(null);
     setActiveStep((s) => Math.max(0, s - 1));
   };
 
   const handlePublish = async () => {
     if (!form.naukri && !form.linkedin && !form.careerPortal) {
-      setStepError("Select at least one platform before publishing");
+      setStepError(t("jobs.v.platform"));
       return;
     }
     setStepError(null);
+    setApiError(null);
     setSaving(true);
     try {
       const updated = await jobsApi.publishPlatforms(jobId!, {
@@ -396,65 +506,89 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
         email_notifications: form.emailNotifications,
         application_deadline: form.applicationDeadline || null,
       });
+      window.clearTimeout(saveTimer.current);
+      if (!initialJob) discardDraft();
       setJob(updated);
       setPublished(updated);
       onPublished(updated);
     } catch (err) {
-      setStepError(extractErrorMessage(err, "Failed to publish job"));
+      setApiError({ what: t("jobs.err.publish"), error: err });
     } finally {
       setSaving(false);
     }
   };
 
+  const sectionTitle = (emoji: string, text: string) => (
+    <Typography variant="subtitle1" component="h3" sx={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 1 }}>
+      <Emoji name={emoji} size={18} />
+      {text}
+    </Typography>
+  );
+
+  const aiInputs = [
+    form.title,
+    form.department,
+    form.location,
+    formatExperienceRange(form.experienceMinYears ? Number(form.experienceMinYears) : null, form.experienceMaxYears ? Number(form.experienceMaxYears) : null),
+    ...[...form.technicalSkillsMustHave, ...form.softSkillsMustHave].slice(0, 6),
+    form.salaryMin && form.salaryMax ? t("jobs.rev.salary", { min: form.salaryMin, max: form.salaryMax }) : "",
+    form.benefits ? t("jobs.rev.benefits") : "",
+    form.keyResponsibilities ? t("jobs.rev.responsibilities") : "",
+    form.additionalNotes ? t("jobs.rev.notes") : "",
+  ].filter((v): v is string => Boolean(v));
+
   const renderStep = () => {
     switch (activeStep) {
       case 0:
         return (
-          <Stack spacing={2} mt={1}>
-            <TextField label="Title" required value={form.title} onChange={(e) => set("title", e.target.value)} fullWidth autoFocus />
-            <Autocomplete
-              freeSolo
-              options={suggestions.departments}
-              value={form.department}
-              onInputChange={(_e, value) => set("department", value)}
-              renderInput={(params) => <TextField {...params} label="Department" fullWidth />}
-            />
-            <Autocomplete
-              freeSolo
-              options={suggestions.locations}
-              value={form.location}
-              onInputChange={(_e, value) => set("location", value)}
-              renderInput={(params) => <TextField {...params} label="Location" fullWidth />}
-            />
-            <Stack direction="row" spacing={2}>
-              <TextField
-                label="Min Experience (years)"
-                type="number"
-                inputProps={{ min: 0, step: 0.5 }}
-                value={form.experienceMinYears}
-                onChange={(e) => set("experienceMinYears", e.target.value)}
+          <Stack spacing={2}>
+            {!jobId && !initialJob && templates.length > 0 && (
+              <Card sx={{ p: 2, bgcolor: f.surface2, boxShadow: "none", border: `1px dashed ${f.line}` }}>
+                <WithTip tip={t("jobs.tpl.pick_tip")}>
+                  <Autocomplete
+                    options={templates}
+                    getOptionLabel={(o) => [o.title, o.department, o.location].filter(Boolean).join(" · ")}
+                    isOptionEqualToValue={(a, b) => a.id === b.id}
+                    onChange={(_e, value) => applyTemplate(value)}
+                    renderInput={(params) => <TextField {...params} size="small" label={t("jobs.tpl.pick_label")} />}
+                  />
+                </WithTip>
+              </Card>
+            )}
+            {copiedFrom && (
+              <Typography role="status" variant="body2" sx={{ p: 1.25, borderRadius: "12px", bgcolor: f.skySoft }}>
+                {t("jobs.tpl.applied", { title: copiedFrom })}
+              </Typography>
+            )}
+            <TextField label={t("jobs.f.title")} required value={form.title} onChange={(e) => set("title", e.target.value)} fullWidth autoFocus />
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+              <Autocomplete
+                freeSolo
                 fullWidth
+                options={suggestions.departments}
+                value={form.department}
+                onInputChange={(_e, value) => set("department", value)}
+                renderInput={(params) => <TextField {...params} label={t("jobs.f.department")} fullWidth />}
               />
-              <TextField
-                label="Max Experience (years)"
-                type="number"
-                inputProps={{ min: 0, step: 0.5 }}
-                placeholder="Blank for open-ended (e.g. 5+ years)"
-                value={form.experienceMaxYears}
-                onChange={(e) => set("experienceMaxYears", e.target.value)}
+              <Autocomplete
+                freeSolo
                 fullWidth
+                options={suggestions.locations}
+                value={form.location}
+                onInputChange={(_e, value) => set("location", value)}
+                renderInput={(params) => <TextField {...params} label={t("jobs.f.location")} fullWidth />}
               />
             </Stack>
-            <Stack direction="row" spacing={2}>
-              <TextField
-                select
-                label="Education (degree level)"
-                value={form.educationDegreeLevel}
-                onChange={(e) => set("educationDegreeLevel", e.target.value)}
-                fullWidth
-              >
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+              <TextField label={t("jobs.f.exp_min")} type="number" slotProps={{ htmlInput: { min: 0, step: 0.5 } }}
+                value={form.experienceMinYears} onChange={(e) => set("experienceMinYears", e.target.value)} fullWidth />
+              <TextField label={t("jobs.f.exp_max")} type="number" slotProps={{ htmlInput: { min: 0, step: 0.5 } }} placeholder={t("jobs.f.exp_max_ph")}
+                value={form.experienceMaxYears} onChange={(e) => set("experienceMaxYears", e.target.value)} fullWidth />
+            </Stack>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+              <TextField select label={t("jobs.f.edu_level")} value={form.educationDegreeLevel} onChange={(e) => set("educationDegreeLevel", e.target.value)} fullWidth>
                 <MenuItem value="">
-                  <em>Not specified</em>
+                  <em>{t("jobs.f.edu_none")}</em>
                 </MenuItem>
                 {EDUCATION_DEGREE_LEVELS.map((level) => (
                   <MenuItem key={level} value={level}>
@@ -462,131 +596,78 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
                   </MenuItem>
                 ))}
               </TextField>
-              <TextField
-                label="Education (field)"
-                placeholder="e.g. Computer Science"
-                value={form.educationField}
-                onChange={(e) => set("educationField", e.target.value)}
-                fullWidth
-              />
+              <TextField label={t("jobs.f.edu_field")} placeholder={t("jobs.f.edu_field_ph")} value={form.educationField}
+                onChange={(e) => set("educationField", e.target.value)} fullWidth />
             </Stack>
-            <TextField
-              select
-              label="Job type"
-              value={form.jobType}
-              onChange={(e) => set("jobType", e.target.value)}
-              fullWidth
-            >
-              {JOB_TYPES.map((type) => (
-                <MenuItem key={type} value={type}>
-                  {type}
-                </MenuItem>
-              ))}
-            </TextField>
-            <TextField
-              label="Positions count"
-              type="number"
-              value={form.positionsCount}
-              onChange={(e) => set("positionsCount", e.target.value)}
-              fullWidth
-            />
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+              <TextField select label={t("jobs.f.job_type")} value={form.jobType} onChange={(e) => set("jobType", e.target.value)} fullWidth>
+                {JOB_TYPES.map((type) => (
+                  <MenuItem key={type.value} value={type.value}>
+                    {t(type.key)}
+                  </MenuItem>
+                ))}
+              </TextField>
+              <Box sx={{ width: "100%" }}>
+                <WithTip tip={t("jobs.f.positions_tip")}>
+                  <TextField label={t("jobs.f.positions")} type="number" slotProps={{ htmlInput: { min: 1 } }} value={form.positionsCount}
+                    onChange={(e) => set("positionsCount", e.target.value)} fullWidth />
+                </WithTip>
+              </Box>
+            </Stack>
           </Stack>
         );
       case 1:
         return (
-          <Stack spacing={3} mt={1}>
+          <Stack spacing={3}>
             <Stack spacing={2}>
-              <Typography variant="subtitle2">Technical Skills</Typography>
-              {renderSkillsField("technicalSkillsMustHave", "Must Have")}
-              {renderSkillsField("technicalSkillsGoodToHave", "Good to Have")}
+              <Stack direction="row" alignItems="center">
+                {sectionTitle("laptop", t("jobs.f.tech"))}
+                <InfoTip text={t("jobs.f.must_tip")} />
+              </Stack>
+              {renderSkillsField("technicalSkillsMustHave", t("jobs.f.must"))}
+              {renderSkillsField("technicalSkillsGoodToHave", t("jobs.f.good"))}
             </Stack>
             <Stack spacing={2}>
-              <Typography variant="subtitle2">Soft Skills</Typography>
-              {renderSkillsField("softSkillsMustHave", "Must Have")}
-              {renderSkillsField("softSkillsGoodToHave", "Good to Have")}
+              {sectionTitle("handshake", t("jobs.f.soft"))}
+              {renderSkillsField("softSkillsMustHave", t("jobs.f.must"))}
+              {renderSkillsField("softSkillsGoodToHave", t("jobs.f.good"))}
             </Stack>
             <Stack spacing={2}>
-              <Typography variant="subtitle2">Preferred Certifications</Typography>
-              {renderSkillsField(
-                "preferredCertifications",
-                "Preferred Certifications (optional)",
-                suggestions.certifications,
-                "Pick an existing certification, or type one (or several, comma-separated) and press Enter",
-              )}
+              {sectionTitle("graduation", t("jobs.f.certs_title"))}
+              {renderSkillsField("preferredCertifications", t("jobs.f.certs"), suggestions.certifications, t("jobs.f.certs_help"))}
             </Stack>
           </Stack>
         );
       case 2:
         return (
-          <Stack spacing={2} mt={1}>
-            <Stack direction="row" spacing={2}>
-              <TextField
-                label="Salary band min"
-                type="number"
-                value={form.salaryMin}
-                onChange={(e) => set("salaryMin", e.target.value)}
-                fullWidth
-              />
-              <TextField
-                label="Salary band max"
-                type="number"
-                value={form.salaryMax}
-                onChange={(e) => set("salaryMax", e.target.value)}
-                fullWidth
-              />
-            </Stack>
-            <TextField
-              label="Benefits (optional)"
-              value={form.benefits}
-              onChange={(e) => set("benefits", e.target.value)}
-              multiline
-              minRows={3}
-              fullWidth
-            />
+          <Stack spacing={2}>
+            <WithTip tip={t("jobs.f.salary_tip")}>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                <TextField label={t("jobs.f.salary_min")} type="number" value={form.salaryMin} onChange={(e) => set("salaryMin", e.target.value)} fullWidth />
+                <TextField label={t("jobs.f.salary_max")} type="number" value={form.salaryMax} onChange={(e) => set("salaryMax", e.target.value)} fullWidth />
+              </Stack>
+            </WithTip>
+            <TextField label={t("jobs.f.benefits")} value={form.benefits} onChange={(e) => set("benefits", e.target.value)} multiline minRows={3} fullWidth />
           </Stack>
         );
       case 3:
         return (
-          <Stack spacing={2} mt={1}>
-            <TextField
-              label="Key responsibilities (optional)"
-              placeholder="A short paragraph describing what this person will actually do -- used as a starting point for the generated JD's Responsibilities section, not replaced by AI-invented content."
-              value={form.keyResponsibilities}
-              onChange={(e) => set("keyResponsibilities", e.target.value)}
-              multiline
-              minRows={4}
-              fullWidth
-            />
-            <TextField
-              label="Additional notes (optional)"
-              value={form.additionalNotes}
-              onChange={(e) => set("additionalNotes", e.target.value)}
-              multiline
-              minRows={4}
-              fullWidth
-            />
+          <Stack spacing={2}>
+            <TextField label={t("jobs.f.responsibilities")} placeholder={t("jobs.f.responsibilities_ph")} value={form.keyResponsibilities}
+              onChange={(e) => set("keyResponsibilities", e.target.value)} multiline minRows={4} fullWidth />
+            <TextField label={t("jobs.f.notes")} value={form.additionalNotes} onChange={(e) => set("additionalNotes", e.target.value)} multiline minRows={4} fullWidth />
           </Stack>
         );
       case 4:
         return (
-          <Stack spacing={2} mt={1}>
-            <Typography variant="body2" color="text.secondary">
-              Generate a job description with AI, using everything collected so far
-              (requirements, salary band, benefits, and additional notes), or write your
-              own below.
-            </Typography>
-            <Button variant="outlined" onClick={handleGenerateJd} disabled={generatingJd} sx={{ alignSelf: "flex-start" }}>
-              {generatingJd ? "Generating..." : "Generate JD"}
-            </Button>
-            <TextField
-              label="Job description"
-              value={form.jdText}
-              onChange={(e) => set("jdText", e.target.value)}
-              multiline
-              minRows={8}
-              fullWidth
-            />
-          </Stack>
+          <JdSideBySide
+            value={form.jdText}
+            onChange={(next) => set("jdText", next)}
+            aiEnabled={aiEnabled}
+            generating={generatingJd}
+            onGenerate={handleGenerateJd}
+            inputs={aiInputs}
+          />
         );
       case 5:
         return published ? renderSuccess() : renderReviewAndPublish();
@@ -600,161 +681,98 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
     goodToHave: [...form.technicalSkillsGoodToHave, ...form.softSkillsGoodToHave],
   };
 
+  const platformNote = (text: string) => (
+    <Typography variant="caption" sx={{ color: f.muted, mt: -1, ml: 6, display: "block" }}>
+      {text}
+    </Typography>
+  );
+
   const renderReviewAndPublish = () => (
-    <Stack spacing={2} mt={1}>
-      <Typography variant="subtitle1">Review</Typography>
-      <Stack spacing={0.5}>
-        <Typography variant="body2">
-          <strong>{form.title}</strong>
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          {[
-            form.department,
-            form.location,
-            formatExperienceRange(
-              form.experienceMinYears ? Number(form.experienceMinYears) : null,
-              form.experienceMaxYears ? Number(form.experienceMaxYears) : null,
-            ),
-          ]
-            .filter(Boolean)
-            .join(" · ") || "No details set"}
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          {form.jobType} · Positions: {form.positionsCount}
-          {form.salaryMin && form.salaryMax ? ` · Salary band: ${form.salaryMin} - ${form.salaryMax}` : ""}
-        </Typography>
-        {(form.educationDegreeLevel || form.educationField) && (
-          <Typography variant="body2" color="text.secondary">
-            Education: {[form.educationDegreeLevel, form.educationField].filter(Boolean).join(" in ")}
+    <Stack spacing={2}>
+      <Card sx={{ p: 2, bgcolor: f.surface2, boxShadow: "none", border: `1px solid ${f.line}` }}>
+        <Stack spacing={0.75}>
+          <Typography sx={{ fontWeight: 800, fontSize: 17 }}>{form.title}</Typography>
+          <Typography variant="body2" sx={{ color: f.muted }}>
+            {[
+              form.department,
+              form.location,
+              formatExperienceRange(form.experienceMinYears ? Number(form.experienceMinYears) : null, form.experienceMaxYears ? Number(form.experienceMaxYears) : null),
+            ]
+              .filter(Boolean)
+              .join(" · ") || t("jobs.rev.no_details")}
           </Typography>
-        )}
-        {(reviewSkills.mustHave.length > 0 || reviewSkills.goodToHave.length > 0) && (
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap mt={0.5}>
-            {reviewSkills.mustHave.map((skill) => (
-              <Chip key={`must-${skill}`} label={skill} size="small" />
-            ))}
-            {reviewSkills.goodToHave.map((skill) => (
-              <Chip key={`good-${skill}`} label={skill} size="small" variant="outlined" />
-            ))}
-          </Stack>
-        )}
-        {form.preferredCertifications.length > 0 && (
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap mt={0.5} alignItems="center">
-            <Typography variant="caption" color="text.secondary">
-              Preferred certifications:
+          <Typography variant="body2" sx={{ color: f.muted }}>
+            {[t(JOB_TYPES.find((j) => j.value === form.jobType)?.key ?? form.jobType), t("jobs.rev.positions", { count: Number(form.positionsCount) || 1 }),
+              form.salaryMin && form.salaryMax ? t("jobs.rev.salary", { min: form.salaryMin, max: form.salaryMax }) : ""].filter(Boolean).join(" · ")}
+          </Typography>
+          {(form.educationDegreeLevel || form.educationField) && (
+            <Typography variant="body2" sx={{ color: f.muted }}>
+              {t("jobs.rev.education", { value: [form.educationDegreeLevel, form.educationField].filter(Boolean).join(" · ") })}
             </Typography>
-            {form.preferredCertifications.map((cert) => (
-              <Chip key={cert} label={cert} size="small" variant="outlined" />
-            ))}
-          </Stack>
-        )}
-        {form.keyResponsibilities && (
-          <Typography variant="body2" color="text.secondary" mt={0.5}>
-            Key responsibilities: {form.keyResponsibilities}
-          </Typography>
-        )}
-        {form.benefits && (
-          <Typography variant="body2" color="text.secondary" mt={0.5}>
-            Benefits: {form.benefits}
-          </Typography>
-        )}
-        {form.additionalNotes && (
-          <Typography variant="body2" color="text.secondary">
-            Notes: {form.additionalNotes}
-          </Typography>
-        )}
-      </Stack>
+          )}
+          {(reviewSkills.mustHave.length > 0 || reviewSkills.goodToHave.length > 0) && (
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap mt={0.5}>
+              {reviewSkills.mustHave.map((skill) => (
+                <Chip key={`must-${skill}`} label={skill} size="small" color="primary" />
+              ))}
+              {reviewSkills.goodToHave.map((skill) => (
+                <Chip key={`good-${skill}`} label={skill} size="small" variant="outlined" />
+              ))}
+            </Stack>
+          )}
+          {form.preferredCertifications.length > 0 && (
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap mt={0.5} alignItems="center">
+              <Typography variant="caption" sx={{ color: f.muted }}>{t("jobs.rev.certs")}:</Typography>
+              {form.preferredCertifications.map((cert) => (
+                <Chip key={cert} label={cert} size="small" variant="outlined" />
+              ))}
+            </Stack>
+          )}
+          {form.keyResponsibilities && <Typography variant="body2" sx={{ color: f.muted }}>{t("jobs.rev.responsibilities")}: {form.keyResponsibilities}</Typography>}
+          {form.benefits && <Typography variant="body2" sx={{ color: f.muted }}>{t("jobs.rev.benefits")}: {form.benefits}</Typography>}
+          {form.additionalNotes && <Typography variant="body2" sx={{ color: f.muted }}>{t("jobs.rev.notes")}: {form.additionalNotes}</Typography>}
+        </Stack>
+      </Card>
 
-      <Divider />
-
-      <Typography variant="subtitle1">Publish to Platforms</Typography>
-      <FormControlLabel
-        control={<Switch checked={form.naukri} onChange={(e) => set("naukri", e.target.checked)} />}
-        label="Naukri.com"
-      />
-      <Typography variant="caption" color="text.secondary" sx={{ mt: -1.5, ml: 4 }}>
-        No posting API access available -- will be marked as posted here, but posting must be done manually on Naukri.com.
-      </Typography>
-      {form.naukri && (
-        <TextField
-          label="Job posting URL (paste after posting manually)"
-          value={form.postingUrlNaukri}
-          onChange={(e) => set("postingUrlNaukri", e.target.value)}
-          size="small"
-          fullWidth
-          sx={{ ml: 4, maxWidth: 420 }}
-        />
-      )}
-      <FormControlLabel
-        control={<Switch checked={form.linkedin} onChange={(e) => set("linkedin", e.target.checked)} />}
-        label="LinkedIn"
-      />
-      <Typography variant="caption" color="text.secondary" sx={{ mt: -1.5, ml: 4 }}>
-        {linkedinConnected && !linkedinExpired
-          ? "Real: a hiring announcement will be posted to your own LinkedIn feed."
-          : linkedinExpired
-            ? "Your LinkedIn connection has expired -- reconnect in Settings for a real post, or paste a manual link below for now."
-            : "No LinkedIn connection -- connect in Settings for a real post, or paste a manual link below."}
-      </Typography>
-      {form.linkedin && !(linkedinConnected && !linkedinExpired) && (
-        <TextField
-          label="Job posting URL (paste after posting manually)"
-          value={form.postingUrlLinkedin}
-          onChange={(e) => set("postingUrlLinkedin", e.target.value)}
-          size="small"
-          fullWidth
-          sx={{ ml: 4, maxWidth: 420 }}
-        />
-      )}
-      <FormControlLabel
-        control={<Switch checked={form.careerPortal} onChange={(e) => set("careerPortal", e.target.checked)} />}
-        label="Career Portal"
-      />
-      <Typography variant="caption" color="text.secondary" sx={{ mt: -1.5, ml: 4 }}>
-        Real: checking this publishes the job live on the public careers page immediately; unchecking un-publishes it.
-      </Typography>
+      {sectionTitle("globe", t("jobs.pub.where"))}
+      <FormControlLabel control={<Switch checked={form.careerPortal} onChange={(e) => set("careerPortal", e.target.checked)} />} label={t("jobs.pub.careers")} />
+      {platformNote(t("jobs.pub.careers_note"))}
       {form.careerPortal && (
-        <Box sx={{ ml: 4 }}>
+        <Box sx={{ ml: 6 }}>
           {job?.status === "published" ? (
             <Typography variant="body2">
-              Live on Career Portal:{" "}
+              {t("jobs.pub.live")}{" "}
               <MuiLink href={`${window.location.origin}/careers/${job.id}`} target="_blank" rel="noopener noreferrer">
                 {`${window.location.origin}/careers/${job.id}`}
               </MuiLink>
             </Typography>
           ) : (
-            <Typography variant="caption" color="text.secondary">
-              Will be live on the Career Portal once published.
-            </Typography>
+            <Typography variant="caption" sx={{ color: f.muted }}>{t("jobs.pub.will_live")}</Typography>
           )}
         </Box>
+      )}
+      <FormControlLabel control={<Switch checked={form.linkedin} onChange={(e) => set("linkedin", e.target.checked)} />} label="LinkedIn" />
+      {platformNote(
+        linkedinConnected && !linkedinExpired ? t("jobs.pub.linkedin_real") : linkedinExpired ? t("jobs.pub.linkedin_expired") : t("jobs.pub.linkedin_none"),
+      )}
+      {form.linkedin && !(linkedinConnected && !linkedinExpired) && (
+        <TextField label={t("jobs.pub.url")} value={form.postingUrlLinkedin} onChange={(e) => set("postingUrlLinkedin", e.target.value)} size="small" fullWidth sx={{ ml: 6, maxWidth: 420 }} />
+      )}
+      <FormControlLabel control={<Switch checked={form.naukri} onChange={(e) => set("naukri", e.target.checked)} />} label="Naukri.com" />
+      {platformNote(t("jobs.pub.naukri_note"))}
+      {form.naukri && (
+        <TextField label={t("jobs.pub.url")} value={form.postingUrlNaukri} onChange={(e) => set("postingUrlNaukri", e.target.value)} size="small" fullWidth sx={{ ml: 6, maxWidth: 420 }} />
       )}
 
       <Divider />
 
-      <Typography variant="subtitle2" color="text.secondary">
-        Additional options
-      </Typography>
-      <FormControlLabel
-        control={
-          <Switch checked={form.emailNotifications} onChange={(e) => set("emailNotifications", e.target.checked)} />
-        }
-        label="Email notifications"
-      />
-      <Typography variant="caption" color="text.secondary" sx={{ mt: -1.5, ml: 4 }}>
-        {googleConnected
-          ? "Real: you'll get an email at your own inbox (via your connected Google account) when a new application comes in for this job."
-          : "Coming soon for you -- connect Google in Settings first. Once connected, this sends a real email to your inbox when a new application comes in."}
-      </Typography>
-      <TextField
-        label="Application deadline (optional)"
-        type="date"
-        value={form.applicationDeadline}
-        onChange={(e) => set("applicationDeadline", e.target.value)}
-        InputLabelProps={{ shrink: true }}
-        helperText="Real: once this date passes, the job automatically closes and stops accepting applications."
-        sx={{ maxWidth: 280 }}
-      />
+      {sectionTitle("gear", t("jobs.pub.more"))}
+      <FormControlLabel control={<Switch checked={form.emailNotifications} onChange={(e) => set("emailNotifications", e.target.checked)} />} label={t("jobs.pub.email")} />
+      {platformNote(googleConnected ? t("jobs.pub.email_on") : t("jobs.pub.email_off"))}
+      <WithTip tip={t("jobs.autoclose.tip")}>
+        <TextField label={t("jobs.pub.deadline")} type="date" value={form.applicationDeadline} onChange={(e) => set("applicationDeadline", e.target.value)}
+          slotProps={{ inputLabel: { shrink: true } }} helperText={t("jobs.pub.deadline_help")} sx={{ maxWidth: 320 }} fullWidth />
+      </WithTip>
     </Stack>
   );
 
@@ -763,54 +781,41 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
     const platforms = published.published_platforms as Record<string, boolean>;
     const careersUrl = `${window.location.origin}/careers/${published.id}`;
     return (
-      <Stack spacing={2} mt={1}>
-        <Alert severity="success">Job published!</Alert>
-        <Stack spacing={1}>
+      <Stack spacing={2} alignItems="center" textAlign="center">
+        <FriendlyAnimation name="success" size={110} label={t("jobs.done.title")} />
+        <Typography variant="h5" component="p" role="status">{t("jobs.done.title")}</Typography>
+        <Stack spacing={1} sx={{ width: "100%", textAlign: "left" }}>
           {platforms.career_portal && (
             <Typography variant="body2">
-              <strong>Career Portal</strong> — Published:{" "}
-              <MuiLink href={careersUrl} target="_blank" rel="noopener noreferrer">
-                {careersUrl}
-              </MuiLink>
+              <strong>{t("jobs.done.careers")}</strong> —{" "}
+              <MuiLink href={careersUrl} target="_blank" rel="noopener noreferrer">{careersUrl}</MuiLink>
             </Typography>
           )}
           {platforms.naukri && (
             <Typography variant="body2">
-              <strong>Naukri.com</strong> — Marked for manual posting (no automated posting; post this manually on
-              Naukri.com)
+              {t("jobs.done.naukri")}
               {published.posting_url_naukri && (
                 <>
                   {" — "}
-                  <MuiLink href={published.posting_url_naukri} target="_blank" rel="noopener noreferrer">
-                    view posting
-                  </MuiLink>
+                  <MuiLink href={published.posting_url_naukri} target="_blank" rel="noopener noreferrer">{t("jobs.done.view")}</MuiLink>
                 </>
               )}
             </Typography>
           )}
           {platforms.linkedin && (
             <Typography variant="body2">
-              <strong>LinkedIn</strong>{" "}
               {published.linkedin_post_urn ? (
                 <>
-                  — Published to your LinkedIn feed:{" "}
-                  <MuiLink
-                    href={`https://www.linkedin.com/feed/update/${published.linkedin_post_urn}/`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    view post
-                  </MuiLink>
+                  {t("jobs.done.linkedin_post")}{" — "}
+                  <MuiLink href={`https://www.linkedin.com/feed/update/${published.linkedin_post_urn}/`} target="_blank" rel="noopener noreferrer">{t("jobs.done.view")}</MuiLink>
                 </>
               ) : (
                 <>
-                  — Marked for manual posting (no automated posting; post this manually on LinkedIn)
+                  {t("jobs.done.linkedin_manual")}
                   {published.posting_url_linkedin && (
                     <>
                       {" — "}
-                      <MuiLink href={published.posting_url_linkedin} target="_blank" rel="noopener noreferrer">
-                        view posting
-                      </MuiLink>
+                      <MuiLink href={published.posting_url_linkedin} target="_blank" rel="noopener noreferrer">{t("jobs.done.view")}</MuiLink>
                     </>
                   )}
                 </>
@@ -823,45 +828,75 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
   };
 
   const isLastStep = activeStep === STEPS.length - 1;
+  const steps = STEPS.map((s) => ({ ...s, title: t(`jobs.wiz.step.${s.key}`) }));
+  const saveText = !draftsOn
+    ? ""
+    : savedAt
+      ? t("jobs.wiz.saved", { time: new Date(savedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) })
+      : t("jobs.wiz.saves");
 
   return (
-    <Dialog open={open} onClose={handleClose} fullWidth maxWidth="md">
-      <DialogTitle>{initialJob ? "Edit Job" : "Create Job"}</DialogTitle>
+    <Dialog open={open} onClose={handleClose} fullWidth maxWidth={activeStep === 4 && !published ? "lg" : "md"} aria-labelledby="job-wizard-title">
+      <DialogTitle id="job-wizard-title" sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        <Emoji name="briefcase" size={24} />
+        {initialJob ? t("jobs.wiz.edit") : t("jobs.wiz.create")}
+      </DialogTitle>
       <DialogContent>
-        <Stepper activeStep={activeStep} sx={{ mt: 1, mb: 2 }}>
-          {STEPS.map((label) => (
-            <Step key={label}>
-              <StepLabel>{label}</StepLabel>
-            </Step>
-          ))}
-        </Stepper>
+        {draftOffer && (
+          <Card role="status" sx={{ p: 2, mb: 2, bgcolor: f.sunSoft, boxShadow: "none" }}>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }}>
+              <Emoji name="memo" size={22} />
+              <Typography sx={{ flex: 1, fontWeight: 600 }}>
+                {t("jobs.wiz.draft_found", { time: draftOffer.at ? new Date(draftOffer.at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "" })}
+              </Typography>
+              <Button variant="contained" size="small" onClick={restoreDraft}>{t("jobs.wiz.draft_continue")}</Button>
+              <Button size="small" onClick={startFresh}>{t("jobs.wiz.draft_fresh")}</Button>
+            </Stack>
+          </Card>
+        )}
 
-        {stepError && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {stepError}
-          </Alert>
+        {!published && <WizardProgress steps={steps} active={activeStep} saveText={saveText} />}
+
+        {!published && (
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="h5" component="h2">{steps[activeStep].title}</Typography>
+            <Typography sx={{ color: f.muted, mt: 0.5 }}>{t(`jobs.wiz.hint.${STEPS[activeStep].key}`)}</Typography>
+          </Box>
+        )}
+
+        {apiError && (
+          <Box sx={{ mb: 2 }}>
+            <FriendlyError compact error={apiError.error} what={apiError.what} />
+          </Box>
         )}
 
         <Box>{renderStep()}</Box>
+
+        {stepError && (
+          <Typography role="alert" sx={{ mt: 2, color: f.coral, fontWeight: 600 }}>
+            {stepError}
+          </Typography>
+        )}
       </DialogContent>
       <DialogActions>
         {published ? (
           <Button variant="contained" onClick={handleClose}>
-            Done
+            {t("action.done")}
           </Button>
         ) : (
           <>
-            <Button onClick={handleClose}>Cancel</Button>
-            <Button onClick={handleBack} disabled={activeStep === 0 || saving}>
-              Back
+            <Button onClick={handleClose}>{t("action.cancel")}</Button>
+            <Box sx={{ flex: 1 }} />
+            <Button variant="outlined" onClick={handleBack} disabled={activeStep === 0 || saving}>
+              {t("action.back")}
             </Button>
             {isLastStep ? (
               <Button variant="contained" onClick={handlePublish} disabled={saving}>
-                {saving ? "Publishing..." : "Publish"}
+                {saving ? t("jobs.wiz.publishing") : t("jobs.wiz.publish")}
               </Button>
             ) : (
               <Button variant="contained" onClick={handleNext} disabled={saving}>
-                {saving ? "Saving..." : "Next"}
+                {saving ? t("jobs.wiz.saving") : t("action.next")}
               </Button>
             )}
           </>

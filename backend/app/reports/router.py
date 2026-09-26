@@ -292,6 +292,10 @@ def _describe_job_role_entry(db: Session, entry: AuditLog) -> str:
         return f"Job published: {title}" if new_status == "published" else f"Job unpublished: {title}"
     if entry.action == "job_auto_closed_deadline_passed":
         return f"Job auto-closed (deadline passed): {title}"
+    if entry.action == "job_auto_closed_positions_filled":
+        return f"Job auto-closed (all positions filled): {title}"
+    if entry.action == "job_reopened":
+        return f"Job reopened: {title}"
     return f"{_humanize_action(entry.action)}: {title}"
 
 

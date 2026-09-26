@@ -1583,3 +1583,6 @@ export const mediaApi = {
 export const celebrationsApi = {
   once: (eventKey: string) => post<{ first: boolean }>(`/api/me/celebrations/${encodeURIComponent(eventKey)}`),
 };
+
+// Part 15: per-module API files (src/api/<module>.ts) reuse the same authenticated helpers.
+export const http = { request, get, post, patch, put, del, postForm, fetchBlob };

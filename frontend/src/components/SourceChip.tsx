@@ -1,26 +1,20 @@
-import Chip from "@mui/material/Chip";
 import type { ChipProps } from "@mui/material/Chip";
 
 import { candidateSourceLabel } from "../api/types";
+import StatusChip from "../ui-kit/StatusChip";
+import type { Tone } from "../ui-kit/StatusChip";
 
-type SourceColor = "info" | "default" | "primary";
-
-// backend/app/models/candidate.py CANDIDATE_SOURCES. The five sourcing-integration
-// values (linkedin/naukri/indeed/monster/shine) are defined but never written yet, so
-// they share a neutral color with everything else not yet distinguished.
-const SOURCE_COLOR_MAP: Record<string, SourceColor> = {
-  career_portal: "info",
-  manual: "default",
-  local_import: "primary",
+// backend/app/models/candidate.py CANDIDATE_SOURCES. Part 15.4: a pill in the friendly kit
+// look (colour + emoji + word). The five sourcing-integration values
+// (linkedin/naukri/indeed/monster/shine) are defined but never written yet, so they share a
+// neutral style.
+const SOURCE_STYLE: Record<string, { tone: Tone; emoji: string }> = {
+  career_portal: { tone: "sky", emoji: "globe" },
+  manual: { tone: "muted", emoji: "inbox" },
+  local_import: { tone: "brand", emoji: "file_folder" },
 };
 
 export default function SourceChip({ source, size = "small" }: { source: string; size?: ChipProps["size"] }) {
-  return (
-    <Chip
-      label={candidateSourceLabel(source)}
-      color={SOURCE_COLOR_MAP[source] ?? "default"}
-      size={size}
-      variant="outlined"
-    />
-  );
+  const style = SOURCE_STYLE[source] ?? { tone: "muted" as Tone, emoji: "link" };
+  return <StatusChip tone={style.tone} emoji={style.emoji} label={candidateSourceLabel(source)} size={size === "medium" ? "medium" : "small"} />;
 }
