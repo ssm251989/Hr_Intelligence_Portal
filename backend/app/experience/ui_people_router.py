@@ -30,6 +30,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.auth.dependencies import get_current_user
 from app.core.database import get_db
 from app.models.user import User
 from app.platform.iam.authz import has_permission, require
@@ -178,15 +179,36 @@ _LIST_KEYS = ["personal_email", "personal_phone", "skills", "work_email", "desig
 # ---- employees list / directory ----
 
 
+# Part 17.9: the People directory is for everyone in the company; it shows only these
+# fields (no personal contact details, grade, dates or codes). The HR view keeps the full row.
+_DIRECTORY_KEYS = ("id", "name", "first_name", "last_name", "status", "photo_url", "designation", "department_id", "department",
+                   "location_id", "location", "manager_id", "manager_name", "work_mode", "work_email", "skills")
+_DIRECTORY_STATUSES = ("active", "on_notice")
+
+
+def _directory_mode(db: Session, tenant, user: User, view: str) -> bool:
+    """True = directory fields only. The HR view needs core_hr.employee.view; the directory
+    only needs a staff login (agency logins never reach here -- auth/dependencies.py)."""
+    if view not in ("hr", "directory"):
+        raise HTTPException(status_code=400, detail="view must be hr or directory")
+    full = has_permission(db, tenant, user, "core_hr.employee.view")
+    if view == "hr" and not full:
+        raise HTTPException(status_code=403, detail="Missing permission: core_hr.employee.view")
+    return view == "directory"
+
+
 @router.get("/employees")
 def list_people(
     q: Optional[str] = None, status: Optional[str] = None, department_id: Optional[UUID] = None, location_id: Optional[UUID] = None,
-    skill: Optional[str] = None, db: Session = Depends(get_db), current_user: User = Depends(require("core_hr.employee.view")),
+    skill: Optional[str] = None, view: str = "hr", db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
 ):
     from app.models.core_hr import Employee
 
     tenant = require_current_tenant()
+    directory = _directory_mode(db, tenant, current_user, view)
     query = db.query(Employee).filter(Employee.tenant_id == tenant.tenant_id)
+    if directory:
+        query = query.filter(Employee.status.in_(_DIRECTORY_STATUSES))
     if status:
         query = query.filter(Employee.status.in_([s for s in status.split(",") if s]))
     employees = query.order_by(Employee.first_name, Employee.last_name).limit(_LIST_LIMIT).all()
@@ -224,15 +246,17 @@ def list_people(
             hay = " ".join(str(v) for v in (row["name"], row["employee_code"], row["designation"], row["department"], row["location"], row["work_email"], " ".join(skills)) if v).lower()
             if needle not in hay:
                 continue
-        items.append(guard.apply(row))
+        row = guard.apply(row)
+        items.append({k: row[k] for k in _DIRECTORY_KEYS if k in row} if directory else row)
     return {"items": items, "total": len(items), "truncated": len(employees) >= _LIST_LIMIT}
 
 
 @router.get("/filters")
-def people_filters(db: Session = Depends(get_db), current_user: User = Depends(require("core_hr.employee.view"))):
+def people_filters(view: str = "hr", db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     from app.models.core_hr import Employee
 
     tenant = require_current_tenant()
+    _directory_mode(db, tenant, current_user, view)
     employees = db.query(Employee).filter(Employee.tenant_id == tenant.tenant_id).all()
     current = _current_records(db, tenant)
     names = _name_maps(db, tenant)

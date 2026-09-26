@@ -64,8 +64,8 @@ MODULES: tuple[ModuleDef, ...] = (
     ModuleDef("onboarding", (NavItem("nav.onboarding", "/onboarding", "onboarding.preboarding.view", group="people", icon="waving_hand"),),
               ("/api/v1/onboarding", "/api/v1/public/onboarding", "/api/v1/ui/onboarding", "/api/v1/public/ui/onboarding")),
     ModuleDef("core_hr", (
-        NavItem("nav.employees", "/employees", "core_hr.employee.view", group="people", icon="people"),
-        NavItem("nav.directory", "/directory", "core_hr.employee.view", group="people", icon="id_card"),
+        # Part 17.9: one "People" entry (Directory for everyone, HR view inside for HR).
+        NavItem("nav.people", "/people", group="people", icon="people"),
         NavItem("nav.org_chart", "/org-chart", "core_hr.org.view", group="people", icon="building"),
     ), ("/api/v1/ui/people",)),
     ModuleDef("performance", (

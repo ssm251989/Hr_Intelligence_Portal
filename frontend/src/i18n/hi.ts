@@ -23,6 +23,7 @@ export const hi: Bundle = {
   "nav.reports": "रिपोर्ट",
   "nav.onboarding": "ऑनबोर्डिंग",
   "nav.employees": "कर्मचारी",
+  "nav.people": "लोग",
   "nav.directory": "लोगों की सूची",
   "nav.org_chart": "संगठन चार्ट",
   "nav.performance": "प्रदर्शन",

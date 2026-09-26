@@ -2112,3 +2112,13 @@ NEXT: 17.3 maps (geo service + cache + offline India table, shared Leaflet map, 
   the legend); old per-component city tables removed.
 
 NEXT: 17.4 one scoring language ("Match score (0-100)" + one "Shortlist threshold").
+
+## Part 17.9 -- One People section (2026-09-27)
+
+Done before 17.4-17.8 because it is independent (scoring items 17.4-17.6 build on one survey,
+kept together). `/people` = Directory (everyone; directory fields only via `view=directory`)
++ HR view (`?view=hr`, needs core_hr.employee.view); `/employees`, `/directory` redirect with
+their query; one "People" nav item. Decision: directory hides personal contact data, grade,
+codes and dates from non-HR users (work email only).
+
+NEXT: 17.4 one scoring language, then 17.5 scoring rules, 17.6 auto-shortlisting, 17.7, 17.8, 17.10.

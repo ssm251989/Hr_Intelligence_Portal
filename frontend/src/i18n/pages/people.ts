@@ -399,6 +399,13 @@ export const en = {
   "people.org.find_person": "Find a person",
   "people.org.how": "Click a card to expand their team",
   "people.org.how_tip": "Use the zoom controls, or your keyboard: + / – to zoom, 0 to fit, and the arrow keys to move around.",
+  "people.section.title": "People",
+  "people.section.purpose": "Find anyone in the company - name, role, team, office and how to reach them.",
+  "people.section.purpose_hr": "Everyone's HR details in one table: filter, check status, export, and open a profile.",
+  "people.section.views": "Choose a view",
+  "people.section.directory": "Directory",
+  "people.section.hr_view": "HR view",
+  "people.section.loading": "Loading…",
 };
 
 export const hi: Partial<Record<keyof typeof en, string>> = {
@@ -785,6 +792,13 @@ export const hi: Partial<Record<keyof typeof en, string>> = {
   "people.org.find_person": "व्यक्ति खोजें",
   "people.org.how": "किसी कार्ड पर क्लिक करके उनकी टीम खोलें",
   "people.org.how_tip": "ज़ूम नियंत्रण या कीबोर्ड का उपयोग करें: ज़ूम के लिए + / –, फ़िट के लिए 0, और घूमने के लिए ऐरो कीज़।",
+  "people.section.title": "लोग",
+  "people.section.purpose": "कंपनी में किसी को भी खोजें - नाम, भूमिका, टीम, ऑफ़िस और संपर्क।",
+  "people.section.purpose_hr": "सभी का HR विवरण एक तालिका में: फ़िल्टर करें, स्थिति देखें, एक्सपोर्ट करें, प्रोफ़ाइल खोलें।",
+  "people.section.views": "दृश्य चुनें",
+  "people.section.directory": "डायरेक्टरी",
+  "people.section.hr_view": "HR दृश्य",
+  "people.section.loading": "लोड हो रहा है…",
 };
 
 export const ta: Partial<Record<keyof typeof en, string>> = {
@@ -1171,4 +1185,11 @@ export const ta: Partial<Record<keyof typeof en, string>> = {
   "people.org.find_person": "நபரைக் கண்டறி",
   "people.org.how": "ஒருவரின் குழுவை விரிவாக்க அட்டையைக் கிளிக் செய்யவும்",
   "people.org.how_tip": "ஜூம் கட்டுப்பாடுகளைப் பயன்படுத்தவும், அல்லது கீபோர்டை: ஜூம் செய்ய + / –, பொருத்த 0, நகர அம்பு விசைகள்.",
+  "people.section.title": "நபர்கள்",
+  "people.section.purpose": "நிறுவனத்தில் யாரையும் கண்டறியுங்கள் - பெயர், பதவி, குழு, அலுவலகம், தொடர்பு.",
+  "people.section.purpose_hr": "அனைவரின் HR விவரங்களும் ஒரே அட்டவணையில்: வடிகட்டு, நிலையைப் பார், ஏற்றுமதி செய், சுயவிவரத்தைத் திற.",
+  "people.section.views": "காட்சியைத் தேர்ந்தெடு",
+  "people.section.directory": "அடைவு",
+  "people.section.hr_view": "HR காட்சி",
+  "people.section.loading": "ஏற்றுகிறது…",
 };

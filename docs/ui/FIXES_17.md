@@ -126,3 +126,37 @@ PUT /api/v1/geo/fix ... city "Atlantis" -> 400 "We don't know that city yet…"
 **Screenshot:**
 - `fix17-3-map-cities.png`: Hyderabad, Bengaluru, Chennai and Pune plotted from the geo service's coordinates on OpenStreetMap tiles. Each dot sits on its city.
 - In-app maps (`home.png`, `jobs.png`, `analytics.png`): **pending login proof**.
+
+---
+
+## 17.9 Employees vs People directory
+
+**Wrong:**
+- Two separate pages (`/employees` table, `/directory` cards) with overlapping content and two menu entries.
+- Both needed `core_hr.employee.view`, so ordinary staff couldn't find colleagues.
+
+**Changed:**
+- One **People** section (`/people`, `pages/people/PeoplePage.tsx`) with two views:
+  - **Directory** (cards: photo/initials, name, role, team, office, work email, skills), which everyone in the company can see;
+  - **HR view** (`?view=hr`: the table with HR-only columns, status tabs, filters, saved views, export), only with `core_hr.employee.view`.
+- API: `GET /api/v1/ui/people/employees?view=directory` and `/filters?view=directory` work for any staff login. They return only current staff and only the directory fields: no personal email or phone, grade, code, joining date or worker type. `view=hr` still needs the permission.
+- `/employees` redirects to `/people?view=hr` and `/directory` to `/people`, both keeping their filters, so the map's `?location=` links still work.
+- Profiles open from both views (`/employees/:id`, and a new `/people/:id` alias). Directory cards link to the profile only for people who may open it.
+- One "People" menu entry instead of two. Titles: "People", with the page line changing per view.
+
+**Verified (API):**
+```
+GET /api/v1/ui/people/employees?view=directory  (recruiter, no HR access) -> 200
+    6 rows, only active/on_notice; keys: department, department_id, designation, first_name, id, last_name,
+    location, location_id, manager_id, manager_name, name, photo_url, skills, status, work_email, work_mode
+GET /api/v1/ui/people/employees?view=hr (recruiter) -> 403 "Missing permission: core_hr.employee.view"
+GET /api/v1/ui/people/employees (admin) -> 200, 11 rows incl. personal_email, personal_phone, grade, joined_on, employee_code
+GET /api/v1/ui/people/filters?view=directory (recruiter) -> 200
+GET /api/me/bootstrap, "people" menu group:
+    recruiter   -> [People]
+    interviewer -> [People]
+    admin       -> [Onboarding, People, Org chart, Performance, Compensation, Succession, Helpdesk, Assets, Exits]
+```
+`scripts/probe.py` now also overrides `get_current_user_optional`. Before this, bootstrap probes ran as anonymous.
+
+**Screenshot:** `people-directory.png`, `people-hr.png` -- **pending login proof**.

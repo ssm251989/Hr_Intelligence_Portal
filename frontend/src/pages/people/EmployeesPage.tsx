@@ -43,7 +43,7 @@ function inTab(row: PersonRow, tab: StatusTab) {
   return row.status === tab;
 }
 
-export default function EmployeesPage() {
+export default function EmployeesPage({ embedded = false }: { embedded?: boolean }) {
   const t = useT();
   const f = useTheme().palette.fresh;
   const fmt = useFormatDate();
@@ -191,14 +191,22 @@ export default function EmployeesPage() {
   const hasFilters = tab !== "all" || Boolean(search || department || location);
   return (
     <Box>
-      <PageHeader
-        emoji="people"
-        title={t("people.employees.title")}
-        purpose={t("people.employees.purpose")}
-        tourKey="employees"
-        primary={canCreate ? <Button variant="contained" onClick={() => setAddOpen(true)}>{t("people.add.button")}</Button> : undefined}
-        extra={<Button variant="outlined" component={RouterLink} to="/org-chart" startIcon={<Emoji name="building" size={18} />}>{t("people.employees.org_chart")}</Button>}
-      />
+      {embedded ? (
+        canCreate ? (
+          <Stack direction="row" justifyContent="flex-end" sx={{ mb: 2 }}>
+            <Button variant="contained" onClick={() => setAddOpen(true)}>{t("people.add.button")}</Button>
+          </Stack>
+        ) : null
+      ) : (
+        <PageHeader
+          emoji="people"
+          title={t("people.employees.title")}
+          purpose={t("people.employees.purpose")}
+          tourKey="employees"
+          primary={canCreate ? <Button variant="contained" onClick={() => setAddOpen(true)}>{t("people.add.button")}</Button> : undefined}
+          extra={<Button variant="outlined" component={RouterLink} to="/org-chart" startIcon={<Emoji name="building" size={18} />}>{t("people.employees.org_chart")}</Button>}
+        />
+      )}
 
       <Grid container spacing={2} sx={{ mb: 2.5 }}>
         <Grid size={{ xs: 6, md: 3 }}><StatTile emoji="people" tone="brand" value={counts.all} label={t("people.stat.total", { count: counts.all })} loading={loading} /></Grid>

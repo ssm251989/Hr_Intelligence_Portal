@@ -196,9 +196,9 @@ const qs = (params: Record<string, string | undefined | null>) => {
 };
 
 export const peopleApi = {
-  list: (params: { q?: string; status?: string; department_id?: string; location_id?: string; skill?: string } = {}) =>
+  list: (params: { q?: string; status?: string; department_id?: string; location_id?: string; skill?: string; view?: "hr" | "directory" } = {}) =>
     http.get<PeopleList>(`/api/v1/ui/people/employees${qs(params)}`),
-  filters: () => http.get<PeopleFilters>("/api/v1/ui/people/filters"),
+  filters: (view: "hr" | "directory" = "hr") => http.get<PeopleFilters>(`/api/v1/ui/people/filters?view=${view}`),
   summary: (id: string) => http.get<EmployeeSummary>(`/api/v1/ui/people/employees/${id}/summary`),
   history: (id: string) => http.get<EmployeeHistory>(`/api/v1/ui/people/employees/${id}/history`),
   letterTemplates: () => http.get<LetterTemplateOption[]>("/api/v1/ui/people/letter-templates"),

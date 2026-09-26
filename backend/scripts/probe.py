@@ -51,6 +51,7 @@ def main() -> int:
 
     if not args.anon:
         app.dependency_overrides[deps.get_current_user] = as_user
+        app.dependency_overrides[deps.get_current_user_optional] = as_user
     client = TestClient(app, base_url=f"http://{args.host}")
     body = json.loads(args.json) if args.json else None
     resp = client.request(args.method.upper(), args.path, json=body)

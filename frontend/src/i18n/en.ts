@@ -26,6 +26,7 @@ export const en = {
   "nav.reports": "Reports",
   "nav.onboarding": "Onboarding",
   "nav.employees": "Employees",
+  "nav.people": "People",
   "nav.directory": "People directory",
   "nav.org_chart": "Org chart",
   "nav.performance": "Performance",

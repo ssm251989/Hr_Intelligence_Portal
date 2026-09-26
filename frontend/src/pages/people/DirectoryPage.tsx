@@ -21,7 +21,7 @@ import MailOutlineIcon from "@mui/icons-material/MailOutline";
 import { peopleApi, skillList, type PeopleFilters, type PersonRow } from "../../api/peopleApi";
 import { useMeBootstrap } from "../../bootstrap/MeBootstrapContext";
 import RefreshButton from "../../components/RefreshButton";
-import { EmployeeStatusChip, NoAccess } from "../../components/people/shared";
+import { EmployeeStatusChip } from "../../components/people/shared";
 import { useT } from "../../i18n";
 import { EmptyState, Emoji, FriendlyError, PageHeader, UserAvatar } from "../../ui-kit";
 
@@ -31,7 +31,7 @@ import { EmptyState, Emoji, FriendlyError, PageHeader, UserAvatar } from "../../
 const STEP = 48;
 const CURRENT = ["active", "on_notice", "pre_hire"];
 
-export default function DirectoryPage() {
+export default function DirectoryPage({ embedded = false }: { embedded?: boolean }) {
   const t = useT();
   const f = useTheme().palette.fresh;
   const { can, loading: bootLoading } = useMeBootstrap();
@@ -58,7 +58,9 @@ export default function DirectoryPage() {
   const load = () => {
     setLoading(true);
     setError(null);
-    return Promise.all([peopleApi.list({ status: CURRENT.join(",") }), peopleApi.filters()])
+    // Part 17.9: everyone may use the directory; people without HR access get the directory fields only.
+    const view = canView ? "hr" : "directory";
+    return Promise.all([peopleApi.list({ status: CURRENT.join(","), view }), peopleApi.filters(view)])
       .then(([list, flt]) => {
         setRows(list.items);
         setFilters(flt);
@@ -67,9 +69,9 @@ export default function DirectoryPage() {
       .finally(() => setLoading(false));
   };
   useEffect(() => {
-    if (canView) load();
+    if (!bootLoading) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canView]);
+  }, [canView, bootLoading]);
 
   const visible = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -83,28 +85,21 @@ export default function DirectoryPage() {
     });
   }, [rows, q, department, location, skill]);
 
-  if (!bootLoading && !canView) {
-    return (
-      <Box>
-        <PageHeader emoji="people" title={t("people.directory.title")} purpose={t("people.directory.purpose")} />
-        <NoAccess />
-      </Box>
-    );
-  }
-
   const locationName = filters?.locations.find((l) => l.id === location)?.name;
   const skillOptions = (filters?.skills ?? []).map((s) => s.name);
   const hasFilters = Boolean(q || department || location || skill);
 
   return (
     <Box>
-      <PageHeader
-        emoji="people"
-        title={t("people.directory.title")}
-        purpose={t("people.directory.purpose")}
-        tourKey="directory"
-        primary={<Button variant="contained" component={RouterLink} to="/org-chart" startIcon={<Emoji name="building" size={18} />}>{t("people.directory.org_chart")}</Button>}
-      />
+      {!embedded && (
+        <PageHeader
+          emoji="people"
+          title={t("people.directory.title")}
+          purpose={t("people.directory.purpose")}
+          tourKey="directory"
+          primary={<Button variant="contained" component={RouterLink} to="/org-chart" startIcon={<Emoji name="building" size={18} />}>{t("people.directory.org_chart")}</Button>}
+        />
+      )}
 
       <Card sx={{ p: { xs: 1.5, sm: 2 }, mb: 2.5 }}>
         <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} alignItems={{ md: "center" }} useFlexGap flexWrap="wrap">
@@ -154,7 +149,7 @@ export default function DirectoryPage() {
       ) : (
         <>
           <Box component="ul" aria-label={t("people.directory.list")} sx={{ listStyle: "none", m: 0, p: 0, display: "grid", gap: 2, gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))" }}>
-            {visible.slice(0, limit).map((r) => <PersonCard key={r.id} person={r} onSkill={(s) => patch({ skill: s })} />)}
+            {visible.slice(0, limit).map((r) => <PersonCard key={r.id} person={r} canOpen={canView} onSkill={(s) => patch({ skill: s })} />)}
           </Box>
           {visible.length > limit && (
             <Stack alignItems="center" sx={{ mt: 2.5 }}>
@@ -167,7 +162,7 @@ export default function DirectoryPage() {
   );
 }
 
-function PersonCard({ person, onSkill }: { person: PersonRow; onSkill: (s: string) => void }) {
+function PersonCard({ person, canOpen, onSkill }: { person: PersonRow; canOpen: boolean; onSkill: (s: string) => void }) {
   const t = useT();
   const f = useTheme().palette.fresh;
   const skills = skillList(person.skills);
@@ -175,7 +170,7 @@ function PersonCard({ person, onSkill }: { person: PersonRow; onSkill: (s: strin
   return (
     <Box component="li" sx={{ minWidth: 0 }}>
       <Card sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
-        <CardActionArea component={RouterLink} to={`/employees/${person.id}`} sx={{ p: 2, flex: 1, display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 1.25 }}
+        <CardActionArea {...(canOpen ? { component: RouterLink, to: `/employees/${person.id}` } : { disabled: true, disableRipple: true })} sx={{ p: 2, flex: 1, display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 1.25 }}
           aria-label={t("people.directory.open", { name: person.name })}>
           <Stack direction="row" spacing={1.5} alignItems="center" sx={{ width: "100%", minWidth: 0 }}>
             <UserAvatar name={person.name} src={person.photo_url} size={56} />

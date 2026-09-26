@@ -23,6 +23,7 @@ export const ta: Bundle = {
   "nav.reports": "அறிக்கைகள்",
   "nav.onboarding": "சேர்க்கை",
   "nav.employees": "பணியாளர்கள்",
+  "nav.people": "நபர்கள்",
   "nav.directory": "நபர் பட்டியல்",
   "nav.org_chart": "நிறுவன வரைபடம்",
   "nav.performance": "செயல்திறன்",

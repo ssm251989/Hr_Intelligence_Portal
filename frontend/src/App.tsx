@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { Navigate, Route, BrowserRouter, Routes } from "react-router-dom";
+import { Navigate, Route, BrowserRouter, Routes, useLocation } from "react-router-dom";
 import CircularProgress from "@mui/material/CircularProgress";
 
 import { AuthProvider } from "./auth/AuthContext";
@@ -44,9 +44,8 @@ const ShortlistingDashboardPage = lazy(() => import("./pages/ShortlistingDashboa
 const ShortlistingListPage = lazy(() => import("./pages/ShortlistingListPage"));
 const UnifiedInboxPage = lazy(() => import("./pages/UnifiedInboxPage"));
 // Part 15.6: pages for the new modules.
-const EmployeesPage = lazy(() => import("./pages/people/EmployeesPage"));
+const PeoplePage = lazy(() => import("./pages/people/PeoplePage"));
 const EmployeeProfilePage = lazy(() => import("./pages/people/EmployeeProfilePage"));
-const DirectoryPage = lazy(() => import("./pages/people/DirectoryPage"));
 const OrgChartPage = lazy(() => import("./pages/people/OrgChartPage"));
 const OnboardingDashboardPage = lazy(() => import("./pages/onboarding/OnboardingDashboardPage"));
 const WelcomePortalPage = lazy(() => import("./pages/onboarding/WelcomePortalPage"));
@@ -67,6 +66,13 @@ const SettingsHomePage = lazy(() => import("./pages/settings/SettingsHomePage"))
 const SettingsCategoryPage = lazy(() => import("./pages/settings/SettingsCategoryPage"));
 
 const PageLoading = () => <CircularProgress sx={{ m: 4 }} aria-label="Loading" />;
+
+// Part 17.9: old URLs redirect, keeping their filters (e.g. /directory?location=<office>).
+function KeepQuery({ to, extra }: { to: string; extra?: string }) {
+  const { search } = useLocation();
+  const qs = [search.replace(/^\?/, ""), extra].filter(Boolean).join("&");
+  return <Navigate to={`${to}${qs ? `?${qs}` : ""}`} replace />;
+}
 
 // An agency login (Part 15.6) only has the agency portal -- never the staff home.
 function HomeRoute() {
@@ -133,9 +139,11 @@ export default function App() {
                 <Route path="/reports" element={<ReportsPage />} />
                 <Route path="/reports/builder" element={<ReportBuilderPage />} />
                 <Route path="/analytics" element={<AnalyticsPage />} />
-                <Route path="/employees" element={<EmployeesPage />} />
+                <Route path="/people" element={<PeoplePage />} />
+                <Route path="/people/:employeeId" element={<EmployeeProfilePage />} />
+                <Route path="/employees" element={<KeepQuery to="/people" extra="view=hr" />} />
                 <Route path="/employees/:employeeId" element={<EmployeeProfilePage />} />
-                <Route path="/directory" element={<DirectoryPage />} />
+                <Route path="/directory" element={<KeepQuery to="/people" />} />
                 <Route path="/org-chart" element={<OrgChartPage />} />
                 <Route path="/onboarding" element={<OnboardingDashboardPage />} />
                 <Route path="/performance" element={<PerformancePage />} />
