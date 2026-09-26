@@ -1792,3 +1792,14 @@ keys (`group`, `icon`).
 
 Migration `a15f0c3d7e21`: `alembic upgrade head` OK. Quick checks: `compileall -q app` OK,
 `npx tsc --noEmit -p tsconfig.app.json` exit 0, `npm run build` OK.
+
+## Login check after restart (2026-09-26)
+
+Portal login for `kg@ctdtechs.com` diagnosed end to end: `/health` ok; TENANCY_MODE=single
+resolves tenant `ctd-techs` for host `localhost` (so the empty `tenant_domains` table is not a
+problem in this mode); `hr_app` (APP_DATABASE_URL, no BYPASSRLS) sees the user once
+`app.tenant_id` is set; `users.tenant_id` = tenant 1; a JWT with `tid` gets 200 from
+`/auth/me`, `/api/me/bootstrap`, `/api/me/notifications`; CORS for :5173 ok; MFA required =
+false, not enrolled; not locked; rate limits not hit. `/auth/login` returns 401 only for a
+wrong password. New `hrctl.user check|unlock|reset-password` (password on stdin, never
+touches MFA) to verify/recover a portal login without touching data.
