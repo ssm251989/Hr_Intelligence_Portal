@@ -313,6 +313,14 @@ def submit_interview_feedback(
 
     db.commit()
     db.refresh(interview)
+    if application.status == "interview_selected":  # Part 17.8: salary stage -> decide from the band check
+        try:
+            from app.platform.tenancy.context import require_current_tenant
+            from app.recruitment.salary_auto import check
+
+            check(db, require_current_tenant(), application, actor="system")
+        except Exception:  # noqa: BLE001
+            pass
 
     log_action(
         db,

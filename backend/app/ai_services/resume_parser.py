@@ -17,7 +17,10 @@ SYSTEM_PROMPT = (
     "education) and not just skills or tools listed without an actual certification name. "
     "location is the candidate's current city (plus state/country if the resume states "
     "them), e.g. 'Bangalore, India' -- not a past employer's office location, and not a "
-    "remote-work preference."
+    "remote-work preference. current_ctc / expected_ctc are ANNUAL amounts in rupees only if "
+    "the resume states them (e.g. '12 LPA' -> 1200000); notice_period_days only if a notice "
+    "period is stated (e.g. '2 months' -> 60, 'immediate joiner' -> 0); languages are spoken "
+    "languages the resume lists, not programming languages."
 )
 
 _client: Anthropic | None = None
@@ -50,6 +53,11 @@ class ResumeParserOutput(BaseModel):
     education: list[EducationItem] = []
     work_history: list[WorkHistoryItem] = []
     certificates: list[str] = []
+    # Part 17.5/17.8: only when the resume states them (annual amounts in rupees; notice in days)
+    current_ctc: Optional[float] = None
+    expected_ctc: Optional[float] = None
+    notice_period_days: Optional[int] = None
+    languages: list[str] = []
 
 
 def _get_client() -> Anthropic:

@@ -64,6 +64,17 @@ def shortlist_status_of(application: Application) -> Optional[str]:
     return None
 
 
+def _salary_after_shortlist(db, application, actor) -> None:
+    """Part 17.8: once Shortlisted, check the salary band and ask the candidate for missing figures."""
+    try:
+        from app.platform.tenancy.context import require_current_tenant
+        from app.recruitment.salary_auto import after_shortlist
+
+        after_shortlist(db, require_current_tenant(), application, actor=actor or "system")
+    except Exception:  # noqa: BLE001 -- never blocks the shortlisting decision
+        pass
+
+
 def update_shortlist_status(
     db: Session,
     application: Application,
@@ -130,4 +141,6 @@ def update_shortlist_status(
             "feedback": feedback,
         },
     )
+    if application.status == "hr_selected":
+        _salary_after_shortlist(db, application, actor)
     return application

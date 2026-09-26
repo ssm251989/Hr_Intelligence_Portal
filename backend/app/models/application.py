@@ -50,6 +50,8 @@ class Application(Base, TenantOwned):
     score_breakdown = Column(JSONB)
     knocked_out = Column(Boolean, nullable=False, server_default=text("false"))
     scored_at = Column(DateTime(timezone=True))
+    # Part 17.8: latest salary check against the band (app/recruitment/salary_auto.py)
+    salary_check = Column(JSONB)
     scoring_rule_set_id = Column(UUID(as_uuid=True), ForeignKey("scoring_rule_sets.id", ondelete="SET NULL"))
     ranking_score = Column(Numeric)
     ranking_rationale = Column(Text)

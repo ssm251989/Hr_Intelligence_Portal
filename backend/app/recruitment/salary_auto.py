@@ -1,0 +1,247 @@
+"""Part 17.8: salary data collected automatically and checked against the job's band.
+
+Where the figures come from (first one wins, never overwriting what's there):
+  1. the careers apply form (current CTC, expected CTC, notice period);
+  2. the resume (parser fields current_ctc / expected_ctc / notice_period_days);
+  3. the candidate's own "Salary & joining details" form -- emailed automatically once the
+     candidate is shortlisted and something is still missing, with one reminder after 24h.
+
+check() runs whenever figures arrive and stores applications.salary_check:
+  waiting (nothing yet) | in_band | needs_approval (above the band by <= X%, setting
+  recruitment.salary.approval_margin_pct) | flagged (more than X% above) | no_band.
+At the salary stage (after the interview is passed) apply_stage() moves the application:
+  in band -> salary_approved (auto-approved), needs approval -> salary_above_band + a request
+  to the approver, flagged -> salary_above_band marked "flagged". A person can always edit.
+suggestion(): an offer figure inside the band, used to pre-fill the offer.
+"""
+
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
+from sqlalchemy.orm import Session
+
+from app.audit.service import log_action
+from app.models.application import Application
+from app.models.candidate import Candidate
+from app.models.job_role import JobRole
+from app.models.user import User
+
+FORM_ACTION = "salary_details_form"
+SALARY_STAGE = "interview_selected"
+FORM_TTL_DAYS = 14
+REMINDER_AFTER = timedelta(hours=24)
+
+
+def _setting(db: Session, tenant, key: str):
+    from app.platform.settings.resolver import SettingContext, SettingsService
+
+    return SettingsService(db).get(key, SettingContext(tenant=tenant))
+
+
+def _num(v) -> Optional[float]:
+    try:
+        return None if v in (None, "") else float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def missing_fields(candidate: Candidate) -> list[str]:
+    need = []
+    if candidate.expected_ctc is None:
+        need.append("expected_ctc")
+    if candidate.current_ctc is None:
+        need.append("current_ctc")
+    if candidate.notice_period_days is None:
+        need.append("notice_period_days")
+    return need
+
+
+def suggestion(db: Session, tenant, job: JobRole, candidate: Candidate, application: Application) -> Optional[float]:
+    """Inside the band: the current CTC plus the usual hike (setting
+    recruitment.salary.target_hike_pct), at least what they expect when that fits the band,
+    rounded to the nearest 10,000."""
+    lo, hi = _num(job.salary_band_min), _num(job.salary_band_max)
+    if hi is None:
+        return None
+    lo = lo if lo is not None else 0.0
+    expected = _num(candidate.expected_ctc) or _num(application.expected_salary)
+    current = _num(candidate.current_ctc)
+    hike = float(_setting(db, tenant, "recruitment.salary.target_hike_pct") or 0)
+    target = current * (1 + hike / 100) if current else expected
+    if target is None:
+        return None
+    if expected is not None and expected <= hi:
+        target = max(target, expected)
+    return round(min(max(target, lo), hi) / 10000) * 10000
+
+
+def check(db: Session, tenant, application: Application, *, job: Optional[JobRole] = None,
+          candidate: Optional[Candidate] = None, actor: str = "system") -> dict:
+    job = job or db.get(JobRole, application.job_role_id)
+    candidate = candidate or db.get(Candidate, application.candidate_id)
+    if application.expected_salary is None and candidate.expected_ctc is not None:
+        application.expected_salary = candidate.expected_ctc
+    expected = _num(application.expected_salary)
+    lo, hi = _num(job.salary_band_min), _num(job.salary_band_max)
+    margin = float(_setting(db, tenant, "recruitment.salary.approval_margin_pct") or 0)
+    result: dict = {"expected": expected, "current": _num(candidate.current_ctc), "notice_days": candidate.notice_period_days,
+                    "band_min": lo, "band_max": hi, "margin_pct": margin, "missing": missing_fields(candidate),
+                    "checked_at": datetime.now(timezone.utc).isoformat()}
+    if hi is None:
+        result["state"] = "no_band"
+    elif expected is None:
+        result["state"] = "waiting"
+    else:
+        over = 100 * (expected - hi) / hi if hi else 0.0
+        span = (hi - (lo or 0)) or 1
+        result["position_pct"] = round(100 * (expected - (lo or 0)) / span)
+        result["over_pct"] = round(max(over, 0), 1)
+        result["state"] = "in_band" if expected <= hi else "needs_approval" if over <= margin else "flagged"
+    result["suggestion"] = suggestion(db, tenant, job, candidate, application)
+    changed = (application.salary_check or {}).get("state") != result["state"]
+    application.salary_check = result
+    db.commit()
+    if changed:
+        log_action(db, "application", application.id, "salary_checked", actor[:50], {k: result.get(k) for k in ("state", "expected", "band_min", "band_max", "over_pct")})
+    apply_stage(db, tenant, application, job=job, actor=actor)
+    return result
+
+
+def _approver_emails(db: Session, tenant, job: JobRole) -> list[str]:
+    configured = _setting(db, tenant, "recruitment.salary.approvers") or []
+    out = [str(e).strip().lower() for e in configured if "@" in str(e)]
+    if not out and job.hiring_manager_id:
+        u = db.get(User, job.hiring_manager_id)
+        if u and u.email:
+            out.append(u.email)
+    if not out:
+        out = [u.email for u in db.query(User).filter(User.tenant_id == tenant.tenant_id, User.role == "admin").order_by(User.created_at).limit(3) if u.email]
+    return out
+
+
+def apply_stage(db: Session, tenant, application: Application, *, job: JobRole, actor: str = "system") -> Optional[str]:
+    """At the salary stage only: move the application on from its salary check."""
+    from app.models.comms import OutboundMessage
+
+    state = (application.salary_check or {}).get("state")
+    # new figures back inside the band while waiting for approval -> approved as well
+    if application.status == "salary_above_band" and state == "in_band":
+        pass
+    elif application.status != SALARY_STAGE or state not in ("in_band", "needs_approval", "flagged"):
+        return None
+    previous = application.status
+    if state == "in_band":
+        application.status = "salary_approved"
+        application.approved_salary = application.salary_check.get("suggestion") or application.expected_salary
+        note = "within the band - approved automatically"
+    else:
+        application.status = "salary_above_band"
+        note = "above the band - needs approval" if state == "needs_approval" else "far above the band - flagged"
+        candidate = db.get(Candidate, application.candidate_id)
+        for addr in _approver_emails(db, tenant, job):
+            db.add(OutboundMessage(
+                tenant_id=tenant.tenant_id, channel="in_app", purpose="recruitment.salary", to_addresses=[addr],
+                subject=f"Salary approval needed: {(candidate.full_name if candidate else None) or 'a candidate'} for {job.title} "
+                        f"expects {application.salary_check.get('expected'):,.0f} ({application.salary_check.get('over_pct')}% above the band).",
+                body_ref="/salary", status="sent", related_entity_type="application", related_entity_id=application.id))
+    db.commit()
+    log_action(db, "application", application.id, "salary_auto_decided", actor[:50],
+               {"state": state, "previous_status": previous, "new_status": application.status, "note": note})
+    return application.status
+
+
+def take_figures(db: Session, tenant, candidate: Candidate, figures: dict, *, source: str, overwrite: bool = False) -> list[str]:
+    """Save the given figures on the candidate (only empty ones unless overwrite), then re-check
+    every open application. -> names of the fields that were set."""
+    set_fields = []
+    for key in ("current_ctc", "expected_ctc", "notice_period_days", "willing_to_relocate"):
+        value = figures.get(key)
+        if value in (None, ""):
+            continue
+        if key == "notice_period_days":
+            value = int(float(value))
+        elif key != "willing_to_relocate":
+            value = float(value)
+        if overwrite or getattr(candidate, key) is None:
+            setattr(candidate, key, value)
+            set_fields.append(key)
+    db.commit()
+    if set_fields:
+        log_action(db, "candidate", candidate.id, "salary_details_received", source[:50], {"fields": set_fields})
+        for app in db.query(Application).filter(Application.tenant_id == tenant.tenant_id, Application.candidate_id == candidate.id).all():
+            if app.status not in ("hr_rejected", "interview_rejected", "salary_rejected", "bgv_rejected", "onboarding_completed"):
+                check(db, tenant, app, candidate=candidate, actor=source)
+    return set_fields
+
+
+# ---------------------------------------------------------------- the candidate's form
+
+def form_link(token: str) -> str:
+    from app.core.config import settings as app_settings
+
+    return f"{app_settings.FRONTEND_URL.rstrip('/')}/salary-details/{token}"
+
+
+def send_form(db: Session, tenant, application: Application, *, actor: str = "system", reminder: bool = False) -> dict:
+    """Create (or reuse) the candidate's form link and email it through the company mailbox
+    (template recruitment.salary_details_request). -> {"sent", "link"} (link only when mail failed)."""
+    from app.models.iam import ActionToken
+    from app.platform.comms.service import send
+    from app.platform.iam.action_tokens import create_action_token
+
+    candidate = db.get(Candidate, application.candidate_id)
+    job = db.get(JobRole, application.job_role_id)
+    if candidate is None or not candidate.email:
+        return {"sent": False, "reason": "no email"}
+    row = (db.query(ActionToken).filter(ActionToken.tenant_id == tenant.tenant_id, ActionToken.entity_type == "application",
+                                        ActionToken.entity_id == application.id, ActionToken.action == FORM_ACTION,
+                                        ActionToken.responded_at.is_(None), ActionToken.invalidated_at.is_(None),
+                                        ActionToken.expires_at > datetime.now(timezone.utc)).first())
+    if row is None:
+        row = create_action_token(db, tenant, entity_type="application", entity_id=application.id, action=FORM_ACTION,
+                                  payload={"reminded": False}, created_by=actor[:50], ttl_days=FORM_TTL_DAYS)
+    link = form_link(row.token)
+    try:
+        msg = send(db, tenant, template_key="recruitment.salary_details_request", to=[candidate.email],
+                   ctx={"candidate_name": candidate.full_name or "", "candidate_first_name": (candidate.full_name or "").split(" ")[0],
+                        "job_title": job.title if job else "", "form_link": link, "reminder": reminder},
+                   purpose="email.outbound.recruitment")
+        sent = msg.status in ("sent", "queued")
+    except Exception:  # noqa: BLE001 -- no mailbox / template yet: HR can share the link instead
+        sent = False
+    if reminder:
+        row.payload_json = {**(row.payload_json or {}), "reminded": True, "reminded_at": datetime.now(timezone.utc).isoformat()}
+        db.commit()
+    log_action(db, "application", application.id, "salary_form_reminder" if reminder else "salary_form_sent", actor[:50],
+               {"sent": sent, "to": candidate.email})
+    return {"sent": sent, "link": None if sent else link}
+
+
+def after_shortlist(db: Session, tenant, application: Application, actor: str = "system") -> Optional[dict]:
+    """Called when an application becomes Shortlisted: check the band, and ask the candidate
+    for anything still missing (setting recruitment.salary.ask_after_shortlist)."""
+    candidate = db.get(Candidate, application.candidate_id)
+    check(db, tenant, application, candidate=candidate, actor=actor)
+    if candidate is not None and missing_fields(candidate) and _setting(db, tenant, "recruitment.salary.ask_after_shortlist"):
+        return send_form(db, tenant, application, actor=actor)
+    return None
+
+
+def remind_due(db: Session, tenant) -> int:
+    """Scheduled: one reminder 24h after the form was sent and not filled in."""
+    from app.models.iam import ActionToken
+
+    cutoff = datetime.now(timezone.utc) - REMINDER_AFTER
+    rows = (db.query(ActionToken).filter(ActionToken.tenant_id == tenant.tenant_id, ActionToken.action == FORM_ACTION,
+                                         ActionToken.responded_at.is_(None), ActionToken.invalidated_at.is_(None),
+                                         ActionToken.created_at < cutoff, ActionToken.expires_at > datetime.now(timezone.utc)).all())
+    done = 0
+    for row in rows:
+        if (row.payload_json or {}).get("reminded"):
+            continue
+        app = db.get(Application, row.entity_id)
+        if app is None:
+            continue
+        send_form(db, tenant, app, reminder=True)
+        done += 1
+    return done

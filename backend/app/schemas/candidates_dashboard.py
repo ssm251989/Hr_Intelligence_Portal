@@ -78,6 +78,10 @@ class CandidateApplicationRow(BaseModel):
     # the Screening List's own "Remarks" column; the Candidates List keeps showing `remarks`
     # above, unaffected. Null until the application has ever been screened.
     interview_remarks: Optional[str] = None
+    # Part 17.6: flagged by the job's hard rules (knock-outs) -- never auto-rejected, shown
+    # on the Shortlisting page's "Needs a look" tab with the plain reasons below.
+    knocked_out: bool = False
+    knockout_reasons: list[str] = []
 
 
 class CandidatesDashboardStatsResponse(BaseModel):

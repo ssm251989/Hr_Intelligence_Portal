@@ -213,6 +213,10 @@ app.include_router(geo_router)
 from app.recruitment.scoring.api_router import router as scoring_router  # noqa: E402
 
 app.include_router(scoring_router)
+from app.experience.ui_salary_router import public_router as salary_form_router, router as ui_salary_router  # noqa: E402
+
+app.include_router(ui_salary_router)
+app.include_router(salary_form_router)
 install_friendly_errors(app)
 
 

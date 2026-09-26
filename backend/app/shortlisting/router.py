@@ -96,6 +96,9 @@ def make_shortlist_decision(
     if new_status == "hr_selected":
         clear_manual_scheduling_flag(db, application, current_user.email)
         attempt_auto_negotiate_interview_slots(db, application, current_user)
+        from app.shortlisting.service import _salary_after_shortlist
+
+        _salary_after_shortlist(db, application, current_user.email)
     return application
 
 

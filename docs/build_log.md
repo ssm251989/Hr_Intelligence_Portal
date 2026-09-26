@@ -2146,3 +2146,24 @@ NEXT: 17.4 one scoring language, then 17.5 scoring rules, 17.6 auto-shortlisting
 - Fixed on the way: agency audit actor >50 chars; undo message when already undone.
 
 NEXT: 17.4-17.6 frontend (one-score labels, Scoring rules page + wizard steps, Why this score, shortlisting queue), then proofs + commits.
+
+## Part 17.8 -- backend (2026-09-27)
+
+- `app/recruitment/salary_auto.py`: figures from careers form (public apply now takes
+  current/expected CTC + notice; expected + notice required unless `recruitment.careers.ask_salary`
+  is off), from the resume (parser gained current_ctc/expected_ctc/notice_period_days/languages),
+  or the candidate's own form (magic link, `recruitment.salary_details_request` template, sent
+  on Shortlist when something is missing, one reminder after 24h via beat job).
+- Band check on every new figure -> `applications.salary_check` (migration `e3b7d2f9a1c6`):
+  in_band / needs_approval (<= `recruitment.salary.approval_margin_pct`, default 10%) / flagged /
+  waiting / no_band. At the salary stage (interview passed): in band -> salary_approved at the
+  suggested figure; above -> salary_above_band + in-app approval request (approvers setting, else
+  hiring manager, else admins); back in band while waiting -> approved. Offer CTC defaults to
+  approved -> suggestion -> expected. Suggestion = current CTC + `target_hike_pct` (20), at
+  least the expectation when it fits, clamped to the band, rounded to 10,000.
+- API: `/api/v1/ui/salary/queue|applications/{id}/send-form|figures|check`,
+  public `/api/v1/public/salary-details/{token}`.
+- Decision: salary status never changes before the salary stage (it would skip the interview);
+  earlier stages only show the chip.
+
+NEXT: frontend of 17.4-17.6 and 17.8 (4 agents), then proofs, commits; then 17.7.

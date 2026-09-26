@@ -110,6 +110,9 @@ def maybe_auto_shortlist(db: Session, tenant, application: Application, *, job: 
         "recruiter_notified": bool(to), "notified_to": ", ".join(to) or None, "breakdown": application.score_breakdown,
         "previous_status": "screened", "new_status": "hr_selected",
     })
+    from app.shortlisting.service import _salary_after_shortlist
+
+    _salary_after_shortlist(db, application, actor)
     return True
 
 

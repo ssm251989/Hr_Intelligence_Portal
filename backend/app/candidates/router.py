@@ -128,6 +128,8 @@ def parse_and_apply_resume(
     candidate.email = result.get("email") or candidate.email
     candidate.phone = result.get("phone") or candidate.phone
     candidate.location = result.get("location") or candidate.location
+    if result.get("languages") and not candidate.languages:
+        candidate.languages = result.get("languages")
 
     # Best-effort candidate photo -- never allowed to fail or block the parse above it. No
     # embedded image found (or any error extracting/saving one) just leaves photo_path as
@@ -142,6 +144,15 @@ def parse_and_apply_resume(
 
     db.commit()
     db.refresh(candidate)
+
+    # Part 17.8: salary figures stated in the resume fill only what's still empty.
+    try:
+        from app.platform.tenancy.context import require_current_tenant
+        from app.recruitment.salary_auto import take_figures
+
+        take_figures(db, require_current_tenant(), candidate, {k: result.get(k) for k in ("current_ctc", "expected_ctc", "notice_period_days")}, source="resume")
+    except Exception:  # noqa: BLE001 -- never blocks parsing
+        pass
 
     # Automatic screening (Part A): covers the career-portal path (application created
     # before the resume is parsed in the background) and a manual re-parse of a candidate
@@ -254,7 +265,22 @@ def row_to_item(
         suitable_job_score=float(candidate.suitable_job_score) if candidate.suitable_job_score is not None else None,
         remarks=remarks,
         interview_remarks=interview_remarks,
+        knocked_out=bool(getattr(application, "knocked_out", False)),
+        knockout_reasons=_knockout_reasons(screening_action, screening_details),
     )
+
+
+def _knockout_reasons(screening_action: Optional[str], screening_details: Optional[dict]) -> list[str]:
+    """Part 17.6: the plain reasons of the failed knock-outs on the latest scoring entry."""
+    if screening_action != "ai_screening_scored" or not screening_details:
+        return []
+    out = []
+    for k in screening_details.get("knockouts") or []:
+        if isinstance(k, dict) and not k.get("passed"):
+            text = k.get("reason") or k.get("label")
+            if text:
+                out.append(str(text))
+    return out
 
 
 def _filtered_candidate_applications_query(

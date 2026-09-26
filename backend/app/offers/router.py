@@ -92,10 +92,11 @@ def generate_offer(
             status_code=400, detail="Application must be bgv_cleared before an offer can be generated"
         )
 
+    # Part 17.8: approved figure, else the suggested offer inside the band, else what they expect
     salary_value = (
         application.approved_salary
         if application.approved_salary is not None
-        else application.expected_salary
+        else (application.salary_check or {}).get("suggestion") or application.expected_salary
     )
     if salary_value is None:
         raise HTTPException(status_code=400, detail="Application has no approved or expected salary set")

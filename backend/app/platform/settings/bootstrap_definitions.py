@@ -74,6 +74,16 @@ def register_all() -> None:
     register(SettingDef("recruitment.shortlisting.max_size", "int", 0, module="recruitment", group="Shortlisting",
                         json_schema={"type": "integer", "minimum": 0}))
     register(SettingDef("recruitment.shortlisting.notify", "json", ["job_owner"], module="recruitment", group="Shortlisting"))
+    # Part 17.8: salary collection + band check. Above the band by at most approval_margin_pct
+    # -> approval request (to `approvers`, else the job's hiring manager, else admins); more ->
+    # flagged. The offer suggestion adds target_hike_pct to the current CTC, kept in the band.
+    register(SettingDef("recruitment.careers.ask_salary", "bool", True, module="recruitment", group="Careers site"))
+    register(SettingDef("recruitment.salary.ask_after_shortlist", "bool", True, module="recruitment", group="Salary"))
+    register(SettingDef("recruitment.salary.approval_margin_pct", "int", 10, module="recruitment", group="Salary",
+                        json_schema={"type": "integer", "minimum": 0, "maximum": 100}))
+    register(SettingDef("recruitment.salary.target_hike_pct", "int", 20, module="recruitment", group="Salary",
+                        json_schema={"type": "integer", "minimum": 0, "maximum": 200}))
+    register(SettingDef("recruitment.salary.approvers", "json", [], module="recruitment", group="Salary"))
 
     # recruitment.negotiation.* -- current defaults from
     # app/interview_scheduling/negotiation.py's own module constants.

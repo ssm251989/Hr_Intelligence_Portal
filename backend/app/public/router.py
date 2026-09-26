@@ -75,12 +75,22 @@ async def submit_application(
     resume: UploadFile = File(...),
     consent: bool = Form(...),
     knockout_answers: str | None = Form(None),
+    current_ctc: float | None = Form(None, ge=0),
+    expected_ctc: float | None = Form(None, ge=0),
+    notice_period_days: int | None = Form(None, ge=0, le=365),
     db: Session = Depends(get_db),
 ):
     # Part 8 section 3 -- DPDP consent capture: refusing to accept an application without
     # consent, rather than accepting it and hoping the checkbox was ticked client-side.
     if not consent:
         raise HTTPException(status_code=400, detail="Consent to data processing is required to apply")
+    # Part 17.8: salary & notice are asked on the form (required unless the company turned it off)
+    from app.platform.settings.resolver import SettingContext, SettingsService
+    from app.platform.tenancy.context import require_current_tenant as _rct
+
+    if SettingsService(db).get("recruitment.careers.ask_salary", SettingContext(tenant=_rct())):
+        if expected_ctc is None or notice_period_days is None:
+            raise HTTPException(status_code=400, detail="Please fill in your expected salary and notice period")
 
     job = db.get(JobRole, job_id)
     if not job:
@@ -114,7 +124,8 @@ async def submit_application(
     resume_path = save_resume_file(file_bytes, extension)
 
     candidate = Candidate(
-        full_name=full_name, email=email, phone=phone, resume_path=resume_path, source="career_portal"
+        full_name=full_name, email=email, phone=phone, resume_path=resume_path, source="career_portal",
+        current_ctc=current_ctc, expected_ctc=expected_ctc, notice_period_days=notice_period_days,
     )
     db.add(candidate)
     db.commit()
@@ -129,7 +140,7 @@ async def submit_application(
     )
 
     application = Application(
-        job_role_id=job.id, candidate_id=candidate.id, status="received",
+        job_role_id=job.id, candidate_id=candidate.id, status="received", expected_salary=expected_ctc,
         consent_given_at=datetime.now(timezone.utc), consent_version=CURRENT_CONSENT_VERSION,
     )
     db.add(application)
