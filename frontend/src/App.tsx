@@ -7,6 +7,7 @@ import { BootstrapProvider } from "./bootstrap/BootstrapContext";
 import { MeBootstrapProvider } from "./bootstrap/MeBootstrapContext";
 import { AppThemeProvider } from "./theme/ThemeModeContext";
 import ProtectedRoute from "./auth/ProtectedRoute";
+import { useAuth } from "./auth/AuthContext";
 import ErrorBoundary from "./components/ErrorBoundary";
 import AppLayout from "./layout/AppLayout";
 import { I18nProvider } from "./i18n";
@@ -60,10 +61,18 @@ const AssetsPage = lazy(() => import("./pages/servicedesk/AssetsPage"));
 const ExitsPage = lazy(() => import("./pages/servicedesk/ExitsPage"));
 const AnalyticsPage = lazy(() => import("./pages/insights/AnalyticsPage"));
 const ReportBuilderPage = lazy(() => import("./pages/insights/ReportBuilderPage"));
+const AgenciesPage = lazy(() => import("./pages/agency/AgenciesPage"));
+const AgencyPortalPage = lazy(() => import("./pages/agency/AgencyPortalPage"));
 const SettingsHomePage = lazy(() => import("./pages/settings/SettingsHomePage"));
 const SettingsCategoryPage = lazy(() => import("./pages/settings/SettingsCategoryPage"));
 
 const PageLoading = () => <CircularProgress sx={{ m: 4 }} aria-label="Loading" />;
+
+// An agency login (Part 15.6) only has the agency portal -- never the staff home.
+function HomeRoute() {
+  const { user } = useAuth();
+  return (user?.role as string | undefined) === "agency" ? <Navigate to="/agency" replace /> : <HomePage />;
+}
 
 export default function App() {
   return (
@@ -96,7 +105,7 @@ export default function App() {
                   </ProtectedRoute>
                 }
               >
-                <Route index element={<HomePage />} />
+                <Route index element={<HomeRoute />} />
                 <Route path="/overview" element={<OverviewPage />} />
                 <Route path="/jobs" element={<JobsPage />} />
                 <Route path="/candidates" element={<Navigate to="/candidates/dashboard" replace />} />
@@ -119,6 +128,8 @@ export default function App() {
                 <Route path="/salary" element={<SalaryPage />} />
                 <Route path="/bgv" element={<BgvPage />} />
                 <Route path="/offers" element={<OffersPage />} />
+                <Route path="/agencies" element={<AgenciesPage />} />
+                <Route path="/agency" element={<AgencyPortalPage />} />
                 <Route path="/reports" element={<ReportsPage />} />
                 <Route path="/reports/builder" element={<ReportBuilderPage />} />
                 <Route path="/analytics" element={<AnalyticsPage />} />

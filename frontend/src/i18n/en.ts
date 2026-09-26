@@ -21,6 +21,8 @@ export const en = {
   "nav.salary": "Salary",
   "nav.bgv": "Background checks",
   "nav.offers": "Offers",
+  "nav.agencies": "Agencies",
+  "nav.agency_portal": "Agency portal",
   "nav.reports": "Reports",
   "nav.onboarding": "Onboarding",
   "nav.employees": "Employees",

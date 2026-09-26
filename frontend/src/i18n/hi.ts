@@ -18,6 +18,8 @@ export const hi: Bundle = {
   "nav.salary": "वेतन",
   "nav.bgv": "बैकग्राउंड जाँच",
   "nav.offers": "ऑफ़र",
+  "nav.agencies": "एजेंसियाँ",
+  "nav.agency_portal": "एजेंसी पोर्टल",
   "nav.reports": "रिपोर्ट",
   "nav.onboarding": "ऑनबोर्डिंग",
   "nav.employees": "कर्मचारी",

@@ -12,6 +12,7 @@ const SOURCE_STYLE: Record<string, { tone: Tone; emoji: string }> = {
   career_portal: { tone: "sky", emoji: "globe" },
   manual: { tone: "muted", emoji: "inbox" },
   local_import: { tone: "brand", emoji: "file_folder" },
+  agency: { tone: "sun", emoji: "handshake" },
 };
 
 export default function SourceChip({ source, size = "small" }: { source: string; size?: ChipProps["size"] }) {

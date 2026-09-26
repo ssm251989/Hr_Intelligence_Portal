@@ -151,20 +151,21 @@ export const EDUCATION_DEGREE_LEVELS = ["Any", "Bachelor's", "Master's", "PhD", 
 // the real sourcing integrations can slot in later with no schema/type change -- nothing
 // writes them yet (see backend/app/models/candidate.py CANDIDATE_SOURCES).
 export const CANDIDATE_SOURCES = [
-  "career_portal", "manual", "local_import",
+  "career_portal", "manual", "local_import", "agency",
   "linkedin", "naukri", "indeed", "monster", "shine",
 ] as const;
 export type CandidateSource = (typeof CANDIDATE_SOURCES)[number];
 
 // Sources with a real, working import path today -- everything else in
 // CANDIDATE_SOURCES renders as "Coming soon" in the Import wizard/dropdown.
-export const CONNECTED_CANDIDATE_SOURCES: CandidateSource[] = ["career_portal", "local_import"];
+export const CONNECTED_CANDIDATE_SOURCES: CandidateSource[] = ["career_portal", "local_import", "agency"];
 
 export function candidateSourceLabel(source: string): string {
   const labels: Record<string, string> = {
     career_portal: "Career Portal",
     manual: "Manual",
     local_import: "Local Import",
+    agency: "Agency",
     linkedin: "LinkedIn",
     naukri: "Naukri",
     indeed: "Indeed",

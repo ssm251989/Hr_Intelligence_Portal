@@ -1980,3 +1980,41 @@ Decision: Agency portal has no backend at all (no table, permission or endpoint)
 separately as its own small step (next).
 
 Quick checks: tsc exit 0, compileall OK, `import app.main` OK (25 nav items).
+
+## Part 15.6 -- Agency portal (2026-09-26)
+
+Spec: "recruitment agencies (agency portal: agency users submit candidates to assigned jobs
+only)". Nothing existed, so built end to end:
+- Migration `b3d8f2a61c47` (additive): `recruitment_agencies`, `agency_members`,
+  `agency_job_assignments`, `agency_submissions` (TenantOwned + RLS); `users.role` may be
+  `agency`; `candidates.source` may be `agency`.
+- Permissions `recruitment.agency.view|edit` (HR roles pick them up via their recruitment
+  selectors) and `agency.portal.view|create`; new system role "Agency Recruiter" (portal only),
+  bridged from flat role `agency`.
+- `app/recruitment/agency_router.py`: HR `/api/v1/agencies` (list/add/edit/pause, choose jobs,
+  invite a user -> set-password link via new template `recruitment.agency_invite`, link shown
+  to HR if mail can't go out, remove access). Agency `/api/v1/agency-portal` (me + open
+  assigned jobs, my submissions with a PLAIN stage only, submit = resume + consent confirmation,
+  same checks as public apply: deadline, file type, AV scan, consent ledger `channel=agency`,
+  job-owner notification, background parse).
+- Security decision: agency logins are outsiders and some older endpoints only check "signed
+  in", so `get_current_user` refuses a `role == "agency"` user on every path except
+  `/auth/`, `/api/me/`, `/api/v1/me/preferences`, `/api/v1/agency-portal`. Nav: agency users
+  see only "Agency portal"; staff never see it (`NavItem.only_flat_role`).
+- Ownership rule decision: first submission wins -- an email already in the candidate
+  database is refused (409) so an agency can't claim someone the company already knew.
+- Frontend: `/agencies` (HR: list + detail panel, choose jobs dialog, invite dialog, pause
+  switch, submissions linking to the candidate), `/agency` (job cards, send dialog, sent list
+  with stage chips); `/` redirects agency users to `/agency`; "Agency" source chip/label;
+  i18n `i18n/pages/agency.ts` (en full, hi/ta main strings).
+
+Not verified live: calling the new endpoints needs a signed-in token and minting one from a
+script was blocked in this session -- only import/compile/alembic/tsc/build checks ran.
+
+Part 15.7 (libraries): all approved packages were added in 880326f and every page route is
+React.lazy + Suspense -- nothing left to do.
+
+Quick checks: `alembic upgrade head` OK, `compileall` OK, `import app.main` OK, tsc exit 0,
+`npm run build` OK.
+
+NEXT: Part 15.8 -- `hrctl demo seed --tenant <slug>` / `hrctl demo clear` (dry-run first, only "Demo -" records).

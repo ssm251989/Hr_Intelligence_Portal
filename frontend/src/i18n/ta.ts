@@ -18,6 +18,8 @@ export const ta: Bundle = {
   "nav.salary": "சம்பளம்",
   "nav.bgv": "பின்னணி சரிபார்ப்பு",
   "nav.offers": "வேலை வாய்ப்புகள்",
+  "nav.agencies": "ஆட்சேர்ப்பு நிறுவனங்கள்",
+  "nav.agency_portal": "நிறுவன போர்டல்",
   "nav.reports": "அறிக்கைகள்",
   "nav.onboarding": "சேர்க்கை",
   "nav.employees": "பணியாளர்கள்",
