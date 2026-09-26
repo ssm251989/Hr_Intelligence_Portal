@@ -12,8 +12,11 @@ RESUME AFTER A RESTART - read this whole file, then act.
    commit ("wip: resume after restart") and push.
 
 3. Continue from where docs/build_log.md says you stopped, in this order:
-   a) any unfinished STEP of docs/PART15_FULL_PROMPT.txt
-   b) then docs/PART16_POLISH_PROMPT.txt steps 16.1 -> 16.10
+   a) FIRST docs/PART17_FIXES_PROMPT.txt items 17.1 -> 17.15 (17.14 hand-over last) (owner's
+      review fixes - highest priority; it overrides PART 15/16 where they
+      overlap, and each fix needs proof in docs/ui/FIXES_17.md)
+   b) then any unfinished STEP of docs/PART15_FULL_PROMPT.txt
+   c) then docs/PART16_POLISH_PROMPT.txt steps 16.1 -> 16.10
    Re-read the prompt file for the step you are on before continuing.
 
 4. Standing rules (unchanged):

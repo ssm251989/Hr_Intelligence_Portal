@@ -1,0 +1,216 @@
+PART 17 - OWNER REVIEW FIXES + CONFIGURABLE SCORING + AUTOMATION (2026-09-26)
+(Repo hr-automation, branch hrms-platform. Do PART 17 FIRST, before any
+remaining PART 15/16 step. Where it overlaps PART 16, PART 17 wins.)
+
+OWNER'S GOAL: HR automation works end to end, every score and weight is
+configurable per client (and per job), nothing depends on Excel, and every
+screen is understandable without explanation.
+
+RULES (updated)
+- Still no full test suites. BUT for every fix below you MUST verify it
+  really works: call the API (curl/httpie) and/or take a Playwright
+  screenshot of the page after the fix. Record the proof in
+  docs/ui/FIXES_17.md (item, what was wrong, what changed, how verified,
+  screenshot file). No fix is "done" without proof.
+- Don't ask; pick the best option; log in docs/build_log.md.
+- Stop only for data deletion, overwriting main, pushing secrets, irreversible.
+- Commit + push after each item ("part-17.N: <title>"), add a "NEXT:" line.
+
+--------------------------------------------------------------------------
+17.1 RAW TEXT KEYS ON SCREEN (bug)
+Seen: "approvalsPage.title", "approvalsPage.purpose",
+"people.employees.title", "people.employees.purpose",
+"people.directory.title", "people.directory.purpose".
+- Add every missing key to the English, Hindi and Tamil files.
+- i18n fallback: if a key is missing, show the English text, never the key.
+- Add `npm run i18n:check` (a script, not a test suite) that scans all
+  t("...") calls and lists keys missing from en/hi/ta; run it and fix until
+  it reports 0. Add it to `npm run build`.
+
+17.2 HOME - "WHERE CANDIDATES GO" CHART
+- Replace the current chart with a clear horizontal FUNNEL: one bar per stage
+  (Applied, Screened, Shortlisted, Interviewed, Offered, Joined) showing the
+  count, % of previous stage, and the drop-off number between stages
+  ("-88 did not pass screening"). Stage names come from the client's own
+  pipeline. Click a bar -> candidate list filtered to that stage.
+- Period selector (7/30/90 days, this year) and job filter.
+- Keep the Sankey only as an optional "Flow view" toggle on Reports.
+
+17.3 MAPS ARE WRONG (Home "People by office", Jobs "Jobs by location")
+- Use a real Leaflet map with OpenStreetMap tiles (tile URL is a setting),
+  zoom/pan, marker clusters, auto-fit to the markers.
+- Coordinates: from the office/job location record. If missing, geocode the
+  city/pincode through the geocoding connection (OpenStreetMap Nominatim by
+  default, results cached in the DB); ship a built-in table of the top 300
+  Indian cities with lat/lng as offline fallback.
+- Validate: points must be inside India bounds (unless the client adds
+  another country); anything that can't be placed goes into a
+  "Location not found - fix it" list under the map with an edit button.
+- Marker size = count, popup = city, count, button to open the list.
+- Verify with screenshots: Hyderabad, Bengaluru, Chennai, Pune appear in the
+  right places.
+
+17.4 ONE SCORING LANGUAGE (Screening: "interview ready score" vs "Pass mark")
+- One score everywhere: "Match score (0-100)". One threshold everywhere:
+  "Shortlist threshold" (set per job, default from company settings).
+- Rename every label, tooltip, filter and chart; remove the duplicate
+  threshold settings; migrate existing values into the single setting.
+
+17.5 CONFIGURABLE SCORING RULES (core requirement)
+Settings > Hiring > Scoring rules (company default) + per-job override in the
+job wizard ("Scoring" step).
+- Factors (each can be switched on/off, weight slider 0-100, total shown and
+  must equal 100%, "auto-balance" button):
+  skills match (AI semantic), must-have skills, nice-to-have skills,
+  years of experience (min / ideal / max with a curve: 0 below min, 100 at
+  ideal, gently lower above max), relevant-domain experience, location /
+  distance to office (km bands or same city / relocation ok), notice period
+  (days bands), expected salary vs band, education level, certifications,
+  job stability (average tenure), recent use of key skills, languages,
+  any custom field (numeric or yes/no).
+- Knock-out rules (hard filters, shown separately): e.g. "must have
+  Automation Anywhere", "notice <= 60 days", "location in Hyderabad or
+  willing to relocate". Knocked-out candidates are flagged, not deleted.
+- Live preview: pick 3 existing candidates and see their score change as
+  you move sliders; "Save" creates a new version; history + revert.
+- On save: background job recalculates scores for open applications of
+  that job/company, with progress, and records old/new score.
+- Candidate profile "Why this score": table of each factor, its weight, the
+  candidate's value, points earned, plus evidence lines from the resume.
+- Presets to start from (editable): "Balanced", "Experience first",
+  "Location first", "Skills first", "Budget first".
+- Sample file: scoring rules export/import (json/xlsx) so a client's rules
+  can be copied to another job or client.
+
+17.6 AUTOMATED SHORTLISTING (like Jobs)
+- Per job "Shortlisting rules" step in the job wizard: shortlist threshold,
+  knock-outs, max shortlist size, auto-shortlist on/off, undo window
+  (default 4 business hours), who gets notified.
+- When on: new/updated scores above threshold move to Shortlisted
+  automatically, recruiter notified, undo button visible until the window
+  ends, then scheduling starts per the job's scheduling mode.
+- Shortlisting page: queue "Suggested by AI" / "Shortlisted" / "Rejected",
+  bulk approve/reject with reason list, side-by-side compare (up to 3).
+- Never auto-reject; rejection emails still go only after a person decides.
+
+17.7 HR INBOX - MAKE IT UNDERSTANDABLE
+- Rename to "Candidate emails". Page line: "Replies from candidates to your
+  emails (interview times, questions, documents). We link each reply to the
+  right candidate automatically."
+- Tabs: Needs action / Linked to a candidate / Not matched. Each email card
+  shows candidate, job, what the reply is about (AI one-line summary), and
+  buttons (Open candidate, Reply, Mark done).
+- Replies also appear on the candidate's timeline. Empty state explains how
+  emails arrive (connected mailbox) with a Connect mailbox button.
+
+17.8 SALARY - AUTOMATE COLLECTION AND CHECKS
+- Collect salary data automatically:
+  1) careers apply form: current CTC, expected CTC, notice period (required
+     fields, configurable);
+  2) resume parsing fills them if written in the resume;
+  3) if still missing after shortlist, an automatic "Salary & joining details"
+     form link is emailed to the candidate (branded, mobile friendly,
+     reminder after 24h), answers saved on the candidate.
+- Auto-check vs the job's salary band as soon as data arrives: In band ->
+  auto-approved; above band by <= X% (setting) -> approval request to the
+  configured approver; above X% -> flagged. Band bar shows position.
+- Suggest an offer figure (within band, based on the rules) and pre-fill the
+  offer CTC breakup; recruiter can edit before sending.
+- Salary page = queue of candidates with status chips (Waiting for candidate,
+  In band, Needs approval, Approved), not a manual form.
+
+17.9 EMPLOYEES vs PEOPLE DIRECTORY (duplicate)
+- Merge into ONE "People" section with two views:
+  Directory (cards with photo, name, role, team, location, contact - everyone
+  can see) and HR view (table with HR-only columns, filters, export).
+  Employee profile opens from either. Redirect old URLs. Fix titles.
+
+17.10 SETUP CHECKLIST + "CONFIGURATION PACK"
+- Every checklist step opens a working form that saves, shows the saved
+  values when reopened, and can be edited again; step turns green only after
+  a real save; upload fields (logo, employees file) work through storage.
+- Rename "Apply a configuration pack" to "Start from a ready-made template
+  (optional)". Explain in one line: "Loads suggested hiring stages, email
+  templates, scoring rules and roles for your industry. You can change
+  everything later." Show a preview of what it will add, an Apply button,
+  and a Skip button. Ship 3 templates: IT services, Manufacturing, Retail.
+
+17.11 SETTINGS MUST ACTUALLY SAVE (company name, logo, and everything else)
+- Fix save + reload for every settings page. After saving: success message,
+  value shown on reload, and change visible where it is used (company name
+  and logo in sidebar, login page, careers site, emails, letters).
+- Logo upload: png/svg/jpg, preview, crop, stored via storage connection.
+- Go through every settings field; list each in docs/ui/SETTINGS_CHECK.md with
+  "saved OK / reloaded OK / shows in app OK" and fix every failure.
+
+17.12 INTERVIEWS WITHOUT EXCEL
+- The app is the only source of interviewer availability:
+  "My availability" page for interviewers (weekly hours grid, block dates,
+  max interviews per day), HR view of all interviewers' availability,
+  busy times from interviews already booked in the app, optional sync with
+  Google/Outlook calendars via connections.
+- Interviewer pools managed in the app per job/skill.
+- Remove the Excel tracker from Settings and all flows. Keep only a one-time
+  "Import from old Excel tracker" under Settings > Data & privacy > Imports
+  (with sample file), which copies data into the app and is then not used.
+- Negotiation/scheduling reads only app data.
+
+17.13 MORE LOGIC, ENHANCEMENTS, RELIABILITY
+Logic:
+- Talent pool: rejected/older candidates automatically re-matched to new
+  jobs using the same scoring rules ("12 past candidates match this job").
+- Duplicate candidate detection on every entry path (email, phone, file hash).
+- Automatic reminders: pending approvals, missing scorecards, offer expiry,
+  documents pending, response times - all configurable.
+- Job health: jobs with no applicants in 7 days / slow stages highlighted
+  with suggestions (share job, widen location, adjust scoring).
+- Candidate self-service status page shows real progress.
+Reliability:
+- Every page: loading skeletons, friendly error with retry, empty state.
+- API: request validation with clear messages, retries for email/AI/storage
+  with backoff, idempotency keys on create, background jobs for long work,
+  timeouts.
+- Health page for admins: database, mailbox, AI, storage, background jobs
+  (green/amber/red, last check time).
+- Autosave on long forms; confirm before leaving unsaved changes.
+- Nightly database backup command + restore guide for local and AWS.
+- Audit log view for key actions (who changed scoring, approved offer, etc.).
+Visuals:
+- Illustrations (unDraw, brand coloured) on every empty state, error page,
+  login and wizard; Fluent emoji set consistently; Lottie success/confetti
+  animations; candidate/employee photos or initials avatars everywhere;
+  skeleton shimmer while loading.
+
+17.15 REMOVE CANDIDATES (owner request)
+- On candidate profile, candidate list (single + bulk select) and job
+  pipeline: a "Remove" action. Only roles with permission
+  candidates.delete (HR Admin by default; configurable) see it.
+- Step 1 "Remove" = move to Recycle bin (soft delete): hidden from all lists,
+  searches, reports, scoring and emails; scheduled emails/interview offers
+  for that candidate are cancelled; can be restored within N days
+  (setting, default 30).
+- Step 2 "Delete permanently" (from Recycle bin, or automatically when the
+  N days pass): removes the candidate, applications, interviews,
+  negotiation/confirmation tokens, notes, scores, AI results, uploaded
+  files (resume, photo, BGV docs) from storage, and personal data in the
+  message log (kept as "removed candidate" without name/email). Keep only
+  an audit entry: who, when, why, counts - no personal data.
+- Before deleting, show a clear summary: "This removes 1 candidate, 2
+  applications, 1 interview, 3 files. This cannot be undone." + type the
+  word DELETE to confirm. Reason is required (list: duplicate, test data,
+  candidate request (privacy), withdrawn, other).
+- Blocked (with a plain explanation) if the candidate has an accepted offer
+  or is already an employee - use the exit process instead.
+- Privacy request path: "Candidate asked to delete their data" goes straight
+  to permanent delete after confirmation (DPDP erasure) and records it.
+- Bulk remove up to 500 at a time as a background job with progress.
+- Recycle bin page under Candidates with Restore / Delete permanently.
+- Proof in FIXES_17.md: remove -> restore -> remove -> permanent delete on a
+  Demo candidate, with the DB/storage counts before and after.
+
+17.14 HAND-OVER
+- npm run build + i18n:check clean, tsc clean, compileall clean.
+- docs/ui/FIXES_17.md complete with proof for 17.1-17.13 and 17.15.
+- Fresh screenshots of every changed page in docs/ui/screens/.
+- Commit, push, STOP and tell me: what changed (short list), how to see it
+  (URLs + login + demo seed command), anything not finished.
