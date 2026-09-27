@@ -2201,3 +2201,9 @@ NEXT: 17.12 interviews without Excel (my availability, HR view, pools, busy from
 roster.py replaces the tracker behind the same function names (lowest-risk change to the 1259-line negotiation flow); pools + availability in the app; busy = hours/blocked/limits/bookings (+ calendar); Excel removed from settings and the busy_source options; one-time import in Settings > Imports. Decision: ran the one-time import for ctd-techs from its configured tracker (additive: 1 pool, 3 interviewers) so auto-scheduling keeps working immediately. Left in place but unused: the old tracker-path settings endpoint and the generic excel_file connector (used by other imports).
 
 NEXT: 17.13 more logic + reliability (talent pool re-match, duplicates, reminders, job health, health page, backups, audit view, visuals).
+
+## Part 17.13a -- logic backend (2026-09-27)
+
+automation.py: talent pool (past candidates scored with the job rules, add = Screened + scored), duplicates (email / phone last-10 / resume SHA-256; linked via candidates.duplicate_of_id, never merged; agency submissions refused), hourly in-app reminders (approvals, scorecards, offer expiry, joiner documents; once a day each; recruitment.reminders.* settings), job health (no applicants 7d, candidates over the stage time limit, suggestions), candidate status page (365-day link returned by public apply, plain steps only). Migration b8e4c2f6a9d3.
+
+NEXT: 17.13b reliability (health page, idempotency keys, retries/backoff, backup + restore guide, audit view) then 17.13 frontend.

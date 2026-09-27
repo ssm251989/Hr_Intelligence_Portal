@@ -196,10 +196,20 @@ async def upload_resume(
 
     resume_path = save_resume_file(file_bytes, extension)
 
-    candidate = Candidate(resume_path=resume_path, source=source)
+    from app.recruitment.automation import file_hash, find_duplicate
+
+    candidate = Candidate(resume_path=resume_path, source=source, resume_sha256=file_hash(file_bytes))
     db.add(candidate)
     db.commit()
     db.refresh(candidate)
+    # Part 17.13: the same resume file uploaded before -> linked as a possible duplicate
+    from app.platform.tenancy.context import require_current_tenant as _rct
+
+    other, reason = find_duplicate(db, _rct(), resume_sha256=candidate.resume_sha256, exclude_id=candidate.id)
+    if other is not None:
+        candidate.duplicate_of_id = other.id
+        db.commit()
+        log_action(db, "candidate", candidate.id, "possible_duplicate", current_user.email[:50], {"of": str(other.id), "reason": reason})
 
     log_action(db, "candidate", candidate.id, "candidate_uploaded", "system", {"resume_path": resume_path})
     return _with_inferred_gender(candidate)

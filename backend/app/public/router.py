@@ -123,8 +123,10 @@ async def submit_application(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     resume_path = save_resume_file(file_bytes, extension)
 
+    from app.recruitment.automation import file_hash
+
     candidate = Candidate(
-        full_name=full_name, email=email, phone=phone, resume_path=resume_path, source="career_portal",
+        full_name=full_name, email=email, phone=phone, resume_path=resume_path, source="career_portal", resume_sha256=file_hash(file_bytes),
         current_ctc=current_ctc, expected_ctc=expected_ctc, notice_period_days=notice_period_days,
     )
     db.add(candidate)
@@ -178,5 +180,9 @@ async def submit_application(
         notify_job_owner_of_new_application(db, job, candidate)
 
     background_tasks.add_task(_parse_resume_in_background, candidate.id)
+    # Part 17.13: link a repeat applicant to their earlier record; give them their own status page
+    from app.recruitment.automation import mark_if_duplicate, status_link
 
-    return PublicApplicationSubmitResponse(application_id=application.id, status=application.status)
+    mark_if_duplicate(db, require_current_tenant(), candidate, actor="public")
+    return PublicApplicationSubmitResponse(application_id=application.id, status=application.status,
+                                           status_url=status_link(db, require_current_tenant(), application))

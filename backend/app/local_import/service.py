@@ -287,8 +287,11 @@ def _process_one_result(
         move_to_already_uploaded(path, folder_name, already_root, today)
         return "duplicate"
 
-    resume_path = save_resume_file(path.read_bytes(), path.suffix.lower().lstrip("."))
-    candidate = Candidate(resume_path=resume_path, source="local_import")
+    data = path.read_bytes()
+    resume_path = save_resume_file(data, path.suffix.lower().lstrip("."))
+    from app.recruitment.automation import file_hash
+
+    candidate = Candidate(resume_path=resume_path, source="local_import", resume_sha256=file_hash(data))  # Part 17.13
     db.add(candidate)
     db.commit()
     db.refresh(candidate)

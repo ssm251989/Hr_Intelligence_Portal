@@ -223,6 +223,10 @@ app.include_router(candidate_emails_router)
 from app.experience.ui_interviewers_router import router as ui_interviewers_router  # noqa: E402
 
 app.include_router(ui_interviewers_router)
+from app.experience.ui_automation_router import public_router as status_public_router, router as ui_automation_router  # noqa: E402
+
+app.include_router(ui_automation_router)
+app.include_router(status_public_router)
 install_friendly_errors(app)
 
 

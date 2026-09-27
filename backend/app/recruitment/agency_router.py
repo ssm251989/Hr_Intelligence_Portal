@@ -345,6 +345,10 @@ async def portal_submit(
     email = email.strip().lower()
     if db.query(Candidate.id).filter(Candidate.tenant_id == tenant.tenant_id, func.lower(Candidate.email) == email).first():
         raise HTTPException(status_code=409, detail="This person is already in our system, so we can't take them as a new referral")
+    from app.recruitment.automation import find_duplicate
+
+    if phone and find_duplicate(db, tenant, phone=phone)[0] is not None:  # Part 17.13: same person, other email
+        raise HTTPException(status_code=409, detail="This person is already in our system, so we can't take them as a new referral")
 
     extension = resume.filename.rsplit(".", 1)[-1].lower() if resume.filename and "." in resume.filename else ""
     if extension not in ALLOWED_EXTENSIONS:
@@ -360,8 +364,13 @@ async def portal_submit(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     resume_path = save_resume_file(file_bytes, extension)
 
+    from app.recruitment.automation import file_hash
+
+    sha = file_hash(file_bytes)
+    if find_duplicate(db, tenant, resume_sha256=sha)[0] is not None:
+        raise HTTPException(status_code=409, detail="This resume is already in our system, so we can't take it as a new referral")
     candidate = Candidate(tenant_id=tenant.tenant_id, full_name=full_name.strip(), email=email, phone=(phone or "").strip() or None,
-                          resume_path=resume_path, source="agency")
+                          resume_path=resume_path, source="agency", resume_sha256=sha)
     db.add(candidate)
     db.commit()
     db.refresh(candidate)

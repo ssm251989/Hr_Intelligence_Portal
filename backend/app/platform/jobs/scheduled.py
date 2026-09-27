@@ -99,6 +99,12 @@ def _salary_form_reminders(db, tenant):
     return remind_due(db, tenant)
 
 
+def _reminders(db, tenant):
+    from app.recruitment.automation import send_reminders
+
+    return send_reminders(db, tenant)
+
+
 JOBS = {
     "workflow_timers": _workflow_timers,
     "ticket_escalations": _ticket_escalations,
@@ -109,6 +115,7 @@ JOBS = {
     "onboarding_chase": _onboarding_chase,
     "auto_shortlist_release": _auto_shortlist_release,
     "salary_form_reminders": _salary_form_reminders,
+    "reminders": _reminders,
 }
 
 
@@ -149,5 +156,6 @@ celery_app.conf.beat_schedule = {
     "onboarding-chase": {"task": "hrms.fan_out", "schedule": 86400.0, "args": ("onboarding_chase",)},
     "auto-shortlist-release": {"task": "hrms.fan_out", "schedule": 300.0, "args": ("auto_shortlist_release",)},
     "salary-form-reminders": {"task": "hrms.fan_out", "schedule": 3600.0, "args": ("salary_form_reminders",)},
+    "reminders": {"task": "hrms.fan_out", "schedule": 3600.0, "args": ("reminders",)},
 }
 celery_app.conf.timezone = "UTC"

@@ -26,3 +26,4 @@ class PublicJobRead(BaseModel):
 class PublicApplicationSubmitResponse(BaseModel):
     application_id: uuid.UUID
     status: str
+    status_url: Optional[str] = None  # Part 17.13: the candidate's own progress page

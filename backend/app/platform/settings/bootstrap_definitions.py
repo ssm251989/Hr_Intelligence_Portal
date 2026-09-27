@@ -84,6 +84,16 @@ def register_all() -> None:
     register(SettingDef("recruitment.salary.target_hike_pct", "int", 20, module="recruitment", group="Salary",
                         json_schema={"type": "integer", "minimum": 0, "maximum": 200}))
     register(SettingDef("recruitment.salary.approvers", "json", [], module="recruitment", group="Salary"))
+    # Part 17.13: automatic reminders (in-app, at most once a day each)
+    register(SettingDef("recruitment.reminders.enabled", "bool", True, module="recruitment", group="Reminders"))
+    register(SettingDef("recruitment.reminders.approval_hours", "int", 24, module="recruitment", group="Reminders",
+                        json_schema={"type": "integer", "minimum": 1, "maximum": 720}))
+    register(SettingDef("recruitment.reminders.scorecard_hours", "int", 24, module="recruitment", group="Reminders",
+                        json_schema={"type": "integer", "minimum": 1, "maximum": 720}))
+    register(SettingDef("recruitment.reminders.offer_expiry_days", "int", 2, module="recruitment", group="Reminders",
+                        json_schema={"type": "integer", "minimum": 0, "maximum": 30}))
+    register(SettingDef("recruitment.reminders.documents_days", "int", 3, module="recruitment", group="Reminders",
+                        json_schema={"type": "integer", "minimum": 0, "maximum": 30}))
 
     # recruitment.negotiation.* -- current defaults from
     # app/interview_scheduling/negotiation.py's own module constants.

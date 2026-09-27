@@ -52,4 +52,8 @@ class Candidate(Base, TenantOwned):
     notice_period_days = Column(Integer)
     willing_to_relocate = Column(Boolean)
     languages = Column(JSONB)
+    # Part 17.13: duplicate detection -- the resume file's SHA-256, and the earlier record of the
+    # same person (same email / phone / file). Linked, never merged or deleted automatically.
+    resume_sha256 = Column(String(64), index=True)
+    duplicate_of_id = Column(UUID(as_uuid=True), ForeignKey("candidates.id", ondelete="SET NULL"))
     created_at = Column(DateTime(timezone=True), server_default=text("now()"))
