@@ -84,6 +84,9 @@ def register_all() -> None:
     register(SettingDef("recruitment.salary.target_hike_pct", "int", 20, module="recruitment", group="Salary",
                         json_schema={"type": "integer", "minimum": 0, "maximum": 200}))
     register(SettingDef("recruitment.salary.approvers", "json", [], module="recruitment", group="Salary"))
+    # Part 17.15: removed candidates stay in the Recycle bin this many days, then are deleted permanently
+    register(SettingDef("recruitment.candidates.recycle_days", "int", 30, module="recruitment", group="Candidates",
+                        json_schema={"type": "integer", "minimum": 1, "maximum": 365}))
     # Part 17.13: automatic reminders (in-app, at most once a day each)
     register(SettingDef("recruitment.reminders.enabled", "bool", True, module="recruitment", group="Reminders"))
     register(SettingDef("recruitment.reminders.approval_hours", "int", 24, module="recruitment", group="Reminders",

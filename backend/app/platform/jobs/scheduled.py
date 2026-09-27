@@ -105,6 +105,12 @@ def _reminders(db, tenant):
     return send_reminders(db, tenant)
 
 
+def _recycle_bin_purge(db, tenant):
+    from app.recruitment.removal import purge_expired
+
+    return purge_expired(db, tenant)
+
+
 JOBS = {
     "workflow_timers": _workflow_timers,
     "ticket_escalations": _ticket_escalations,
@@ -116,6 +122,7 @@ JOBS = {
     "auto_shortlist_release": _auto_shortlist_release,
     "salary_form_reminders": _salary_form_reminders,
     "reminders": _reminders,
+    "recycle_bin_purge": _recycle_bin_purge,
 }
 
 
@@ -157,5 +164,6 @@ celery_app.conf.beat_schedule = {
     "auto-shortlist-release": {"task": "hrms.fan_out", "schedule": 300.0, "args": ("auto_shortlist_release",)},
     "salary-form-reminders": {"task": "hrms.fan_out", "schedule": 3600.0, "args": ("salary_form_reminders",)},
     "reminders": {"task": "hrms.fan_out", "schedule": 3600.0, "args": ("reminders",)},
+    "recycle-bin-purge": {"task": "hrms.fan_out", "schedule": 86400.0, "args": ("recycle_bin_purge",)},
 }
 celery_app.conf.timezone = "UTC"

@@ -56,6 +56,7 @@ class Application(Base, TenantOwned):
     ranking_score = Column(Numeric)
     ranking_rationale = Column(Text)
     status = Column(Text, server_default=text("'received'"))
+    removed_at = Column(DateTime(timezone=True))  # Part 17.15: its candidate is in the Recycle bin
     # Set only while status == 'on_hold' -- the status to restore on resume (see
     # app/candidates/hold.py). Cleared back to null on resume; never meaningful otherwise.
     previous_status = Column(Text)

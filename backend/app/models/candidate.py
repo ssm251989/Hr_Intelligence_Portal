@@ -56,4 +56,9 @@ class Candidate(Base, TenantOwned):
     # same person (same email / phone / file). Linked, never merged or deleted automatically.
     resume_sha256 = Column(String(64), index=True)
     duplicate_of_id = Column(UUID(as_uuid=True), ForeignKey("candidates.id", ondelete="SET NULL"))
+    # Part 17.15: in the Recycle bin (hidden everywhere; see app/recruitment/removal.py)
+    deleted_at = Column(DateTime(timezone=True), index=True)
+    deleted_by = Column(String(200))
+    delete_reason = Column(String(30))
+    delete_note = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=text("now()"))

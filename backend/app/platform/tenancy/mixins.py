@@ -70,3 +70,7 @@ def install_tenant_read_filter() -> None:
         return
     event.listen(OrmSession, "do_orm_execute", _tenant_read_filter)
     _read_filter_installed = True
+    # Part 17.15: candidates in the Recycle bin are hidden from every query the same way
+    from app.recruitment.removal import install_removed_filter
+
+    install_removed_filter()

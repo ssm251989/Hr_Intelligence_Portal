@@ -230,6 +230,9 @@ from app.experience.ui_automation_router import public_router as status_public_r
 
 app.include_router(ui_automation_router)
 app.include_router(status_public_router)
+from app.experience.ui_candidate_removal_router import router as ui_candidate_removal_router  # noqa: E402
+
+app.include_router(ui_candidate_removal_router)
 install_friendly_errors(app)
 
 
