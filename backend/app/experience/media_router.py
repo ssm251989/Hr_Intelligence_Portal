@@ -108,7 +108,10 @@ async def upload_media(key: str, file: UploadFile = File(...), title: Optional[s
     storage = _storage()
     stored_path = None
     if storage is not None:
-        result = storage.put(f"media/{tenant.tenant_id}/{filename}", data, file.content_type or "application/octet-stream")
+        from app.platform.ops.retry import is_transient, with_retry
+
+        result = with_retry(lambda: storage.put(f"media/{tenant.tenant_id}/{filename}", data, file.content_type or "application/octet-stream"),
+                            attempts=3, base_delay=0.5, retry_if=lambda r: not getattr(r, "success", True) and is_transient(getattr(r, "error", "")))
         if getattr(result, "success", False):
             stored_path = f"{STORAGE_PREFIX}media/{tenant.tenant_id}/{filename}"
     if stored_path is None:

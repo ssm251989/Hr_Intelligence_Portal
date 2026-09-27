@@ -42,3 +42,6 @@ Sample/Ready-to-upload/
 Sample/Already-uploaded/
 Sample/Interview_Tracker/
 ~$*.xlsx
+
+# Part 17.13: local database backups (hrctl backup)
+backups/

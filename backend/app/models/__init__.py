@@ -137,6 +137,7 @@ from app.models.prompt import PromptTemplate
 from app.models.requisition import JobRequisition
 from app.models.secret import Secret, SecretScope
 from app.models.geo import GeoCacheEntry
+from app.models.idempotency import IdempotencyKey
 from app.models.interviewer_pool import InterviewerPool
 from app.models.scoring import ScoreRecalcRun, ScoringRuleSet
 from app.models.agency import AgencyJobAssignment, AgencyMember, AgencySubmission, RecruitmentAgency
@@ -154,6 +155,7 @@ from app.models.workflow import WorkflowDefinition, WorkflowInstance, WorkflowSt
 # populated tables that happened to only ever be imported directly by their own
 # routers/services, never through this file) until this fix.
 __all__ = [
+    "IdempotencyKey",
     "InterviewerPool",
     "ScoreRecalcRun",
     "ScoringRuleSet",

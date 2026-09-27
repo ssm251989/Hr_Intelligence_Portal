@@ -2207,3 +2207,9 @@ NEXT: 17.13 more logic + reliability (talent pool re-match, duplicates, reminder
 automation.py: talent pool (past candidates scored with the job rules, add = Screened + scored), duplicates (email / phone last-10 / resume SHA-256; linked via candidates.duplicate_of_id, never merged; agency submissions refused), hourly in-app reminders (approvals, scorecards, offer expiry, joiner documents; once a day each; recruitment.reminders.* settings), job health (no applicants 7d, candidates over the stage time limit, suggestions), candidate status page (365-day link returned by public apply, plain steps only). Migration b8e4c2f6a9d3.
 
 NEXT: 17.13b reliability (health page, idempotency keys, retries/backoff, backup + restore guide, audit view) then 17.13 frontend.
+
+## Part 17.13b -- reliability backend (2026-09-27)
+
+System health (/api/v1/ui/system-health: database, mailbox, AI, storage, background jobs; green/amber/red + checked_at, 60s cache), retry with backoff for email send and storage put (transient errors only; AI SDK already retries), idempotency keys (middleware + table, 24h replay, auth paths never stored; frontend sends a body-derived key per 5s window so double clicks never create twice), audit view filters (actor, dates, key-action groups) + CSV export and a real permission (full log = security.audit.export; one record = application view), hrctl backup run/list (pg_dump app + control + uploads zip, keep 14) + docs/BACKUP_RESTORE.md. Migration c3f7a1d9e5b2.
+
+NEXT: 17.13 frontend (talent pool, duplicates, job health, status page, health page, audit filters, leave-without-saving guard, visuals).

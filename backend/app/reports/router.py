@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -358,16 +358,18 @@ def get_recent_activity(
     return RecentActivityResponse(items=items)
 
 
-@router.get("/reports/audit", response_model=AuditLogPage)
-def list_audit_log(
-    entity_type: Optional[str] = Query(None),
-    entity_id: Optional[uuid.UUID] = Query(None),
-    action: Optional[str] = Query(None),
-    limit: int = Query(50, ge=1, le=200),
-    offset: int = Query(0, ge=0),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
+# Part 17.13: key actions people look for, as quick filters on the audit view
+AUDIT_GROUPS = {
+    "scoring": ("scoring_rules_saved", "scoring_rules_cleared", "score_recalculated"),
+    "offers": ("offer_generated", "offer_sent", "offer_approved", "offer_signed", "salary_approval_decision", "salary_auto_decided"),
+    "shortlisting": ("hr_shortlisting_decision", "shortlist_status_updated", "ai_auto_shortlisted", "auto_shortlist_undone"),
+    "settings": ("setting_changed", "place_fixed", "pool_created", "pool_updated", "pool_deleted", "shortlisting_rules_saved"),
+    "candidates": ("candidate_removed", "candidate_restored", "candidate_deleted", "possible_duplicate", "added_from_talent_pool"),
+    "access": ("agency_member_added", "agency_member_removed", "role_created", "role_updated", "user_invited"),
+}
+
+
+def _audit_query(db: Session, *, entity_type, entity_id, action, actor, group, since, until):
     query = db.query(AuditLog)
     if entity_type is not None:
         query = query.filter(AuditLog.entity_type == entity_type)
@@ -375,10 +377,76 @@ def list_audit_log(
         query = query.filter(AuditLog.entity_id == entity_id)
     if action is not None:
         query = query.filter(AuditLog.action == action)
+    if actor:
+        query = query.filter(AuditLog.actor.ilike(f"%{actor.strip()}%"))
+    if group:
+        if group not in AUDIT_GROUPS:
+            raise HTTPException(status_code=400, detail=f"group must be one of {sorted(AUDIT_GROUPS)}")
+        query = query.filter(AuditLog.action.in_(AUDIT_GROUPS[group]))
+    if since is not None:
+        query = query.filter(AuditLog.created_at >= since)
+    if until is not None:
+        query = query.filter(AuditLog.created_at < until + timedelta(days=1))
+    return query
 
+
+def _audit_allowed(db: Session, user: User, entity_id) -> None:
+    """Part 17.13: browsing the whole log needs security.audit.export (admins, auditors);
+    the history of ONE record (entity_id given) is open to people who can view applications."""
+    from app.platform.iam.authz import has_permission
+    from app.platform.tenancy.context import require_current_tenant
+
+    tenant = require_current_tenant()
+    if has_permission(db, tenant, user, "security.audit.export"):
+        return
+    if entity_id is not None and has_permission(db, tenant, user, "recruitment.application.view"):
+        return
+    raise HTTPException(status_code=403, detail="Missing permission: security.audit.export")
+
+
+@router.get("/reports/audit", response_model=AuditLogPage)
+def list_audit_log(
+    entity_type: Optional[str] = Query(None),
+    entity_id: Optional[uuid.UUID] = Query(None),
+    action: Optional[str] = Query(None),
+    actor: Optional[str] = Query(None, description="Who did it (part of an email or 'system')"),
+    group: Optional[str] = Query(None, description="scoring | offers | shortlisting | settings | candidates | access"),
+    since: Optional[date] = Query(None),
+    until: Optional[date] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _audit_allowed(db, current_user, entity_id)
+    query = _audit_query(db, entity_type=entity_type, entity_id=entity_id, action=action, actor=actor, group=group, since=since, until=until)
     total = query.count()
     items = query.order_by(AuditLog.created_at.desc()).offset(offset).limit(limit).all()
     return AuditLogPage(total=total, limit=limit, offset=offset, items=items)
+
+
+@router.get("/reports/audit/export")
+def export_audit_log(
+    entity_type: Optional[str] = Query(None), entity_id: Optional[uuid.UUID] = Query(None), action: Optional[str] = Query(None),
+    actor: Optional[str] = Query(None), group: Optional[str] = Query(None), since: Optional[date] = Query(None), until: Optional[date] = Query(None),
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    import csv
+    import io
+    import json as _json
+
+    from fastapi.responses import StreamingResponse
+
+    _audit_allowed(db, current_user, entity_id)
+    rows = _audit_query(db, entity_type=entity_type, entity_id=entity_id, action=action, actor=actor, group=group, since=since, until=until)         .order_by(AuditLog.created_at.desc()).limit(20000).all()
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["when", "who", "what", "record type", "record id", "details"])
+    for r in rows:
+        w.writerow([r.created_at.isoformat() if r.created_at else "", r.actor or "system", r.action, r.entity_type, r.entity_id or "",
+                    _json.dumps(r.details or {}, ensure_ascii=False, default=str)[:2000]])
+    return StreamingResponse(io.BytesIO(buf.getvalue().encode("utf-8-sig")), media_type="text/csv",
+                             headers={"Content-Disposition": 'attachment; filename="audit-log.csv"'})
 
 
 @router.get("/applications/{application_id}/timeline", response_model=ApplicationTimelineResponse)

@@ -4,6 +4,7 @@
 - POST /api/v1/ui/jobs/{id}/talent-pool/{candidate_id}     add one of them to the job (Screened, scored)
 - GET  /api/v1/ui/jobs-health                              open jobs needing attention + suggestions
 - GET  /api/v1/ui/candidates/{id}/duplicates               possible earlier records of the same person
+- GET  /api/v1/ui/system-health                            admin health page
 - POST /api/v1/ui/reminders/run                            send due reminders now (admins; also hourly)
 - GET  /api/v1/ui/applications/{id}/status-link            the candidate's own status page link (to share)
 - GET  /api/v1/public/status/{token}                       the candidate's status page (no login)
@@ -83,6 +84,16 @@ def duplicates(candidate_id: UUID, db: Session = Depends(get_db), current_user: 
     if other is not None and str(other.id) not in {f["candidate_id"] for f in found}:
         found.append({"candidate_id": str(other.id), "name": other.full_name, "email": other.email, "reason": reason})
     return {"candidate_id": str(cand.id), "duplicates": found}
+
+
+@router.get("/system-health")
+def system_health(fresh: bool = False, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Part 17.13: database, mailbox, AI, storage, background jobs -- green / amber / red."""
+    from app.experience.system_health import check
+
+    tenant = require_current_tenant()
+    _need(db, tenant, current_user, "platform.settings.view")
+    return check(db, tenant, fresh=fresh)
 
 
 @router.post("/reminders/run")

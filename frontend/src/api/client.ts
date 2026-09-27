@@ -162,6 +162,19 @@ export function setUnauthorizedHandler(handler: (() => void) | null) {
   onUnauthorized = handler;
 }
 
+async function idempotencyKey(path: string, body: string): Promise<string> {
+  const bucket = Math.floor(Date.now() / 5000);
+  const text = `${path}\n${body}\n${bucket}`;
+  try {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+    return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 40);
+  } catch {
+    let h = 0;
+    for (let i = 0; i < text.length; i += 1) h = (Math.imul(31, h) + text.charCodeAt(i)) | 0;
+    return `k${bucket}${(h >>> 0).toString(16)}`;
+  }
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const isFormData = options.body instanceof FormData;
   const headers: Record<string, string> = isFormData
@@ -171,6 +184,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const hadToken = Boolean(authToken);
   if (authToken) {
     headers["Authorization"] = `Bearer ${authToken}`;
+  }
+  // Part 17.13: the same create sent twice within ~5 seconds (double click, a retry after a
+  // dropped connection) carries the same Idempotency-Key, so the server returns the first
+  // result instead of creating a second record.
+  if ((options.method ?? "GET").toUpperCase() === "POST" && typeof options.body === "string" && !headers["Idempotency-Key"]
+      && !path.startsWith("/auth/") && !/password|mfa/.test(path)) {
+    headers["Idempotency-Key"] = await idempotencyKey(path, options.body);
   }
 
   const response = await fetch(`${BASE_URL}${path}`, { ...options, headers });

@@ -82,6 +82,9 @@ configure_logging()
 init_optional_integrations(app)
 app.add_middleware(RateLimitMiddleware)
 from app.platform.modules import ModuleGateMiddleware  # noqa: E402
+from app.platform.ops.idempotency import IdempotencyMiddleware  # noqa: E402
+
+app.add_middleware(IdempotencyMiddleware)  # Part 17.13: inside the tenant resolver (needs the tenant)
 
 app.add_middleware(ModuleGateMiddleware)
 app.add_middleware(ObservabilityMiddleware)

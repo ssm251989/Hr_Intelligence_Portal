@@ -95,11 +95,21 @@ def send(
 
         from app.platform.connectors.capabilities import OutboundEmail
 
-        result = adapter.send(OutboundEmail(
+        from app.platform.ops.retry import is_transient, with_retry
+
+        email_msg = OutboundEmail(
             to=to, cc=cc, bcc=bcc, subject=rendered["subject"], body_text=rendered["text"],
             body_html=rendered["html"], attachments=attachments,
-        ))
-        outbound.attempts += 1
+        )
+        tries = {"n": 0}
+
+        def _send():
+            tries["n"] += 1
+            return adapter.send(email_msg)
+
+        # Part 17.13: a dropped connection / timeout is retried (up to 3 tries, 0.5s -> 1s backoff)
+        result = with_retry(_send, attempts=3, base_delay=0.5, retry_if=lambda r: not r.success and is_transient(r.error))
+        outbound.attempts += tries["n"]
         if result.success:
             outbound.status = "sent"
             outbound.provider_message_id = result.provider_message_id
