@@ -13,13 +13,15 @@ import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 
 import { ApiError, publicApi } from "../api/client";
 import type { PublicJobRead } from "../api/types";
+import MoneyField, { DaysField } from "../components/salary/MoneyField";
 import { useT } from "../i18n";
 import { EmptyState, Emoji, FriendlyError, Illustration } from "../ui-kit";
 
 const ACCEPTED_EXTENSIONS = [".pdf", ".docx"];
 
 // A5: the SHORT apply form -- resume + contact details only; everything else is collected
-// later in the process. Same fields and API call as before.
+// later in the process. Part 17.8: plus expected salary + notice period (current salary
+// optional), so the salary check can run straight away.
 export default function CareersApplyPage() {
   const f = useTheme().palette.fresh;
   const t = useT();
@@ -34,6 +36,9 @@ export default function CareersApplyPage() {
   const [phone, setPhone] = useState("");
   const [resume, setResume] = useState<File | null>(null);
   const [consent, setConsent] = useState(false);
+  const [currentCtc, setCurrentCtc] = useState("");
+  const [expectedCtc, setExpectedCtc] = useState("");
+  const [noticeDays, setNoticeDays] = useState("");
   const [dragging, setDragging] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
@@ -75,6 +80,14 @@ export default function CareersApplyPage() {
       setProblem(t("careers.apply.need_resume"));
       return;
     }
+    if (!expectedCtc || noticeDays === "") {
+      setProblem(t("salaryApply.need_salary"));
+      return;
+    }
+    if (Number(noticeDays) > 365) {
+      setProblem(t("salaryApply.notice_too_long"));
+      return;
+    }
     if (!consent) {
       setProblem(t("careers.apply.need_consent"));
       return;
@@ -84,7 +97,12 @@ export default function CareersApplyPage() {
     setProblem(null);
     setError(null);
     try {
-      await publicApi.apply({ jobId: id, fullName, email, phone: phone || undefined, resume, consent });
+      await publicApi.apply({
+        jobId: id, fullName, email, phone: phone || undefined, resume, consent,
+        currentCtc: currentCtc ? Number(currentCtc) : undefined,
+        expectedCtc: Number(expectedCtc),
+        noticePeriodDays: Number(noticeDays),
+      });
       navigate(`/careers/${id}/thank-you`);
     } catch (err) {
       setError(err);
@@ -143,6 +161,12 @@ export default function CareersApplyPage() {
             <TextField label={t("careers.apply.name")} required fullWidth autoComplete="name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
             <TextField label={t("careers.apply.email")} type="email" required fullWidth autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
             <TextField label={t("careers.apply.phone")} fullWidth autoComplete="tel" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
+
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 2 }}>
+              <MoneyField label={t("salaryApply.expected")} required value={expectedCtc} onChange={setExpectedCtc} />
+              <MoneyField label={t("salaryApply.current")} value={currentCtc} onChange={setCurrentCtc} />
+            </Box>
+            <DaysField label={t("salaryApply.notice")} required value={noticeDays} onChange={setNoticeDays} />
 
             <FormControlLabel
               control={<Checkbox checked={consent} onChange={(e) => setConsent(e.target.checked)} />}

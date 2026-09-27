@@ -21,12 +21,14 @@ export function bandPosition(value: number | null | undefined, min: number | nul
 }
 
 export default function SalaryBandBar({
-  expected, min, max, approved,
+  expected, min, max, approved, suggested,
 }: {
   expected: number | null | undefined;
   min: number | null | undefined;
   max: number | null | undefined;
   approved?: number | null;
+  /** Part 17.8: the suggested offer figure (inside the band), drawn as a dashed tick. */
+  suggested?: number | null;
 }) {
   const t = useT();
   const f = useTheme().palette.fresh;
@@ -46,7 +48,7 @@ export default function SalaryBandBar({
 
   const mid = (min + max) / 2;
   const { pos, pct } = bandPosition(expected, min, max);
-  const values = [min, max, ...(expected != null ? [expected] : []), ...(approved != null ? [approved] : [])];
+  const values = [min, max, ...(expected != null ? [expected] : []), ...(approved != null ? [approved] : []), ...(suggested != null ? [suggested] : [])];
   const span = Math.max(max - min, max * 0.1, 1);
   const lo = Math.min(...values) - span * 0.25;
   const hi = Math.max(...values) + span * 0.25;
@@ -70,6 +72,9 @@ export default function SalaryBandBar({
         )}
         {/* mid tick */}
         <Box sx={{ position: "absolute", left: at(mid), top: 12, width: 2, height: 20, bgcolor: f.brand, transform: "translateX(-1px)" }} />
+        {suggested != null && approved == null && (
+          <Box title={t("salaryQueue.band.suggested_marker", { amount: money(suggested) })} sx={{ position: "absolute", left: at(suggested), top: 6, width: 0, height: 32, borderLeft: `3px dashed ${f.ok}`, transform: "translateX(-1.5px)" }} />
+        )}
         {approved != null && (
           <Box title={t("salary.band.approved_marker")} sx={{ position: "absolute", left: at(approved), top: 10, width: 4, height: 24, borderRadius: 2, bgcolor: f.ok, transform: "translateX(-2px)" }} />
         )}

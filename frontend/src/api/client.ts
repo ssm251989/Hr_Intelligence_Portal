@@ -509,10 +509,9 @@ export interface CandidateApplicationsListParams {
   appliedBefore?: string;
   matchScoreMin?: number;
   matchScoreMax?: number;
-  // Which column matchScoreMin/Max filter -- omit for the Candidates List's "Match Score"
-  // filter (raw Resume Matcher score, the backend default); "composite_score" for the
-  // Screening List's "Screening Score" filter, targeting the same column that page's
-  // primary score column shows (see utils/screeningScore.ts).
+  // Which column matchScoreMin/Max filter. Part 17.4: every list passes "composite_score"
+  // -- the one Match score (see utils/screeningScore.ts). "match_score" (the backend
+  // default) is only the AI "Skills match" factor.
   scoreField?: "match_score" | "composite_score";
 }
 
@@ -1224,7 +1223,11 @@ export const recruitmentApi = {
 export const publicApi = {
   listJobs: () => get<PublicJobRead[]>("/public/jobs"),
   getJob: (jobId: UUID) => get<PublicJobRead>(`/public/jobs/${jobId}`),
-  apply: (payload: { jobId: UUID; fullName: string; email: string; phone?: string; resume: File; consent: boolean; knockoutAnswers?: Record<string, string> }) => {
+  // Part 17.8: current / expected salary (per year) and notice period (days) on the short form.
+  apply: (payload: {
+    jobId: UUID; fullName: string; email: string; phone?: string; resume: File; consent: boolean; knockoutAnswers?: Record<string, string>;
+    currentCtc?: number; expectedCtc?: number; noticePeriodDays?: number;
+  }) => {
     const form = new FormData();
     form.append("job_id", payload.jobId);
     form.append("full_name", payload.fullName);
@@ -1233,6 +1236,9 @@ export const publicApi = {
     form.append("resume", payload.resume);
     form.append("consent", String(payload.consent));
     if (payload.knockoutAnswers) form.append("knockout_answers", JSON.stringify(payload.knockoutAnswers));
+    if (payload.currentCtc != null) form.append("current_ctc", String(payload.currentCtc));
+    if (payload.expectedCtc != null) form.append("expected_ctc", String(payload.expectedCtc));
+    if (payload.noticePeriodDays != null) form.append("notice_period_days", String(payload.noticePeriodDays));
     return postForm<PublicApplicationSubmitResponse>("/public/apply", form);
   },
 };

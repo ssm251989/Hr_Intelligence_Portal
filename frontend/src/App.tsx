@@ -49,6 +49,7 @@ const EmployeeProfilePage = lazy(() => import("./pages/people/EmployeeProfilePag
 const OrgChartPage = lazy(() => import("./pages/people/OrgChartPage"));
 const OnboardingDashboardPage = lazy(() => import("./pages/onboarding/OnboardingDashboardPage"));
 const WelcomePortalPage = lazy(() => import("./pages/onboarding/WelcomePortalPage"));
+const SalaryDetailsFormPage = lazy(() => import("./pages/salary/SalaryDetailsFormPage"));
 const PerformancePage = lazy(() => import("./pages/performance/PerformancePage"));
 const TeamPerformancePage = lazy(() => import("./pages/performance/TeamPerformancePage"));
 const ReviewFormPage = lazy(() => import("./pages/performance/ReviewFormPage"));
@@ -96,6 +97,7 @@ export default function App() {
               <Route path="/superadmin" element={<SuperAdminPage />} />
               <Route path="/welcome" element={<WelcomePortalPage />} />
               <Route path="/welcome/:token" element={<WelcomePortalPage />} />
+              <Route path="/salary-details/:token" element={<SalaryDetailsFormPage />} />
               <Route path="/careers" element={<CareersLayout />}>
                 <Route index element={<CareersListPage />} />
                 <Route path=":id" element={<CareersJobDetailPage />} />
@@ -130,6 +132,7 @@ export default function App() {
                 <Route path="/interviews/list" element={<InterviewListPage />} />
                 <Route path="/interviews/my" element={<MyInterviewsPage />} />
                 <Route path="/hr-inbox" element={<HrInboxListPage />} />
+                <Route path="/candidate-emails" element={<HrInboxListPage />} />
                 <Route path="/approvals" element={<UnifiedInboxPage />} />
                 <Route path="/salary" element={<SalaryPage />} />
                 <Route path="/bgv" element={<BgvPage />} />
