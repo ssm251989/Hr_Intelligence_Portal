@@ -343,7 +343,9 @@ def _bucket_scores(scores: list[float]) -> list[tuple[str, int]]:
 def match_score_distribution(db: Session) -> list[tuple[str, int]]:
     """Buckets every application's real match_score -- all 5 buckets always appear, even
     at 0, so the chart's axis never reflows as data comes in."""
-    scores = [score for (score,) in db.query(Application.match_score).filter(Application.match_score.isnot(None)).all()]
+    # Part 17.4: the one "Match score" is composite_score (the AI fit only where nothing else exists)
+    score_col = func.coalesce(Application.composite_score, Application.match_score)
+    scores = [score for (score,) in db.query(score_col).filter(score_col.isnot(None)).all()]
     return _bucket_scores(scores)
 
 
@@ -363,8 +365,8 @@ def avg_match_score_as_of(db: Session, cutoff: datetime) -> Optional[float]:
     counting. None once no scored applications exist yet by that cutoff (a percentage
     average from zero scored applications is undefined, not 0)."""
     avg = (
-        db.query(func.avg(Application.match_score))
-        .filter(Application.match_score.isnot(None), Application.created_at < cutoff)
+        db.query(func.avg(func.coalesce(Application.composite_score, Application.match_score)))
+        .filter(func.coalesce(Application.composite_score, Application.match_score).isnot(None), Application.created_at < cutoff)
         .scalar()
     )
     return round(float(avg), 1) if avg is not None else None

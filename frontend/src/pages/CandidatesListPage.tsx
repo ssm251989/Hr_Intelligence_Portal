@@ -53,7 +53,7 @@ import { useT } from "../i18n";
 import { EmptyState, FriendlyError, PageHeader, StatusChip, statusStyle } from "../ui-kit";
 import { downloadCsv } from "../utils/csv";
 import { downloadResume } from "../utils/resume";
-import { resumeMatchScoreDisplay } from "../utils/screeningScore";
+import { matchScoreDisplay } from "../utils/screeningScore";
 
 // Part 15.4 Candidates list: table AND Kanban board (switch remembered per browser, table by
 // default -- N4), 25 rows a page (N5), the standard ListToolbar (refresh, saved views, column
@@ -163,6 +163,8 @@ export default function CandidatesListPage() {
     appliedBefore: filters.appliedBefore || undefined,
     matchScoreMin: filters.matchScoreMin ? Number(filters.matchScoreMin) : undefined,
     matchScoreMax: filters.matchScoreMax ? Number(filters.matchScoreMax) : undefined,
+    // Part 17.4: the score filter targets the one Match score (composite_score).
+    scoreField: "composite_score" as const,
   });
 
   const loadPage = () => {
@@ -215,7 +217,7 @@ export default function CandidatesListPage() {
         "candidates.csv",
         [
           "Candidate", "Email", "Job Applied", "Status", "Source", "Applied On", "Experience (yrs)",
-          "Screening Score", "Resume Match", "Location", "Remarks",
+          "Match score", "Location", "Remarks",
         ],
         result.map((row) => [
           row.candidate_name,
@@ -225,10 +227,8 @@ export default function CandidatesListPage() {
           row.source,
           row.applied_on,
           row.experience_years,
-          // Composite screening score when there is one, else the raw match score -- kept
-          // as its own column beside "Resume Match" so the two never collapse into one.
-          row.composite_score ?? row.match_score,
-          row.match_score,
+          // The one Match score (composite; AI skills match only for rows scored before it existed).
+          matchScoreDisplay(row).value,
           row.location,
           row.remarks,
         ]),
@@ -364,7 +364,7 @@ export default function CandidatesListPage() {
     applied: row.applied_on,
     experience: row.experience_years,
     location: row.location,
-    match: resumeMatchScoreDisplay(row).value,
+    match: matchScoreDisplay(row).value,
     status: statusStyle(row.status).label,
     remarks: row.remarks,
   }));
@@ -572,7 +572,7 @@ export default function CandidatesListPage() {
                         {show("match") && (
                           <TableCell>
                             {(() => {
-                              const { value, tooltip } = resumeMatchScoreDisplay(row);
+                              const { value, tooltip } = matchScoreDisplay(row, t);
                               if (value == null) return "—";
                               return (
                                 <Tooltip title={tooltip}>

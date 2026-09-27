@@ -11,14 +11,13 @@ import { useNavigate } from "react-router-dom";
 import type { CandidateApplicationRow } from "../api/types";
 import { useT } from "../i18n";
 import { StatusChip } from "../ui-kit";
-import { screeningScoreDisplay } from "../utils/screeningScore";
+import { matchScoreDisplay } from "../utils/screeningScore";
 import CandidateAvatar from "./CandidateAvatar";
 import { ScoreBadge } from "./screening/ScoreParts";
 import SourceIcon from "./SourceIcon";
 
 // RecentCandidatesTable's Shortlisting Dashboard counterpart -- every row here is already
-// Shortlisted (hr_selected), so the useful score column is the Screening Score (composite)
-// that decision was actually made against, not the raw Match Score.
+// Shortlisted (hr_selected); the score column is the one Match score (composite).
 export default function RecentShortlistedTable({ rows }: { rows: CandidateApplicationRow[] }) {
   const navigate = useNavigate();
   const t = useT();
@@ -45,7 +44,7 @@ export default function RecentShortlistedTable({ rows }: { rows: CandidateApplic
         </TableHead>
         <TableBody>
           {rows.map((row) => {
-            const { value, tooltip } = screeningScoreDisplay(row);
+            const { value, tooltip } = matchScoreDisplay(row);
             const open = () => navigate(`/candidates/${row.application_id}`);
             return (
               <TableRow

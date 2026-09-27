@@ -9,16 +9,19 @@ import Typography from "@mui/material/Typography";
 import { useNavigate } from "react-router-dom";
 
 import type { CandidateApplicationRow } from "../api/types";
+import { useT } from "../i18n";
+import { matchScoreDisplay } from "../utils/screeningScore";
 import CandidateAvatar from "./CandidateAvatar";
 import SourceIcon from "./SourceIcon";
 
 export default function RecentCandidatesTable({ rows }: { rows: CandidateApplicationRow[] }) {
+  const t = useT();
   const navigate = useNavigate();
 
   if (rows.length === 0) {
     return (
       <Typography color="text.secondary" variant="body2">
-        No candidates yet.
+        {t("candidates.dash.recent_empty")}
       </Typography>
     );
   }
@@ -28,12 +31,12 @@ export default function RecentCandidatesTable({ rows }: { rows: CandidateApplica
       <Table size="small">
         <TableHead>
           <TableRow>
-            <TableCell>Candidate</TableCell>
-            <TableCell>Source</TableCell>
-            <TableCell>Applied For</TableCell>
-            <TableCell>Applied On</TableCell>
-            <TableCell>Match Score</TableCell>
-            <TableCell>Experience</TableCell>
+            <TableCell>{t("candidates.col.candidate")}</TableCell>
+            <TableCell>{t("candidates.col.source")}</TableCell>
+            <TableCell>{t("candidates.col.job")}</TableCell>
+            <TableCell>{t("candidates.col.applied")}</TableCell>
+            <TableCell>{t("candidates.col.match")}</TableCell>
+            <TableCell>{t("candidates.col.experience")}</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
@@ -54,7 +57,7 @@ export default function RecentCandidatesTable({ rows }: { rows: CandidateApplica
                     sx={{ width: 28, height: 28, fontSize: 12 }}
                   />
                   <Typography variant="body2" noWrap>
-                    {row.candidate_name || "Unnamed candidate"}
+                    {row.candidate_name || t("candidates.unnamed")}
                   </Typography>
                 </Stack>
               </TableCell>
@@ -63,8 +66,13 @@ export default function RecentCandidatesTable({ rows }: { rows: CandidateApplica
               </TableCell>
               <TableCell>{row.job_title}</TableCell>
               <TableCell>{new Date(row.applied_on).toLocaleDateString()}</TableCell>
-              <TableCell>{row.match_score != null ? `${Math.round(row.match_score)}%` : "—"}</TableCell>
-              <TableCell>{row.experience_years != null ? `${row.experience_years}y` : "—"}</TableCell>
+              <TableCell>
+                {(() => {
+                  const { value } = matchScoreDisplay(row, t);
+                  return value != null ? Math.round(value) : "—";
+                })()}
+              </TableCell>
+              <TableCell>{row.experience_years != null ? t("candidates.years", { count: row.experience_years }) : "—"}</TableCell>
             </TableRow>
           ))}
         </TableBody>

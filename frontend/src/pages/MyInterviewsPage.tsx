@@ -150,7 +150,9 @@ export default function MyInterviewsPage() {
             const facts = [
               r.total_experience_years != null ? t("interviews.my.experience", { count: r.total_experience_years }) : null,
               r.candidate_location || null,
-              r.match_score != null ? t("interviews.my.match", { value: Math.round(r.match_score) }) : null,
+              (r.composite_score ?? r.match_score) != null
+                ? t("interviews.my.match", { value: Math.round((r.composite_score ?? r.match_score) as number) })
+                : null,
             ].filter(Boolean) as string[];
             return (
               <Card key={iv.interview_id} component="article" aria-label={t("interviews.my.card_label", { name })} sx={{ p: 2.25 }}>

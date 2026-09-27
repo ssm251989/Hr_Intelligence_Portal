@@ -158,14 +158,12 @@ export function JobSummaryView({ jobs }: { jobs: JobRoleRead[] }) {
       ) : data ? (
         <>
           <Grid container spacing={2}>
-            <Grid size={{ xs: 12, sm: 4 }}>
+            <Grid size={{ xs: 12, sm: 6 }}>
               <StatTile emoji="inbox" tone="brand" value={data.total_applications} label={t("reports.stat.applications", { count: data.total_applications })} />
             </Grid>
-            <Grid size={{ xs: 12, sm: 4 }}>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              {/* Part 17.4: one score -- the Match score. The old "Average ranking score" tile is gone. */}
               <StatTile emoji="target" tone="sky" value={score(data.average_match_score)} label={t("reports.stat.avg_match")} />
-            </Grid>
-            <Grid size={{ xs: 12, sm: 4 }}>
-              <StatTile emoji="trophy" tone="sun" value={score(data.average_ranking_score)} label={t("reports.stat.avg_rank")} />
             </Grid>
           </Grid>
           {data.by_status.length === 0 ? (

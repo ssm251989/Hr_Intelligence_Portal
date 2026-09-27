@@ -11,7 +11,7 @@ import { useTheme } from "@mui/material/styles";
 import type { CandidateApplicationRow } from "../../api/types";
 import { useT } from "../../i18n";
 import { ProgressRing, StatusChip } from "../../ui-kit";
-import { screeningScoreDisplay } from "../../utils/screeningScore";
+import { matchScoreDisplay } from "../../utils/screeningScore";
 import { useScreeningDetails } from "./hooks";
 import { EvidenceList, ScoreBreakdown, scoreTone } from "./ScoreParts";
 
@@ -32,7 +32,7 @@ export default function CompareDialog({
   const shown = rows.slice(0, MAX_COMPARE);
   // Selected rows can come from several pages, so the dialog fetches its own details.
   const details = useScreeningDetails(open ? shown.map((r) => r.application_id) : []);
-  const best = Math.max(...shown.map((r) => screeningScoreDisplay(r).value ?? -1));
+  const best = Math.max(...shown.map((r) => matchScoreDisplay(r).value ?? -1));
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="lg" aria-labelledby="compare-title">
@@ -41,7 +41,7 @@ export default function CompareDialog({
         <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", md: `repeat(${Math.max(1, shown.length)}, minmax(0, 1fr))` } }}>
           {shown.map((row) => {
             const d = details.get(row.application_id);
-            const score = screeningScoreDisplay(row).value;
+            const score = matchScoreDisplay(row).value;
             const tone = scoreTone(score);
             const ringTone = tone === "muted" ? "brand" : tone;
             const years = d?.experience_years ?? row.experience_years;

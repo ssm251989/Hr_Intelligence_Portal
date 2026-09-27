@@ -11,6 +11,8 @@ export interface MyInterviewRow {
   total_experience_years?: number | null;
   top_skills: string[];
   missing_skills: string[];
+  /** Part 17.4: the Match score, when the server sends it; else match_score is shown. */
+  composite_score?: number | null;
   match_score?: number | null;
   feedback_submitted: boolean;
 }

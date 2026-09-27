@@ -43,10 +43,12 @@ import { ROLE_MATRIX } from "../auth/roles";
 import { useT } from "../i18n";
 import { EmptyState, FriendlyError, PageHeader, StatusChip } from "../ui-kit";
 import { downloadCsv } from "../utils/csv";
-import { screeningScoreDisplay } from "../utils/screeningScore";
+import { matchScoreDisplay } from "../utils/screeningScore";
 
 const SEARCH_DEBOUNCE_MS = 300;
 const COLUMN_KEYS = ["source", "job", "applied", "skill", "score", "pass", "ranking", "status", "remarks"] as const;
+// Part 17.4: one headline score. The AI rank is still available but hidden unless chosen.
+const DEFAULT_COLUMNS = COLUMN_KEYS.filter((k) => k !== "ranking");
 
 // Same "Active"/"Inactive"/"On Hold" reading as the Candidates List -- one status language
 // across every table, now as colour + emoji + word.
@@ -159,17 +161,17 @@ export default function ScreeningListPage() {
   const [selected, setSelected] = useState<Map<string, CandidateApplicationRow>>(new Map());
   const [compareOpen, setCompareOpen] = useState(false);
   const [passRange, setPassRange] = useState<[number, number]>([75, 100]);
-  const [visibleColumns, setVisibleColumns] = useState<string[]>([...COLUMN_KEYS]);
+  const [visibleColumns, setVisibleColumns] = useState<string[]>([...DEFAULT_COLUMNS]);
 
   const columns: ListColumn[] = COLUMN_KEYS.map((key) => ({ key, label: t(`screening.col.${key}`) }));
   const show = (key: string) => visibleColumns.includes(key);
 
   useEffect(() => {
     jobsApi.list().then(setJobs).catch(() => setJobs([]));
-    // The pass line starts at the company's own "interview ready" mark.
+    // The slider starts at the company's Shortlist threshold (a view-only filter here).
     screeningApi
       .getSettings()
-      .then((s) => setPassRange([Number(s.interview_min_score), Number(s.interview_max_score)]))
+      .then((s) => setPassRange([Math.round(Number(s.shortlist_threshold)), 100]))
       .catch(() => undefined);
   }, []);
 
@@ -195,7 +197,7 @@ export default function ScreeningListPage() {
     appliedBefore: filters.appliedBefore || undefined,
     matchScoreMin: filters.matchScoreMin ? Number(filters.matchScoreMin) : undefined,
     matchScoreMax: filters.matchScoreMax ? Number(filters.matchScoreMax) : undefined,
-    // This page's score range filter targets composite_score (the Screening Score column).
+    // The score range filter targets composite_score -- the one Match score.
     scoreField: "composite_score" as const,
   });
 
@@ -246,7 +248,7 @@ export default function ScreeningListPage() {
         "screening.csv",
         [
           "Candidate", "Email", "Job Applied", "Status", "Applied On", "Skill Match %",
-          "Screening Score", "Resume Match", "Ranking Score", "Remarks",
+          "Match score", "Remarks",
         ],
         result.map((row) => [
           row.candidate_name,
@@ -255,9 +257,7 @@ export default function ScreeningListPage() {
           row.status,
           row.applied_on,
           row.skill_match_pct,
-          row.composite_score ?? row.match_score,
-          row.match_score,
-          row.ranking_score,
+          matchScoreDisplay(row).value,
           row.interview_remarks,
         ]),
       );
@@ -313,12 +313,12 @@ export default function ScreeningListPage() {
 
   const csvRows = rows.map((row) => ({
     source: row.source, job: row.job_title, applied: row.applied_on, skill: row.skill_match_pct,
-    score: screeningScoreDisplay(row).value, pass: passLabel(row), ranking: row.ranking_score, status: row.status,
+    score: matchScoreDisplay(row).value, pass: passLabel(row), ranking: row.ranking_score, status: row.status,
     remarks: row.interview_remarks,
   }));
 
   function passes(row: CandidateApplicationRow): boolean | null {
-    const v = screeningScoreDisplay(row).value;
+    const v = matchScoreDisplay(row).value;
     if (v == null) return null;
     const r = Math.round(v);
     return r >= passRange[0] && r <= passRange[1];
@@ -378,7 +378,7 @@ export default function ScreeningListPage() {
             value={passRange}
             onChange={setPassRange}
             counts={counts?.counts}
-            scores={rows.map((r) => screeningScoreDisplay(r).value)}
+            scores={rows.map((r) => matchScoreDisplay(r).value)}
             label={t("screening.pass.slider")}
             info={t("screening.pass.info")}
           />
@@ -401,7 +401,7 @@ export default function ScreeningListPage() {
       </Stack>
 
       <Box mb={2}>
-        <CandidateFiltersPanel jobs={jobs} filters={filters} onChange={setFilters} scoreLabel="Screening" />
+        <CandidateFiltersPanel jobs={jobs} filters={filters} onChange={setFilters} />
       </Box>
 
       {actionError != null && (
@@ -486,7 +486,7 @@ export default function ScreeningListPage() {
               </TableHead>
               <TableBody>
                 {rows.map((row) => {
-                  const { value, tooltip } = screeningScoreDisplay(row);
+                  const { value, tooltip } = matchScoreDisplay(row, t);
                   const pass = passes(row);
                   const name = row.candidate_name || t("screening.unnamed");
                   return (

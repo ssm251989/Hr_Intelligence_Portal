@@ -83,7 +83,7 @@ def get_job_summary(
     by_status = _ordered_status_counts(status_rows)
 
     avg_match_score, avg_ranking_score = (
-        db.query(func.avg(Application.match_score), func.avg(Application.ranking_score))
+        db.query(func.avg(func.coalesce(Application.composite_score, Application.match_score)), func.avg(Application.ranking_score))
         .filter(Application.job_role_id == job_id)
         .one()
     )

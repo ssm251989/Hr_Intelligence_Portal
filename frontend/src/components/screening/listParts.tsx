@@ -10,7 +10,7 @@ import Typography from "@mui/material/Typography";
 import { isMissingEndpoint, screeningExtraApi, type ScoreListParams } from "../../api/screeningExtra";
 import type { CandidateApplicationRow, CandidatesListPage } from "../../api/types";
 import { useT } from "../../i18n";
-import { screeningScoreDisplay } from "../../utils/screeningScore";
+import { matchScoreDisplay } from "../../utils/screeningScore";
 import CandidateAvatar from "../CandidateAvatar";
 
 // N5: 25 rows by default.
@@ -33,7 +33,7 @@ export async function loadSortedPage(
   } catch (err) {
     if (!isMissingEndpoint(err)) throw err;
     const page = await original();
-    const score = (r: CandidateApplicationRow) => screeningScoreDisplay(r).value ?? -1;
+    const score = (r: CandidateApplicationRow) => matchScoreDisplay(r).value ?? -1;
     return { ...page, items: [...page.items].sort((a, b) => score(b) - score(a)) };
   }
 }

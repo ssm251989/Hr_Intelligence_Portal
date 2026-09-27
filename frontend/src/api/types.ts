@@ -823,27 +823,16 @@ export interface PublicApplicationSubmitResponse {
 
 // ---- screening settings (Part D dashboard threshold + Part F interview threshold) ----
 
+// Part 17.4: the ONE company-level "Shortlist threshold" (0-100 Match score). Candidates
+// with a Match score at or above it are suggested for the shortlist; each job can override
+// it in its own Shortlisting rules. The old dashboard_*/interview_* pairs are gone.
 export interface ScreeningSettings {
-  dashboard_min_score: number;
-  dashboard_max_score: number;
-  // Part F: the Screening Dashboard's own, independent threshold -- whether a screened
-  // application is flagged "Interview ready" in the Screening List's Remarks column.
-  // Never shared with dashboard_min/max_score above.
-  interview_min_score: number;
-  interview_max_score: number;
+  shortlist_threshold: number;
   updated_at?: string | null;
 }
 
-// Partial update: send ONE pair (dashboard_min/max_score OR interview_min/max_score), never
-// both at once -- each pair is saved by its own panel (Candidates Dashboard vs Screening
-// Dashboard) and the backend leaves whichever pair you omit completely untouched. A pair
-// sent partially (only min, or only max) is rejected -- see backend
-// app/schemas/screening.py ScreeningSettingsUpdate.
 export interface ScreeningSettingsUpdate {
-  dashboard_min_score?: number;
-  dashboard_max_score?: number;
-  interview_min_score?: number;
-  interview_max_score?: number;
+  shortlist_threshold: number;
 }
 
 // Summary counts for one Re-evaluate All run -- see app/screening/service.py

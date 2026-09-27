@@ -5,6 +5,7 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 
 import { APPLICATION_STATUSES, CANDIDATE_SOURCES, candidateSourceLabel, type JobRoleRead } from "../api/types";
+import { useT } from "../i18n";
 import { statusLabel as applicationStatusLabel } from "./StatusChip";
 
 export interface CandidateFilters {
@@ -40,13 +41,10 @@ export default function CandidateFiltersPanel({
   jobs,
   filters,
   onChange,
-  // The score range filter's field, min/max values are always the same (see
-  // CandidateFilters.matchScoreMin/Max) -- only its *label* differs by page, since which
-  // column those values actually filter is a caller concern (see candidatesApi.
-  // listApplications/exportApplications's scoreField param and each page's own listParams).
-  // Defaults to "Match" (Candidates List's "Match % min/max"); the Screening List passes
-  // "Screening" for "Screening % min/max", matching its Screening Score column.
-  scoreLabel = "Match",
+  // Part 17.4: the score range always filters the one Match score (each page passes
+  // scoreField "composite_score"), so its label is always "Match score". scoreLabel is
+  // accepted for older callers but no longer changes the wording.
+  scoreLabel: _scoreLabel,
   // Overrides the Status dropdown's label + option set -- used by the Shortlisting List to
   // show its own 4 named states ("Shortlist Status": Under Review/Shortlisted/On Hold/Not
   // Shortlisted) via `filters.status` instead of the full raw APPLICATION_STATUSES list.
@@ -57,10 +55,13 @@ export default function CandidateFiltersPanel({
   jobs: JobRoleRead[];
   filters: CandidateFilters;
   onChange: (filters: CandidateFilters) => void;
+  /** @deprecated Ignored -- the label is always "Match score". */
   scoreLabel?: string;
   statusLabel?: string;
   statusOptions?: { value: string; label: string }[];
 }) {
+  const t = useT();
+  void _scoreLabel;
   const activeCount = Object.values(filters).filter(Boolean).length;
   const set = (key: keyof CandidateFilters, value: string) => onChange({ ...filters, [key]: value });
 
@@ -173,22 +174,22 @@ export default function CandidateFiltersPanel({
 
       <Stack direction="row" spacing={0.5} alignItems="center">
         <TextField
-          label={`${scoreLabel} % min`}
+          label={t("candidates.filter.score_min")}
           type="number"
           size="small"
           value={filters.matchScoreMin}
           onChange={(e) => set("matchScoreMin", e.target.value)}
           slotProps={{ htmlInput: { min: 0, max: 100, step: 5 } }}
-          sx={{ width: 100 }}
+          sx={{ width: 150 }}
         />
         <TextField
-          label={`${scoreLabel} % max`}
+          label={t("candidates.filter.score_max")}
           type="number"
           size="small"
           value={filters.matchScoreMax}
           onChange={(e) => set("matchScoreMax", e.target.value)}
           slotProps={{ htmlInput: { min: 0, max: 100, step: 5 } }}
-          sx={{ width: 100 }}
+          sx={{ width: 150 }}
         />
       </Stack>
 

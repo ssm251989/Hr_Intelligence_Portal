@@ -64,6 +64,7 @@ class MyInterviewRow(BaseModel):
     top_skills: list[str] = []
     missing_skills: list[str] = []
     match_score: Optional[float] = None
+    composite_score: Optional[float] = None  # Part 17.4: the one Match score
     feedback_submitted: bool = False
 
 
@@ -105,6 +106,7 @@ def my_interviews(
                 top_skills=[str(s) for s in skills[:8]],
                 missing_skills=[str(s) for s in (application.missing_skills or [])[:8]],
                 match_score=float(application.match_score) if application.match_score is not None else None,
+                composite_score=float(application.composite_score) if application.composite_score is not None else None,
                 feedback_submitted=_feedback_submitted(interview),
             )
         )

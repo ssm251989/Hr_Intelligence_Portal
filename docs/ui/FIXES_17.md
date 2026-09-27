@@ -160,3 +160,105 @@ GET /api/me/bootstrap, "people" menu group:
 `scripts/probe.py` now also overrides `get_current_user_optional`. Before this, bootstrap probes ran as anonymous.
 
 **Screenshot:** `people-directory.png`, `people-hr.png` -- **pending login proof**.
+
+---
+
+## 17.4 One scoring language
+
+**Wrong:**
+- Four different numbers ("Resume match", "Screening score", "Interview-ready score", "Rank score") and two separate marks ("Automatic screening mark", "Interview-ready / Pass mark").
+- Three more settings (weights, formula, auto-shortlist threshold) were stored but never used.
+
+**Changed:**
+- **One score everywhere:** "Match score (0-100)", stored in `applications.composite_score` and built by the configurable rules (17.5). The AI resume fit is now only the factor "Skills match (AI)".
+- **One threshold:** "Shortlist threshold", with a company default in setting `recruitment.scoring.shortlist_threshold` and a per-job value in its shortlisting rules.
+  - The migration copied each company's interview-ready mark into it. ctd-techs: 22.
+  - The seven old keys are no longer registered. Their stored rows are kept.
+  - `GET/PUT /screening/settings` is now `{shortlist_threshold}`.
+- **Frontend:**
+  - The two threshold panels are replaced by one `ShortlistThresholdPanel` on the Screening dashboard.
+  - Every column, filter, tooltip, chart, export header and dashboard tile now says "Match score" or "Shortlist threshold".
+  - The profile radar line reads the shortlist threshold.
+- **Backend stats** (candidates dashboard average and distribution, job summary, my interviews) now use the Match score.
+
+**Verified:**
+```
+GET /screening/settings -> 200 {"shortlist_threshold": 22.0}   (migrated from interview_min_score)
+old keys recruitment.screening.{dashboard,interview}_{min,max}_score, auto_shortlist_threshold, weights,
+composite_formula -> not registered; grep of backend app/: no readers left
+tsc --noEmit clean after the relabel
+```
+**Screenshot:** `screening-dashboard.png`, `candidates-list.png` -- **pending login proof**.
+
+---
+
+## 17.5 Configurable scoring rules
+
+**Wrong:** fixed equal weights in code. Nothing could be configured, knock-outs didn't exist, and there was no explanation.
+
+**Changed:**
+- **Engine** (`app/recruitment/scoring/`): 14 factors, each can be switched on or off with a weight from 0 to 100.
+  - The switched-on weights must total 100 (auto-balance helps).
+  - Knock-outs are shown separately. They flag, never delete and never reject.
+  - Five presets: Balanced, Experience first, Location first, Skills first, Budget first.
+  - Versioned company and per-job rules, with history and revert.
+  - Saving starts a background recalculation with progress, and each old and new score goes into the audit log.
+  - "Why this score": each factor's weight, the candidate's value, points earned and resume evidence, plus the knock-out results.
+  - Export and import as JSON or XLSX.
+- **UI:**
+  - Settings > Hiring > **Scoring rules** (company): `ScoringRulesEditor` plus the company shortlisting defaults.
+  - Job wizard steps **Scoring** and **Shortlisting rules**.
+  - Candidate profile **Why this score** card (`WhyThisScore.tsx`).
+
+**Verified (API, `scripts/probe.py`):**
+```
+GET  /api/v1/scoring/catalog -> 14 factors, 5 presets
+GET  /api/v1/scoring/rules -> source preset (Balanced), threshold 22 (company)
+PUT  rules with weights totalling 120 -> 400 "...add up to 120%. They must add up to 100% - use auto-balance."
+POST /balance -> skills_ai 25, must_have 25, nice_to_have 13, location 17, certifications 8, recent_skills 12 = 100
+PUT  job rules v1 (Skills first), v2 (Experience first), POST revert to v1 -> v3 "Went back to version 1"
+GET  /export?format=xlsx -> 6509-byte workbook; POST /import (that file) -> same weights back (not saved)
+DELETE /rules?job_id -> job back on company rules (3 versions removed)
+POST /preview "Location first" on Automation Anywhere Architect (nothing saved):
+     Pradeep 73.6 -> 81.0 (Pune, ~0 km from the job: location 100)
+     Kranthi 74.2 -> 52.5 (Hyderabad, ~506 km: location 15)
+GET  /applications/{Pradeep}/why -> score 73.9 = sum of factor points
+     Must-have skills w20 "11 of 21 must-haves" (experience-years lines no longer counted as skills)
+Recalculation on the demo job "Demo - RPA Developer" (Location first):
+     run 8afc3929: status done, total 3, done 3, changed 3
+     audit score_recalculated old->new: Asha 94.8->96.6, Karan 54.1->44.4, Nisha 33.6->26.6
+```
+**Screenshot:** `settings-scoring.png`, `job-wizard-scoring.png`, `candidate-why.png` -- **pending login proof**.
+
+---
+
+## 17.6 Automated shortlisting
+
+**Wrong:** there was no auto-shortlist step. The undo window existed, but nothing used it.
+
+**Changed:**
+- **Job rules** (`job_roles.shortlisting_json`, with company defaults in `recruitment.shortlisting.*`): auto-shortlist on/off, threshold, maximum shortlist size, undo window (business hours) and who is notified.
+- **When on:** a scored or rescored application that is Screened, not knocked out, and at or above the threshold becomes Shortlisted.
+  - A bell notification goes to the job owner or hiring manager, else the admins.
+  - The undo button shows until the window ends. Undo is final.
+  - Interview scheduling starts only after the window closes (beat job `auto_shortlist_release`).
+  - Nobody is ever rejected automatically.
+- **Shortlisting page** is now a queue:
+  - tabs: Suggested by AI, Needs a look (knocked out, with the reason), Shortlisted (with the AI notice and undo), Rejected, each with a count;
+  - a job filter;
+  - bulk shortlist, and bulk reject with a required reason;
+  - compare up to 3;
+  - a Match score chip against the job's threshold.
+
+**Verified (demo job):**
+```
+PUT /api/v1/scoring/shortlisting?job_id=<demo> {"auto_shortlist":true,"threshold":80,"undo_hours":4,"max_size":5}
+rescore -> Asha (96.6) hr_selected; Karan (44.4), Nisha (26.6) stay screened
+audit ai_auto_shortlisted: score 96.6, threshold 80, undo_until 2026-09-28T07:30Z (4 business hours)
+POST undo-auto-shortlist -> 200 screened; again -> 409 "This was already undone"
+rescore after undo -> Asha stays screened (undo is final)
+threshold 40 + rescore -> Karan hr_selected; bell to admin "Demo - Karan Joshi was shortlisted automatically..."
+```
+Not run live: the release into interview scheduling after the window, because that would email interview slots to a candidate. It is covered by `release_due` plus the beat job.
+
+**Screenshot:** `shortlisting-queue.png` -- **pending login proof**.

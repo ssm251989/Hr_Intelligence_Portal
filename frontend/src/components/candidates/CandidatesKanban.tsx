@@ -12,7 +12,7 @@ import Typography from "@mui/material/Typography";
 import type { CandidateApplicationRow } from "../../api/types";
 import { useT } from "../../i18n";
 import { Emoji, StatusChip, useReducedMotion } from "../../ui-kit";
-import { resumeMatchScoreDisplay } from "../../utils/screeningScore";
+import { matchScoreDisplay } from "../../utils/screeningScore";
 import CandidateAvatar from "../CandidateAvatar";
 import SourceIcon from "../SourceIcon";
 import { BOARD_COLUMNS, columnOf, useFresh, type BoardColumnKey } from "./stages";
@@ -73,7 +73,7 @@ function KanbanCard({ row, canWrite, onMove, onOpen, renderActions }: { row: Can
   const f = useFresh();
   const reduced = useReducedMotion();
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: row.application_id, disabled: !canWrite });
-  const { value: score } = resumeMatchScoreDisplay(row);
+  const { value: score } = matchScoreDisplay(row, t);
   const name = row.candidate_name || t("candidates.unnamed");
   // dnd-kit's own keyboard handling is not used (arrow-moving a card by pixels is not a
   // friendly keyboard model); the "Move to stage" menu is the keyboard path instead.

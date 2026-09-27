@@ -7,7 +7,6 @@ import { Link as RouterLink } from "react-router-dom";
 
 import CandidatesDashboardStats from "../components/CandidatesDashboardStats";
 import RefreshButton from "../components/RefreshButton";
-import ScreeningThresholdPanel from "../components/ScreeningThresholdPanel";
 import UploadCandidateDialog from "../components/UploadCandidateDialog";
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
@@ -57,8 +56,6 @@ export default function CandidatesDashboardPage() {
           </>
         }
       />
-
-      <ScreeningThresholdPanel />
 
       <CandidatesDashboardStats refreshSignal={refreshSignal} onLoadingChange={setRefreshing} />
 

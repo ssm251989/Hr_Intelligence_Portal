@@ -8,7 +8,7 @@ import { passCount } from "../../api/screeningExtra";
 import { useT } from "../../i18n";
 import { Emoji, InfoTip } from "../../ui-kit";
 
-// S4: the pass mark as a slider (keyboard: arrows move 1 point, PageUp/PageDown 10) with a
+// S4: the Shortlist threshold as a slider (keyboard: arrows move 1 point, PageUp/PageDown 10) with a
 // live "N candidates pass" read-out computed on the client from a score histogram (or from
 // the scores already loaded on screen when the histogram isn't available).
 export default function ThresholdSlider({
