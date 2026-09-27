@@ -82,6 +82,10 @@ def send(
             subject_tpl=template.subject_tpl, html_tpl=template.html_tpl, text_tpl=template.text_tpl,
             variables_schema=template.variables_schema_json, context=ctx,
         )
+        if channel == "email" and rendered["html"]:
+            from app.platform.comms.theme import wrap_email_html
+
+            rendered["html"] = wrap_email_html(db, tenant, rendered["html"])  # Part 17.11: logo / name header
         outbound.subject = rendered["subject"]
         outbound.body_ref = rendered["html"] or rendered["text"]
 

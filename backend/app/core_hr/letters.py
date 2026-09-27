@@ -79,6 +79,10 @@ def generate_letter(db: Session, tenant: TenantContext, *, employee_id: UUID, te
     template = get_published_template(db, tenant, template_key)
     full_context = {**context, **get_theme_and_org_context(db, tenant)}
     rendered_html = render_string(template.html_tpl, full_context)
+    if "logo_url" not in (template.html_tpl or ""):  # Part 17.11: company header unless the letter places the logo itself
+        from app.platform.comms.theme import wrap_email_html
+
+        rendered_html = wrap_email_html(db, tenant, rendered_html)
 
     record = LetterRecord(
         tenant_id=tenant.tenant_id, employee_id=employee_id, template_key=template_key, template_version=template.version,

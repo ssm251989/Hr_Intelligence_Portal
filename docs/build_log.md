@@ -2189,3 +2189,9 @@ NEXT: 17.10 setup checklist forms (show saved values, green only after real save
 See FIXES_17.md 17.10. Decisions: templates are high-level (stages, scoring preset, email wording, roles, settings) applied through the normal services instead of raw config-pack rows; applying never deletes (old pipeline kept, new version of rules/emails); proofs of apply run in a rolled-back transaction so the real company config is untouched. Logo upload/storage and bootstrap logo_url land here too (used by 17.11).
 
 NEXT: 17.11 settings must actually save -- go through every settings page, fix failures, docs/ui/SETTINGS_CHECK.md; logo shown in sidebar/login/careers/emails/letters.
+
+## Part 17.11 -- Settings really save (2026-09-27)
+
+Logo upload + storage + logo_url everywhere (app, public pages, email and letter header), partial brand-theme update, success message + live reload after every settings save, SETTINGS_CHECK.md (94/94 registry settings + dedicated pages, all in rolled-back transactions). Decision: email layouts table is unused, so the header is added by one wrap_email_html() used by both senders and letters (skipped when a letter template places the logo itself).
+
+NEXT: 17.12 interviews without Excel (my availability, HR view, pools, busy from app bookings, remove Excel tracker, one-time import).

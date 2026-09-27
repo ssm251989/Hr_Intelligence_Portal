@@ -22,6 +22,8 @@ import Typography from "@mui/material/Typography";
 
 import { extractErrorMessage, platformSettingsApi, type SettingDefinition, type SettingHistoryEntry, type SettingValueRow } from "../api/client";
 import { t as tr } from "../i18n";
+import { useBootstrap } from "../bootstrap/BootstrapContext";
+import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
 
 // Part 2 (docs/HRMS_COMPLETE_SPEC.txt section 4's UI) + section L/A1-A3 (client decision,
 // added to the spec after this Part started -- WINS over Part 14's own UI wording):
@@ -218,6 +220,17 @@ export default function PlatformSettingsPanel({ prefixes, title, intro }: { pref
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  // Part 17.11: after a save -> a clear success message, and the app picks the change up at
+  // once (company name / colours / modules in the menu, sign-in page, careers site).
+  const [saved, setSaved] = useState<string | null>(null);
+  const { reload: reloadBranding } = useBootstrap();
+  const { reload: reloadMe } = useMeBootstrap();
+  const afterSave = (label: string) => {
+    load();
+    setSaved(label);
+    reloadBranding();
+    reloadMe();
+  };
 
   const load = () => {
     setLoading(true);
@@ -267,8 +280,13 @@ export default function PlatformSettingsPanel({ prefixes, title, intro }: { pref
         </Typography>
 
         {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
+          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
             {error}
+          </Alert>
+        )}
+        {saved && (
+          <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSaved(null)} role="status">
+            {tr("settings.saved_ok", { name: saved })}
           </Alert>
         )}
 
@@ -298,7 +316,7 @@ export default function PlatformSettingsPanel({ prefixes, title, intro }: { pref
                 </Typography>
                 <List dense disablePadding>
                   {defs.map((def) => (
-                    <SettingRow key={def.key} def={def} row={valuesByKey.get(def.key)} onSaved={load} onError={setError} showKey={showKeys} />
+                    <SettingRow key={def.key} def={def} row={valuesByKey.get(def.key)} onSaved={() => afterSave(def.help || friendlyName(def.key))} onError={(m) => { setSaved(null); setError(m); }} showKey={showKeys} />
                   ))}
                 </List>
               </Box>

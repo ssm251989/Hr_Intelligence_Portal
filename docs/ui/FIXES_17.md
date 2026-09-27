@@ -382,3 +382,44 @@ everything above rolled back; the two CSV copies the proof wrote to local storag
 - `PUT /comms/brand-theme` blanked every field that wasn't sent; it is now a partial update.
 
 **Screenshot:** `setup.png` -- **pending login proof**.
+
+---
+
+## 17.11 Settings must actually save
+
+**Wrong:**
+- There was no logo upload at all. `logo_file_id` pointed at nothing, so every screen showed the "CT" initials.
+- Saving the brand colour blanked the other brand fields.
+- After saving, there was no success message.
+- A new company name, logo or colour didn't appear until the page was reloaded (branding was fetched once).
+- Emails and letters had no company header.
+
+**Changed:**
+- **Logo** (`components/branding/LogoUploader.tsx`, on Settings > Company > Branding and in setup):
+  - PNG/JPG/WebP/SVG up to 2 MB, with preview and crop (square or wide, zoom, move).
+  - Stored as media `brand.logo` through the storage connection (`storage.documents`), else local disk. SVGs with scripts are refused and served with a strict CSP.
+  - Bootstrap and public branding return `logo_url`. The sidebar, sign-in, register and careers pages show it; the initials remain the fallback.
+  - `{{ theme.logo_url }}` is available to templates. Every email and generated letter now starts with a header showing the logo, or the company name when there's no logo.
+- **`PUT /comms/brand-theme`** is a partial update.
+- **Every settings row:**
+  - a success message after saving;
+  - the branding and menu reload straight away (`useBootstrap().reload`, `useMeBootstrap().reload`), so a new name, colour or modules show everywhere without a page refresh.
+- **`docs/ui/SETTINGS_CHECK.md`:** every registered setting checked with `backend/scripts/settings_check.py`, which can be re-run.
+
+**Verified:**
+```
+settings_check.py: 94/94 OK, 0 failed (changed valid value saved via PUT /api/v1/settings/{key}, read back,
+    and checked where it shows: company name -> public branding; timezone/modules -> bootstrap;
+    tile URL/attribution/countries -> geo config; shortlist threshold -> /screening/settings; shortlisting -> rules form).
+    org.locale: the admin's own language choice ('en') wins over the company default, as designed (confirmed in setting_values).
+    ux.home_layout is per person (saved from the Home page).
+dedicated pages (rolled back):
+    brand colour: saved 200, reloaded #123abc, other fields kept True, public branding shows #123abc
+    logo: saved 200, public branding logo_url present, file 200 image/png; email/letter header contains the logo
+    custom field 201 + listed; role 201 + listed; email template draft 201 -> publish 200 -> latest v2 published;
+    approval steps 201 + listed; mailbox connection 201 + listed
+logo validation: SVG with onload= -> 400; PDF -> 400
+after all runs: real settings unchanged (threshold 22, name "CTD Techs", no logo); the test logo file was deleted
+npm run build (with i18n:check) OK
+```
+**Screenshot:** `settings-branding.png`, `sidebar-logo.png` -- **pending login proof**. The sign-in page shows the logo once one is uploaded (public page; to be taken in 17.14).

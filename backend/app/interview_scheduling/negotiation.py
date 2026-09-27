@@ -400,7 +400,9 @@ def _render_negotiation_email(db: Session, template_key: str, **extra_ctx) -> tu
             subject_tpl=template.subject_tpl, html_tpl=template.html_tpl, text_tpl=template.text_tpl,
             variables_schema=template.variables_schema_json, context=ctx,
         )
-        return rendered["subject"], rendered["text"], rendered["html"]
+        from app.platform.comms.theme import wrap_email_html
+
+        return rendered["subject"], rendered["text"], wrap_email_html(db, tenant, rendered["html"])
     except (TemplateNotFoundError, VariablesValidationError, TemplateRenderError) as exc:
         raise NegotiationEmailRenderError(str(exc)) from exc
 

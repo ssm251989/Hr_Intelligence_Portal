@@ -24,6 +24,9 @@ import {
   type SuppressionRow,
 } from "../api/client";
 import { t as tr } from "../i18n";
+import { apiUrl } from "../api/client";
+import { useBootstrap } from "../bootstrap/BootstrapContext";
+import LogoUploader from "./branding/LogoUploader";
 import EmailTemplates from "./comms/EmailTemplates";
 
 function TemplatesTab() {
@@ -128,11 +131,16 @@ function BrandThemeTab() {
 
   useEffect(load, []);
 
+  const { reload: reloadBranding, branding } = useBootstrap();
+  const [savedMsg, setSavedMsg] = useState(false);
   const handleSave = async () => {
     setSaving(true);
+    setSavedMsg(false);
     try {
       await commsApi.upsertBrandTheme(form);
       load();
+      reloadBranding(); // Part 17.11: the new colours show straight away
+      setSavedMsg(true);
     } catch (err) {
       setError(extractErrorMessage(err, "Failed to save brand theme"));
     } finally {
@@ -145,13 +153,19 @@ function BrandThemeTab() {
   return (
     <Box>
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
           {error}
         </Alert>
       )}
+      {savedMsg && <Alert severity="success" sx={{ mb: 2 }} role="status" onClose={() => setSavedMsg(false)}>{tr("settings.brand.saved")}</Alert>}
+      <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{tr("settings.brand.logo_title")}</Typography>
+      <Typography variant="body2" color="text.secondary" mb={1.5}>{tr("settings.brand.logo_intro")}</Typography>
+      <Box sx={{ mb: 3 }}>
+        <LogoUploader currentUrl={apiUrl(branding?.logo_url)} onSaved={() => { reloadBranding(); setSavedMsg(true); }} />
+      </Box>
+      <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{tr("settings.brand.colours_title")}</Typography>
       <Typography variant="body2" color="text.secondary" mb={2}>
-        This is the palette every negotiation/confirmation email and page (interview
-        picker, confirm page) renders with. {theme ? "" : "No theme configured yet -- a generic default is used until you save one."}
+        {tr("settings.brand.colours_intro")} {theme ? "" : tr("settings.brand.no_theme")}
       </Typography>
       <Stack spacing={2} maxWidth={360}>
         <TextField size="small" label="Name" value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} />

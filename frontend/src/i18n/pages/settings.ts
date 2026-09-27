@@ -94,6 +94,13 @@ export const en = {
   "settingsPage.branding.media_title": "Welcome video & tours",
   "settingsPage.branding.media_hint": "Add a welcome video for new joiners and short how-to clips.",
   "settingsPage.branding.open": "Open",
+  "settings.saved_ok": "Saved: {name}. It's used from now on.",
+  "settings.brand.saved": "Saved. The new look shows in the menu, sign-in page, careers site, emails and letters.",
+  "settings.brand.logo_title": "Logo",
+  "settings.brand.logo_intro": "Shown in the menu, the sign-in page, the careers site, and at the top of every email and letter.",
+  "settings.brand.colours_title": "Colours",
+  "settings.brand.colours_intro": "Your main colour is used for buttons and headings in the app, emails and pages candidates see.",
+  "settings.brand.no_theme": "No colours saved yet - the standard ones are used until you save.",
 };
 
 export const hi: Record<keyof typeof en, string> = {
@@ -189,6 +196,13 @@ export const hi: Record<keyof typeof en, string> = {
   "settingsPage.branding.media_title": "स्वागत वीडियो और टूर",
   "settingsPage.branding.media_hint": "नए कर्मचारियों के लिए स्वागत वीडियो और छोटे 'कैसे करें' क्लिप जोड़ें।",
   "settingsPage.branding.open": "खोलें",
+  "settings.saved_ok": "सहेजा गया: {name}। अब से यही इस्तेमाल होगा।",
+  "settings.brand.saved": "सहेजा गया। नया रूप मेनू, साइन-इन पेज, करियर साइट, ईमेल और पत्रों में दिखता है।",
+  "settings.brand.logo_title": "लोगो",
+  "settings.brand.logo_intro": "मेनू, साइन-इन पेज, करियर साइट और हर ईमेल व पत्र के ऊपर दिखता है।",
+  "settings.brand.colours_title": "रंग",
+  "settings.brand.colours_intro": "आपका मुख्य रंग ऐप, ईमेल और उम्मीदवारों के पेजों में बटन और शीर्षकों के लिए इस्तेमाल होता है।",
+  "settings.brand.no_theme": "अभी कोई रंग नहीं सहेजा - सहेजने तक सामान्य रंग इस्तेमाल होंगे।",
 };
 
 export const ta: Record<keyof typeof en, string> = {
@@ -284,4 +298,11 @@ export const ta: Record<keyof typeof en, string> = {
   "settingsPage.branding.media_title": "வரவேற்பு வீடியோ & சுற்றுலா",
   "settingsPage.branding.media_hint": "புதியவர்களுக்கு வரவேற்பு வீடியோவும் சிறு 'எப்படி' கிளிப்புகளும் சேருங்கள்.",
   "settingsPage.branding.open": "திற",
+  "settings.saved_ok": "சேமிக்கப்பட்டது: {name}. இனி இதுவே பயன்படும்.",
+  "settings.brand.saved": "சேமிக்கப்பட்டது. புதிய தோற்றம் மெனு, உள்நுழைவுப் பக்கம், வேலைவாய்ப்புத் தளம், மின்னஞ்சல்கள், கடிதங்களில் தெரியும்.",
+  "settings.brand.logo_title": "லோகோ",
+  "settings.brand.logo_intro": "மெனு, உள்நுழைவுப் பக்கம், வேலைவாய்ப்புத் தளம், ஒவ்வொரு மின்னஞ்சல் மற்றும் கடிதத்தின் மேலே காட்டப்படும்.",
+  "settings.brand.colours_title": "நிறங்கள்",
+  "settings.brand.colours_intro": "உங்கள் முதன்மை நிறம் செயலி, மின்னஞ்சல்கள், விண்ணப்பதாரர் பக்கங்களில் பொத்தான்கள், தலைப்புகளுக்குப் பயன்படும்.",
+  "settings.brand.no_theme": "இன்னும் நிறங்கள் சேமிக்கப்படவில்லை - சேமிக்கும் வரை வழக்கமானவை பயன்படும்.",
 };
