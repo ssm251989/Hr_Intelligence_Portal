@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Menu from "@mui/material/Menu";
@@ -22,7 +22,8 @@ import UserAvatar from "../../ui-kit/UserAvatar";
 // Middle pane (spec H1): the selected mail plus the sender's other mail, oldest first, and a
 // reply box (sent from the shared HR mailbox via POST /applications/{id}/message) with
 // insertable snippets taken from the company's published email templates (spec H4).
-export default function InboxThreadPane({ email, onLinkedChanged }: { email: HrInboundEmailRead; onLinkedChanged?: () => void }) {
+// `focusReply`: bump it (e.g. the card's "Reply" button) to scroll to the reply box and focus it.
+export default function InboxThreadPane({ email, onLinkedChanged, focusReply = 0 }: { email: HrInboundEmailRead; onLinkedChanged?: () => void; focusReply?: number }) {
   const f = useTheme().palette.fresh;
   const { t, locale } = useI18n();
   const fmt = new Intl.DateTimeFormat(localeTag(locale), { dateStyle: "medium", timeStyle: "short" });
@@ -34,6 +35,17 @@ export default function InboxThreadPane({ email, onLinkedChanged }: { email: HrI
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<unknown>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
+  const replyRef = useRef<HTMLElement | null>(null);
+  const bodyRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    if (!focusReply) return;
+    const handle = setTimeout(() => {
+      replyRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      bodyRef.current?.focus({ preventScroll: true });
+    }, 50);
+    return () => clearTimeout(handle);
+  }, [focusReply, email.id]);
 
   useEffect(() => {
     let alive = true;
@@ -114,7 +126,7 @@ export default function InboxThreadPane({ email, onLinkedChanged }: { email: HrI
       </Stack>
 
       {applicationId ? (
-        <Box component="section" aria-label={t("inbox.reply.title")} sx={{ p: 1.75, borderRadius: "14px", border: `1px solid ${f.line}`, bgcolor: f.surface }}>
+        <Box component="section" ref={replyRef} aria-label={t("inbox.reply.title")} sx={{ p: 1.75, borderRadius: "14px", border: `1px solid ${f.line}`, bgcolor: f.surface }}>
           <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
             <Stack direction="row" spacing={1} alignItems="center">
               <Emoji name="envelope" size={18} />
@@ -141,7 +153,7 @@ export default function InboxThreadPane({ email, onLinkedChanged }: { email: HrI
           </Stack>
           <Stack spacing={1.5}>
             <TextField size="small" label={t("inbox.reply.subject")} value={subject} onChange={(e) => setSubject(e.target.value)} fullWidth />
-            <TextField label={t("inbox.reply.body")} value={body} onChange={(e) => setBody(e.target.value)} fullWidth multiline minRows={4} />
+            <TextField inputRef={bodyRef} label={t("inbox.reply.body")} value={body} onChange={(e) => setBody(e.target.value)} fullWidth multiline minRows={4} />
             {sendError ? <FriendlyError error={sendError} compact /> : null}
             {sentTo && <StatusChip tone="ok" emoji="check" label={t("inbox.reply.sent", { to: sentTo })} />}
             <Stack direction="row" justifyContent="flex-end">

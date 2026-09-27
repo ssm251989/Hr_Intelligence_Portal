@@ -14,7 +14,7 @@ export const ta: Bundle = {
   "nav.screening": "தேர்வாய்வு",
   "nav.shortlisting": "குறும்பட்டியல்",
   "nav.interviews": "நேர்காணல்கள்",
-  "nav.hr_inbox": "HR இன்பாக்ஸ்",
+  "nav.hr_inbox": "விண்ணப்பதாரர் மின்னஞ்சல்கள்",
   "nav.salary": "சம்பளம்",
   "nav.bgv": "பின்னணி சரிபார்ப்பு",
   "nav.offers": "வேலை வாய்ப்புகள்",

@@ -262,3 +262,76 @@ threshold 40 + rescore -> Karan hr_selected; bell to admin "Demo - Karan Joshi w
 Not run live: the release into interview scheduling after the window, because that would email interview slots to a candidate. It is covered by `release_due` plus the beat job.
 
 **Screenshot:** `shortlisting-queue.png` -- **pending login proof**.
+
+---
+
+## 17.7 HR Inbox -> Candidate emails
+
+**Wrong:** "HR Inbox" was a raw mail table. It didn't say what a mail was about, whether anyone had handled it, or how mail arrives.
+
+**Changed:**
+- Renamed to **Candidate emails** (menu, page, `/candidate-emails` alias of `/hr-inbox`), with the page line as specified.
+- Tabs **Needs action / Linked to a candidate / Not matched**, each with a count.
+- Email cards show the candidate (or sender), the job, a topic chip, a one-line summary (marked "AI" when the AI wrote it), and the buttons Open candidate / Reply / Mark done (Assign to candidate when not matched).
+- Backend (`app/hr_inbox/triage.py`):
+  - topic by keyword rules;
+  - summary by the AI (governed feature `recruitment.email_summary`, at most 5 per page load), else the reply's first real sentence with quoted history and greetings removed;
+  - automatic senders (no-reply, newsletters, bounces) are labelled "Automatic email - not from a candidate" and marked done.
+  - Triage also runs when mail arrives, and the timeline entry carries the summary. Linked replies already show on the candidate's timeline.
+- Empty state and a no-mailbox banner explain how mail arrives, with a **Connect mailbox** button (`/settings/communication/mailboxes`).
+
+**Verified (API):**
+```
+GET /api/v1/ui/candidate-emails?tab=not_matched -> 200, mailbox_connected true,
+    counts {needs_action 0 after triage, linked 0, not_matched 12}
+    the 12 real rows are Google system mails (workspace-noreply@, no-reply@accounts.google.com, mailer-daemon@)
+    -> topic automated, status done, "Automatic email - not from a candidate"
+topic/summary rules on sample replies:
+    "Re: Interview schedule" -> interview_time | "Tuesday 3 pm works for me."   (quoted "On Mon, HR wrote:" dropped)
+    "Documents"              -> documents      | "Dear team, attached my PAN card and last payslip as requested."
+    "Re: Offer"              -> offer          | "Could you please confirm if the CTC includes the joining bonus?"
+    "Update"                 -> withdrawal     | "I have accepted another offer, so I would like to withdraw my application."
+First run: the AI wrote meta-comments about the promotional mails ("This is a promotional email...").
+Fixed: automatic-sender rule plus a NOT_CANDIDATE answer in the prompt.
+npm run build (with i18n:check) OK
+```
+**Screenshot:** `candidate-emails.png` -- **pending login proof**.
+
+---
+
+## 17.8 Salary - automate collection and checks
+
+**Wrong:**
+- The expected salary had to be typed in by hand, and validation was a manual button.
+- Nothing asked the candidate for anything, and there was no offer suggestion.
+
+**Changed:**
+- **Collection**, where the first source wins and nothing gets overwritten:
+  1. The careers apply form asks for current and expected salary and notice period. Expected salary and notice are required unless `recruitment.careers.ask_salary` is off.
+  2. The resume parser now reads `current_ctc` / `expected_ctc` / `notice_period_days` / `languages` when they are stated.
+  3. The **Salary & joining details** form (`/salary-details/:token`: branded, mobile, one-time link) is emailed automatically on Shortlist when something is missing, with one reminder after 24h.
+- **Band check** on every new figure (`applications.salary_check`): in band / needs approval (at most `recruitment.salary.approval_margin_pct`, 10% by default) / flagged / waiting / no band.
+  - At the salary stage (interview passed): in band becomes auto-approved at the suggestion. Above the band goes to salary_above_band plus an approval request to the approvers (else the hiring manager, else the admins).
+  - New figures back inside the band get auto-approved.
+- **Offer suggestion:** the current salary plus `target_hike_pct` (20%), at least what they expect when that fits, clamped to the band and rounded to 10,000. The offer CTC defaults to approved, then the suggestion, then the expected figure.
+- **Salary page = queue:**
+  - chips Waiting for candidate / In band / Needs approval / Far above band / Approved / Declined, with counts and a job filter;
+  - a band bar with the expected-salary marker and the suggestion;
+  - Approve/Decline, Send form / Send again (the link is shown when mail can't go), and Edit figures.
+
+**Verified (API + in-process, demo candidates only):**
+```
+GET /api/v1/ui/salary/queue -> Karan in_band (pos 43%, suggest 1,100,000); 2 real candidates "Waiting for candidate"
+PUT figures Karan expects 1,600,000 -> needs_approval (6.7% over, margin 10)
+               expects 2,000,000 -> flagged (33.3% over)
+               expects 1,200,000 -> in_band (suggest 1,200,000 = current 1,000,000 + 20%)
+Asha at salary stage, expects 1,400,000 (current 1,150,000) -> salary_approved, approved 1,400,000 (in band, pos 86%)
+Nisha at salary stage, expects 1,600,000 -> salary_above_band + bell to admin "Salary approval needed: ... (6.7% above the band)"
+public form GET -> 200 prefilled; POST invalid (-5) -> 422; POST valid -> 200; POST again -> 410
+    "Thanks - we already have your answers."; unknown link -> 404
+after the form: Nisha 800,000 / 1,000,000 / 30 days / relocate yes -> in_band -> salary_approved at 1,000,000
+npm run build OK
+```
+Not run live: the real email of the form link. It goes through the company mailbox to the candidate, so the link was created in-process for the demo candidate instead.
+
+**Screenshot:** `salary-queue.png`, `salary-details-form.png`, `careers-apply.png` -- **pending login proof** (the form and careers pages are public; screenshots will be taken in 17.14).

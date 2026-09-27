@@ -14,7 +14,7 @@ export const hi: Bundle = {
   "nav.screening": "स्क्रीनिंग",
   "nav.shortlisting": "शॉर्टलिस्ट",
   "nav.interviews": "इंटरव्यू",
-  "nav.hr_inbox": "HR इनबॉक्स",
+  "nav.hr_inbox": "उम्मीदवारों के ईमेल",
   "nav.salary": "वेतन",
   "nav.bgv": "बैकग्राउंड जाँच",
   "nav.offers": "ऑफ़र",

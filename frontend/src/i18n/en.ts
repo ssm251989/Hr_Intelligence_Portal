@@ -17,7 +17,7 @@ export const en = {
   "nav.screening": "Screening",
   "nav.shortlisting": "Shortlisting",
   "nav.interviews": "Interviews",
-  "nav.hr_inbox": "HR Inbox",
+  "nav.hr_inbox": "Candidate emails",
   "nav.salary": "Salary",
   "nav.bgv": "Background checks",
   "nav.offers": "Offers",
