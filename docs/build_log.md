@@ -2181,3 +2181,11 @@ NEXT: frontend of 17.4-17.6 and 17.8 (4 agents), then proofs, commits; then 17.7
   labelled automatic; no candidate replies yet.
 
 NEXT: 17.7 frontend (agent), then 17.10 setup checklist + templates, 17.11 settings save check, 17.12.
+
+NEXT: 17.10 setup checklist forms (show saved values, green only after real save) + 3 ready-made templates (IT services, Manufacturing, Retail) with preview/apply/skip.
+
+## Part 17.10 -- Setup checklist + templates (2026-09-27)
+
+See FIXES_17.md 17.10. Decisions: templates are high-level (stages, scoring preset, email wording, roles, settings) applied through the normal services instead of raw config-pack rows; applying never deletes (old pipeline kept, new version of rules/emails); proofs of apply run in a rolled-back transaction so the real company config is untouched. Logo upload/storage and bootstrap logo_url land here too (used by 17.11).
+
+NEXT: 17.11 settings must actually save -- go through every settings page, fix failures, docs/ui/SETTINGS_CHECK.md; logo shown in sidebar/login/careers/emails/letters.

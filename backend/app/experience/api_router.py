@@ -91,6 +91,71 @@ class SkipStep(BaseModel):
     undo: bool = False
 
 
+# ---- Part 17.10: saved values, first office, employees file, ready-made templates ----
+
+
+@router.get("/setup/values")
+def setup_values(db: Session = Depends(get_db), current_user: User = Depends(require("platform.settings.view"))):
+    return setup_wizard.values(db, require_current_tenant())
+
+
+class EntityLocationStep(BaseModel):
+    entity_name: str
+    location_name: str
+    city: Optional[str] = None
+    state: Optional[str] = None
+
+
+@router.post("/setup/entities-locations")
+def setup_entities(payload: EntityLocationStep, db: Session = Depends(get_db), current_user: User = Depends(require("platform.settings.configure"))):
+    try:
+        return setup_wizard.add_entity_location(db, require_current_tenant(), actor=current_user.email, **payload.model_dump())
+    except setup_wizard.SetupError as exc:
+        raise _bad(exc)
+
+
+from fastapi import File, Form, UploadFile  # noqa: E402
+
+
+@router.post("/setup/employees-file")
+async def setup_employees_file(file: UploadFile = File(...), commit: bool = Form(False), db: Session = Depends(get_db),
+                               current_user: User = Depends(require("platform.settings.configure"))):
+    """commit=false -> check the file (rows + errors); commit=true -> add the valid people."""
+    data = await file.read()
+    if len(data) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="That file is larger than 10 MB.")
+    try:
+        return setup_wizard.import_employees(db, require_current_tenant(), data, file.filename or "", commit=commit, actor=current_user.email)
+    except setup_wizard.SetupError as exc:
+        raise _bad(exc)
+
+
+@router.get("/setup/employees-sample")
+def setup_employees_sample(current_user: User = Depends(require("platform.settings.view"))):
+    from fastapi.responses import Response
+
+    body = "first_name,last_name,personal_email,personal_phone,employee_code,status,worker_type\n" \
+           "Asha,Verma,asha.verma@example.com,9876543210,,active,employee\n"
+    return Response(content=body, media_type="text/csv", headers={"Content-Disposition": 'attachment; filename="employees-sample.csv"'})
+
+
+@router.get("/setup/templates")
+def setup_templates_list(current_user: User = Depends(require("platform.settings.view"))):
+    from app.experience import setup_templates
+
+    return [setup_templates.preview(t["key"]) for t in setup_templates.listing()]
+
+
+@router.post("/setup/templates/{key}/apply")
+def setup_template_apply(key: str, db: Session = Depends(get_db), current_user: User = Depends(require("platform.settings.configure"))):
+    from app.experience import setup_templates
+
+    if key not in setup_templates.TEMPLATES:
+        raise HTTPException(status_code=404, detail="Unknown template")
+    result = setup_templates.apply(db, require_current_tenant(), key, actor=current_user.email)
+    return {**result, "progress": setup_wizard.progress(db, require_current_tenant())}
+
+
 @router.post("/setup/steps/{step}/skip")
 def setup_skip(step: str, payload: SkipStep, db: Session = Depends(get_db), current_user: User = Depends(require("platform.settings.configure"))):
     try:

@@ -1,4 +1,8 @@
-import { useEffect, useState } from "react";
+// Part 14 section 1 / Part 17.10: the client admin finishes setup here. Every step opens a
+// working form that saves, shows what is saved when reopened and can be edited again. Progress
+// comes from the server's real data: a step turns green only after a real save; a skipped step
+// is shown as skipped (never as done).
+import { useCallback, useEffect, useState } from "react";
 import { Link as RouterLink, useSearchParams } from "react-router-dom";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
@@ -6,148 +10,279 @@ import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import Checkbox from "@mui/material/Checkbox";
+import Chip from "@mui/material/Chip";
+import CircularProgress from "@mui/material/CircularProgress";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import LinearProgress from "@mui/material/LinearProgress";
+import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
 import Step from "@mui/material/Step";
 import StepButton from "@mui/material/StepButton";
 import Stepper from "@mui/material/Stepper";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import { useTheme } from "@mui/material/styles";
 
-import { experienceApi, extractErrorMessage, type SetupProgress } from "../api/client";
+import { apiUrl, experienceApi, type SetupProgress } from "../api/client";
+import { downloadBlob } from "../api/scoringApi";
+import { setupApi, type EmployeesFileResult, type SetupTemplate, type SetupValues } from "../api/setupApi";
+import { useBootstrap } from "../bootstrap/BootstrapContext";
 import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
+import LogoUploader from "../components/branding/LogoUploader";
+import { useT } from "../i18n";
+import { Emoji, FriendlyError, PageHeader, StatusChip } from "../ui-kit";
 
-// Part 14 section 1 (docs/HRMS_COMPLETE_SPEC.txt; decision A5): the client admin finishes
-// setup here. Progress is computed on the server from real data, so a step shows "done"
-// because the thing exists (a tested mailbox, imported employees...), not because someone
-// clicked Next. Steps whose editor already exists elsewhere link straight to it.
-
-const STEP_LABELS: Record<string, string> = {
-  company: "Company details", entities_locations: "Entities & locations", branding: "Branding", mailbox: "Connect your mailbox",
-  import_employees: "Import employees", modules: "Choose modules", config_pack: "Apply a configuration pack", invite_admins: "Invite admins",
-};
-const ELSEWHERE: Record<string, { text: string; path: string }> = {
-  entities_locations: { text: "Add at least one legal entity and one location in Core HR.", path: "/settings#core-hr" },
-  branding: { text: "Upload your logo and set colours in Branding.", path: "/settings#branding" },
-  mailbox: { text: "Connect your organisation's mailbox (SMTP/IMAP, password or OAuth2) and send a test email.", path: "/settings#connections" },
-  import_employees: { text: "Use the Excel import wizard (preview → dry run → commit).", path: "/settings#core-hr" },
-};
-const MODULE_OPTIONS = [
-  { code: "onboarding", label: "Pre-boarding & onboarding" }, { code: "core_hr", label: "Core HR" }, { code: "performance", label: "Performance & goals" },
-  { code: "helpdesk", label: "Helpdesk" }, { code: "assets", label: "Assets" }, { code: "separation", label: "Exit & separation" },
-  { code: "analytics", label: "Analytics & report builder" }, { code: "copilot", label: "HR Copilot" },
-];
+const MODULE_CODES = ["onboarding", "core_hr", "performance", "helpdesk", "assets", "separation", "analytics", "copilot"];
+const TIMEZONES = ["Asia/Kolkata", "Asia/Dubai", "Asia/Singapore", "Europe/London", "America/New_York", "UTC"];
+const LOCALES = ["en-IN", "hi-IN", "ta-IN", "en-GB", "en-US"];
+const CURRENCIES = ["INR", "USD", "AED", "SGD", "GBP", "EUR"];
 
 export default function SetupWizardPage() {
+  const t = useT();
+  const f = useTheme().palette.fresh;
   const [params, setParams] = useSearchParams();
-  const { data: me, reload } = useMeBootstrap();
+  const { reload: reloadMe } = useMeBootstrap();
+  const { reload: reloadBranding } = useBootstrap();
   const [progress, setProgress] = useState<SetupProgress | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [values, setValues] = useState<SetupValues | null>(null);
+  const [templates, setTemplates] = useState<SetupTemplate[] | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [company, setCompany] = useState({ display_name: "", legal_name: "", timezone: "Asia/Kolkata" });
-  const [modules, setModules] = useState<string[]>(me?.modules ?? MODULE_OPTIONS.map((m) => m.code));
-  const [invite, setInvite] = useState("");
-  const [packText, setPackText] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  const load = () => experienceApi.setupProgress().then(setProgress).catch((err) => setError(extractErrorMessage(err, "Failed to load setup progress")));
-  useEffect(() => {
-    load();
-  }, []);
+  const [company, setCompany] = useState({ display_name: "", legal_name: "", timezone: "Asia/Kolkata", locale: "en-IN", currency: "INR" });
+  const [office, setOffice] = useState({ entity_name: "", location_name: "", city: "" });
+  const [colour, setColour] = useState("#0E7C66");
+  const [modules, setModules] = useState<string[]>(MODULE_CODES);
+  const [invite, setInvite] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [check, setCheck] = useState<EmployeesFileResult | null>(null);
+
+  const load = useCallback(() => Promise.all([experienceApi.setupProgress(), setupApi.values()]).then(([p, v]) => {
+    setProgress(p);
+    setValues(v);
+    // show what is saved (Part 17.10: reopening a step shows the saved values)
+    setCompany({
+      display_name: v.company.display_name ?? "", legal_name: v.company.legal_name ?? "", timezone: v.company.timezone ?? "Asia/Kolkata",
+      locale: v.company.locale ?? "en-IN", currency: v.company.currency ?? "INR",
+    });
+    setOffice((o) => ({ ...o, entity_name: o.entity_name || v.entities[0]?.name || v.company.legal_name || "" }));
+    if (v.branding.primary_color) setColour(v.branding.primary_color);
+    if (v.modules.length) setModules(v.modules.filter((m) => MODULE_CODES.includes(m)));
+  }).catch(setError), []);
+  useEffect(() => { load(); setupApi.templates().then(setTemplates).catch(() => setTemplates([])); }, [load]);
 
   const steps = progress?.steps ?? [];
-  const current = params.get("step") ?? steps.find((s) => !s.done)?.step ?? "company";
+  const current = params.get("step") ?? steps.find((s) => !s.done && !s.skipped)?.step ?? "company";
   const index = Math.max(0, steps.findIndex((s) => s.step === current));
   const step = steps[index];
-  const goto = (name: string) => setParams({ step: name });
-  const after = (p: SetupProgress, message: string) => {
-    setProgress(p);
-    setNotice(message);
+  const goto = (name: string) => { setParams({ step: name }); setNotice(null); setError(null); };
+
+  const run = async (action: () => Promise<unknown>, message: string, next = true) => {
+    setBusy(true);
     setError(null);
-    const next = p.steps.find((s) => !s.done);
-    if (next) goto(next.step);
+    try {
+      await action();
+      await load();
+      setNotice(message);
+      if (next) {
+        const p = await experienceApi.setupProgress();
+        const upcoming = p.steps.find((s, i) => i > index && !s.done && !s.skipped);
+        if (upcoming) setParams({ step: upcoming.step });
+      }
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
   };
-  const fail = (fallback: string) => (err: unknown) => setError(extractErrorMessage(err, fallback));
+
+  const chip = (s: { done: boolean; skipped: boolean }) =>
+    s.done ? <StatusChip tone="ok" emoji="check" label={t("setup.state.done")} />
+      : s.skipped ? <StatusChip tone="muted" emoji="pause" label={t("setup.state.skipped")} />
+      : <StatusChip tone="sun" emoji="hourglass" label={t("setup.state.todo")} />;
 
   return (
     <Box>
-      <Typography variant="h5" component="h1" gutterBottom>Set up your organisation</Typography>
+      <PageHeader emoji="rocket" title={t("setup.title")} purpose={t("setup.purpose")} />
       {progress && (
         <Box sx={{ mb: 2 }}>
-          <LinearProgress variant="determinate" value={progress.percent} aria-label={`Setup ${progress.percent}% complete`} />
-          <Typography variant="caption" color="text.secondary">{progress.percent}% complete</Typography>
+          <LinearProgress variant="determinate" value={progress.percent} aria-label={t("setup.progress_aria", { pct: progress.percent })} />
+          <Typography variant="caption" color="text.secondary">{t("setup.progress", { pct: progress.percent })}</Typography>
         </Box>
       )}
       <Stepper nonLinear activeStep={index} alternativeLabel sx={{ mb: 3, display: { xs: "none", md: "flex" } }}>
         {steps.map((s) => (
           <Step key={s.step} completed={s.done}>
-            <StepButton onClick={() => goto(s.step)}>{STEP_LABELS[s.step]}</StepButton>
+            <StepButton onClick={() => goto(s.step)} optional={s.skipped ? <Typography variant="caption">{t("setup.state.skipped")}</Typography> : undefined}>
+              {t(`setup.step.${s.step}`)}
+            </StepButton>
           </Step>
         ))}
       </Stepper>
-      {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
+      <Stack direction="row" spacing={1} sx={{ mb: 2, display: { xs: "flex", md: "none" }, overflowX: "auto" }}>
+        {steps.map((s) => <Chip key={s.step} label={t(`setup.step.${s.step}`)} color={s.done ? "success" : "default"} variant={s.step === current ? "filled" : "outlined"} onClick={() => goto(s.step)} />)}
+      </Stack>
+      {error ? <Box sx={{ mb: 2 }}><FriendlyError error={error} compact /></Box> : null}
       {notice && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setNotice(null)}>{notice}</Alert>}
-      {progress?.complete && <Alert severity="success" sx={{ mb: 2 }}>Setup is complete. The checklist has been removed from your home page.</Alert>}
+      {progress?.complete && <Alert severity="success" sx={{ mb: 2 }}>{t("setup.complete")}</Alert>}
 
-      {step && (
+      {!progress || !values ? <CircularProgress aria-label={t("setup.loading")} /> : step && (
         <Card>
           <CardContent>
-            <Typography variant="h6" gutterBottom>{STEP_LABELS[step.step]}</Typography>
-            <Typography color="text.secondary" gutterBottom>{step.done ? "Done: " : "Status: "}{step.detail}</Typography>
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
+              <Typography variant="h6" component="h2" sx={{ flex: 1 }}>{t(`setup.step.${step.step}`)}</Typography>
+              {chip(step)}
+            </Stack>
+            <Typography sx={{ color: f.muted, mb: 2 }}>{t(`setup.hint.${step.step}`)}</Typography>
 
             {step.step === "company" && (
-              <Stack spacing={2} sx={{ maxWidth: 480, mt: 1 }} component="form" onSubmit={(e) => { e.preventDefault(); experienceApi.setCompany(company).then((p) => after(p, "Company details saved.")).catch(fail("Save failed")); }}>
-                <TextField label="Display name" required value={company.display_name} onChange={(e) => setCompany({ ...company, display_name: e.target.value })} helperText="Shown in the app, emails and the career site." />
-                <TextField label="Legal name" value={company.legal_name} onChange={(e) => setCompany({ ...company, legal_name: e.target.value })} helperText="Used on letters. Defaults to the display name." />
-                <TextField label="Timezone" required value={company.timezone} onChange={(e) => setCompany({ ...company, timezone: e.target.value })} helperText="IANA name, e.g. Asia/Kolkata." />
-                <Button type="submit" variant="contained" disabled={!company.display_name}>Save</Button>
+              <Stack spacing={2} sx={{ maxWidth: 480 }} component="form" onSubmit={(e) => { e.preventDefault(); run(() => experienceApi.setCompany(company).then(() => reloadBranding()), t("setup.saved.company")); }}>
+                <TextField label={t("setup.company.display_name")} required value={company.display_name} onChange={(e) => setCompany({ ...company, display_name: e.target.value })} helperText={t("setup.company.display_name_hint")} />
+                <TextField label={t("setup.company.legal_name")} value={company.legal_name} onChange={(e) => setCompany({ ...company, legal_name: e.target.value })} helperText={t("setup.company.legal_name_hint")} />
+                <TextField select label={t("setup.company.timezone")} value={company.timezone} onChange={(e) => setCompany({ ...company, timezone: e.target.value })}>
+                  {[...new Set([company.timezone, ...TIMEZONES])].map((z) => <MenuItem key={z} value={z}>{z}</MenuItem>)}
+                </TextField>
+                <Stack direction="row" spacing={2}>
+                  <TextField select fullWidth label={t("setup.company.locale")} value={company.locale} onChange={(e) => setCompany({ ...company, locale: e.target.value })}>
+                    {[...new Set([company.locale, ...LOCALES])].map((z) => <MenuItem key={z} value={z}>{z}</MenuItem>)}
+                  </TextField>
+                  <TextField select fullWidth label={t("setup.company.currency")} value={company.currency} onChange={(e) => setCompany({ ...company, currency: e.target.value })}>
+                    {[...new Set([company.currency, ...CURRENCIES])].map((z) => <MenuItem key={z} value={z}>{z}</MenuItem>)}
+                  </TextField>
+                </Stack>
+                <Button type="submit" variant="contained" disabled={busy || !company.display_name} sx={{ alignSelf: "flex-start" }}>{t("setup.save")}</Button>
               </Stack>
             )}
 
-            {ELSEWHERE[step.step] && (
-              <Stack spacing={1} sx={{ mt: 1 }}>
-                <Typography>{ELSEWHERE[step.step].text}</Typography>
-                <Button component={RouterLink} to={ELSEWHERE[step.step].path} variant="outlined" sx={{ alignSelf: "flex-start" }}>Open</Button>
-                <Button onClick={load} sx={{ alignSelf: "flex-start" }}>I've done this — check again</Button>
+            {step.step === "entities_locations" && (
+              <Stack spacing={2} sx={{ maxWidth: 520 }}>
+                {(values.entities.length > 0 || values.locations.length > 0) && (
+                  <Box>
+                    <Typography sx={{ fontWeight: 700, fontSize: 14 }}>{t("setup.office.saved")}</Typography>
+                    <Typography sx={{ fontSize: 14, color: f.muted }}>{t("setup.office.entities", { list: values.entities.map((e) => e.name).join(", ") || "—" })}</Typography>
+                    <Typography sx={{ fontSize: 14, color: f.muted }}>{t("setup.office.locations", { list: values.locations.map((l) => l.name + (l.state ? ` (${l.state})` : "")).join(", ") || "—" })}</Typography>
+                  </Box>
+                )}
+                <TextField label={t("setup.office.entity_name")} required value={office.entity_name} onChange={(e) => setOffice({ ...office, entity_name: e.target.value })} helperText={t("setup.office.entity_hint")} />
+                <TextField label={t("setup.office.location_name")} required value={office.location_name} onChange={(e) => setOffice({ ...office, location_name: e.target.value })} placeholder={t("setup.office.location_ph")} />
+                <TextField label={t("setup.office.city")} value={office.city} onChange={(e) => setOffice({ ...office, city: e.target.value })} helperText={t("setup.office.city_hint")} />
+                <Button variant="contained" disabled={busy || !office.entity_name.trim() || !office.location_name.trim()} sx={{ alignSelf: "flex-start" }}
+                  onClick={() => run(() => setupApi.addEntityLocation(office).then(() => setOffice((o) => ({ ...o, location_name: "", city: "" }))), t("setup.saved.office"))}>
+                  {t("setup.office.add")}
+                </Button>
+                <Button component={RouterLink} to="/settings/onboarding/org" sx={{ alignSelf: "flex-start" }}>{t("setup.office.more")}</Button>
               </Stack>
             )}
 
-            {step.step === "modules" && (
-              <Stack sx={{ mt: 1 }}>
-                {MODULE_OPTIONS.map((m) => (
-                  <FormControlLabel key={m.code} label={m.label}
-                    control={<Checkbox checked={modules.includes(m.code)} onChange={(e) => setModules((prev) => (e.target.checked ? [...prev, m.code] : prev.filter((c) => c !== m.code)))} />} />
-                ))}
-                <Button variant="contained" sx={{ alignSelf: "flex-start", mt: 1 }}
-                  onClick={() => experienceApi.setModules(modules).then((p) => { reload(); after(p, "Modules saved -- the menu now shows exactly these."); }).catch(fail("Save failed"))}>Save modules</Button>
-              </Stack>
-            )}
-
-            {step.step === "config_pack" && (
-              <Stack spacing={1} sx={{ mt: 1 }}>
-                <Typography variant="body2">Paste a configuration pack (exported from another environment with hrctl config-pack export). It is checked first; nothing is written until you apply it.</Typography>
-                <TextField multiline minRows={6} value={packText} onChange={(e) => setPackText(e.target.value)} inputProps={{ "aria-label": "Configuration pack JSON" }} />
-                <Stack direction="row" spacing={1}>
-                  <Button onClick={() => { try { experienceApi.applyConfigPack(JSON.parse(packText), true).then((r) => setNotice(`Check passed: ${JSON.stringify(r.tables)}`)).catch(fail("Check failed")); } catch { setError("That isn't valid JSON."); } }}>Check</Button>
-                  <Button variant="contained" onClick={() => { try { experienceApi.applyConfigPack(JSON.parse(packText), false).then(() => load().then(() => setNotice("Configuration pack applied."))).catch(fail("Apply failed")); } catch { setError("That isn't valid JSON."); } }}>Apply</Button>
+            {step.step === "branding" && (
+              <Stack spacing={2.5} sx={{ maxWidth: 560 }}>
+                <LogoUploader currentUrl={apiUrl(values.branding.logo_url)} onSaved={() => { reloadBranding(); load(); setNotice(t("setup.saved.logo")); }} />
+                <Stack direction="row" spacing={2} alignItems="center">
+                  <TextField type="color" label={t("setup.brand.colour")} value={colour} onChange={(e) => setColour(e.target.value)} sx={{ width: 140 }} />
+                  <Box sx={{ px: 2, py: 1, borderRadius: "10px", bgcolor: colour, color: "#fff", fontWeight: 700 }}>{t("setup.brand.sample")}</Box>
+                  <Button variant="contained" disabled={busy} onClick={() => run(() => setupApi.saveBrandColours({ primary_color: colour }).then(() => reloadBranding()), t("setup.saved.colour"), false)}>{t("setup.save")}</Button>
                 </Stack>
               </Stack>
             )}
 
-            {step.step === "invite_admins" && (
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ mt: 1 }}>
-                <TextField label="Admin email" type="email" value={invite} onChange={(e) => setInvite(e.target.value)} />
-                <Button variant="contained" disabled={!invite}
-                  onClick={() => experienceApi.inviteAdmin(invite).then((r) => { setInvite(""); setNotice(r.email_sent ? "Invitation sent." : `Email couldn't be sent yet -- share this one-time link: ${r.link}`); load(); }).catch(fail("Invite failed"))}>Invite</Button>
+            {step.step === "mailbox" && (
+              <Stack spacing={1.5}>
+                <Alert severity={values.mailbox.connected ? "success" : "info"}>{values.mailbox.detail}</Alert>
+                <Stack direction="row" spacing={1}>
+                  <Button variant="contained" component={RouterLink} to="/settings/communication/mailboxes">{values.mailbox.connected ? t("setup.mailbox.open") : t("setup.mailbox.connect")}</Button>
+                  <Button onClick={() => run(async () => undefined, t("setup.checked"), false)}>{t("setup.check_again")}</Button>
+                </Stack>
               </Stack>
             )}
 
-            {!step.done && step.skippable && (
-              <Button color="inherit" sx={{ mt: 2 }} onClick={() => experienceApi.skipStep(step.step).then((p) => after(p, `Skipped "${STEP_LABELS[step.step]}". You can come back any time.`)).catch(fail("Skip failed"))}>Skip for now</Button>
+            {step.step === "import_employees" && (
+              <Stack spacing={1.5} sx={{ maxWidth: 560 }}>
+                <Typography sx={{ fontSize: 14 }}>{t("setup.people.count", { count: values.employees.count })}</Typography>
+                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                  <Button variant="outlined" component="label" startIcon={<Emoji name="page" size={16} />}>
+                    {file ? file.name : t("setup.people.choose")}
+                    <input hidden type="file" accept=".csv,.xlsx" onChange={(e) => { setFile(e.target.files?.[0] ?? null); setCheck(null); e.target.value = ""; }} />
+                  </Button>
+                  <Button onClick={() => setupApi.employeesSample().then((b) => b && downloadBlob(b, "employees-sample.csv"))}>{t("setup.people.sample")}</Button>
+                </Stack>
+                {file && !check && <Button variant="contained" disabled={busy} sx={{ alignSelf: "flex-start" }}
+                  onClick={() => run(() => setupApi.employeesFile(file, false).then(setCheck), t("setup.people.checked"), false)}>{t("setup.people.check")}</Button>}
+                {check && check.committed === 0 && (
+                  <Alert severity={check.errors ? "warning" : "success"}
+                    action={<Button color="inherit" disabled={busy || check.rows === check.errors}
+                      onClick={() => run(() => setupApi.employeesFile(file as File, true).then((r) => { setCheck(r); setFile(null); }), t("setup.saved.people"))}>
+                      {t("setup.people.add", { count: check.rows - check.errors })}</Button>}>
+                    {t("setup.people.result", { rows: check.rows, errors: check.errors })}
+                  </Alert>
+                )}
+                <Button component={RouterLink} to="/people?view=hr" sx={{ alignSelf: "flex-start" }}>{t("setup.people.open")}</Button>
+              </Stack>
             )}
-            {step.skipped && (
-              <Button color="inherit" sx={{ mt: 2 }} onClick={() => experienceApi.skipStep(step.step, true).then(setProgress).catch(fail("Failed"))}>Un-skip</Button>
+
+            {step.step === "modules" && (
+              <Stack>
+                {MODULE_CODES.map((m) => (
+                  <FormControlLabel key={m} label={t(`setup.module.${m}`)}
+                    control={<Checkbox checked={modules.includes(m)} onChange={(e) => setModules((prev) => (e.target.checked ? [...prev, m] : prev.filter((c) => c !== m)))} />} />
+                ))}
+                <Button variant="contained" disabled={busy} sx={{ alignSelf: "flex-start", mt: 1 }}
+                  onClick={() => run(() => experienceApi.setModules(modules).then(() => reloadMe()), t("setup.saved.modules"))}>{t("setup.save")}</Button>
+              </Stack>
             )}
+
+            {step.step === "config_pack" && (
+              <Stack spacing={2}>
+                {values.template?.name && <Alert severity="success">{t("setup.tpl.applied", { name: values.template.name })}</Alert>}
+                {templates === null ? <CircularProgress size={24} /> : (
+                  <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(3, 1fr)" }, gap: 2 }}>
+                    {templates.map((tpl) => (
+                      <Card key={tpl.key} variant="outlined" sx={{ display: "flex", flexDirection: "column" }}>
+                        <CardContent sx={{ flex: 1 }}>
+                          <Typography sx={{ fontWeight: 800 }}>{tpl.name}</Typography>
+                          <Typography sx={{ fontSize: 13, color: f.muted, mb: 1 }}>{tpl.line}</Typography>
+                          {tpl.adds.map((a) => (
+                            <Box key={a.what} sx={{ mb: 0.75 }}>
+                              <Typography sx={{ fontSize: 12.5, fontWeight: 700 }}>{a.what}</Typography>
+                              <Typography sx={{ fontSize: 12.5, color: f.muted }}>{a.items.join(" · ")}</Typography>
+                            </Box>
+                          ))}
+                        </CardContent>
+                        <Box sx={{ p: 2, pt: 0 }}>
+                          <Button variant="contained" fullWidth disabled={busy}
+                            onClick={() => window.confirm(t("setup.tpl.confirm", { name: tpl.name })) && run(() => setupApi.applyTemplate(tpl.key), t("setup.saved.template", { name: tpl.name }))}>
+                            {t("setup.tpl.apply")}
+                          </Button>
+                        </Box>
+                      </Card>
+                    ))}
+                  </Box>
+                )}
+                <Typography sx={{ fontSize: 13, color: f.muted }}>{templates?.[0]?.note}</Typography>
+              </Stack>
+            )}
+
+            {step.step === "invite_admins" && (
+              <Stack spacing={1.5} sx={{ maxWidth: 520 }}>
+                <Typography sx={{ fontSize: 14 }}>{t("setup.admins.now", { list: values.admins.map((a) => a.email).join(", ") })}</Typography>
+                <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                  <TextField label={t("setup.admins.email")} type="email" value={invite} onChange={(e) => setInvite(e.target.value)} sx={{ flex: 1 }} />
+                  <Button variant="contained" disabled={busy || !/^\S+@\S+\.\S+$/.test(invite)}
+                    onClick={() => run(() => experienceApi.inviteAdmin(invite).then((r) => { setInvite(""); if (!r.email_sent && r.link) window.prompt(t("setup.admins.link"), r.link); }), t("setup.saved.invite"), false)}>
+                    {t("setup.admins.invite")}
+                  </Button>
+                </Stack>
+              </Stack>
+            )}
+
+            <Stack direction="row" spacing={1} sx={{ mt: 3 }}>
+              {!step.done && !step.skipped && step.skippable && (
+                <Button color="inherit" disabled={busy} onClick={() => run(() => experienceApi.skipStep(step.step), t("setup.skipped_msg", { step: t(`setup.step.${step.step}`) }))}>{t("setup.skip")}</Button>
+              )}
+              {step.skipped && (
+                <Button color="inherit" disabled={busy} onClick={() => run(() => experienceApi.skipStep(step.step, true), t("setup.unskipped"), false)}>{t("setup.unskip")}</Button>
+              )}
+            </Stack>
           </CardContent>
         </Card>
       )}

@@ -5,7 +5,8 @@ Steps: company -> entities & locations -> branding -> connect mailbox (test) -> 
 employees -> pick modules -> pick config pack -> invite admins. Progress is DERIVED from
 real data (a step is done because the thing exists, not because someone clicked "next"),
 so the checklist on the admin home can't drift from reality. A step can be explicitly
-skipped (recorded in `platform.setup.skipped`), which counts as done.
+skipped (recorded in `platform.setup.skipped`) -- Part 17.10: a skipped step is shown as
+skipped, never as done; only a real save turns a step green.
 """
 
 from typing import Optional
@@ -68,16 +69,135 @@ def progress(db: Session, tenant: TenantContext) -> dict:
         "mailbox": (mailbox_ok, mailbox_detail),
         "import_employees": (db.query(Employee).filter(Employee.tenant_id == tenant.tenant_id).count() > 0, "Employees imported."),
         "modules": (_has_tenant_value(db, tenant, "platform.modules.enabled"), "Modules chosen."),
-        "config_pack": (_has_tenant_value(db, tenant, "platform.setup.config_pack"), "A configuration pack was applied."),
+        "config_pack": (_has_tenant_value(db, tenant, "platform.setup.config_pack"), "A ready-made template was applied."),
         "invite_admins": (admins >= 2, f"{admins} admin(s) -- invite at least one more so you're never locked out."),
     }
     steps = []
     for step in STEPS:
         done, detail = checks[step]
-        steps.append({"step": step, "done": bool(done) or step in skipped, "skipped": step in skipped and not done, "detail": detail,
+        steps.append({"step": step, "done": bool(done), "skipped": step in skipped and not done, "detail": detail,
                       "skippable": step in SKIPPABLE, "fix_path": _FIX_PATHS[step]})
     complete = sum(1 for s in steps if s["done"])
-    return {"steps": steps, "percent": round(100 * complete / len(steps)), "complete": complete == len(steps)}
+    settled = sum(1 for s in steps if s["done"] or s["skipped"])
+    return {"steps": steps, "percent": round(100 * complete / len(steps)), "complete": settled == len(steps),
+            "done_count": complete, "skipped_count": settled - complete}
+
+
+def values(db: Session, tenant: TenantContext) -> dict:
+    """Part 17.10: what is saved for each step, so a reopened step shows it and can edit it."""
+    from app.models.experience import TenantMedia
+
+    s, ctx = SettingsService(db), SettingContext(tenant=tenant)
+    theme = db.query(BrandTheme).filter(BrandTheme.tenant_id == tenant.tenant_id, BrandTheme.is_default.is_(True)).first()
+    logo = db.query(TenantMedia).filter(TenantMedia.tenant_id == tenant.tenant_id, TenantMedia.media_key == "brand.logo").first()
+    mailbox_ok, mailbox_detail = _mailbox_state(db, tenant)
+    return {
+        "company": {k.split(".")[1]: s.get(k, ctx) for k in ("org.display_name", "org.legal_name", "org.timezone", "org.locale", "org.currency")},
+        "entities": [{"id": str(e.id), "name": e.name} for e in db.query(LegalEntity).filter(LegalEntity.tenant_id == tenant.tenant_id).order_by(LegalEntity.name)],
+        "locations": [{"id": str(l.id), "name": l.name, "state": l.state, "lat": l.geo_lat, "lng": l.geo_lng}
+                      for l in db.query(Location).filter(Location.tenant_id == tenant.tenant_id).order_by(Location.name)],
+        "branding": {"primary_color": theme.primary_color if theme else None, "secondary_color": theme.secondary_color if theme else None,
+                     "logo_url": f"/api/v1/public/media/brand.logo?v={int(logo.updated_at.timestamp())}" if logo and logo.updated_at else None},
+        "mailbox": {"connected": mailbox_ok, "detail": mailbox_detail},
+        "employees": {"count": db.query(Employee).filter(Employee.tenant_id == tenant.tenant_id).count()},
+        "modules": s.get("platform.modules.enabled", ctx) or [],
+        "template": s.get("platform.setup.config_pack", ctx) or None,
+        "admins": [{"email": u.email, "name": u.full_name} for u in db.query(User).filter(User.tenant_id == tenant.tenant_id, User.role == "admin").order_by(User.created_at)],
+    }
+
+
+def add_entity_location(db: Session, tenant: TenantContext, *, entity_name: str, location_name: str, city: Optional[str],
+                        state: Optional[str], actor: str) -> dict:
+    """First legal entity + office from the wizard (re-uses an entity of the same name)."""
+    from app.platform.geo.service import offline
+
+    entity_name, location_name = entity_name.strip(), location_name.strip()
+    if not entity_name or not location_name:
+        raise SetupError("Give the company's legal name and the office name.")
+    entity = db.query(LegalEntity).filter(LegalEntity.tenant_id == tenant.tenant_id, LegalEntity.name == entity_name).first()
+    if entity is None:
+        entity = LegalEntity(tenant_id=tenant.tenant_id, name=entity_name)
+        db.add(entity)
+        db.commit()
+        db.refresh(entity)
+    place = offline(city or location_name)
+    loc = db.query(Location).filter(Location.tenant_id == tenant.tenant_id, Location.name == location_name).first()
+    if loc is None:
+        loc = Location(tenant_id=tenant.tenant_id, name=location_name, legal_entity_id=entity.id)
+        db.add(loc)
+    loc.state = state or (place.label.split(", ")[-1] if place else None)
+    if place is not None:
+        loc.geo_lat, loc.geo_lng = f"{place.lat:.5f}", f"{place.lng:.5f}"
+    db.commit()
+    return progress(db, tenant)
+
+
+EMPLOYEE_COLUMNS = {"first_name": "first_name", "last_name": "last_name", "personal_email": "personal_email", "personal_phone": "personal_phone",
+                    "employee_code": "employee_code", "status": "status", "worker_type": "worker_type", "gender": "gender"}
+
+
+def read_employee_file(data: bytes, filename: str) -> list[dict]:
+    """CSV or XLSX with a header row; header names are matched loosely ("First name" -> first_name)."""
+    import csv
+    import io
+
+    def norm(h) -> str:
+        return str(h or "").strip().lower().replace(" ", "_").replace("-", "_")
+
+    rows: list[dict] = []
+    if filename.lower().endswith(".xlsx"):
+        from openpyxl import load_workbook
+
+        ws = load_workbook(io.BytesIO(data), read_only=True, data_only=True).active
+        it = ws.iter_rows(values_only=True)
+        header = [norm(h) for h in next(it, [])]
+        for r in it:
+            if r and any(v not in (None, "") for v in r):
+                rows.append({header[i]: (str(v).strip() if v is not None else None) for i, v in enumerate(r) if i < len(header)})
+    elif filename.lower().endswith(".csv"):
+        reader = csv.DictReader(io.StringIO(data.decode("utf-8-sig")))
+        for r in reader:
+            rows.append({norm(k): (v.strip() if isinstance(v, str) else v) for k, v in r.items() if k})
+    else:
+        raise SetupError("Please upload a .csv or .xlsx file (download the sample file to start).")
+    if not rows:
+        raise SetupError("The file has no rows under the header.")
+    if len(rows) > 5000:
+        raise SetupError("Please upload at most 5,000 people at a time.")
+    return rows
+
+
+def import_employees(db: Session, tenant: TenantContext, data: bytes, filename: str, *, commit: bool, actor: str) -> dict:
+    from app.core_hr.import_wizard import commit_batch, create_batch
+
+    rows = read_employee_file(data, filename)
+    present = {k for r in rows for k in r}
+    mapping = {src: dst for src, dst in EMPLOYEE_COLUMNS.items() if src in present}
+    if "first_name" not in mapping:
+        raise SetupError("The file needs a 'first_name' column.")
+    _keep_upload(tenant, data, filename)
+    batch = create_batch(db, tenant, entity="employee", rows=rows, column_mapping=mapping, created_by=actor)
+    result = {"batch_id": str(batch.id), "rows": batch.row_count, "errors": batch.error_count, "committed": 0}
+    if commit:
+        result.update(commit_batch(db, tenant, batch.id, created_by=actor))
+        result["progress"] = progress(db, tenant)
+    return result
+
+
+def _keep_upload(tenant: TenantContext, data: bytes, filename: str) -> None:
+    """The uploaded file itself is kept in storage (the storage connection, else local disk)."""
+    import uuid as _uuid
+
+    from app.experience.media_router import MEDIA_DIR, _storage
+
+    ext = filename.rsplit(".", 1)[-1].lower()
+    key = f"imports/{tenant.tenant_id}/{_uuid.uuid4()}.{ext}"
+    storage = _storage()
+    if storage is not None and getattr(storage.put(key, data, "application/octet-stream"), "success", False):
+        return
+    path = MEDIA_DIR.parent / key
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
 
 
 def skip(db: Session, tenant: TenantContext, step: str, *, actor: str, undo: bool = False) -> dict:

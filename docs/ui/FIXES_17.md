@@ -335,3 +335,50 @@ npm run build OK
 Not run live: the real email of the form link. It goes through the company mailbox to the candidate, so the link was created in-process for the demo candidate instead.
 
 **Screenshot:** `salary-queue.png`, `salary-details-form.png`, `careers-apply.png` -- **pending login proof** (the form and careers pages are public; screenshots will be taken in 17.14).
+
+---
+
+## 17.10 Setup checklist + ready-made templates
+
+**Wrong:**
+- Half the steps only linked elsewhere, and reopening a step showed empty fields.
+- A skipped step counted as done.
+- The "configuration pack" step expected pasted JSON.
+- The logo had no upload that worked (see 17.11).
+
+**Changed:**
+- Every step has a working form that shows the saved values (`GET /api/v1/setup/values`) and saves again:
+  - **company:** name, legal name, time zone, language, currency;
+  - **company & offices:** inline, and the office is placed on the map from the city table (`POST /api/v1/setup/entities-locations`);
+  - **logo & colours:** `LogoUploader` with preview and crop, plus a colour saved through `PUT /comms/brand-theme` (now a partial update);
+  - **mailbox:** status plus Connect or Open;
+  - **people file:** CSV or XLSX, check, then add; the upload is kept in storage; a sample file is provided;
+  - **modules;**
+  - **template;**
+  - **invite admin.**
+- A step turns green only after a real save. Skipped steps show "Skipped" and don't count as done; `complete` = everything done or skipped.
+- "Apply a configuration pack" is now **"Start from a ready-made template (optional)"**, with the one-line explanation. Three templates (IT services, Manufacturing, Retail), each with a preview of what it adds, Apply (with a confirm) and Skip.
+  - Applying never deletes anything. It adds a new default pipeline (the old one is kept), a new version of the company scoring rules, a new published email version, extra roles and a few settings.
+
+**Verified (all "apply" runs happened inside a database transaction that was rolled back, so the real company's configuration is unchanged):**
+```
+GET /api/v1/setup/progress -> modules and config_pack now "SKIPPED" (before: shown as done), percent 50
+GET /api/v1/setup/values -> company CTD Techs / Asia/Kolkata / en-IN / INR, 2 offices, colour #1d5fd6, mailbox connected, 11 people
+GET /api/v1/setup/templates -> 3 previews, e.g. IT services:
+    Hiring stages: Applied; Screened by AI; Shortlisted; Technical interview; Passed interviews; Background check; Offer sent; Joined
+    Scoring rules: Skills first (Skills match (AI) 30%, Must-have 30%, Nice-to-have 15%, Certifications 10%, Recent use 15%)
+    Email wording: 'We've received your application for Automation Architect'   (placeholders shown with sample values)
+apply it_services   -> stages 8, scoring_rules 1, emails 1 (published), roles 1, settings 3; default pipeline -> "IT services hiring"; threshold 70
+apply manufacturing -> stages 8, scoring_rules 1, emails 1, roles 2, settings 3
+apply retail        -> stages 7, scoring_rules 1, emails 1, roles 1, settings 4
+first office "Hyderabad office" (city Hyderabad) -> Telangana 17.385, 78.4867; step entities_locations false -> true
+employees file (3 rows, 1 without first name): check -> rows 3, errors 1; add -> committed 2, skipped 1 (people 11 -> 13)
+people.pdf -> "Please upload a .csv or .xlsx file (download the sample file to start)."
+everything above rolled back; the two CSV copies the proof wrote to local storage were deleted
+```
+
+**Found and fixed during proof:**
+- The template email stayed a draft because its placeholders weren't declared; they are now declared, so it publishes.
+- `PUT /comms/brand-theme` blanked every field that wasn't sent; it is now a partial update.
+
+**Screenshot:** `setup.png` -- **pending login proof**.

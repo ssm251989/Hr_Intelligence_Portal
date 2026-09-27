@@ -340,7 +340,8 @@ def upsert_brand_theme(payload: BrandThemeUpsert, db: Session = Depends(get_db),
         theme = BrandTheme(tenant_id=tenant.tenant_id, is_default=True, **payload.model_dump())
         db.add(theme)
     else:
-        for field, value in payload.model_dump().items():
+        # Part 17.11: only the fields sent change (saving the colour must not blank the footer)
+        for field, value in payload.model_dump(exclude_unset=True).items():
             setattr(theme, field, value)
     db.commit()
     db.refresh(theme)

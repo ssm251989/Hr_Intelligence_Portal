@@ -80,6 +80,9 @@ import type {
 // VITE_API_BASE_URL="/_api" (same-origin reverse proxy, so the tenant Host header is kept).
 const BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
+/** Part 17.11: a server path like "/api/v1/public/media/brand.logo" as a full URL for <img src>. */
+export const apiUrl = (path: string | null | undefined): string | null => (path ? (/^https?:/.test(path) ? path : `${BASE_URL}${path}`) : null);
+
 export class ApiError extends Error {
   status: number;
   detail: unknown;
@@ -1032,6 +1035,7 @@ export const metadataApi = {
 export interface BrandingRead {
   product_name: string;
   logo_file_id: string | null;
+  logo_url?: string | null; // Part 17.11: the uploaded company logo (public file)
   primary_color: string;
   secondary_color: string | null;
   gradient_from: string;

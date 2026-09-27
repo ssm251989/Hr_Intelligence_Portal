@@ -55,9 +55,14 @@ def build_branding(db: Session, tenant: TenantContext) -> dict:
 
     from app.platform.comms.theme import GENERIC_FALLBACK_THEME
 
+    from app.models.experience import TenantMedia
+
+    logo = db.query(TenantMedia).filter(TenantMedia.tenant_id == tenant.tenant_id, TenantMedia.media_key == "brand.logo").first()
     return {
         "product_name": org_display_name,
         "logo_file_id": str(theme.logo_file_id) if theme and theme.logo_file_id else None,
+        # Part 17.11: the uploaded logo (public file; ?v= changes on every upload so no stale cache)
+        "logo_url": f"/api/v1/public/media/brand.logo?v={int(logo.updated_at.timestamp())}" if logo and logo.updated_at else None,
         "primary_color": (theme.primary_color if theme else None) or GENERIC_FALLBACK_THEME["primary_color"],
         "secondary_color": (theme.secondary_color if theme else None),
         "gradient_from": (theme.gradient_from if theme else None) or GENERIC_FALLBACK_THEME["gradient_from"],

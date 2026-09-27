@@ -30,9 +30,42 @@ router = APIRouter(tags=["media"])
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent
 MEDIA_DIR = BACKEND_ROOT / "uploads" / "media"
-KEY_RE = re.compile(r"^(welcome|tour)\.[a-z0-9_-]+(\.gif)?$|^welcome\.video$")
+KEY_RE = re.compile(r"^(welcome|tour)\.[a-z0-9_-]+(\.gif)?$|^welcome\.video$|^brand\.logo$")
 ALLOWED_TYPES = {"video/mp4": "mp4", "video/webm": "webm", "image/gif": "gif", "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
 MAX_BYTES = 50 * 1024 * 1024
+# Part 17.11: the company logo (sidebar, login, careers site, emails, letters)
+LOGO_KEY = "brand.logo"
+LOGO_TYPES = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/svg+xml": "svg"}
+LOGO_MAX_BYTES = 2 * 1024 * 1024
+STORAGE_PREFIX = "storage:"  # file_path of a file kept in the storage connection
+
+
+def _storage():
+    """The storage connection routed for `storage.documents`, if any (else local disk)."""
+    from app.platform.connectors.registry import get_provider
+    from app.platform.connectors.router import ConnectorRouter
+    from app.core.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        resolved = ConnectorRouter(db).try_resolve("storage.documents")
+        if resolved is None:
+            return None
+        spec = get_provider(resolved.connection.provider_code)
+        if spec.adapter_cls is None or "StorageProvider" not in spec.capabilities:
+            return None
+        return spec.adapter_cls(resolved.connection.config_json or {}, {})
+    except Exception:  # noqa: BLE001 -- storage problems fall back to local disk
+        return None
+    finally:
+        db.close()
+
+
+def _safe_svg(data: bytes) -> bytes:
+    low = data.decode("utf-8", errors="ignore").lower()
+    if re.search(r"<script|javascript:|<foreignobject|\son[a-z]+\s*=", low):
+        raise HTTPException(status_code=400, detail="This SVG contains scripts, which aren't allowed in a logo. Please export it again as plain SVG or PNG.")
+    return data
 
 
 def _check_key(key: str) -> None:
@@ -59,34 +92,59 @@ def list_media(db: Session = Depends(get_db), current_user: User = Depends(get_c
 async def upload_media(key: str, file: UploadFile = File(...), title: Optional[str] = Form(None), db: Session = Depends(get_db),
                        current_user: User = Depends(require("platform.settings.configure"))):
     _check_key(key)
-    ext = ALLOWED_TYPES.get(file.content_type or "")
+    is_logo = key == LOGO_KEY
+    ext = (LOGO_TYPES if is_logo else ALLOWED_TYPES).get(file.content_type or "")
     if ext is None:
-        raise HTTPException(status_code=400, detail="Please upload an MP4 or WebM video, or a GIF/PNG/JPG/WebP image.")
+        raise HTTPException(status_code=400, detail="Please upload a PNG, JPG, WebP or SVG image." if is_logo
+                            else "Please upload an MP4 or WebM video, or a GIF/PNG/JPG/WebP image.")
     data = await file.read()
-    if len(data) > MAX_BYTES:
-        raise HTTPException(status_code=400, detail="That file is larger than 50 MB. Please upload a shorter clip.")
+    if len(data) > (LOGO_MAX_BYTES if is_logo else MAX_BYTES):
+        raise HTTPException(status_code=400, detail="That logo is larger than 2 MB. Please use a smaller image." if is_logo
+                            else "That file is larger than 50 MB. Please upload a shorter clip.")
+    if ext == "svg":
+        data = _safe_svg(data)
     tenant = require_current_tenant()
-    folder = MEDIA_DIR / str(tenant.tenant_id)
-    folder.mkdir(parents=True, exist_ok=True)
     filename = f"{uuid.uuid4()}.{ext}"
-    (folder / filename).write_bytes(data)
+    storage = _storage()
+    stored_path = None
+    if storage is not None:
+        result = storage.put(f"media/{tenant.tenant_id}/{filename}", data, file.content_type or "application/octet-stream")
+        if getattr(result, "success", False):
+            stored_path = f"{STORAGE_PREFIX}media/{tenant.tenant_id}/{filename}"
+    if stored_path is None:
+        folder = MEDIA_DIR / str(tenant.tenant_id)
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / filename).write_bytes(data)
 
     row = db.query(TenantMedia).filter(TenantMedia.tenant_id == tenant.tenant_id, TenantMedia.media_key == key).first()
     old_path = row.file_path if row else None
     if row is None:
         row = TenantMedia(tenant_id=tenant.tenant_id, media_key=key)
         db.add(row)
-    row.file_path = f"{tenant.tenant_id}/{filename}"
+    row.file_path = stored_path or f"{tenant.tenant_id}/{filename}"
     row.content_type = file.content_type
     row.size_bytes = len(data)
     row.title = title
     row.uploaded_by = current_user.id
     row.updated_at = datetime.now(timezone.utc)
     db.commit()
-    if old_path:
-        (MEDIA_DIR / old_path).unlink(missing_ok=True)
+    _remove_file(old_path)
     db.refresh(row)
     return _row(row)
+
+
+def _remove_file(path: Optional[str]) -> None:
+    if not path:
+        return
+    if path.startswith(STORAGE_PREFIX):
+        storage = _storage()
+        if storage is not None:
+            try:
+                storage.delete(path[len(STORAGE_PREFIX):])
+            except Exception:  # noqa: BLE001
+                pass
+        return
+    (MEDIA_DIR / path).unlink(missing_ok=True)
 
 
 @router.delete("/api/v1/media/{key}", status_code=204)
@@ -99,7 +157,7 @@ def delete_media(key: str, db: Session = Depends(get_db), current_user: User = D
     path = row.file_path
     db.delete(row)
     db.commit()
-    (MEDIA_DIR / path).unlink(missing_ok=True)
+    _remove_file(path)
     return None
 
 
@@ -108,10 +166,24 @@ def media_file(key: str, db: Session = Depends(get_db)):
     _check_key(key)
     tenant = require_current_tenant()
     row = db.query(TenantMedia).filter(TenantMedia.tenant_id == tenant.tenant_id, TenantMedia.media_key == key).first()
+    headers = {"Cache-Control": "public, max-age=3600", "X-Content-Type-Options": "nosniff"}
+    if row is not None and row.content_type == "image/svg+xml":
+        headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; img-src data:"
+    if row is not None and row.file_path.startswith(STORAGE_PREFIX):
+        storage = _storage()
+        try:
+            data = storage.get(row.file_path[len(STORAGE_PREFIX):]) if storage is not None else None
+        except Exception:  # noqa: BLE001
+            data = None
+        if data is None:
+            raise HTTPException(status_code=404, detail="The file couldn't be read from storage.")
+        from fastapi.responses import Response
+
+        return Response(content=data, media_type=row.content_type, headers=headers)
     path = (MEDIA_DIR / row.file_path) if row else None
     if row is None or path is None or not path.is_file():
         raise HTTPException(status_code=404, detail="No clip has been uploaded for this yet.")
-    return FileResponse(path, media_type=row.content_type, headers={"Cache-Control": "public, max-age=3600"})
+    return FileResponse(path, media_type=row.content_type, headers=headers)
 
 
 @router.post("/api/me/celebrations/{event_key}")

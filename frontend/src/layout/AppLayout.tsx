@@ -114,7 +114,7 @@ function Sidebar({ items, expanded, onToggle, onNavigate }: { items: ShellItem[]
   const t = theme.palette.fresh;
   const tr = useT();
   const location = useLocation();
-  const { productName, logoMark } = useBootstrap();
+  const { productName, logoMark, logoUrl } = useBootstrap();
   const activeSection = sectionOf(location.pathname);
   const [open, setOpen] = useState<Record<string, boolean>>({});
 
@@ -141,9 +141,13 @@ function Sidebar({ items, expanded, onToggle, onNavigate }: { items: ShellItem[]
       }}
     >
       <Stack direction="row" alignItems="center" spacing={1.25} sx={{ px: expanded ? 1 : 0, pb: 1.5, justifyContent: expanded ? "flex-start" : "center" }}>
-        <Box sx={{ width: 34, height: 34, borderRadius: "10px", bgcolor: t.brand, color: t.brandInk, display: "grid", placeItems: "center", fontWeight: 800, fontSize: 13, flexShrink: 0 }}>
-          {logoMark}
-        </Box>
+        {logoUrl ? (
+          <Box component="img" src={logoUrl} alt="" sx={{ height: 34, maxWidth: expanded ? 110 : 34, objectFit: "contain", flexShrink: 0 }} />
+        ) : (
+          <Box sx={{ width: 34, height: 34, borderRadius: "10px", bgcolor: t.brand, color: t.brandInk, display: "grid", placeItems: "center", fontWeight: 800, fontSize: 13, flexShrink: 0 }}>
+            {logoMark}
+          </Box>
+        )}
         {expanded && (
           <Typography noWrap sx={{ fontWeight: 800, fontSize: 16, flex: 1, minWidth: 0 }} title={productName}>
             {productName}

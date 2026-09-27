@@ -13,12 +13,16 @@ import { Illustration, type IllustrationName } from "../../ui-kit";
 
 export function BrandMark({ size = 40 }: { size?: number }) {
   const f = useTheme().palette.fresh;
-  const { productName, logoMark } = useBootstrap();
+  const { productName, logoMark, logoUrl } = useBootstrap();
   return (
     <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
-      <Box aria-hidden sx={{ width: size, height: size, borderRadius: "12px", bgcolor: f.brand, color: f.brandInk, display: "grid", placeItems: "center", fontWeight: 800, fontSize: size * 0.36, flexShrink: 0 }}>
-        {logoMark}
-      </Box>
+      {logoUrl ? (
+        <Box component="img" src={logoUrl} alt="" sx={{ height: size, maxWidth: size * 3, objectFit: "contain", flexShrink: 0 }} />
+      ) : (
+        <Box aria-hidden sx={{ width: size, height: size, borderRadius: "12px", bgcolor: f.brand, color: f.brandInk, display: "grid", placeItems: "center", fontWeight: 800, fontSize: size * 0.36, flexShrink: 0 }}>
+          {logoMark}
+        </Box>
+      )}
       <Typography sx={{ fontWeight: 800, fontSize: size * 0.42, minWidth: 0 }} noWrap title={productName}>
         {productName}
       </Typography>
