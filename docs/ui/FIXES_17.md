@@ -423,3 +423,47 @@ after all runs: real settings unchanged (threshold 22, name "CTD Techs", no logo
 npm run build (with i18n:check) OK
 ```
 **Screenshot:** `settings-branding.png`, `sidebar-logo.png` -- **pending login proof**. The sign-in page shows the logo once one is uploaded (public page; to be taken in 17.14).
+
+---
+
+## 17.12 Interviews without Excel
+
+**Wrong:** interview scheduling read its interviewer pool, emails and busy status from an Excel workbook, and wrote an "Interview Log" back into it. Without the file configured, scheduling stopped.
+
+**Changed:**
+- **The app is the only source:**
+  - Pools: new `interviewer_pools` table (migration `a6d3f8b2c4e1`), each for one job or for any job matching its skills, with members in the order they are asked.
+  - Availability: `interviewer_availability` holds working hours per weekday, blocked dates and daily/weekly limits.
+  - `app/interview_scheduling/roster.py` gives negotiation.py, confirmation.py and service.py the same functions they used from the tracker, backed by app data. The log writes and job-title sync are no-ops, because every negotiation and interview is already stored in the app.
+  - No step requires a tracker path any more.
+- **Busy check** (`availability.py`): a person is busy when:
+  - the weekday is off;
+  - the date is blocked;
+  - their daily or weekly limit is reached;
+  - or none of the offered slots fits their hours without clashing with an interview already booked in the app.
+  - "calendar" mode also asks their connected calendar. Excel is never read, and the `busy_source` setting no longer offers "excel" (the migration moved any "excel" value to "internal").
+- **Pages:**
+  - **My availability** (`/interviews/availability`, everyone): weekly hours grid, days away, limits, free slots tomorrow, bookings, pools.
+  - **Interviewers & pools** (`/interviews/interviewers`, HR): everyone's hours, days away, bookings for the next 7 days, free slots tomorrow and pools, with an Edit dialog; the pools tab has create/edit/remove.
+  - Both are in the Interviews sub-menu.
+- **Settings > Hiring > Interviews:** the Excel tracker card is removed. It now links to the pages above plus the rules for how interview times are offered.
+- **Settings > Data & privacy > Imports:** a one-time **"Import from old Excel interview tracker"** (sample file, check first, then copy into the app). After that the file is not used.
+
+**Verified:**
+```
+(rolled-back transaction)
+GET  /me with nothing saved -> suggested Mon-Fri 10:00-18:00, Sat/Sun off
+PUT  /me Mon-Fri 10:00-12:00 + blocked 2030-01-01 + max 2/day -> 200, reloads the same
+PUT  /me with 14:00-09:00 -> 422 "each time range needs start before end"
+GET  /interviewers -> slot times tomorrow 10:00, 15:00, 18:00; admin free tomorrow: ['10:00'] (only 10-12 works)
+POST /pools for "Demo - RPA Developer" -> 201; roster for that job -> [Kishore <kg@...>, demo.panel@example.com]
+POST /pools without a job or skills -> 400
+busy check tomorrow (hours 10-12): not busy -> after booking every offered slot in the app: busy
+someone with no availability row and no bookings: not busy
+import-sample -> dry run {pools 1, interviewers 2}, import -> created 1 pool, 2 interviewers; a .pdf -> 400
+(real company, one-time import of the configured tracker Sample/Interview_Tracker/interview_tracker_sample.xlsx)
+-> 1 pool "Automation Anywhere Architect interviewers" (linked to that job), 3 interviewers; nothing deleted
+roster now used by negotiation (committed data): Kishore, Suresh A, Jagadeesh - all with emails
+is_interviewer_busy source contains no Excel call; npm run build OK
+```
+**Screenshot:** `my-availability.png`, `interviewers-pools.png` -- **pending login proof**.

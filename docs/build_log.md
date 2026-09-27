@@ -2195,3 +2195,9 @@ NEXT: 17.11 settings must actually save -- go through every settings page, fix f
 Logo upload + storage + logo_url everywhere (app, public pages, email and letter header), partial brand-theme update, success message + live reload after every settings save, SETTINGS_CHECK.md (94/94 registry settings + dedicated pages, all in rolled-back transactions). Decision: email layouts table is unused, so the header is added by one wrap_email_html() used by both senders and letters (skipped when a letter template places the logo itself).
 
 NEXT: 17.12 interviews without Excel (my availability, HR view, pools, busy from app bookings, remove Excel tracker, one-time import).
+
+## Part 17.12 -- Interviews without Excel (2026-09-27)
+
+roster.py replaces the tracker behind the same function names (lowest-risk change to the 1259-line negotiation flow); pools + availability in the app; busy = hours/blocked/limits/bookings (+ calendar); Excel removed from settings and the busy_source options; one-time import in Settings > Imports. Decision: ran the one-time import for ctd-techs from its configured tracker (additive: 1 pool, 3 interviewers) so auto-scheduling keeps working immediately. Left in place but unused: the old tracker-path settings endpoint and the generic excel_file connector (used by other imports).
+
+NEXT: 17.13 more logic + reliability (talent pool re-match, duplicates, reminders, job health, health page, backups, audit view, visuals).

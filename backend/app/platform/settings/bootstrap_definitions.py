@@ -93,7 +93,7 @@ def register_all() -> None:
     register(SettingDef("recruitment.negotiation.max_retry_days", "int", 1, module="recruitment", group="Interview Negotiation"))
     register(SettingDef(
         "recruitment.negotiation.busy_source", "enum", "internal", module="recruitment",
-        group="Interview Negotiation", json_schema={"enum": ["internal", "excel", "calendar"]},
+        group="Interview Negotiation", json_schema={"enum": ["internal", "calendar"]},  # Part 17.12: no Excel
     ))
 
     # recruitment.tracker.* -- current defaults from

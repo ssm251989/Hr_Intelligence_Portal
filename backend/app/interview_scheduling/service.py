@@ -33,7 +33,7 @@ from app.integrations.google_calendar import (
     check_calendar_availability,
     format_ist_datetime,
 )
-from app.interview_scheduling.tracker import append_interview_log_row, eligible_interviewers_for_job
+from app.interview_scheduling.roster import append_interview_log_row, eligible_interviewers_for_job  # Part 17.12
 from app.models.user import User
 from app.models.user_integration import UserIntegration
 

@@ -6,7 +6,6 @@ import CommunicationsPanel from "../components/CommunicationsPanel";
 import ConnectionsPanel from "../components/ConnectionsPanel";
 import CoreHrPanel from "../components/CoreHrPanel";
 import HrMailboxSettingsCard from "../components/HrMailboxSettingsCard";
-import InterviewTrackerSettingsCard from "../components/InterviewTrackerSettingsCard";
 import MediaSettingsPanel from "../components/MediaSettingsPanel";
 import MetadataPanel from "../components/MetadataPanel";
 import OnboardingPanel from "../components/OnboardingPanel";
@@ -21,7 +20,7 @@ import ShortlistingRulesForm from "../components/scoring/ShortlistingRulesForm";
 import BrandingGuideCard from "../components/settings/BrandingGuideCard";
 import IntegrationCard from "../components/settings/IntegrationCard";
 import { t } from "../i18n";
-import { AuditLogPage, BillingPage, ImportsPage, LanguagesPage, SamplesPage, StoragePage, TwoStepPage } from "./pages";
+import { AuditLogPage, BillingPage, ImportsPage, InterviewsSettingsPage, LanguagesPage, SamplesPage, StoragePage, TwoStepPage } from "./pages";
 
 // Part 16.3: Settings = short, grouped, searchable. Nothing was removed -- every earlier panel
 // is a page here, behind the same permission it had. Rarely used pages are `advanced` (shown
@@ -100,7 +99,7 @@ export const CATEGORIES: SettingsCategory[] = [
         render: () => (<><ScoringRulesEditor /><ShortlistingRulesForm /></>) },
       { id: "screening", emoji: "magnifier", keywords: "ai negotiation tracker blind", prefixes: ["recruitment."], visible: ADMIN,
         render: scoped(["recruitment."], "settingsHome.page.hiring.screening") },
-      { id: "interviews", emoji: "calendar", keywords: "interview scheduling tracker", visible: EVERYONE, render: () => <InterviewTrackerSettingsCard /> },
+      { id: "interviews", emoji: "calendar", keywords: "interview scheduling availability interviewer pools negotiation slots", prefixes: ["recruitment.negotiation."], visible: EVERYONE, render: () => <InterviewsSettingsPage /> },
       { id: "availability", emoji: "hourglass", keywords: "interviewer availability ctc salary components", visible: ADMIN,
         render: () => <RecruitmentPanel only="Availability & CTC" /> },
       { id: "offers", emoji: "envelope", keywords: "salary bands ctc offer expiry", prefixes: ["compensation.", "offers."], visible: ADMIN,

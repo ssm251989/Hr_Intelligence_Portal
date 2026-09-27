@@ -15,6 +15,7 @@ import { Link as RouterLink } from "react-router-dom";
 import { experienceApi, extractErrorMessage, http, reportsApi, type HealthIssue } from "../api/client";
 import type { AuditLogRead } from "../api/types";
 import MfaSettingsCard from "../components/MfaSettingsCard";
+import ExcelTrackerImport from "../components/interviews/ExcelTrackerImport";
 import PlatformSettingsPanel from "../components/PlatformSettingsPanel";
 import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
 import { LOCALES, useT } from "../i18n";
@@ -208,8 +209,41 @@ export function ImportsPage({ go }: { go: (path: string) => void }) {
           </Stack>
         ))}
         <Button sx={{ alignSelf: "flex-start", mt: 1 }} onClick={() => go("data/samples")} startIcon={<Emoji name="page" size={16} />}>{t("settingsHome.imports.samples")}</Button>
+        {/* Part 17.12: the only place the old Excel interview tracker is still read -- once */}
+        <Box sx={{ pt: 2, mt: 1, borderTop: 1, borderColor: "divider" }}><ExcelTrackerImport /></Box>
       </Stack>
     </Section>
+  );
+}
+
+// ---- Hiring > Interviews (Part 17.12: no Excel -- availability + pools live in the app) ----
+
+export function InterviewsSettingsPage() {
+  const t = useT();
+  const { can } = useMeBootstrap();
+  const links = [
+    { emoji: "calendar", title: t("interviewers.settings.my"), line: t("interviewers.settings.my_line"), to: "/interviews/availability" },
+    ...(can("recruitment.interview.view") ? [{ emoji: "people", title: t("interviewers.settings.hr"), line: t("interviewers.settings.hr_line"), to: "/interviews/interviewers" },
+      { emoji: "puzzle", title: t("interviewers.settings.pools"), line: t("interviewers.settings.pools_line"), to: "/interviews/interviewers?tab=pools" }] : []),
+  ];
+  return (
+    <Stack spacing={2}>
+      <Section title={t("interviewers.settings.title")} emoji="calendar" intro={t("interviewers.settings.intro")}>
+        <Stack spacing={1.5}>
+          {links.map((l) => (
+            <Stack key={l.to} direction="row" spacing={1.5} alignItems="center">
+              <Emoji name={l.emoji} size={20} />
+              <Box sx={{ flex: 1 }}>
+                <Typography sx={{ fontWeight: 600 }}>{l.title}</Typography>
+                <Typography variant="body2" color="text.secondary">{l.line}</Typography>
+              </Box>
+              <Button variant="outlined" size="small" component={RouterLink} to={l.to}>{t("home.alert.open")}</Button>
+            </Stack>
+          ))}
+        </Stack>
+      </Section>
+      {can("platform.settings.configure") && <PlatformSettingsPanel prefixes={["recruitment.negotiation."]} title={t("interviewers.settings.rules")} intro={t("interviewers.settings.rules_intro")} />}
+    </Stack>
   );
 }
 

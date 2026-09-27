@@ -45,6 +45,8 @@ const ShortlistingListPage = lazy(() => import("./pages/ShortlistingListPage"));
 const UnifiedInboxPage = lazy(() => import("./pages/UnifiedInboxPage"));
 // Part 15.6: pages for the new modules.
 const PeoplePage = lazy(() => import("./pages/people/PeoplePage"));
+const MyAvailabilityPage = lazy(() => import("./pages/interviews/MyAvailabilityPage"));
+const InterviewersPage = lazy(() => import("./pages/interviews/InterviewersPage"));
 const EmployeeProfilePage = lazy(() => import("./pages/people/EmployeeProfilePage"));
 const OrgChartPage = lazy(() => import("./pages/people/OrgChartPage"));
 const OnboardingDashboardPage = lazy(() => import("./pages/onboarding/OnboardingDashboardPage"));
@@ -131,6 +133,8 @@ export default function App() {
                 <Route path="/interviews/dashboard" element={<InterviewsDashboardPage />} />
                 <Route path="/interviews/list" element={<InterviewListPage />} />
                 <Route path="/interviews/my" element={<MyInterviewsPage />} />
+                <Route path="/interviews/availability" element={<MyAvailabilityPage />} />
+                <Route path="/interviews/interviewers" element={<InterviewersPage />} />
                 <Route path="/hr-inbox" element={<HrInboxListPage />} />
                 <Route path="/candidate-emails" element={<HrInboxListPage />} />
                 <Route path="/approvals" element={<UnifiedInboxPage />} />

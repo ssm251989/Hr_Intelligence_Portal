@@ -45,6 +45,8 @@ export const NAV_CHILDREN: Record<string, { labelKey: string; path: string }[]> 
     { labelKey: "nav.sub.dashboard", path: "/interviews/dashboard" },
     { labelKey: "nav.sub.all_interviews", path: "/interviews/list" },
     { labelKey: "nav.sub.my_interviews", path: "/interviews/my" },
+    { labelKey: "nav.sub.my_availability", path: "/interviews/availability" },
+    { labelKey: "nav.sub.interviewers", path: "/interviews/interviewers" },
   ],
   "/performance": [
     { labelKey: "nav.sub.my_performance", path: "/performance" },

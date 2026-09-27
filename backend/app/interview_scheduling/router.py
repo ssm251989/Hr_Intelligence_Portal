@@ -62,7 +62,7 @@ def update_settings(
     pool_sync = sync_interviewer_pool_job_titles(db, Path(payload.tracker_path))
 
     return InterviewSchedulingSettingsSaveResult(
-        tracker_path=settings_row.tracker_path,
+        tracker_path=settings_row.tracker_path or "app",
         updated_at=settings_row.updated_at,
         validation=TrackerValidationResult(**validation),
         interviewer_pool_jobs_considered=pool_sync["jobs_considered"],
@@ -90,12 +90,7 @@ def propose_slots(
             detail="Application must be HR-selected before interview slots can be proposed",
         )
 
-    settings_row = get_interview_scheduling_settings(db)
-    if not settings_row.tracker_path:
-        raise HTTPException(
-            status_code=400,
-            detail="Configure the Interview Scheduling tracker path in Settings before proposing slots",
-        )
+    settings_row = get_interview_scheduling_settings(db)  # Part 17.12: interviewers come from the app's pools
 
     candidate = db.get(Candidate, application.candidate_id)
     if not candidate or not candidate.email:
@@ -110,7 +105,7 @@ def propose_slots(
 
     try:
         result = propose_interview_slots(
-            db, application, tracker_path=settings_row.tracker_path, candidate=candidate, job=job,
+            db, application, tracker_path=settings_row.tracker_path or "app", candidate=candidate, job=job,
             hr_integration=hr_integration, actor=current_user.email,
         )
     except SmtpError as exc:

@@ -68,7 +68,7 @@ from app.integrations.hr_email import EmailAttachment, get_hr_integration, is_sm
 from app.integrations.ics import build_interview_ics
 from app.interview_scheduling.availability import is_interviewer_busy
 from app.interview_scheduling.storage import get_interview_scheduling_settings
-from app.interview_scheduling.tracker import (
+from app.interview_scheduling.roster import (  # Part 17.12: app data, not Excel
     append_interview_log_row,
     eligible_interviewers_for_job,
     email_for_interviewer,
@@ -555,7 +555,7 @@ def _advance_interviewer_round(
     tracker beyond the pool listing itself.
     """
     mechanics = _negotiation_mechanics(db, require_current_tenant())
-    pool = eligible_interviewers_for_job(Path(tracker_path), job.title)
+    pool = eligible_interviewers_for_job(Path(tracker_path), job.title, job=job)
     slot_times = _slot_times_for_day(round_day, mechanics["slot_hours"])
 
     tried = _already_attempted_names(db, application, round_day)
@@ -655,11 +655,7 @@ def attempt_auto_negotiate_interview_slots(db: Session, application: Application
         return None, blocking_reason
 
     settings_row = get_interview_scheduling_settings(db)
-    if not settings_row.tracker_path:
-        reason = "Interview Scheduling tracker path is not configured"
-        _skip(db, application, actor_user.email, reason)
-        return None, reason
-    tracker_path = settings_row.tracker_path
+    tracker_path = settings_row.tracker_path or "app"  # Part 17.12: interviewers come from the app, not a file
 
     candidate = db.get(Candidate, application.candidate_id)
     if not candidate or not candidate.email:
@@ -822,9 +818,7 @@ def advance_after_interviewer_batch_resolved(db: Session, application: Applicati
     third day) -- otherwise flags for manual scheduling.
     """
     settings_row = get_interview_scheduling_settings(db)
-    if not settings_row.tracker_path:
-        return
-    tracker_path = settings_row.tracker_path
+    tracker_path = settings_row.tracker_path or "app"  # Part 17.12
     candidate = db.get(Candidate, application.candidate_id)
     job = db.get(JobRole, application.job_role_id)
     if not candidate or not job:
@@ -869,7 +863,7 @@ def _start_candidate_round(db: Session, application: Application, interviewer_ro
     a tenant changes its negotiation settings between the interviewer's response and this
     call (see NegotiationToken's own docstring)."""
     settings_row = get_interview_scheduling_settings(db)
-    tracker_path = settings_row.tracker_path
+    tracker_path = settings_row.tracker_path or "app"  # Part 17.12
     candidate = db.get(Candidate, application.candidate_id)
     job = db.get(JobRole, application.job_role_id)
     if not candidate or not job or not tracker_path:
@@ -940,8 +934,8 @@ def _resolve_declined(db: Session, application: Application, row: NegotiationTok
     settings_row = get_interview_scheduling_settings(db)
     candidate = db.get(Candidate, application.candidate_id)
     job = db.get(JobRole, application.job_role_id)
-    if settings_row.tracker_path and candidate and job:
-        _flag_for_manual_scheduling(db, application, settings_row.tracker_path, candidate, job, row.actor_email)
+    if candidate and job:
+        _flag_for_manual_scheduling(db, application, settings_row.tracker_path or "app", candidate, job, row.actor_email)
 
 
 def _reprompt_candidate(db: Session, application: Application, candidate_row: NegotiationToken) -> "NegotiationPageState":
@@ -962,7 +956,7 @@ def _reprompt_candidate(db: Session, application: Application, candidate_row: Ne
         is not None
     )
     settings_row = get_interview_scheduling_settings(db)
-    tracker_path = settings_row.tracker_path
+    tracker_path = settings_row.tracker_path or "app"  # Part 17.12
     candidate = db.get(Candidate, application.candidate_id)
     job = db.get(JobRole, application.job_role_id)
 
@@ -1037,7 +1031,7 @@ def _finalize(db: Session, application: Application, candidate_row: NegotiationT
     marked scheduled). The older manual/propose-slots flow is untouched and still uses
     confirmation.create_confirmed_calendar_event."""
     settings_row = get_interview_scheduling_settings(db)
-    tracker_path = settings_row.tracker_path
+    tracker_path = settings_row.tracker_path or "app"  # Part 17.12
 
     previous_status = application.status
     application.status = "interview_scheduled"

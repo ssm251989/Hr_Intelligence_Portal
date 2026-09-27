@@ -41,7 +41,7 @@ from app.integrations.google_calendar import (
     format_ist_datetime,
 )
 from app.interview_scheduling.service import select_interviewer
-from app.interview_scheduling.tracker import sync_interviewer_pool_job_titles, update_interview_log_row
+from app.interview_scheduling.roster import sync_interviewer_pool_job_titles, update_interview_log_row  # Part 17.12
 from app.models.application import Application
 from app.models.candidate import Candidate
 from app.models.interview import Interview
