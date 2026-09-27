@@ -34,6 +34,7 @@ import SourceChip from "../components/SourceChip";
 import ActivityTimeline from "../components/candidates/ActivityTimeline";
 import ResumePreview from "../components/candidates/ResumePreview";
 import ScoreCard from "../components/candidates/ScoreCard";
+import WhyThisScore from "../components/scoring/WhyThisScore";
 import { STEPPER_STAGES, stepperIndex, useFresh } from "../components/candidates/stages";
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
@@ -468,9 +469,11 @@ export default function CandidateDetailPage() {
               certificates: screeningDetails.certificates_score,
               resumeMatch: screeningDetails.resume_matcher_score ?? application.match_score,
               composite: screeningDetails.composite_score ?? application.composite_score,
-              jobNeeds: screeningDetails.interview_threshold_min ?? screeningDetails.threshold_min,
+              jobNeeds: screeningDetails.shortlist_threshold ?? screeningDetails.interview_threshold_min ?? screeningDetails.threshold_min,
             }}
           />
+
+          <WhyThisScore applicationId={application.id} refreshKey={`${application.composite_score ?? ""}-${application.status}`} />
 
           <Card>
             <Tabs value={tab} onChange={(_e, value: TabKey) => setTab(value)} variant="scrollable" allowScrollButtonsMobile sx={{ px: 1, borderBottom: `1px solid ${f.line}` }}>

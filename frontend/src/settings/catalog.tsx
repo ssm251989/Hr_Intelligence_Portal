@@ -16,6 +16,8 @@ import PrivacyPanel from "../components/PrivacyPanel";
 import RecruitmentPanel from "../components/RecruitmentPanel";
 import ServiceDeskPanel from "../components/ServiceDeskPanel";
 import WorkflowsPanel from "../components/WorkflowsPanel";
+import ScoringRulesEditor from "../components/scoring/ScoringRulesEditor";
+import ShortlistingRulesForm from "../components/scoring/ShortlistingRulesForm";
 import BrandingGuideCard from "../components/settings/BrandingGuideCard";
 import IntegrationCard from "../components/settings/IntegrationCard";
 import { t } from "../i18n";
@@ -62,7 +64,7 @@ export const LEGACY: Record<string, string> = {
   communications: "communication/templates", emails: "communication/templates", notifications: "communication/rules",
   privacy: "data/privacy", dpdp: "data/privacy", workflows: "automation/approvals", approvals: "automation/approvals",
   metadata: "data/fields", "custom-fields": "data/fields", fields: "data/fields", access: "people/roles", roles: "people/roles",
-  hiring: "hiring/stages", recruitment: "hiring/stages", interviews: "hiring/interviews", onboarding: "onboarding/plans",
+  hiring: "hiring/stages", recruitment: "hiring/stages", scoring: "hiring/scoring", "scoring-rules": "hiring/scoring", shortlisting: "hiring/scoring", interviews: "hiring/interviews", onboarding: "onboarding/plans",
   "core-hr": "onboarding/org", people: "onboarding/org", employees: "onboarding/org", performance: "performance/cycles",
   helpdesk: "helpdesk/main", assets: "helpdesk/main", exits: "helpdesk/main", "service-desk": "helpdesk/main",
   all: "advanced/all", modules: "advanced/all", platform: "advanced/all", "all-settings": "advanced/all",
@@ -92,7 +94,11 @@ export const CATEGORIES: SettingsCategory[] = [
     id: "hiring", emoji: "briefcase", pages: [
       { id: "stages", emoji: "briefcase", keywords: "pipeline hiring stages", visible: ADMIN, render: () => <RecruitmentPanel only="Pipeline" /> },
       { id: "requests", emoji: "clipboard", keywords: "job requests requisitions approval", visible: ADMIN, render: () => <RecruitmentPanel only="Requisitions" /> },
-      { id: "screening", emoji: "magnifier", keywords: "ai scoring threshold shortlist weights blind", prefixes: ["recruitment."], visible: ADMIN,
+      // Part 17.5/17.6: the Match score's rules + automatic shortlisting (their raw settings live here too).
+      { id: "scoring", emoji: "target", keywords: "score weight match threshold knockout shortlist auto-shortlist preset", visible: ADMIN,
+        prefixes: ["recruitment.scoring.", "recruitment.shortlisting."],
+        render: () => (<><ScoringRulesEditor /><ShortlistingRulesForm /></>) },
+      { id: "screening", emoji: "magnifier", keywords: "ai negotiation tracker blind", prefixes: ["recruitment."], visible: ADMIN,
         render: scoped(["recruitment."], "settingsHome.page.hiring.screening") },
       { id: "interviews", emoji: "calendar", keywords: "interview scheduling tracker", visible: EVERYONE, render: () => <InterviewTrackerSettingsCard /> },
       { id: "availability", emoji: "hourglass", keywords: "interviewer availability ctc salary components", visible: ADMIN,

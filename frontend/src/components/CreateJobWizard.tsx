@@ -26,6 +26,8 @@ import { useT } from "../i18n";
 import { Emoji, FriendlyAnimation, FriendlyError, InfoTip } from "../ui-kit";
 import { formatExperienceRange } from "../utils/experience";
 import JdSideBySide from "./jobs/JdSideBySide";
+import ScoringRulesEditor from "./scoring/ScoringRulesEditor";
+import ShortlistingRulesForm from "./scoring/ShortlistingRulesForm";
 import WizardProgress from "./jobs/WizardProgress";
 
 const EMPTY_SUGGESTIONS: JobFieldSuggestionsResponse = {
@@ -41,6 +43,10 @@ const STEPS = [
   { key: "salary", emoji: "money" },
   { key: "extra", emoji: "memo" },
   { key: "jd", emoji: "page" },
+  // Part 17.5/17.6: the job is already saved by now (step 1 creates it), so its own scoring and
+  // shortlisting rules can be set here; each has its own Save (nothing is required).
+  { key: "scoring", emoji: "target" },
+  { key: "shortlisting", emoji: "check" },
   { key: "publish", emoji: "rocket" },
 ];
 
@@ -206,6 +212,8 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
   const [linkedinExpired, setLinkedinExpired] = useState(false);
   const [suggestions, setSuggestions] = useState<JobFieldSuggestionsResponse>(EMPTY_SUGGESTIONS);
   const [copiedFrom, setCopiedFrom] = useState<string | null>(null);
+  // unsaved changes on the Scoring / Shortlisting steps (they save themselves)
+  const [rulesDirty, setRulesDirty] = useState(false);
   // autosave
   const [draftOffer, setDraftOffer] = useState<{ draft: WizardDraft; at: string | null } | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -306,6 +314,7 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
   };
 
   const reset = () => {
+    setRulesDirty(false);
     window.clearTimeout(saveTimer.current);
     touched.current = false;
     setActiveStep(0);
@@ -356,6 +365,10 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
     }
     if (step === 4) {
       if (!form.jdText.trim()) return t(aiEnabled ? "jobs.v.jd_ai" : "jobs.v.jd");
+      return null;
+    }
+    if (step === 5 || step === 6) {
+      if (rulesDirty) return t("scoring.wiz.unsaved");
       return null;
     }
     return null;
@@ -474,6 +487,7 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
           setJob(updated);
         }
       }
+      setRulesDirty(false);
       setActiveStep((s) => s + 1);
     } catch (err) {
       setApiError({ what: t("jobs.err.save_step"), error: err });
@@ -483,6 +497,7 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
   };
 
   const handleBack = () => {
+    setRulesDirty(false);
     setStepError(null);
     setApiError(null);
     setActiveStep((s) => Math.max(0, s - 1));
@@ -670,6 +685,10 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
           />
         );
       case 5:
+        return jobId ? <ScoringRulesEditor jobId={jobId} onDirtyChange={setRulesDirty} /> : <Typography sx={{ color: f.muted }}>{t("scoring.wiz.save_first")}</Typography>;
+      case 6:
+        return jobId ? <ShortlistingRulesForm jobId={jobId} onDirtyChange={setRulesDirty} /> : <Typography sx={{ color: f.muted }}>{t("scoring.wiz.save_first")}</Typography>;
+      case 7:
         return published ? renderSuccess() : renderReviewAndPublish();
       default:
         return null;
@@ -836,7 +855,7 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
       : t("jobs.wiz.saves");
 
   return (
-    <Dialog open={open} onClose={handleClose} fullWidth maxWidth={activeStep === 4 && !published ? "lg" : "md"} aria-labelledby="job-wizard-title">
+    <Dialog open={open} onClose={handleClose} fullWidth maxWidth={(activeStep === 4 || activeStep === 5) && !published ? "lg" : "md"} aria-labelledby="job-wizard-title">
       <DialogTitle id="job-wizard-title" sx={{ display: "flex", alignItems: "center", gap: 1 }}>
         <Emoji name="briefcase" size={24} />
         {initialJob ? t("jobs.wiz.edit") : t("jobs.wiz.create")}
