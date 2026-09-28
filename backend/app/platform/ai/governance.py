@@ -27,6 +27,7 @@ AI_FEATURES: dict[str, tuple[str, str]] = {
     "recruitment.screening": ("recruitment", "Resume screening"),
     "recruitment.interview_kit": ("recruitment", "Interview kit generation"),
     "recruitment.email_summary": ("recruitment", "One-line summaries of candidate emails"),
+    "recruitment.document_check": ("recruitment", "Joining document check"),
     "onboarding.document_extraction": ("onboarding", "Document data extraction"),
     "performance.review_draft": ("performance", "Review summary drafts"),
     "separation.exit_summary": ("separation", "Exit interview summaries"),

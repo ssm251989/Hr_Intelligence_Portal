@@ -213,6 +213,11 @@ def _remove_files(db: Session, candidate: Candidate, app_ids: list) -> int:
         paths.append(Path(UPLOAD_DIR) / candidate.resume_path)
     if candidate.photo_path:
         paths.append(Path(PHOTO_UPLOAD_DIR) / candidate.photo_path)
+    from app.models.candidate_document import CandidateDocument  # Part 18.16 joining documents
+    from app.recruitment.joining_docs import UPLOAD_DIR as DOCS_DIR
+
+    for (fp,) in db.query(CandidateDocument.file_path).filter(CandidateDocument.application_id.in_(app_ids or [None])):
+        paths.append(DOCS_DIR / fp)
     for rel in (candidate.custom_fields or {}).get("payslips", []):  # Part 18.12 salary form payslips
         paths.append(Path(UPLOAD_DIR).parent / "salary-payslips" / rel)
     for (fp,) in db.query(BgvDocument.file_path).execution_options(**{INCLUDE_REMOVED: True}).filter(BgvDocument.application_id.in_(app_ids or [None])):

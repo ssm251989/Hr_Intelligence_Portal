@@ -56,6 +56,15 @@ def validate_salary(
     db.commit()
     db.refresh(application)
 
+    try:  # Part 18.16: the documents form goes out as soon as the salary is approved
+        from app.platform.tenancy.context import require_current_tenant
+        from app.recruitment.joining_docs import after_salary_approved
+
+        if application.status == "salary_approved":
+            after_salary_approved(db, require_current_tenant(), application)
+    except Exception:  # noqa: BLE001
+        pass
+
     log_action(
         db,
         "application",
@@ -93,6 +102,15 @@ def confirm_salary(
     application.status = "salary_approved"
     db.commit()
     db.refresh(application)
+
+    try:  # Part 18.16: the documents form goes out as soon as the salary is approved
+        from app.platform.tenancy.context import require_current_tenant
+        from app.recruitment.joining_docs import after_salary_approved
+
+        if application.status == "salary_approved":
+            after_salary_approved(db, require_current_tenant(), application)
+    except Exception:  # noqa: BLE001
+        pass
 
     log_action(
         db,

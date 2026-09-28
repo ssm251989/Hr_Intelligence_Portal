@@ -41,7 +41,7 @@ LOCKABLE: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
                                       r"^/api/v1/ui/interviewers", r"^/api/v1/recruitment/interviewer-availability", r"^/reports/interviews-")),
     "candidate_emails": (("/hr-inbox", "/candidate-emails"), (r"^/hr-inbox", r"^/api/v1/ui/hr-inbox", r"^/api/v1/ui/candidate-emails")),
     "salary": (("/salary",), (APP + r"(validate-salary|salary|approve-salary)", r"^/api/v1/ui/salary", r"^/api/v1/ui/stage-table/salary", r"^/api/v1/ui/budgets")),
-    "bgv": (("/bgv",), (APP + r"bgv", r"^/api/v1/ui/stage-table/bgv")),
+    "bgv": (("/bgv",), (APP + r"bgv", r"^/api/v1/ui/stage-table/bgv", r"^/api/v1/ui/documents")),
     "offers": (("/offers",), (APP + r"offer", r"^/api/v1/ui/offers", r"^/api/v1/recruitment/(offers|offer-components)", r"^/api/v1/ui/stage-table/offers")),
     "reports": (("/reports",), (r"^/reports/(pipeline|audit)", r"^/api/v1/intelligence/reports")),
     "settings": (("/settings",), (r"^/api/v1/settings", r"^/api/v1/connections", r"^/api/v1/connection-routes", r"^/api/v1/connectors",

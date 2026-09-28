@@ -66,6 +66,16 @@ def _extras(db, stage, app_ids) -> dict:
                                        func.count(BgvDocument.id).filter(BgvDocument.validation_status.in_(("valid", "verified", "approved")))
                                        ).filter(BgvDocument.application_id.in_(app_ids)).group_by(BgvDocument.application_id):
             out[aid] = {"documents": total, "documents_ok": ok}
+        # Part 18.17: joining documents (before BGV starts) -- received / flagged / waiting for HR
+        from app.models.candidate_document import CandidateDocument
+
+        for aid, total, reds, ambers, pending in db.query(
+                CandidateDocument.application_id, func.count(CandidateDocument.id),
+                func.count(CandidateDocument.id).filter(CandidateDocument.check_level == "red", CandidateDocument.hr_status != "reupload"),
+                func.count(CandidateDocument.id).filter(CandidateDocument.check_level == "amber", CandidateDocument.hr_status != "reupload"),
+                func.count(CandidateDocument.id).filter(CandidateDocument.hr_status == "pending"),
+        ).filter(CandidateDocument.application_id.in_(app_ids)).group_by(CandidateDocument.application_id):
+            out.setdefault(aid, {}).update({"joining_docs": total, "joining_red": reds, "joining_amber": ambers, "joining_pending": pending})
     elif stage == "offers":
         from app.models.offer import Offer
 

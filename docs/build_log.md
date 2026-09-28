@@ -2334,3 +2334,9 @@ NEXT: 18.15 department budgets settings (per dept + FY, quarters, alert %, on ex
 ui_budgets_router (list/save/delete/dashboard/xlsx export), BudgetsSettingsPage (Settings > Hiring > Department budgets), FinanceDashboard (tiles, coloured per-department bars, month trend, top roles, alerts, Excel). Lock rule for /ui/budgets under Salary.
 
 NEXT: 18.16 documents form after salary approval (Settings > Hiring > Required documents: types, required/optional, file types, max size, per job type; reminders).
+
+## Part 18.16 -- joining documents form (2026-09-28)
+
+joining_docs.py (required list setting, send_form/after_salary_approved hooked into every salary-approved path, uploads, reminders job), candidate_documents (e7a3c9f1b5d2), public /documents/:token page, Settings > Hiring > Required documents editor, templates documents_request/documents_reupload.
+
+NEXT: 18.17 documents review (agent checks green/amber/red with reasons; HR approve all/per document or ask re-upload; approval moves to BGV) -- backend done in joining_docs, add the HR review panel on the BGV table.

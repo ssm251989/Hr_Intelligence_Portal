@@ -29,6 +29,19 @@ DEFAULTS: dict[str, tuple[str, str, list[str]]] = {
         "you would like to talk it through.\n\nBest regards,\n{{ company_name }} HR",
         ["candidate_first_name", "job_title", "amount"],
     ),
+    "recruitment.documents_request": (
+        "{{ job_title }}: please upload your joining documents",
+        "Hi {{ candidate_first_name }},\n\nGood news - your salary for {{ job_title }} is approved. The next step is your joining "
+        "documents. Please upload them here:\n\n{{ form_link }}\n\nWhat we need:\n{{ documents }}\n\nClear photos or PDFs are fine. "
+        "Only the HR team sees them.\n\nBest regards,\n{{ company_name }} HR",
+        ["candidate_first_name", "job_title", "form_link", "documents"],
+    ),
+    "recruitment.documents_reupload": (
+        "{{ job_title }}: please upload a few documents again",
+        "Hi {{ candidate_first_name }},\n\nThank you for your documents. We need these again:\n{{ documents }}\n\n{{ note }}\n\n"
+        "Please use the same link:\n\n{{ form_link }}\n\nBest regards,\n{{ company_name }} HR",
+        ["candidate_first_name", "job_title", "form_link", "documents"],
+    ),
     "recruitment.job_closed_candidate": (
         "Update on your application for {{ job_title }}",
         "Hi {{ candidate_first_name }},\n\nThank you for applying for {{ job_title }}. This position has been closed for now, so "

@@ -164,6 +164,10 @@ def apply_stage(db: Session, tenant, application: Application, *, job: JobRole, 
         from app.recruitment import budgets
 
         budgets.reserve(db, tenant, application, job, _num(application.approved_salary))
+        from app.recruitment.joining_docs import after_salary_approved  # Part 18.16
+
+        db.commit()
+        after_salary_approved(db, tenant, application, actor=actor)
     else:
         application.status = "salary_above_band"
         note = "above the band - needs approval" if state == "needs_approval" else "far above the band - flagged"
@@ -349,6 +353,9 @@ def decide(db: Session, tenant, application: Application, *, decision: str, acto
         application.salary_check = check_
         db.commit()
         budgets.reserve(db, tenant, application, job, final)
+        from app.recruitment.joining_docs import after_salary_approved  # Part 18.16
+
+        after_salary_approved(db, tenant, application, actor=actor)
     elif decision == "counter":
         if amount is None or amount <= 0:
             raise ValueError("Enter the counter-offer amount.")

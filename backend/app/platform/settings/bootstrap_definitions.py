@@ -79,6 +79,13 @@ def register_all() -> None:
     # flagged. The offer suggestion adds target_hike_pct to the current CTC, kept in the band.
     register(SettingDef("recruitment.careers.ask_salary", "bool", True, module="recruitment", group="Careers site"))
     register(SettingDef("recruitment.salary.ask_after_shortlist", "bool", True, module="recruitment", group="Salary"))
+    # Part 18.16: joining documents asked for after the salary is approved
+    from app.recruitment.joining_docs import DEFAULT_REQUIRED
+
+    register(SettingDef("recruitment.documents.required", "json", DEFAULT_REQUIRED, module="recruitment", group="Documents"))
+    register(SettingDef("recruitment.documents.auto_send", "bool", True, module="recruitment", group="Documents"))
+    register(SettingDef("recruitment.documents.reminder_hours", "json", [24, 72], module="recruitment", group="Documents",
+                        json_schema={"type": "array", "items": {"type": "integer", "minimum": 1, "maximum": 720}, "maxItems": 5}))
     # Part 18.13: auto-approve when the hike over current CTC is at most this % (and band + budget are fine)
     register(SettingDef("recruitment.salary.auto_approve_hike_pct", "int", 20, module="recruitment", group="Salary",
                         json_schema={"type": "integer", "minimum": 0, "maximum": 300}))

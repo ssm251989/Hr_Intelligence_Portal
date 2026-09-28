@@ -247,6 +247,10 @@ app.include_router(ui_stage_table_router)
 from app.experience.ui_budgets_router import router as ui_budgets_router  # noqa: E402
 
 app.include_router(ui_budgets_router)
+from app.experience.ui_documents_router import public_router as documents_public_router, router as ui_documents_router  # noqa: E402
+
+app.include_router(ui_documents_router)
+app.include_router(documents_public_router)
 install_friendly_errors(app)
 
 

@@ -430,3 +430,23 @@ recruiter PUT -> 403
 tsc clean, i18n 0 missing (32 new keys), npm run build OK
 ```
 **Screenshot:** Finance tab + Department budgets page -- pending login proof.
+
+## 18.16 Documents form (automatic after salary approval)
+
+**Ask:** as soon as the salary is approved (automatically or by HR), email the candidate a "Documents upload" form. The list of documents must be configurable.
+
+**Change:**
+- **Settings > Hiring > Required documents** (`recruitment.documents.required`). Each document has a label, required/optional, allowed file types (PDF / JPG / PNG / DOCX), max MB, and optionally **only for some job types**. It starts with: PAN, Aadhaar, education certificates, experience letters (optional), last 3 payslips, relieving letter (optional), photo. `auto_send` is on by default, and reminders run at **24 h and 72 h** (`reminder_hours`, hourly job).
+- **Automatic:** every place a salary becomes approved (auto rule, HR decide, legacy approve and confirm) calls `after_salary_approved`. That sends the branded **`recruitment.documents_request`** email (editable default wording, with the list) with a 21-day link.
+- **Candidate page `/documents/:token`:** one row per document (required/optional, types, size) with Upload / Add another, green when received and red with HR's note when asked again. "Send to HR" is enabled only when every required document is in, and then tells the recruiters in-app.
+- **Storage:** new table `candidate_documents` (migration `e7a3c9f1b5d2`); files under `uploads/joining-docs/<company>/`, deleted with the candidate (17.15).
+
+**Verified** (rolled back; emails recorded, not sent; test files deleted afterwards):
+```
+salary auto-approved (9 L -> 10 L, in band) -> status salary_approved + email recruitment.documents_request
+  "- PAN card - Aadhaar card - Education certificates - Passport-size photo"
+public form lists pan, aadhaar, education, photo (all required); submit before all are in -> 400
+uploads -> 200; photo as .exe -> 400; submit when complete -> ok (recruiters told in-app)
+tsc clean, i18n 0 missing (29 new keys), npm run build OK
+```
+**Screenshot:** candidate documents page -- pending (needs a live demo link).
