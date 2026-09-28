@@ -35,6 +35,7 @@ export interface StageRow {
   expected_salary?: number | null; approved_salary?: number | null; salary_state?: string | null;
   // Part 18.14 salary rows
   current_ctc?: number | null; hike_pct?: number | null; band_min?: number | null; band_max?: number | null; budget_after?: number | null;
+  joining_docs?: number; joining_red?: number; joining_amber?: number; joining_pending?: number; // Part 18.17
   budget_configured?: boolean; reasons?: { code: string; [k: string]: unknown }[]; salary_status?: string; counter?: number | null; form_open?: boolean;
 }
 interface StagePage { total: number; statuses: string[]; status_counts: Record<string, number>; departments: string[]; items: StageRow[] }

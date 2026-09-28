@@ -2340,3 +2340,9 @@ NEXT: 18.16 documents form after salary approval (Settings > Hiring > Required d
 joining_docs.py (required list setting, send_form/after_salary_approved hooked into every salary-approved path, uploads, reminders job), candidate_documents (e7a3c9f1b5d2), public /documents/:token page, Settings > Hiring > Required documents editor, templates documents_request/documents_reupload.
 
 NEXT: 18.17 documents review (agent checks green/amber/red with reasons; HR approve all/per document or ask re-upload; approval moves to BGV) -- backend done in joining_docs, add the HR review panel on the BGV table.
+
+## Part 18.17 -- documents review (2026-09-28)
+
+Agent checks (rules + Claude validator behind AI feature recruitment.document_check) with green/amber/red + reasons and cross-checks; DocumentsReviewDrawer on the BGV page (joining documents column), approve one/all, ask again with note, resend link; all approved -> bgv_requested + copy into BGV documents.
+
+NEXT: 18.18 BGV decision by HR (Passed / Resend form / Failed with reason + editable email preview; never auto-failed).

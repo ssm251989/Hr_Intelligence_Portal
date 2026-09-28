@@ -1,4 +1,5 @@
-import StageTable from "../components/stage/StageTable";
+import StageTable, { type StageRow } from "../components/stage/StageTable";
+import DocumentsReviewDrawer from "../components/documents/DocumentsReviewDrawer";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import Alert from "@mui/material/Alert";
@@ -8,6 +9,7 @@ import Card from "@mui/material/Card";
 import CircularProgress from "@mui/material/CircularProgress";
 import Grid from "@mui/material/Grid";
 import MenuItem from "@mui/material/MenuItem";
+import Chip from "@mui/material/Chip";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
@@ -180,6 +182,7 @@ export default function BgvPage() {
   const [jobs, setJobs] = useState<JobRoleRead[]>([]);
   const [selectedJobId, setSelectedJobId] = useState("");
   const [focusApp, setFocusApp] = useState<string | null>(null); // Part 18.11
+  const [reviewing, setReviewing] = useState<StageRow | null>(null); // Part 18.17
   const [stageRefresh, setStageRefresh] = useState(0);
   const [applications, setApplications] = useState<ApplicationRead[]>([]);
   useEffect(() => setStageRefresh((k) => k + 1), [applications]);
@@ -368,7 +371,22 @@ export default function BgvPage() {
             }}>{t("stage.bulk_request_bgv", { count: ready.length })}</Button>
           ) : null;
         } : undefined}
-        extraColumns={[{ key: "docs", label: t("stage.col.documents"), render: (r) => r.documents ? `${r.documents_ok ?? 0}/${r.documents}` : "—" }]} onOpen={(r) => { setFocusApp(r.application_id); if (r.job_id !== selectedJobId) handleJobChange(r.job_id); }} />
+        extraColumns={[
+          { key: "joining", label: t("docrev.col"), render: (r) => r.status !== "salary_approved" ? "—" : !r.joining_docs ? t("docrev.none_yet") : (
+            <Stack direction="row" spacing={0.5}>
+              <Chip size="small" label={t("docrev.files", { count: r.joining_docs })} />
+              {(r.joining_red ?? 0) > 0 && <Chip size="small" color="error" label={t("docrev.reds", { count: r.joining_red ?? 0 })} />}
+              {(r.joining_amber ?? 0) > 0 && <Chip size="small" color="warning" label={t("docrev.ambers", { count: r.joining_amber ?? 0 })} />}
+            </Stack>) },
+          { key: "docs", label: t("stage.col.documents"), render: (r) => r.documents ? `${r.documents_ok ?? 0}/${r.documents}` : "—" },
+        ]}
+        onOpen={(r) => {
+          // Part 18.17: before BGV starts, a row opens the joining-documents review
+          if (r.status === "salary_approved") { setReviewing(r); return; }
+          setFocusApp(r.application_id); if (r.job_id !== selectedJobId) handleJobChange(r.job_id);
+        }} />
+      <DocumentsReviewDrawer applicationId={reviewing?.application_id ?? null} name={reviewing?.name} onClose={() => setReviewing(null)}
+        onChanged={() => setStageRefresh((k) => k + 1)} />
       <JobPickerCard jobs={jobs} value={selectedJobId} onChange={handleJobChange} hint={t("bgv.pick_hint")} />
 
       {error && (

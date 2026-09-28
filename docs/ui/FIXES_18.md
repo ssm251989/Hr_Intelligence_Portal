@@ -450,3 +450,35 @@ uploads -> 200; photo as .exe -> 400; submit when complete -> ok (recruiters tol
 tsc clean, i18n 0 missing (29 new keys), npm run build OK
 ```
 **Screenshot:** candidate documents page -- pending (needs a live demo link).
+
+## 18.17 Documents review (agent highlights, HR approves)
+
+**Ask:** when files arrive, the agent checks each one and highlights green / amber / red with the reason. HR approves all or per document, or asks for specific documents again. HR approval moves the candidate to BGV.
+
+**Change:**
+- **Agent check on every upload** (`joining_docs.check_document`):
+  - rule checks: readable (scans/photos without text → amber "check by eye"); looks like the right document (PAN pattern / "Income Tax", Aadhaar number, degree words, payslip words …); the candidate's name is on it; expiry dates in the past; the photo must be an image;
+  - **AI check** (Claude, the existing document validator, new AI feature switch `recruitment.document_check`) for PAN, Aadhaar, education and experience, adding "problem" / "not sure" with its issues;
+  - cross-document check: the same name, and the same date of birth on PAN and Aadhaar.
+  - The agent never approves; it only colours and explains.
+- **HR review panel** on the **BGV page**:
+  - rows still at "salary approved" show a *Joining documents* column ("4 files", "1 problem", "1 to check"), and clicking one opens the review drawer;
+  - each document shows its files with a green/amber/red chip, the reasons and a link to open the file;
+  - buttons: **Approve** one, **Approve all and start BGV**, tick documents + note → **Ask the candidate again** (email `recruitment.documents_reupload` with the list and note; the page shows the note in red), and resend the link.
+- **All required approved → BGV starts automatically** (`bgv_requested`). The approved PAN, Aadhaar, degree and experience files are copied into BGV, so BGV starts with them.
+- API `/api/v1/ui/documents/{id}` (+ `/approve`, `/reupload`, `/send-form`, `/file/{doc}`). Viewing needs `recruitment.bgv.view`; decisions need `recruitment.bgv.edit`. Covered by the BGV module lock.
+
+**Verified** (same rolled-back run as 18.16; the AI check really ran):
+```
+PAN (Income Tax, ABCDE1234F, Ravi Kumar)          -> green
+"Aadhaar" that is really a payslip                -> red   [wrong_type, ai_problem]
+degree certificate in someone else's name         -> amber [name_missing, ai_check]
+photo PNG -> green;  reds / ambers = 1 / 1
+ask again for Aadhaar + note -> email documents_reupload "- Aadhaar card: This was a payslip - please upload your Aadhaar card."
+  candidate page shows aadhaar not received + the note; new Aadhaar uploaded
+approve PAN only -> not moved yet; approve all -> moved_to_bgv true, status bgv_requested
+BGV documents created: aadhaar, degree, pan
+interviewer approve -> 403; all test files deleted
+tsc clean, i18n 0 missing (35 new keys), npm run build OK
+```
+**Screenshot:** BGV table joining-documents column + review drawer -- pending login proof.
