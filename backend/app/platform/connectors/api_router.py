@@ -78,15 +78,13 @@ class PurposeStatus(BaseModel):
 
 @router.get("/purposes", response_model=list[PurposeStatus])
 def list_purposes(db: Session = Depends(get_db), current_user: User = Depends(require_roles("admin"))):
-    tenant = require_current_tenant()
-    routed_purposes = {
-        row[0]
-        for row in db.query(ConnectionRoute.purpose)
-        .filter(ConnectionRoute.tenant_id == tenant.tenant_id, ConnectionRoute.enabled.is_(True))
-        .distinct()
-        .all()
-    }
-    return [PurposeStatus(purpose=p, routed=p in routed_purposes) for p in all_purposes()]
+    # Part 18.2/18.3: "routed" = the router really finds a connection (fallbacks and the one
+    # company mailbox included), not just "a row exists for this exact purpose".
+    from app.platform.connectors.router import ConnectorRouter
+
+    require_current_tenant()
+    resolver = ConnectorRouter(db)
+    return [PurposeStatus(purpose=p, routed=resolver.try_resolve(p) is not None) for p in all_purposes()]
 
 
 # ---- connections CRUD ----

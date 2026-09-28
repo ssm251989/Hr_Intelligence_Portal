@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from app.models.comms import MessageTemplate, NotificationRule
-from app.models.connection import Connection, ConnectionOAuthToken, ConnectionRoute
+from app.models.connection import Connection, ConnectionOAuthToken
 from app.models.user import User
 from app.models.workflow import WorkflowDefinition
 from app.platform.tenancy.context import TenantContext
@@ -31,22 +31,19 @@ def _issue(severity: str, code: str, message: str, fix: str, fix_path: str, acti
 def check(db: Session, tenant: TenantContext) -> dict:
     from app.platform.ai.governance import feature_enabled
     from app.platform.comms.catalog import describe_template, purpose_health
-    from app.platform.connectors.purposes import fallback_for
     from app.platform.modules import enabled_modules
     from app.platform.settings.resolver import SettingContext, SettingsService
 
     issues: list[dict] = []
     modules = enabled_modules(db, tenant)
-    routed = {r.purpose for r in db.query(ConnectionRoute).filter(ConnectionRoute.tenant_id == tenant.tenant_id, ConnectionRoute.enabled.is_(True)).all()}
+
+    from app.platform.connectors.router import ConnectorRouter
+
+    resolver = ConnectorRouter(db)
 
     def _is_routed(purpose: str) -> bool:
-        seen = set()
-        while purpose and purpose not in seen:
-            if purpose in routed:
-                return True
-            seen.add(purpose)
-            purpose = fallback_for(purpose)
-        return False
+        # Part 18.2/18.3: ask the router itself (fallback chain + the one company mailbox)
+        return resolver.try_resolve(purpose) is not None
 
     for purpose, module in _NEEDED_PURPOSES.items():
         if module and module not in modules:

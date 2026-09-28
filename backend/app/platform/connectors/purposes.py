@@ -30,8 +30,10 @@ def _register_all() -> None:
     register_purpose("email.outbound.onboarding", fallback="email.outbound.default")
     register_purpose("email.outbound.hr_letters", fallback="email.outbound.default")
     register_purpose("email.outbound.system", fallback="email.outbound.default")
-    register_purpose("email.inbound.negotiation_replies")
-    register_purpose("email.inbound.candidate_applications")
+    # Part 18.2: one company mailbox -- every inbound purpose falls back to the default one
+    register_purpose("email.inbound.default")
+    register_purpose("email.inbound.negotiation_replies", fallback="email.inbound.default")
+    register_purpose("email.inbound.candidate_applications", fallback="email.inbound.default")
     register_purpose("calendar.interviews")
     register_purpose("meeting.interviews")
     register_purpose("chat.hr_alerts")
@@ -52,7 +54,7 @@ def _register_all() -> None:
     register_purpose("meeting.teams")
     register_purpose("meeting.zoom")
     # Parts 11-12
-    register_purpose("email.inbound.helpdesk")
+    register_purpose("email.inbound.helpdesk", fallback="email.inbound.default")
     register_purpose("email.outbound.helpdesk", fallback="email.outbound.default")
     register_purpose("email.outbound.reports", fallback="email.outbound.default")
     register_purpose("analytics.warehouse_push")

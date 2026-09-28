@@ -98,7 +98,29 @@ class ConnectorRouter:
             if resolved is not None:
                 return resolved
             current = fallback_for(current)
+        mailbox = self._company_mailbox(purpose)
+        if mailbox is not None:
+            return mailbox
         raise NoConnectionForPurposeError(purpose)
+
+    # Part 18.2: there is ONE company mailbox. Any email purpose with no route of its own uses
+    # the connection already routed for another purpose in the same direction (sending or
+    # reading); failing that, the company's only active connection that can do it.
+    _MAIL_CAPABILITY = {"outbound": "EmailSender", "inbound": "EmailReceiver"}
+
+    def _company_mailbox(self, purpose: str) -> Optional[ResolvedConnection]:
+        parts = purpose.split(".")
+        if len(parts) < 2 or parts[0] != "email" or parts[1] not in self._MAIL_CAPABILITY:
+            return None
+        prefix = f"email.{parts[1]}."
+        for route in (self.db.query(ConnectionRoute).filter(ConnectionRoute.purpose.like(prefix + "%"), ConnectionRoute.enabled.is_(True))
+                      .order_by(ConnectionRoute.purpose.asc(), ConnectionRoute.priority.asc()).all()):
+            if route.condition_jsonlogic:
+                continue  # a conditional route was meant for its own purpose only
+            connection = self.db.get(Connection, route.connection_id)
+            if connection is not None and connection.status == "active" and not _breaker_tripped(self.db, connection.id, purpose):
+                return ResolvedConnection(connection=connection, route=route, purpose_resolved=route.purpose)
+        return None
 
     def try_resolve(self, purpose: str, ctx: Optional[dict] = None) -> Optional[ResolvedConnection]:
         try:

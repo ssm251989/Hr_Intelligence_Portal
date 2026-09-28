@@ -10,6 +10,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 import { extractErrorMessage, hrInboxApi } from "../api/client";
+import { useT } from "../i18n";
 import type { HrIntegrationRead } from "../api/types";
 import ConfirmDialog from "./ConfirmDialog";
 import HrMailboxConnectDialog from "./HrMailboxConnectDialog";
@@ -25,6 +26,7 @@ import HrMailboxConnectDialog from "./HrMailboxConnectDialog";
 // validating the credentials (a real test send + IMAP login, see
 // HrMailboxConnectDialog), not merely by having saved something that looks filled in.
 export default function HrMailboxSettingsCard() {
+  const t = useT();
   const [settings, setSettings] = useState<HrIntegrationRead | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -107,15 +109,12 @@ export default function HrMailboxSettingsCard() {
     <Card variant="outlined" sx={{ maxWidth: 560 }}>
       <CardContent>
         <Typography variant="h6" gutterBottom>
-          HR Mailbox (Shared Email Account)
+          {t("mailbox.one.title")}
         </Typography>
-        <Typography variant="body2" color="text.secondary" mb={2}>
-          The single shared, org-level mailbox every automated HR email sends from and the incoming-mail poll
-          reads from -- interview scheduling emails, candidate messages, new-application notifications, and every
-          reply back -- across every recruiter, admin-only. Plain SMTP/IMAP credentials work with any email
-          provider (Gmail, Outlook, Yahoo, etc.), no Google OAuth connection required. This is separate from the
-          Google Calendar card above, which still creates each recruiter's own interview Calendar events.
+        <Typography variant="body2" color="text.secondary" mb={1}>
+          {t("mailbox.one.body")}
         </Typography>
+        <Alert severity="info" sx={{ mb: 2 }}>{t("mailbox.one.all_modules")}</Alert>
 
         {loadError && <Alert severity="error" sx={{ mb: 2 }}>{loadError}</Alert>}
 

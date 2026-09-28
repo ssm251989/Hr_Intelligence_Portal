@@ -2244,3 +2244,9 @@ NEXT: STOP -- hand-over reported. Then PART16 steps 16.1-16.10 per RESUME.txt wh
 New setting iam.auth.two_step_available (Advanced, default off) gates every 2-step path: login never challenges/enrols, config-health drops the 2FA warnings, bootstrap exposes two_step=false so the Settings page is hidden. Code kept. Decision: an extra "available" switch rather than deleting code, so it can return (owner asked to keep it).
 
 NEXT: 18.2 one company mailbox for everything (auto-route every purpose, hide per-purpose routing, health not warning).
+
+## Part 18.2 -- one company mailbox (2026-09-28)
+
+email.inbound.default + inbound fallbacks; ConnectorRouter._company_mailbox (same-direction route reuse, non-conditional routes only); config-health and /connectors/purposes use the router for "routed". Mailbox card reworded (one mailbox, all modules). Decision: no data migration needed -- the existing SMTP/IMAP routes serve every purpose through the fallback.
+
+NEXT: 18.3 health checks read real status (DocuSign per-user OAuth counts; connected + last test passed; Re-check now button).
