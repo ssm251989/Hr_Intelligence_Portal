@@ -532,6 +532,8 @@ export interface CandidateApplicationsListParams {
   appliedBefore?: string;
   matchScoreMin?: number;
   matchScoreMax?: number;
+  noticeMax?: number; // Part 18.10
+  tags?: string; // Part 18.10: comma-separated
   // Which column matchScoreMin/Max filter. Part 17.4: every list passes "composite_score"
   // -- the one Match score (see utils/screeningScore.ts). "match_score" (the backend
   // default) is only the AI "Skills match" factor.
@@ -580,6 +582,8 @@ export const candidatesApi = {
     if (params.appliedBefore) query.set("applied_before", params.appliedBefore);
     if (params.matchScoreMin != null) query.set("match_score_min", String(params.matchScoreMin));
     if (params.matchScoreMax != null) query.set("match_score_max", String(params.matchScoreMax));
+    if (params.noticeMax != null) query.set("notice_max", String(params.noticeMax));
+    if (params.tags) query.set("tags", params.tags);
     if (params.scoreField) query.set("score_field", params.scoreField);
     return get<CandidatesListPage>(`/candidates/applications?${query.toString()}`);
   },
@@ -602,6 +606,8 @@ export const candidatesApi = {
     if (params.appliedBefore) query.set("applied_before", params.appliedBefore);
     if (params.matchScoreMin != null) query.set("match_score_min", String(params.matchScoreMin));
     if (params.matchScoreMax != null) query.set("match_score_max", String(params.matchScoreMax));
+    if (params.noticeMax != null) query.set("notice_max", String(params.noticeMax));
+    if (params.tags) query.set("tags", params.tags);
     if (params.scoreField) query.set("score_field", params.scoreField);
     return get<CandidateApplicationRow[]>(`/candidates/applications/export?${query.toString()}`);
   },
@@ -682,6 +688,8 @@ export interface ShortlistingListParams {
   appliedBefore?: string;
   matchScoreMin?: number;
   matchScoreMax?: number;
+  noticeMax?: number; // Part 18.10
+  tags?: string; // Part 18.10: comma-separated
 }
 
 export type ShortlistingExportParams = Omit<ShortlistingListParams, "page" | "pageSize"> & {
@@ -701,6 +709,8 @@ function _shortlistingQuery(params: ShortlistingListParams): URLSearchParams {
   if (params.appliedBefore) query.set("applied_before", params.appliedBefore);
   if (params.matchScoreMin != null) query.set("match_score_min", String(params.matchScoreMin));
   if (params.matchScoreMax != null) query.set("match_score_max", String(params.matchScoreMax));
+  if (params.noticeMax != null) query.set("notice_max", String(params.noticeMax));
+  if (params.tags) query.set("tags", params.tags);
   return query;
 }
 

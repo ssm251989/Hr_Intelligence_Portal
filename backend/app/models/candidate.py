@@ -1,5 +1,5 @@
 from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Integer, Numeric, String, Text, text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 
 from app.core.database import Base
 from app.platform.tenancy.mixins import TenantOwned
@@ -56,6 +56,7 @@ class Candidate(Base, TenantOwned):
     # same person (same email / phone / file). Linked, never merged or deleted automatically.
     resume_sha256 = Column(String(64), index=True)
     duplicate_of_id = Column(UUID(as_uuid=True), ForeignKey("candidates.id", ondelete="SET NULL"))
+    tags = Column(ARRAY(Text), nullable=False, server_default=text("'{}'"))  # Part 18.10: lower-case labels HR adds
     # Part 17.15: in the Recycle bin (hidden everywhere; see app/recruitment/removal.py)
     deleted_at = Column(DateTime(timezone=True), index=True)
     deleted_by = Column(String(200))

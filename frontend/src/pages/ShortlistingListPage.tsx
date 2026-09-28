@@ -1,3 +1,4 @@
+import CandidateFiltersPanel, { EMPTY_CANDIDATE_FILTERS, type CandidateFilters } from "../components/CandidateFiltersPanel";
 import { useEffect, useMemo, useState } from "react";
 import CompareArrowsOutlinedIcon from "@mui/icons-material/CompareArrowsOutlined";
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
@@ -141,6 +142,15 @@ export default function ShortlistingListPage() {
     ? (tabParam as QueueTab)
     : (legacy && LEGACY_STATUS_TAB[legacy]) || "suggested";
   const jobId = searchParams.get("job") ?? "";
+  // Part 18.10: the same filter panel as Candidates and Screening (job stays in the picker above)
+  const [filters, setFilters] = useState<CandidateFilters>(EMPTY_CANDIDATE_FILTERS);
+  const extra = useMemo(() => ({
+    source: filters.source || undefined, location: filters.location || undefined,
+    experienceMin: filters.experienceMin ? Number(filters.experienceMin) : undefined, experienceMax: filters.experienceMax ? Number(filters.experienceMax) : undefined,
+    appliedAfter: filters.appliedAfter || undefined, appliedBefore: filters.appliedBefore || undefined,
+    matchScoreMin: filters.matchScoreMin ? Number(filters.matchScoreMin) : undefined, matchScoreMax: filters.matchScoreMax ? Number(filters.matchScoreMax) : undefined,
+    noticeMax: filters.noticeMax ? Number(filters.noticeMax) : undefined, tags: filters.tags || undefined,
+  }), [filters]);
 
   const setParam = (key: string, value: string) => {
     const next = new URLSearchParams(searchParams);
@@ -193,7 +203,7 @@ export default function ShortlistingListPage() {
   useEffect(() => {
     setPage(1);
     setSelected(new Map());
-  }, [tab, jobId, search]);
+  }, [tab, jobId, search, extra]);
 
   const reload = () => setRefreshKey((k) => k + 1);
 
@@ -206,7 +216,7 @@ export default function ShortlistingListPage() {
       let total = 0;
       for (let p = 1; p <= POOL_MAX_PAGES; p += 1) {
         const res = await shortlistingApi.listShortlisting({
-          page: p, pageSize: POOL_PAGE_SIZE, shortlistStatus: "under_review", jobRoleId: jobId || undefined, search: search || undefined,
+          page: p, pageSize: POOL_PAGE_SIZE, shortlistStatus: "under_review", jobRoleId: jobId || undefined, search: search || undefined, ...extra,
         });
         all.push(...(res.items as QueueRow[]));
         total = res.total;
@@ -224,13 +234,13 @@ export default function ShortlistingListPage() {
     return () => {
       alive = false;
     };
-  }, [jobId, search, refreshKey]);
+  }, [jobId, search, refreshKey, extra]);
 
   useEffect(() => {
     let alive = true;
     const count = (status: ShortlistStatus) =>
       shortlistingApi
-        .listShortlisting({ page: 1, pageSize: 1, shortlistStatus: status, jobRoleId: jobId || undefined, search: search || undefined })
+        .listShortlisting({ page: 1, pageSize: 1, shortlistStatus: status, jobRoleId: jobId || undefined, search: search || undefined, ...extra })
         .then((r) => r.total)
         .catch(() => null);
     Promise.all([count("shortlisted"), count("not_shortlisted")]).then(([shortlisted, rejected]) => {
@@ -239,7 +249,7 @@ export default function ShortlistingListPage() {
     return () => {
       alive = false;
     };
-  }, [jobId, search, refreshKey]);
+  }, [jobId, search, refreshKey, extra]);
 
   const decidedTab = tab === "shortlisted" || tab === "rejected";
   useEffect(() => {
@@ -248,7 +258,7 @@ export default function ShortlistingListPage() {
     setDecidedLoading(true);
     setDecidedError(null);
     shortlistingApi
-      .listShortlisting({ page, pageSize, shortlistStatus: DECIDED_STATUS[tab], jobRoleId: jobId || undefined, search: search || undefined })
+      .listShortlisting({ page, pageSize, shortlistStatus: DECIDED_STATUS[tab], jobRoleId: jobId || undefined, search: search || undefined, ...extra })
       .then((res) => {
         if (!alive) return;
         setDecidedRows(res.items as QueueRow[]);
@@ -259,7 +269,7 @@ export default function ShortlistingListPage() {
     return () => {
       alive = false;
     };
-  }, [decidedTab, tab, page, pageSize, jobId, search, refreshKey]);
+  }, [decidedTab, tab, page, pageSize, jobId, search, refreshKey, extra]);
 
   const { thresholds, ready: thresholdsReady } = useJobThresholds(
     [...pool.map((r) => r.job_role_id), ...decidedRows.map((r) => r.job_role_id)],
@@ -378,7 +388,7 @@ export default function ShortlistingListPage() {
           ? selectedList
           : decidedTab
             ? ((await shortlistingApi.exportShortlisting({
-              shortlistStatus: DECIDED_STATUS[tab], jobRoleId: jobId || undefined, search: search || undefined,
+              shortlistStatus: DECIDED_STATUS[tab], jobRoleId: jobId || undefined, search: search || undefined, ...extra,
             })) as QueueRow[])
             : waitingRows;
       downloadCsv(
@@ -482,6 +492,9 @@ export default function ShortlistingListPage() {
         <Box flex={1} />
         <Button startIcon={<RefreshIcon />} onClick={handleRefresh} disabled={loading}>{t("shortlistQueue.refresh")}</Button>
       </Stack>
+      <Box sx={{ mb: 2 }}>
+        <CandidateFiltersPanel jobs={jobs} filters={filters} onChange={setFilters} hide={["jobRoleId", "status"]} savedKey="shortlisting.queue" />
+      </Box>
 
       <Tabs
         value={tab}

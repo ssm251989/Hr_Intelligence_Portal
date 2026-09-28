@@ -5,7 +5,7 @@ import { Link as RouterLink } from "react-router-dom";
 
 import RefreshButton from "../components/RefreshButton";
 import ScreeningDashboardStats from "../components/ScreeningDashboardStats";
-import ShortlistThresholdPanel from "../components/ShortlistThresholdPanel";
+import ScoringRulesLink from "../components/scoring/ScoringRulesLink";
 import { useT } from "../i18n";
 import { PageHeader } from "../ui-kit";
 
@@ -31,7 +31,8 @@ export default function ScreeningDashboardPage() {
         extra={<RefreshButton loading={refreshing} onRefresh={() => setRefreshSignal((s) => s + 1)} label={t("screening.refresh")} />}
       />
 
-      <ShortlistThresholdPanel refreshSignal={refreshSignal} />
+      {/* Part 18.10: the shortlist score is edited only in Settings > Hiring > Scoring rules */}
+      <ScoringRulesLink />
 
       <ScreeningDashboardStats refreshSignal={refreshSignal} onLoadingChange={setRefreshing} />
     </Box>

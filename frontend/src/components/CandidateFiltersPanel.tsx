@@ -1,9 +1,17 @@
 import RestartAltIcon from "@mui/icons-material/RestartAlt";
+import { useEffect, useState } from "react";
+import Autocomplete from "@mui/material/Autocomplete";
 import Button from "@mui/material/Button";
 import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 
+import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import Box from "@mui/material/Box";
+import IconButton from "@mui/material/IconButton";
+import Menu from "@mui/material/Menu";
+import { experienceApi, http, type SavedViewRow } from "../api/client";
 import { APPLICATION_STATUSES, CANDIDATE_SOURCES, candidateSourceLabel, type JobRoleRead } from "../api/types";
 import { useT } from "../i18n";
 import { statusLabel as applicationStatusLabel } from "./StatusChip";
@@ -19,6 +27,8 @@ export interface CandidateFilters {
   appliedBefore: string;
   matchScoreMin: string;
   matchScoreMax: string;
+  noticeMax: string; // Part 18.10: "" | days
+  tags: string; // Part 18.10: comma-separated
 }
 
 export const EMPTY_CANDIDATE_FILTERS: CandidateFilters = {
@@ -32,6 +42,8 @@ export const EMPTY_CANDIDATE_FILTERS: CandidateFilters = {
   appliedBefore: "",
   matchScoreMin: "",
   matchScoreMax: "",
+  noticeMax: "",
+  tags: "",
 };
 
 // Rendered directly above the Candidates List table as a row of separate controls --
@@ -51,6 +63,8 @@ export default function CandidateFiltersPanel({
   // Every other caller leaves this unset and gets the original "Status" dropdown.
   statusLabel = "Status",
   statusOptions,
+  hide,
+  savedKey,
 }: {
   jobs: JobRoleRead[];
   filters: CandidateFilters;
@@ -59,14 +73,23 @@ export default function CandidateFiltersPanel({
   scoreLabel?: string;
   statusLabel?: string;
   statusOptions?: { value: string; label: string }[];
+  /** Part 18.10: filters a page already shows elsewhere (e.g. Shortlisting's own job picker) */
+  hide?: (keyof CandidateFilters)[];
+  /** Part 18.10: per-user saved filters for pages without a list toolbar */
+  savedKey?: string;
 }) {
   const t = useT();
   void _scoreLabel;
   const activeCount = Object.values(filters).filter(Boolean).length;
   const set = (key: keyof CandidateFilters, value: string) => onChange({ ...filters, [key]: value });
+  const [tagOptions, setTagOptions] = useState<string[]>([]);
+  useEffect(() => {
+    http.get<{ tag: string }[]>("/api/v1/ui/candidates-tags").then((r) => setTagOptions(r.map((x) => x.tag))).catch(() => setTagOptions([]));
+  }, []);
 
   return (
     <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap alignItems="center">
+      {!hide?.includes("jobRoleId") && (
       <TextField
         select
         label="Job"
@@ -82,7 +105,9 @@ export default function CandidateFiltersPanel({
           </MenuItem>
         ))}
       </TextField>
+      )}
 
+      {!hide?.includes("status") && (
       <TextField
         select
         label={statusLabel}
@@ -104,6 +129,7 @@ export default function CandidateFiltersPanel({
           ),
         )}
       </TextField>
+      )}
 
       <TextField
         select
@@ -193,6 +219,19 @@ export default function CandidateFiltersPanel({
         />
       </Stack>
 
+      {/* Part 18.10: notice period and tags -- the same on Candidates, Screening and Shortlisting */}
+      <TextField select label={t("filters.notice")} size="small" value={filters.noticeMax} onChange={(e) => set("noticeMax", e.target.value)} sx={{ minWidth: 150 }}>
+        <MenuItem value="">{t("filters.any")}</MenuItem>
+        {["0", "15", "30", "60", "90"].map((d) => <MenuItem key={d} value={d}>{d === "0" ? t("filters.notice_now") : t("filters.notice_upto", { days: d })}</MenuItem>)}
+      </TextField>
+      <Autocomplete
+        multiple size="small" options={tagOptions} value={filters.tags ? filters.tags.split(",") : []}
+        onChange={(_e, v) => set("tags", v.join(","))}
+        renderInput={(params) => <TextField {...params} label={t("filters.tags")} />}
+        sx={{ minWidth: 200 }}
+      />
+
+      {savedKey && <SavedFilters listKey={savedKey} filters={filters} onApply={onChange} />}
       <Button
         size="small"
         startIcon={<RestartAltIcon fontSize="small" />}
@@ -202,5 +241,44 @@ export default function CandidateFiltersPanel({
         Reset{activeCount > 0 ? ` (${activeCount})` : ""}
       </Button>
     </Stack>
+  );
+}
+
+// Part 18.10: saved filters per user (the same /api/v1/views store the list toolbars use)
+function SavedFilters({ listKey, filters, onApply }: { listKey: string; filters: CandidateFilters; onApply: (f: CandidateFilters) => void }) {
+  const t = useT();
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const [views, setViews] = useState<SavedViewRow[]>([]);
+  const [name, setName] = useState("");
+  const load = () => experienceApi.views(listKey).then(setViews).catch(() => setViews([]));
+  useEffect(() => { void load(); }, [listKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const save = async () => {
+    if (!name.trim()) return;
+    await experienceApi.saveView(listKey, { name: name.trim(), config: { filters } }).catch(() => undefined);
+    setName("");
+    void load();
+  };
+  return (
+    <>
+      <Button size="small" startIcon={<BookmarkBorderIcon fontSize="small" />} onClick={(e) => setAnchor(e.currentTarget)}>{t("filters.saved")}</Button>
+      <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}>
+        {views.length === 0 && <MenuItem disabled>{t("filters.saved_none")}</MenuItem>}
+        {views.map((v) => (
+          <MenuItem key={v.id} onClick={() => { onApply({ ...EMPTY_CANDIDATE_FILTERS, ...((v.config?.filters ?? {}) as Partial<CandidateFilters>) }); setAnchor(null); }}>
+            <Box sx={{ flex: 1 }}>{v.name}</Box>
+            {v.mine && (
+              <IconButton size="small" aria-label={t("filters.saved_delete")}
+                onClick={(e) => { e.stopPropagation(); void experienceApi.deleteView(listKey, v.id).then(load); }}>
+                <DeleteOutlineIcon fontSize="small" />
+              </IconButton>
+            )}
+          </MenuItem>
+        ))}
+        <Box sx={{ px: 2, py: 1, display: "flex", gap: 1 }} onKeyDown={(e) => e.stopPropagation()}>
+          <TextField size="small" placeholder={t("filters.saved_name")} value={name} onChange={(e) => setName(e.target.value)} />
+          <Button size="small" variant="contained" disabled={!name.trim()} onClick={save}>{t("filters.saved_save")}</Button>
+        </Box>
+      </Menu>
+    </>
   );
 }

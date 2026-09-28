@@ -12,6 +12,7 @@ class CandidateRead(BaseModel):
     full_name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
+    tags: list[str] = []  # Part 18.10
     location: Optional[str] = None
     resume_path: Optional[str] = None
     photo_path: Optional[str] = None

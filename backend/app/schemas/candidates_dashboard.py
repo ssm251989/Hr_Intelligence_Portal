@@ -35,6 +35,8 @@ class CandidateApplicationRow(BaseModel):
     job_title: str
     status: str
     hold_reason: Optional[str] = None  # Part 18.8: "job_closed" -> shown as "On hold - job closed"
+    tags: list[str] = []  # Part 18.10
+    notice_period_days: Optional[int] = None  # Part 18.10
     source: str
     location: Optional[str] = None
     applied_on: datetime

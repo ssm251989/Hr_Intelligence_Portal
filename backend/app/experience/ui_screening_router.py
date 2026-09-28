@@ -86,12 +86,13 @@ def _apply_shortlist_status(query, shortlist_status: Optional[str]):
 def _base_query(
     db: Session, *, scope: str, status: Optional[str], shortlist_status: Optional[str], job_role_id, source, location,
     search, experience_min, experience_max, applied_after, applied_before, match_score_min, match_score_max,
+    notice_max=None, tags=None,
 ):
     query = _filtered_candidate_applications_query(
         db, job_role_id=job_role_id, status=status if scope == "screening" else None, source=source, location=location,
         search=search, experience_min=experience_min, experience_max=experience_max, applied_after=applied_after,
         applied_before=applied_before, match_score_min=match_score_min, match_score_max=match_score_max,
-        score_field="composite_score",
+        notice_max=notice_max, tags=tags, score_field="composite_score",
     )
     if scope == "shortlisting":
         query = _apply_shortlist_status(query, shortlist_status)
@@ -116,6 +117,8 @@ def list_sorted(
     applied_before: Optional[date] = Query(None),
     match_score_min: Optional[float] = Query(None, ge=0, le=100),
     match_score_max: Optional[float] = Query(None, ge=0, le=100),
+    notice_max: Optional[int] = Query(None, ge=0, le=365, description="Part 18.10: notice period at most this many days"),
+    tags: Optional[str] = Query(None, description="Part 18.10: comma-separated tags (any of them)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -125,7 +128,7 @@ def list_sorted(
         db, scope=scope, status=status, shortlist_status=shortlist_status, job_role_id=job_role_id, source=source,
         location=location, search=search, experience_min=experience_min, experience_max=experience_max,
         applied_after=applied_after, applied_before=applied_before, match_score_min=match_score_min,
-        match_score_max=match_score_max,
+        match_score_max=match_score_max, notice_max=notice_max, tags=tags,
     )
     total = query.count()
     order = (

@@ -14,6 +14,7 @@ Every query filters on the current company's tenant_id explicitly.
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
@@ -84,6 +85,38 @@ def duplicates(candidate_id: UUID, db: Session = Depends(get_db), current_user: 
     if other is not None and str(other.id) not in {f["candidate_id"] for f in found}:
         found.append({"candidate_id": str(other.id), "name": other.full_name, "email": other.email, "reason": reason})
     return {"candidate_id": str(cand.id), "duplicates": found}
+
+
+class TagsBody(BaseModel):
+    tags: list[str]
+
+
+@router.get("/candidates-tags")
+def all_tags(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Part 18.10: every tag in use (for the tag filter and the tag picker), most used first."""
+    from sqlalchemy import func as _f
+
+    tenant = require_current_tenant()
+    _need(db, tenant, current_user, "recruitment.candidate.view")
+    tag = _f.unnest(Candidate.tags).label("tag")
+    rows = db.query(tag, _f.count()).filter(Candidate.tenant_id == tenant.tenant_id).group_by("tag").order_by(_f.count().desc()).limit(200).all()
+    return [{"tag": t, "count": n} for t, n in rows]
+
+
+@router.put("/candidates/{candidate_id}/tags")
+def set_tags(candidate_id: UUID, body: TagsBody, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from app.audit.service import log_action
+
+    tenant = require_current_tenant()
+    _need(db, tenant, current_user, "recruitment.candidate.edit")
+    cand = db.query(Candidate).filter(Candidate.tenant_id == tenant.tenant_id, Candidate.id == candidate_id).first()
+    if cand is None:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    clean = sorted({t.strip().lower()[:40] for t in body.tags if t and t.strip()})[:20]
+    cand.tags = clean
+    db.commit()
+    log_action(db, "candidate", cand.id, "candidate_tags_set", current_user.email[:50], {"tags": clean})
+    return {"candidate_id": str(cand.id), "tags": clean}
 
 
 @router.get("/system-health")

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import CompareArrowsOutlinedIcon from "@mui/icons-material/CompareArrowsOutlined";
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
@@ -7,7 +7,6 @@ import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
-import CardContent from "@mui/material/CardContent";
 import Checkbox from "@mui/material/Checkbox";
 import IconButton from "@mui/material/IconButton";
 import InputAdornment from "@mui/material/InputAdornment";
@@ -34,10 +33,10 @@ import ListToolbar, { type ListColumn, type ListViewState } from "../components/
 import RetryNegotiationMenuItem, { isRetryNegotiationEligible } from "../components/RetryNegotiationMenuItem";
 import SourceIcon from "../components/SourceIcon";
 import CompareDialog, { MAX_COMPARE } from "../components/screening/CompareDialog";
-import { useScoreCounts, useScreeningDetails } from "../components/screening/hooks";
+import { useScreeningDetails } from "../components/screening/hooks";
 import { CandidateCell, DEFAULT_PAGE_SIZE, loadSortedPage, PaginationFooter, SortSelect, type SortMode } from "../components/screening/listParts";
 import { ScoreBadge } from "../components/screening/ScoreParts";
-import ThresholdSlider from "../components/screening/ThresholdSlider";
+import ScoringRulesLink from "../components/scoring/ScoringRulesLink";
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
 import { useT } from "../i18n";
@@ -160,7 +159,7 @@ export default function ScreeningListPage() {
   const anyFilterActive = Boolean(search) || Object.values(filters).some(Boolean);
   const [selected, setSelected] = useState<Map<string, CandidateApplicationRow>>(new Map());
   const [compareOpen, setCompareOpen] = useState(false);
-  const [passRange, setPassRange] = useState<[number, number]>([75, 100]);
+  const [passRange, setPassRange] = useState<[number, number]>([75, 100]); // company shortlist score .. 100 (read-only)
   const [visibleColumns, setVisibleColumns] = useState<string[]>([...DEFAULT_COLUMNS]);
 
   const columns: ListColumn[] = COLUMN_KEYS.map((key) => ({ key, label: t(`screening.col.${key}`) }));
@@ -197,6 +196,8 @@ export default function ScreeningListPage() {
     appliedBefore: filters.appliedBefore || undefined,
     matchScoreMin: filters.matchScoreMin ? Number(filters.matchScoreMin) : undefined,
     matchScoreMax: filters.matchScoreMax ? Number(filters.matchScoreMax) : undefined,
+    noticeMax: filters.noticeMax ? Number(filters.noticeMax) : undefined,
+    tags: filters.tags || undefined,
     // The score range filter targets composite_score -- the one Match score.
     scoreField: "composite_score" as const,
   });
@@ -222,12 +223,6 @@ export default function ScreeningListPage() {
   }, [page, pageSize, search, filters, sort, refreshKey]);
 
   const details = useScreeningDetails(rows.map((r) => r.application_id), refreshKey);
-  const countParams = useMemo(() => {
-    const { scoreField: _s, matchScoreMin: _a, matchScoreMax: _b, ...rest } = listParams();
-    return { scope: "screening" as const, ...rest };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, filters]);
-  const counts = useScoreCounts(countParams, refreshKey);
 
   const handleRefresh = () => {
     setFilters(EMPTY_CANDIDATE_FILTERS);
@@ -371,19 +366,8 @@ export default function ScreeningListPage() {
         }
       />
 
-      <Card sx={{ mb: 2 }} data-tour="screening-slider">
-        <CardContent>
-          <ThresholdSlider
-            id="screening-pass"
-            value={passRange}
-            onChange={setPassRange}
-            counts={counts?.counts}
-            scores={rows.map((r) => matchScoreDisplay(r).value)}
-            label={t("screening.pass.slider")}
-            info={t("screening.pass.info")}
-          />
-        </CardContent>
-      </Card>
+      {/* Part 18.10: no threshold slider on a list page -- "Pass" uses the company shortlist score (Settings) */}
+      <ScoringRulesLink />
 
       <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems={{ xs: "stretch", md: "center" }} mb={2}>
         <TextField

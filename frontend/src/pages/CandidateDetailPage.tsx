@@ -39,6 +39,7 @@ import { STEPPER_STAGES, stepperIndex, useFresh } from "../components/candidates
 import { useAuth } from "../auth/AuthContext";
 import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
 import DuplicateBanner from "../components/candidates/DuplicateBanner";
+import CandidateTags from "../components/candidates/CandidateTags";
 import RemoveCandidateDialog from "../components/candidates/RemoveCandidateDialog";
 import { ROLE_MATRIX } from "../auth/roles";
 import { useT } from "../i18n";
@@ -374,6 +375,9 @@ export default function CandidateDetailPage() {
       />
 
       <DuplicateBanner candidateId={candidate.id} />
+      <Box sx={{ mb: 2, maxWidth: 560 }}>
+        <CandidateTags candidateId={candidate.id} initial={candidate.tags ?? []} canEdit={canWrite} />
+      </Box>
       {canRemove && (
         <RemoveCandidateDialog
           open={removeOpen}

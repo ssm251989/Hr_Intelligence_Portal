@@ -134,6 +134,8 @@ def list_shortlisting(
     applied_before: Optional[date] = Query(None),
     match_score_min: Optional[float] = Query(None, ge=0, le=100),
     match_score_max: Optional[float] = Query(None, ge=0, le=100),
+    notice_max: Optional[int] = Query(None, ge=0, le=365, description="Part 18.10: notice period at most this many days"),
+    tags: Optional[str] = Query(None, description="Part 18.10: comma-separated tags (any of them)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -155,7 +157,7 @@ def list_shortlisting(
         applied_after=applied_after,
         applied_before=applied_before,
         match_score_min=match_score_min,
-        match_score_max=match_score_max,
+        match_score_max=match_score_max, notice_max=notice_max, tags=tags,
         score_field="composite_score",
     )
     query = _apply_shortlist_status_filter(query, shortlist_status)
@@ -190,6 +192,8 @@ def export_shortlisting(
     applied_before: Optional[date] = Query(None),
     match_score_min: Optional[float] = Query(None, ge=0, le=100),
     match_score_max: Optional[float] = Query(None, ge=0, le=100),
+    notice_max: Optional[int] = Query(None, ge=0, le=365, description="Part 18.10: notice period at most this many days"),
+    tags: Optional[str] = Query(None, description="Part 18.10: comma-separated tags (any of them)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -221,7 +225,7 @@ def export_shortlisting(
             applied_after=applied_after,
             applied_before=applied_before,
             match_score_min=match_score_min,
-            match_score_max=match_score_max,
+            match_score_max=match_score_max, notice_max=notice_max, tags=tags,
             score_field="composite_score",
         )
         query = _apply_shortlist_status_filter(query, shortlist_status)

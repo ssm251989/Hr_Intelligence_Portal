@@ -182,6 +182,7 @@ export type InferredGender = "male" | "female" | null;
 
 export interface CandidateRead {
   id: UUID;
+  tags?: string[]; // Part 18.10
   full_name?: string | null;
   email?: string | null;
   phone?: string | null;

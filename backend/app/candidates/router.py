@@ -262,6 +262,8 @@ def row_to_item(
         job_title=job_title,
         status=application.status,
         hold_reason=getattr(application, 'hold_reason', None),
+        tags=list(candidate.tags or []),
+        notice_period_days=candidate.notice_period_days,
         source=candidate.source,
         location=candidate.location,
         applied_on=application.created_at,
@@ -311,6 +313,8 @@ def _filtered_candidate_applications_query(
     match_score_min: Optional[float],
     match_score_max: Optional[float],
     score_field: Literal["match_score", "composite_score"] = "match_score",
+    notice_max: Optional[int] = None,
+    tags: Optional[str] = None,
 ):
     """Shared by the paginated List page endpoint and the unpaginated export endpoint --
     one filter-building implementation so the two can never quietly drift apart (e.g. an
@@ -365,6 +369,12 @@ def _filtered_candidate_applications_query(
         query = query.filter(score_column >= match_score_min)
     if match_score_max is not None:
         query = query.filter(score_column <= match_score_max)
+    # Part 18.10: notice period (days) and tags (any of the given ones)
+    if notice_max is not None:
+        query = query.filter(Candidate.notice_period_days <= notice_max)
+    wanted = [t.strip().lower() for t in (tags or "").split(",") if t.strip()]
+    if wanted:
+        query = query.filter(Candidate.tags.overlap(wanted))
     return query
 
 
@@ -388,6 +398,8 @@ def list_candidate_applications(
     applied_before: Optional[date] = Query(None, description="Applications created on/before this date"),
     match_score_min: Optional[float] = Query(None, ge=0, le=100),
     match_score_max: Optional[float] = Query(None, ge=0, le=100),
+    notice_max: Optional[int] = Query(None, ge=0, le=365, description="Part 18.10: notice period at most this many days"),
+    tags: Optional[str] = Query(None, description="Part 18.10: comma-separated tags (any of them)"),
     score_field: Literal["match_score", "composite_score"] = Query(
         "match_score",
         description="Which column match_score_min/max filter -- the raw Resume Matcher "
@@ -416,7 +428,7 @@ def list_candidate_applications(
         applied_after=applied_after,
         applied_before=applied_before,
         match_score_min=match_score_min,
-        match_score_max=match_score_max,
+        match_score_max=match_score_max, notice_max=notice_max, tags=tags,
         score_field=score_field,
     )
 
@@ -450,6 +462,8 @@ def export_candidate_applications(
     applied_before: Optional[date] = Query(None),
     match_score_min: Optional[float] = Query(None, ge=0, le=100),
     match_score_max: Optional[float] = Query(None, ge=0, le=100),
+    notice_max: Optional[int] = Query(None, ge=0, le=365, description="Part 18.10: notice period at most this many days"),
+    tags: Optional[str] = Query(None, description="Part 18.10: comma-separated tags (any of them)"),
     score_field: Literal["match_score", "composite_score"] = Query("match_score"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -485,7 +499,7 @@ def export_candidate_applications(
             applied_after=applied_after,
             applied_before=applied_before,
             match_score_min=match_score_min,
-            match_score_max=match_score_max,
+            match_score_max=match_score_max, notice_max=notice_max, tags=tags,
             score_field=score_field,
         )
 

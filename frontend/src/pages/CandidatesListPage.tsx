@@ -167,6 +167,8 @@ export default function CandidatesListPage() {
     appliedBefore: filters.appliedBefore || undefined,
     matchScoreMin: filters.matchScoreMin ? Number(filters.matchScoreMin) : undefined,
     matchScoreMax: filters.matchScoreMax ? Number(filters.matchScoreMax) : undefined,
+    noticeMax: filters.noticeMax ? Number(filters.noticeMax) : undefined,
+    tags: filters.tags || undefined,
     // Part 17.4: the score filter targets the one Match score (composite_score).
     scoreField: "composite_score" as const,
   });

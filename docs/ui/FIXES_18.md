@@ -250,3 +250,29 @@ disconnect -> 204 -> not_set_up
 tsc clean, i18n 0 missing (39 new keys en/hi/ta), npm run build OK
 ```
 **Screenshot:** Import wizard "Complete setup", Job boards page -- pending login proof.
+
+## 18.10 One filter system; scoring only in Settings
+
+**Problem:** Candidates and Screening had filter panels but Shortlisting didn't; there were no notice-period or tag filters. The Screening list had its own threshold slider and the Screening dashboard its own threshold editor, so thresholds could be changed in several places.
+
+**Change:**
+- **One filter panel** (`CandidateFiltersPanel`) on **Candidates, Screening and Shortlisting**: job, stage, match score range, experience range, location, **notice period** (can join now / up to 15, 30, 60, 90 days), source, date added, **tags**.
+- **Saved filters per user:** Candidates and Screening save them through the list toolbar's saved views. Shortlisting has a "Saved filters" menu in the panel (same per-user store: save, apply, delete your own).
+- **Backend:** the shared filter function (`_filtered_candidate_applications_query`) gained `notice_max` and `tags` (any of them). They are passed through `/candidates/applications` (+ export), `/api/v1/ui/screening/list` and `/shortlisting/list` (+ export).
+- **Tags:** new `candidates.tags` (migration `c9e4a2d8f6b1`, GIN index). Tags are edited on the candidate profile (type and Enter; stored lower-case, at most 20). `GET /api/v1/ui/candidates-tags` gives the most-used tags for the picker. List rows carry `tags` and `notice_period_days`.
+- **Scoring only in Settings:**
+  - the Screening list's threshold slider and the Screening dashboard's threshold panel are removed;
+  - both pages show one read-only line, "The shortlist score is 22 … set in Settings > Hiring > Scoring rules - this page only filters", with an **Open scoring rules** button;
+  - weights, thresholds and per-job overrides stay only in Settings > Hiring > Scoring rules (17.4-17.6).
+
+**Verified** (rolled back):
+```
+PUT tags ["RPA", " Senior ", "rpa"] -> ["rpa", "senior"]; GET candidates-tags -> senior 1, rpa 1
+/candidates/applications?tags=rpa            -> [Demo - Asha Verma]
+/candidates/applications?notice_max=30       -> Asha (15 days), Nisha; Karan (90) left out
+/api/v1/ui/screening/list?tags=senior        -> [Demo - Asha Verma]
+/shortlisting/list?notice_max=100            -> [Demo - Karan Joshi]
+rows carry tags ["rpa","senior"] + notice 15
+tsc clean, i18n 0 missing (14 new keys), npm run build OK
+```
+**Screenshot:** the three list pages with the filter bar -- pending login proof.

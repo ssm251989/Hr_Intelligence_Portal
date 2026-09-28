@@ -23,6 +23,8 @@ export interface ScoreListParams {
   appliedBefore?: string;
   matchScoreMin?: number;
   matchScoreMax?: number;
+  noticeMax?: number;
+  tags?: string;
 }
 
 function query(params: Partial<ScoreListParams>): URLSearchParams {
@@ -33,6 +35,8 @@ function query(params: Partial<ScoreListParams>): URLSearchParams {
     ["location", "location"], ["experienceMin", "experience_min"], ["experienceMax", "experience_max"],
     ["appliedAfter", "applied_after"], ["appliedBefore", "applied_before"], ["matchScoreMin", "match_score_min"],
     ["matchScoreMax", "match_score_max"],
+    ["noticeMax", "notice_max"],
+    ["tags", "tags"],
   ];
   for (const [key, name] of map) {
     const value = params[key];

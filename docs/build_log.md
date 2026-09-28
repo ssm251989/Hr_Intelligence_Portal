@@ -2298,3 +2298,9 @@ NEXT: 18.9 LinkedIn/Naukri import: "Complete setup" (what is needed, opens Setti
 Import wizard: "Complete setup" chip + panel (needs per board, open settings, upload board resumes); Settings > Integrations > Job boards (JobBoardsPage: status, masked connect form -> secret store + jobboard.<code> route, test, disconnect, working alternatives); ui_job_boards_router; upload accepts board sources. Decision: no fake "connected" -- boards without an adapter show "Saved - waiting for API access". Also added the missing Settings title for Advanced > Modules.
 
 NEXT: 18.10 one filter system on Candidates/Screening/Shortlisting (job, stage, score, experience, location, notice, source, date, tags, saved filters) and scoring thresholds only in Settings.
+
+## Part 18.10 -- one filter system (2026-09-28)
+
+notice_max + tags in the shared filter query (5 endpoints), candidates.tags (c9e4a2d8f6b1) + tag endpoints + profile tag editor, CandidateFiltersPanel gains notice/tags/hide/savedKey (Shortlisting gets the panel + saved filters), Screening slider + dashboard threshold panel replaced by ScoringRulesLink (read-only score + link to Settings).
+
+NEXT: 18.11 all-candidates tables on Salary, BGV, Offers (Shortlisting/Screening already across jobs): job column + filter, paging 500+, sorting, bulk actions, export.
