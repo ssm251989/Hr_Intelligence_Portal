@@ -68,3 +68,49 @@ rolled back: smtp last test failed -> CONNECTION_FAILING "HR Mailbox (SMTP) isn'
              no DocuSign sign-in  -> UNROUTED_PURPOSE e-sign warning comes back
 ```
 **Screenshot:** Home health card -- pending login proof.
+
+## 18.4 Module unlock passcode
+
+**Problem / ask:** every main module must stay locked until an admin enters the module passcode. The passcode must never be in code or git.
+
+**Change:**
+- **Storage:** new table `module_access` holds the passcode only as a **bcrypt hash** (`$2b$12$…`, 60 characters), plus the unlocked-at/by, wrong-try count and wait-until for each module.
+- **Setting the passcode:**
+  - on the server, once: `python -m hrctl.modules set-passcode --tenant <slug>` (hidden prompt, typed twice; nothing ends up in shell history);
+  - later, in Settings > Advanced > Modules > **Change passcode** (needs the current passcode; main admin only);
+  - `python -m hrctl.modules status --tenant <slug>` shows which modules are locked.
+- **What gets locked:**
+  - Jobs, Candidates, Screening, Shortlisting, Interviews, Candidate emails, Salary, BGV, Offers, Reports, Settings, GenAI usage;
+  - plus every other switched-on module (Onboarding, People, Performance, Helpdesk, Assets, Exits, Analytics, HR assistant).
+- **Settings** (`modules.lock.*`): on/off; one passcode for all (default) or one per module; 5 wrong tries, then a 15-minute wait. All editable.
+- **Enforcement:**
+  - APIs of a locked module return **403** with `MODULE_LOCKED` and a plain message.
+  - Always open: sign-in, the menu, the lock API and the candidate-facing public pages.
+  - A few read lists that every page needs stay open (jobs list, applications list, one candidate), so one locked module never breaks another. Writes to them are locked.
+- **In the app:**
+  - A locked module shows a lock icon in the menu, and its pages show a friendly "… is locked" card. Admins can type the passcode right there; everyone else is told to ask an admin.
+  - Settings > Advanced > Modules lists every module with Locked/Open, Unlock / Lock per module, Unlock all / Lock all, Change passcode, and the lock settings.
+- **Audit:** every unlock, lock, wrong try, first set and change is written to the audit log.
+- **Until a passcode exists, locking stays off.** Otherwise nobody could unlock anything. **I did not set the passcode**; the owner runs the command once.
+
+**Verified** (one rolled-back transaction with a throwaway test passcode; the real company has 0 `module_access` rows afterwards):
+```
+no passcode yet            -> active false; GET /api/v1/ui/salary/queue 200
+after set-passcode         -> active true, 20 modules locked
+salary queue               -> 403 {"code":"MODULE_LOCKED","message":"This module is locked. An admin needs to enter the module passcode ..."}
+GET /jobs (shared read)    -> 200;  POST /jobs -> 403
+bootstrap                  -> nav items carry lock_key (/jobs -> jobs, /hr-inbox -> candidate_emails ...), module_locks.locked = 20 keys
+wrong passcode             -> 400 "That passcode isn't right. 4 tries left."
+unlock salary              -> 200; salary queue 200; BGV still 403
+recruiter unlock           -> 403
+5 wrong in a row           -> 4,3,2,1 tries left, then 429 "Too many wrong tries. Please wait 15 minutes"
+right passcode during wait -> 429 (the wait is enforced)
+after the wait, unlock all -> 200, locked = []
+lock salary again          -> salary queue 403
+change passcode            -> wrong current 400; right current 200; old passcode then 400, new 200
+stored                     -> "$2b$12$..." length 60 (bcrypt), no plain text anywhere
+audit                      -> module_passcode_set, _wrong, module_unlocked, module_locked, module_passcode_changed ...
+public branding            -> 200 (never locked)
+frontend                   -> tsc clean, i18n 0 missing (52 new keys en/hi/ta), npm run build OK
+```
+**Screenshot:** locked page card, Settings > Modules -- pending login proof. There is no passcode on the real company yet, so nothing shows as locked until the owner sets one.

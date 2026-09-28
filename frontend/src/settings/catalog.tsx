@@ -11,6 +11,7 @@ import MetadataPanel from "../components/MetadataPanel";
 import OnboardingPanel from "../components/OnboardingPanel";
 import PerformancePanel from "../components/PerformancePanel";
 import PlatformSettingsPanel from "../components/PlatformSettingsPanel";
+import ModuleLockSettingsPage from "../components/modules/ModuleLockSettingsPage";
 import PrivacyPanel from "../components/PrivacyPanel";
 import RecruitmentPanel from "../components/RecruitmentPanel";
 import ServiceDeskPanel from "../components/ServiceDeskPanel";
@@ -68,7 +69,7 @@ export const LEGACY: Record<string, string> = {
   hiring: "hiring/stages", recruitment: "hiring/stages", scoring: "hiring/scoring", "scoring-rules": "hiring/scoring", shortlisting: "hiring/scoring", interviews: "hiring/interviews", onboarding: "onboarding/plans",
   "core-hr": "onboarding/org", people: "onboarding/org", employees: "onboarding/org", performance: "performance/cycles",
   helpdesk: "helpdesk/main", assets: "helpdesk/main", exits: "helpdesk/main", "service-desk": "helpdesk/main",
-  all: "advanced/all", modules: "advanced/all", platform: "advanced/all", "all-settings": "advanced/all",
+  all: "advanced/all", modules: "advanced/modules", "module-lock": "advanced/modules", platform: "advanced/all", "all-settings": "advanced/all",
   health: "data/health", "system-health": "data/health",
 };
 
@@ -195,6 +196,7 @@ export const CATEGORIES: SettingsCategory[] = [
   {
     id: "advanced", emoji: "tools", pages: [
       { id: "all", emoji: "tools", keywords: "all settings raw", visible: ADMIN, render: () => <PlatformSettingsPanel /> },
+      { id: "modules", emoji: "lock", keywords: "modules lock unlock passcode", visible: ADMIN, render: () => <ModuleLockSettingsPage /> },
     ],
   },
 ];

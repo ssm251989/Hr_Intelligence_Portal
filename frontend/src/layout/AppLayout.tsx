@@ -28,6 +28,7 @@ import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { useTheme } from "@mui/material/styles";
+import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import { brandingApi, experienceApi, reportsApi, type NavEntry, type NotificationGroup } from "../api/client";
@@ -40,6 +41,8 @@ import CopilotWidget from "../components/CopilotWidget";
 import GlobalSearch from "../components/GlobalSearch";
 import ModuleTour from "../components/ModuleTour";
 import RecentActivityFeed from "../components/RecentActivityFeed";
+import { lockKeyForPath } from "../api/moduleLockApi";
+import LockedModuleCard from "../components/modules/LockedModuleCard";
 import { LOCALES, useI18n, useT } from "../i18n";
 import { useThemeMode } from "../theme/ThemeModeContext";
 import Emoji from "../ui-kit/Emoji";
@@ -79,6 +82,7 @@ interface ShellItem {
   icon: string;
   group: NavGroup;
   children?: { label: string; path: string }[];
+  locked?: boolean; // Part 18.4
 }
 
 function useShellNav(): ShellItem[] {
@@ -96,6 +100,7 @@ function useShellNav(): ShellItem[] {
       path: n.path,
       icon: n.icon ?? "puzzle",
       group: n.group ?? "today",
+      locked: Boolean(n.lock_key && data?.module_locks?.locked.includes(n.lock_key)),
       children: NAV_CHILDREN[sectionOf(n.path)]?.filter((c) => !c.permission || can(c.permission)).map((c) => ({ label: t(c.labelKey), path: c.path })),
     }));
   }, [data, t, can]);
@@ -177,12 +182,14 @@ function Sidebar({ items, expanded, onToggle, onNavigate }: { items: ShellItem[]
                   <Box component="button" type="button" aria-expanded={isOpen} onClick={() => setOpen((p) => ({ ...p, [section]: !p[section] }))} sx={itemSx(active)}>
                     <Emoji name={item.icon} size={18} />
                     <Box component="span" sx={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.label}</Box>
+                    {item.locked && <LockOutlinedIcon sx={{ fontSize: 15, opacity: 0.7 }} aria-label={tr("lock.state.locked")} />}
                     {isOpen ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
                   </Box>
                 ) : (
                   <Box component={NavLink} to={item.path} end={item.path === "/"} onClick={onNavigate} aria-current={active ? "page" : undefined} sx={itemSx(active)}>
                     <Emoji name={item.icon} size={18} />
                     {expanded && <Box component="span" sx={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.label}</Box>}
+                    {expanded && item.locked && <LockOutlinedIcon sx={{ fontSize: 15, opacity: 0.7 }} aria-label={tr("lock.state.locked")} />}
                   </Box>
                 );
                 return (
@@ -352,6 +359,11 @@ export default function AppLayout() {
   const { mode, toggleMode } = useThemeMode();
   const navigate = useNavigate();
   const items = useShellNav();
+  // Part 18.4: a locked module's pages show the passcode card instead of the page
+  const location = useLocation();
+  const { data: me } = useMeBootstrap();
+  const lockKey = me?.module_locks?.active ? lockKeyForPath(location.pathname, me.module_locks.pages, me.nav) : null;
+  const lockedHere = lockKey && me?.module_locks?.locked.includes(lockKey) ? lockKey : null;
   const [confirmLogoutOpen, setConfirmLogoutOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [expanded, setExpanded] = useState(() => readStorage(SIDEBAR_STORAGE_KEY) !== "false");
@@ -417,7 +429,7 @@ export default function AppLayout() {
           </Box>
           <Box component="main" id="main-content" tabIndex={-1} sx={{ minWidth: 0, outline: "none" }}>
             {/* Remount the page on a language change so every label (hook or plain t()) re-renders. */}
-            <Outlet key={locale} />
+            {lockedHere ? <LockedModuleCard module={lockedHere} /> : <Outlet key={locale} />}
           </Box>
         </Box>
       </Box>

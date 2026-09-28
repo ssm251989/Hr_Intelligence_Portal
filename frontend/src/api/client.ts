@@ -1102,6 +1102,7 @@ export interface NavEntry {
   module?: string;
   group?: "today" | "hiring" | "people" | "insights" | "admin";
   icon?: string;
+  lock_key?: string | null; // Part 18.4
 }
 
 export interface NotificationGroup {
@@ -1123,6 +1124,7 @@ export interface BootstrapRead {
   modules?: string[];
   ux?: { reduce_motion: boolean; page_size: number; direction: "ltr" | "rtl" };
   two_step?: boolean; // Part 18.1
+  module_locks?: { active: boolean; locked: string[]; pages: Record<string, string[]> }; // Part 18.4
 }
 
 export const brandingApi = {

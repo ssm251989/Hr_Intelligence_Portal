@@ -2262,3 +2262,9 @@ NEXT: 18.4 module unlock passcode (bcrypt hash in DB, hrctl modules set-passcode
 app/platform/module_lock.py (LOCKABLE areas with page paths + API rules, other enabled modules from the registry, ModuleLockMiddleware 403 MODULE_LOCKED, 5s cache), module_access table (bcrypt hash only; migration f2a8d6c3b9e1), /api/v1/modules/access (status, unlock, lock, passcode change with current passcode, main admin only), settings modules.lock.enabled/mode/max_attempts/lockout_minutes, bootstrap module_locks + nav lock_key, hrctl modules set-passcode|status (getpass prompt). Decisions: locking is inactive until a passcode exists (otherwise nobody could unlock); shared reads (/jobs, /applications, one candidate) stay open so one locked area never breaks another; wrong tries counted company-wide; the owner passcode was NOT set by me (the owner runs the CLI).
 
 NEXT: 18.4b module lock frontend (locked page card with passcode, lock icon in menu, Settings > Advanced > Modules page).
+
+## Part 18.4b -- module lock frontend (2026-09-28)
+
+LockedModuleCard (passcode field for admins, "ask your admin" for others), AppLayout shows it instead of the page for a locked module and a lock icon on locked menu items, Settings > Advanced > Modules (ModuleLockSettingsPage: table, unlock/lock per module and all, change passcode, modules.lock.* settings), moduleLockApi + lockKeyForPath. 52 keys en/hi/ta.
+
+NEXT: 18.5 switch off People, Org chart, Performance, Compensation, Succession, Helpdesk; setup "Choose what you use" shows only real modules and really updates the menu.
