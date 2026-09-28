@@ -13,6 +13,7 @@ import PerformancePanel from "../components/PerformancePanel";
 import PlatformSettingsPanel from "../components/PlatformSettingsPanel";
 import ModuleLockSettingsPage from "../components/modules/ModuleLockSettingsPage";
 import JobBoardsPage from "../components/jobboards/JobBoardsPage";
+import BudgetsSettingsPage from "../components/salary/BudgetsSettingsPage";
 import PrivacyPanel from "../components/PrivacyPanel";
 import RecruitmentPanel from "../components/RecruitmentPanel";
 import ServiceDeskPanel from "../components/ServiceDeskPanel";
@@ -111,6 +112,7 @@ export const CATEGORIES: SettingsCategory[] = [
         render: scoped(["compensation.", "offers."], "settingsHome.page.hiring.offers") },
       { id: "bgv", emoji: "shield", keywords: "background checks verification vendor", prefixes: ["onboarding.bgv."], visible: ADMIN,
         render: scoped(["onboarding.bgv."], "settingsHome.page.hiring.bgv") },
+      { id: "budgets", emoji: "bank", keywords: "department budget finance hiring cost money fiscal year", visible: ADMIN, render: () => <BudgetsSettingsPage /> },
       { id: "careers", emoji: "globe", keywords: "careers site benefits faq", prefixes: ["careers."], visible: ADMIN, render: scoped(["careers."], "settingsHome.page.hiring.careers") },
       { id: "boards", emoji: "link", keywords: "linkedin naukri indeed job boards posting", visible: EVERYONE,
         render: () => (

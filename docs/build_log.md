@@ -2328,3 +2328,9 @@ NEXT: 18.14 Salary page = table (+ bulk approve, filters, sort by hike, export, 
 SalaryPage rewritten: Candidates tab = StageTable(salary) with money/hike/band/budget/status/reason columns, red rows, bulk approve, SalaryPanel drawer (figures, why, history from audit, approve/counter/reject, send form); stage-table salary extras + hike sort; old queue cards kept exported. Finance tab placeholder until 18.15.
 
 NEXT: 18.15 department budgets settings (per dept + FY, quarters, alert %, on exceed) + Salary > Finance dashboard (allocated/reserved/committed/remaining bars, month trend, top roles, alerts, Excel export).
+
+## Part 18.15 -- department budgets + finance (2026-09-28)
+
+ui_budgets_router (list/save/delete/dashboard/xlsx export), BudgetsSettingsPage (Settings > Hiring > Department budgets), FinanceDashboard (tiles, coloured per-department bars, month trend, top roles, alerts, Excel). Lock rule for /ui/budgets under Salary.
+
+NEXT: 18.16 documents form after salary approval (Settings > Hiring > Required documents: types, required/optional, file types, max size, per job type; reminders).

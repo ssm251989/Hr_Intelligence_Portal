@@ -397,3 +397,36 @@ history (Bala): salary_checked, salary_auto_decided, salary_approve
 tsc clean, i18n 0 missing (49 new keys), npm run build OK
 ```
 **Screenshot:** Salary table + side panel -- pending login proof.
+
+## 18.15 Department hiring budget + finance dashboard
+
+**Ask:** each department gets a hiring amount per year, and every hire reduces it (budget 50 L, hire at 10 L → 40 L left). Configurable in Settings, with a finance view.
+
+**Change:**
+- **Settings > Hiring > Department budgets** (`BudgetsSettingsPage`): one row per department (taken from the jobs, and more can be added) for the chosen financial year, with:
+  - the **yearly budget** (lakh shown as you type) and an optional **Q1-Q4 split** (must not add up to more than the year);
+  - **alert at %** (default 80);
+  - **when a hire goes over**: *needs approval* or *block the approval*;
+  - used so far, and Save / Clear. Saving is audited (before and after).
+  - The financial year follows `org.fiscal_year_start_month` (default April → "2026-27").
+- **Money tracking** (from 18.13): *reserved* when a salary is approved (auto or HR) → *committed* when the offer is signed → *released* when the candidate is rejected at salary or BGV, or removed.
+- **Salary > Finance tab** (`FinanceDashboard`):
+  - totals as coloured tiles: allocated, reserved, committed, remaining;
+  - per-department **coloured bars** (committed coral, reserved amber, remaining green) with "10 L of 25 L used · 15 L left", and a ring when near the alert;
+  - **trend by month** (stacked bars) and **top roles by cost**;
+  - **alerts** (near the alert % / over budget);
+  - **Export to Excel** (sheets: budgets, top roles, by month) and an "Edit budgets" link.
+- API `GET/PUT/DELETE /api/v1/ui/budgets`, `/dashboard`, `/export` (.xlsx). Viewing needs salary view; editing needs settings configure. Both are covered by the Salary module lock.
+
+**Verified** (rolled back; continues the 18.13 test data):
+```
+PUT quarters adding up to more than the year -> 400
+PUT Demo - Budget Dept 2026-27: 25 L, Q1-Q4 10/10/5/0 L, alert 60%, block -> saved
+offer signed for Bala -> 10 L moves reserved -> committed
+dashboard: allocated 25 L, reserved 0, committed 10 L, remaining 15 L, used 40%, 1 hire; no alert (40% < 60%)
+top roles: Demo - Budget Test Engineer 10 L; trend 2026-09 committed 10 L
+export: .xlsx with sheets [Budgets 2026-27, Top roles, By month]
+recruiter PUT -> 403
+tsc clean, i18n 0 missing (32 new keys), npm run build OK
+```
+**Screenshot:** Finance tab + Department budgets page -- pending login proof.
