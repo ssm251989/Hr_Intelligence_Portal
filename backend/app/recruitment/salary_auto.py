@@ -186,7 +186,6 @@ def send_form(db: Session, tenant, application: Application, *, actor: str = "sy
     """Create (or reuse) the candidate's form link and email it through the company mailbox
     (template recruitment.salary_details_request). -> {"sent", "link"} (link only when mail failed)."""
     from app.models.iam import ActionToken
-    from app.platform.comms.service import send
     from app.platform.iam.action_tokens import create_action_token
 
     candidate = db.get(Candidate, application.candidate_id)
@@ -202,7 +201,10 @@ def send_form(db: Session, tenant, application: Application, *, actor: str = "sy
                                   payload={"reminded": False}, created_by=actor[:50], ttl_days=FORM_TTL_DAYS)
     link = form_link(row.token)
     try:
-        msg = send(db, tenant, template_key="recruitment.salary_details_request", to=[candidate.email],
+        from app.platform.comms.defaults import send_default  # Part 18.12: default wording on first use
+
+        msg = send_default(db, tenant, "recruitment.salary_details_request", to=[candidate.email], related_entity_type="application",
+                           related_entity_id=application.id,
                    ctx={"candidate_name": candidate.full_name or "", "candidate_first_name": (candidate.full_name or "").split(" ")[0],
                         "job_title": job.title if job else "", "form_link": link, "reminder": reminder},
                    purpose="email.outbound.recruitment")
@@ -222,26 +224,65 @@ def after_shortlist(db: Session, tenant, application: Application, actor: str = 
     for anything still missing (setting recruitment.salary.ask_after_shortlist)."""
     candidate = db.get(Candidate, application.candidate_id)
     check(db, tenant, application, candidate=candidate, actor=actor)
+    # Part 18.12: the form goes out at the moment chosen in Settings (default: interview cleared)
+    if (_setting(db, tenant, "recruitment.salary.form_trigger") or "interview_cleared") != "shortlisted":
+        return None
     if candidate is not None and missing_fields(candidate) and _setting(db, tenant, "recruitment.salary.ask_after_shortlist"):
         return send_form(db, tenant, application, actor=actor)
     return None
 
 
-def remind_due(db: Session, tenant) -> int:
-    """Scheduled: one reminder 24h after the form was sent and not filled in."""
+def _already_answered(db: Session, tenant, application: Application) -> bool:
     from app.models.iam import ActionToken
 
-    cutoff = datetime.now(timezone.utc) - REMINDER_AFTER
+    return db.query(ActionToken.id).filter(ActionToken.tenant_id == tenant.tenant_id, ActionToken.entity_type == "application",
+                                           ActionToken.entity_id == application.id, ActionToken.action == FORM_ACTION,
+                                           ActionToken.responded_at.isnot(None)).first() is not None
+
+
+def after_interview(db: Session, tenant, application: Application, interview, actor: str = "system") -> Optional[dict]:
+    """Part 18.12: an interview was marked "selected". If Settings say the salary form goes out
+    when the interview is cleared (recruitment.salary.form_trigger) and this is the chosen round
+    (recruitment.salary.form_after_round: 0 = the final decision, N = from round N on), email the
+    branded form once; reminders follow recruitment.salary.reminder_hours."""
+    from app.models.interview import Interview
+
+    if (_setting(db, tenant, "recruitment.salary.form_trigger") or "interview_cleared") != "interview_cleared":
+        return None
+    wanted = int(_setting(db, tenant, "recruitment.salary.form_after_round") or 0)
+    rounds = [i.id for i in db.query(Interview).filter(Interview.application_id == application.id)
+              .order_by(Interview.scheduled_at.asc().nullslast(), Interview.created_at.asc())]
+    this_round = rounds.index(interview.id) + 1 if interview.id in rounds else len(rounds)
+    if wanted and this_round < wanted:
+        return None
+    if _already_answered(db, tenant, application):
+        return {"sent": False, "reason": "already answered"}
+    return send_form(db, tenant, application, actor=actor)
+
+
+def remind_due(db: Session, tenant) -> int:
+    """Scheduled (hourly): reminders at each of recruitment.salary.reminder_hours (default 24 and
+    48 hours) after the form was sent, while it is still not filled in. Part 18.12."""
+    from app.models.iam import ActionToken
+
+    hours = sorted(int(h) for h in (_setting(db, tenant, "recruitment.salary.reminder_hours") or [24, 48]) if int(h) > 0)
+    if not hours:
+        return 0
+    now = datetime.now(timezone.utc)
     rows = (db.query(ActionToken).filter(ActionToken.tenant_id == tenant.tenant_id, ActionToken.action == FORM_ACTION,
                                          ActionToken.responded_at.is_(None), ActionToken.invalidated_at.is_(None),
-                                         ActionToken.created_at < cutoff, ActionToken.expires_at > datetime.now(timezone.utc)).all())
+                                         ActionToken.created_at < now - timedelta(hours=hours[0]), ActionToken.expires_at > now).all())
     done = 0
     for row in rows:
-        if (row.payload_json or {}).get("reminded"):
+        payload = row.payload_json or {}
+        sent = int(payload.get("reminders", 1 if payload.get("reminded") else 0))
+        if sent >= len(hours) or now - row.created_at < timedelta(hours=hours[sent]):
             continue
         app = db.get(Application, row.entity_id)
         if app is None:
             continue
         send_form(db, tenant, app, reminder=True)
+        row.payload_json = {**(row.payload_json or {}), "reminders": sent + 1}
+        db.commit()
         done += 1
     return done

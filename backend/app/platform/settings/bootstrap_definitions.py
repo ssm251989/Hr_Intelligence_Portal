@@ -79,6 +79,15 @@ def register_all() -> None:
     # flagged. The offer suggestion adds target_hike_pct to the current CTC, kept in the band.
     register(SettingDef("recruitment.careers.ask_salary", "bool", True, module="recruitment", group="Careers site"))
     register(SettingDef("recruitment.salary.ask_after_shortlist", "bool", True, module="recruitment", group="Salary"))
+    # Part 18.12: when the salary form goes out, which round, reminders, optional asks
+    register(SettingDef("recruitment.salary.form_trigger", "str", "interview_cleared", module="recruitment", group="Salary",
+                        json_schema={"type": "string", "enum": ["interview_cleared", "shortlisted", "manual"]}))
+    register(SettingDef("recruitment.salary.form_after_round", "int", 0, module="recruitment", group="Salary",
+                        json_schema={"type": "integer", "minimum": 0, "maximum": 10}))
+    register(SettingDef("recruitment.salary.reminder_hours", "json", [24, 48], module="recruitment", group="Salary",
+                        json_schema={"type": "array", "items": {"type": "integer", "minimum": 1, "maximum": 720}, "maxItems": 5}))
+    register(SettingDef("recruitment.salary.ask_offers", "bool", True, module="recruitment", group="Salary"))
+    register(SettingDef("recruitment.salary.ask_payslip", "bool", False, module="recruitment", group="Salary"))
     register(SettingDef("recruitment.salary.approval_margin_pct", "int", 10, module="recruitment", group="Salary",
                         json_schema={"type": "integer", "minimum": 0, "maximum": 100}))
     register(SettingDef("recruitment.salary.target_hike_pct", "int", 20, module="recruitment", group="Salary",

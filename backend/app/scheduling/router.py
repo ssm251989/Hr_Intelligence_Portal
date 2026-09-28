@@ -321,6 +321,13 @@ def submit_interview_feedback(
             check(db, require_current_tenant(), application, actor="system")
         except Exception:  # noqa: BLE001
             pass
+        try:  # Part 18.12: salary form when the interview is cleared (Settings > Hiring > Salary)
+            from app.platform.tenancy.context import require_current_tenant
+            from app.recruitment.salary_auto import after_interview
+
+            after_interview(db, require_current_tenant(), application, interview, actor=current_user.email)
+        except Exception:  # noqa: BLE001 -- the decision is saved even when the email fails
+            pass
 
     log_action(
         db,

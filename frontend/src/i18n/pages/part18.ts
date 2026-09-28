@@ -183,6 +183,13 @@ export const en = {
   "stage.status.offer_sent": "Offer sent",
   "stage.status.onboarding_started": "Onboarding",
   "stage.status.onboarding_completed": "Joined",
+  "salaryForm.offers": "Offers you have in hand (optional)",
+  "salaryForm.offers_hint": "How many other job offers you have right now. Type 0 if none.",
+  "salaryForm.best_offer": "Best offer you have (per year)",
+  "salaryForm.payslip": "Upload a recent payslip (optional)",
+  "salaryForm.uploading": "Uploading…",
+  "salaryForm.payslip_hint": "PDF, PNG or JPG, up to 5 MB. Only the hiring team sees it.",
+  "salaryForm.payslip_count": "{count} payslip file(s) received - thank you.",
 } as const;
 
 export const hi: Partial<Record<keyof typeof en, string>> = {
@@ -369,6 +376,13 @@ export const hi: Partial<Record<keyof typeof en, string>> = {
   "stage.status.offer_sent": "ऑफ़र भेजा गया",
   "stage.status.onboarding_started": "ऑनबोर्डिंग",
   "stage.status.onboarding_completed": "जॉइन किया",
+  "salaryForm.offers": "आपके पास मौजूद ऑफ़र (वैकल्पिक)",
+  "salaryForm.offers_hint": "अभी आपके पास कितने और नौकरी ऑफ़र हैं। न हों तो 0 लिखें।",
+  "salaryForm.best_offer": "आपका सबसे अच्छा ऑफ़र (प्रति वर्ष)",
+  "salaryForm.payslip": "हाल की सैलरी स्लिप अपलोड करें (वैकल्पिक)",
+  "salaryForm.uploading": "अपलोड हो रहा है…",
+  "salaryForm.payslip_hint": "PDF, PNG या JPG, 5 MB तक। सिर्फ़ भर्ती टीम देखती है।",
+  "salaryForm.payslip_count": "{count} सैलरी स्लिप फ़ाइल मिलीं - धन्यवाद।",
 };
 
 export const ta: Partial<Record<keyof typeof en, string>> = {
@@ -555,4 +569,11 @@ export const ta: Partial<Record<keyof typeof en, string>> = {
   "stage.status.offer_sent": "சலுகை அனுப்பப்பட்டது",
   "stage.status.onboarding_started": "சேர்க்கை",
   "stage.status.onboarding_completed": "சேர்ந்தார்",
+  "salaryForm.offers": "உங்களிடம் உள்ள சலுகைகள் (விருப்பம்)",
+  "salaryForm.offers_hint": "இப்போது உங்களிடம் எத்தனை பிற வேலை சலுகைகள் உள்ளன. இல்லையெனில் 0.",
+  "salaryForm.best_offer": "உங்கள் சிறந்த சலுகை (ஆண்டுக்கு)",
+  "salaryForm.payslip": "சமீபத்திய சம்பளச் சீட்டைப் பதிவேற்று (விருப்பம்)",
+  "salaryForm.uploading": "பதிவேற்றுகிறது…",
+  "salaryForm.payslip_hint": "PDF, PNG அல்லது JPG, 5 MB வரை. பணியமர்த்தல் குழு மட்டுமே பார்க்கும்.",
+  "salaryForm.payslip_count": "{count} சம்பளச் சீட்டுக் கோப்பு(கள்) பெறப்பட்டன - நன்றி.",
 };

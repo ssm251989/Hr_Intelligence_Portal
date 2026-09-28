@@ -40,6 +40,12 @@ export default function SalaryDetailsFormPage() {
   const [notice, setNotice] = useState("");
   const [relocate, setRelocate] = useState<"" | "yes" | "no">("");
   const [joining, setJoining] = useState("");
+  // Part 18.12: offers in hand + payslip (only when Settings ask for them)
+  const [offers, setOffers] = useState("");
+  const [bestOffer, setBestOffer] = useState("");
+  const [payslips, setPayslips] = useState(0);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<unknown>(null);
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<unknown>(null);
@@ -56,6 +62,7 @@ export default function SalaryDetailsFormPage() {
         setExpected(str(v.expected_ctc));
         setNotice(v.notice_period_days == null ? "" : String(v.notice_period_days));
         setRelocate(v.willing_to_relocate == null ? "" : v.willing_to_relocate ? "yes" : "no");
+        setPayslips(v.payslips ?? 0);
       })
       .catch(setLoadError);
   }, [token]);
@@ -147,6 +154,8 @@ export default function SalaryDetailsFormPage() {
         notice_period_days: Number(notice),
         willing_to_relocate: relocate === "" ? null : relocate === "yes",
         earliest_joining_date: joining || null,
+        offers_in_hand: view.ask_offers && offers !== "" ? Number(offers) : null,
+        best_offer_ctc: view.ask_offers && bestOffer ? Number(bestOffer) : null,
       });
       setDone(true);
     } catch (err) {
@@ -193,6 +202,33 @@ export default function SalaryDetailsFormPage() {
             slotProps={{ inputLabel: { shrink: true } }}
             helperText={t("salaryForm.joining_hint")}
           />
+
+          {view.ask_offers && (
+            <Stack spacing={2}>
+              <TextField label={t("salaryForm.offers")} type="number" value={offers} onChange={(e) => setOffers(e.target.value)} fullWidth
+                helperText={t("salaryForm.offers_hint")} slotProps={{ htmlInput: { min: 0, max: 20 } }} />
+              {Number(offers) > 0 && <MoneyField label={t("salaryForm.best_offer")} value={bestOffer} onChange={setBestOffer} />}
+            </Stack>
+          )}
+          {view.ask_payslip && (
+            <Box>
+              <Button variant="outlined" component="label" disabled={uploading}>
+                {uploading ? t("salaryForm.uploading") : t("salaryForm.payslip")}
+                <input hidden type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (!file) return;
+                  setUploading(true);
+                  setUploadError(null);
+                  try { setPayslips((await salaryFormApi.payslip(token, file)).count); } catch (err) { setUploadError(err); } finally { setUploading(false); }
+                }} />
+              </Button>
+              <Typography sx={{ color: f.muted, fontSize: 13, mt: 0.5 }}>
+                {payslips > 0 ? t("salaryForm.payslip_count", { count: payslips }) : t("salaryForm.payslip_hint")}
+              </Typography>
+              {uploadError !== null && <FriendlyError compact error={uploadError} />}
+            </Box>
+          )}
 
           <Button type="submit" variant="contained" size="large" disabled={saving}>
             {saving ? t("salaryForm.sending") : t("salaryForm.submit")}

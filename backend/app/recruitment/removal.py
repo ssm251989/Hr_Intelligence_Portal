@@ -209,6 +209,8 @@ def _remove_files(db: Session, candidate: Candidate, app_ids: list) -> int:
         paths.append(Path(UPLOAD_DIR) / candidate.resume_path)
     if candidate.photo_path:
         paths.append(Path(PHOTO_UPLOAD_DIR) / candidate.photo_path)
+    for rel in (candidate.custom_fields or {}).get("payslips", []):  # Part 18.12 salary form payslips
+        paths.append(Path(UPLOAD_DIR).parent / "salary-payslips" / rel)
     for (fp,) in db.query(BgvDocument.file_path).execution_options(**{INCLUDE_REMOVED: True}).filter(BgvDocument.application_id.in_(app_ids or [None])):
         if fp:
             paths.append(Path(BGV_DIR) / fp)

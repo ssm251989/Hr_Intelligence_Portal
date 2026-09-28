@@ -96,6 +96,9 @@ export interface SalaryFormView {
   expected_ctc: number | null;
   notice_period_days: number | null;
   willing_to_relocate: boolean | null;
+  ask_offers?: boolean; // Part 18.12
+  ask_payslip?: boolean;
+  payslips?: number;
 }
 
 export interface SalaryFormAnswers {
@@ -104,6 +107,8 @@ export interface SalaryFormAnswers {
   notice_period_days: number;
   willing_to_relocate?: boolean | null;
   earliest_joining_date?: string | null;
+  offers_in_hand?: number | null; // Part 18.12
+  best_offer_ctc?: number | null;
 }
 
 const enc = encodeURIComponent;
@@ -112,6 +117,18 @@ export const salaryFormApi = {
   view: (token: string) => publicRequest<SalaryFormView>(`/api/v1/public/salary-details/${enc(token)}`),
   submit: (token: string, answers: SalaryFormAnswers) =>
     publicRequest<{ ok: boolean }>(`/api/v1/public/salary-details/${enc(token)}`, { method: "POST", body: JSON.stringify(answers) }),
+  // Part 18.12: optional payslip (PDF/PNG/JPG, 5 MB)
+  payslip: async (token: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    const response = await fetch(`${BASE_URL}/api/v1/public/salary-details/${enc(token)}/payslip`, { method: "POST", body: form });
+    if (!response.ok) {
+      let detail: unknown = response.statusText;
+      try { detail = (await response.json()).detail; } catch { /* keep status text */ }
+      throw new ApiError(response.status, detail);
+    }
+    return response.json() as Promise<{ uploaded: boolean; count: number }>;
+  },
 };
 
 /** "1200000" -> "12,00,000" (Indian grouping) for the helper line under a money field. */

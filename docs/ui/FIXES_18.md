@@ -308,3 +308,32 @@ real data: bgv 2, salary 1, offers 0
 tsc clean, i18n 0 missing (33 new keys), npm run build OK
 ```
 **Screenshot:** BGV and Offers tables -- pending login proof.
+
+## 18.12 Salary form sent automatically
+
+**Problem:** the salary form (17.8) went out when a candidate was shortlisted, with one reminder at 24 h. Its email template also had never been created, so the email fell back to "share this link".
+
+**Change:**
+- **When** (Settings > Hiring > Salary):
+  - `recruitment.salary.form_trigger` = **interview_cleared** (default) / shortlisted / manual;
+  - `recruitment.salary.form_after_round` = 0 (the final decision) or N (from interview round N; the round is the interview's position for that candidate).
+  - Recording "selected" on an interview (`PATCH /interviews/{id}/feedback`) now sends the branded form once. It is not sent again if already answered.
+- **Reminders:** `recruitment.salary.reminder_hours` = [24, 48] by default, any list of up to 5. The hourly job sends each reminder once while the form is unanswered and stops as soon as it is answered.
+- **Form fields:** current CTC, expected CTC, notice period, relocation, earliest joining (as before), plus:
+  - **offers in hand** (and the best offer), setting `ask_offers`, on by default;
+  - optional **payslip upload** (PDF/PNG/JPG, 5 MB), setting `ask_payslip`, off by default. Files are kept under `uploads/salary-payslips` and deleted with the candidate (17.15).
+- **Email wording:** the email uses the default template (`app/platform/comms/defaults.py`). It is created as a published, editable template on first use, which fixes the 17.8 gap.
+
+**Verified** (rolled back; sending replaced by a recorder so nothing was emailed):
+```
+defaults: trigger interview_cleared, after_round 0, reminders [24, 48], ask_offers true, ask_payslip false
+after_round = 2, round 1 cleared -> nothing sent
+after_round = 0, decision "selected" -> 1 email recruitment.salary_details_request
+template created on first use -> published "{{ job_title }}: your salary and joining details"
+reminders: at 10h 0 | at 25h 1 | again 0 | at 49h 1 | after both 0
+public form -> ask_offers true, ask_payslip true; payslip PDF -> uploaded (1); .exe -> 400
+submit with offers_in_hand 1, best offer 10,00,000 -> saved on the candidate
+answered -> no more reminders; the test payslip file was deleted afterwards
+tsc clean, i18n 0 missing, npm run build OK
+```
+**Screenshot:** the salary form with the new fields -- pending (needs an unanswered demo link).

@@ -15,7 +15,7 @@ Every query filters on the current company's tenant_id explicitly.
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -157,7 +157,11 @@ def form_view(token: str, db: Session = Depends(get_db)):
             "current_ctc": float(cand.current_ctc) if cand and cand.current_ctc is not None else None,
             "expected_ctc": float(cand.expected_ctc) if cand and cand.expected_ctc is not None else None,
             "notice_period_days": cand.notice_period_days if cand else None,
-            "willing_to_relocate": cand.willing_to_relocate if cand else None}
+            "willing_to_relocate": cand.willing_to_relocate if cand else None,
+            # Part 18.12: optional asks (Settings > Hiring > Salary)
+            "ask_offers": bool(salary_auto._setting(db, tenant, "recruitment.salary.ask_offers")),
+            "ask_payslip": bool(salary_auto._setting(db, tenant, "recruitment.salary.ask_payslip")),
+            "payslips": len((cand.custom_fields or {}).get("payslips", [])) if cand else 0}
 
 
 class FormIn(BaseModel):
@@ -166,6 +170,38 @@ class FormIn(BaseModel):
     notice_period_days: int = Field(..., ge=0, le=365)
     willing_to_relocate: Optional[bool] = None
     earliest_joining_date: Optional[str] = Field(None, max_length=20)
+    offers_in_hand: Optional[int] = Field(None, ge=0, le=20)  # Part 18.12
+    best_offer_ctc: Optional[float] = Field(None, ge=0, le=1_000_000_000)
+
+
+PAYSLIP_TYPES = {"application/pdf": "pdf", "image/png": "png", "image/jpeg": "jpg"}
+PAYSLIP_MAX = 5 * 1024 * 1024
+
+
+@public_router.post("/{token}/payslip")
+async def payslip_upload(token: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """Part 18.12: optional payslip (PDF/PNG/JPG, 5 MB) -- before the form is sent in. Kept under
+    uploads/salary-payslips and listed on the candidate (removed with the candidate, 17.15)."""
+    import uuid as _uuid
+    from pathlib import Path
+
+    tenant, _row, app = _resolve(db, token)
+    ext = PAYSLIP_TYPES.get(file.content_type or "")
+    if ext is None:
+        raise HTTPException(status_code=400, detail="Please upload a PDF, PNG or JPG file.")
+    data = await file.read()
+    if len(data) > PAYSLIP_MAX:
+        raise HTTPException(status_code=400, detail="That file is larger than 5 MB.")
+    folder = Path(__file__).resolve().parent.parent.parent / "uploads" / "salary-payslips" / str(tenant.tenant_id)
+    folder.mkdir(parents=True, exist_ok=True)
+    name = f"{_uuid.uuid4()}.{ext}"
+    (folder / name).write_bytes(data)
+    cand = db.get(Candidate, app.candidate_id)
+    fields = dict(cand.custom_fields or {})
+    fields["payslips"] = [*fields.get("payslips", []), f"{tenant.tenant_id}/{name}"][-6:]
+    cand.custom_fields = fields
+    db.commit()
+    return {"uploaded": True, "count": len(fields["payslips"])}
 
 
 @public_router.post("/{token}")
@@ -178,8 +214,10 @@ def form_submit(token: str, payload: FormIn, db: Session = Depends(get_db)):
     figures = payload.model_dump()
     app.expected_salary = payload.expected_ctc
     salary_auto.take_figures(db, tenant, cand, figures, source="candidate form", overwrite=True)
-    if payload.earliest_joining_date:
-        cand.custom_fields = {**(cand.custom_fields or {}), "earliest_joining_date": payload.earliest_joining_date}
+    extra = {k: v for k, v in (("earliest_joining_date", payload.earliest_joining_date), ("offers_in_hand", payload.offers_in_hand),
+                                   ("best_offer_ctc", payload.best_offer_ctc)) if v is not None}
+    if extra:
+        cand.custom_fields = {**(cand.custom_fields or {}), **extra}
         db.commit()
     mark_action_token_responded(db, row)
     log_action(db, "application", app.id, "salary_form_answered", "candidate", {"fields": list(figures)})

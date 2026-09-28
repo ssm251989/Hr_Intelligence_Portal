@@ -2310,3 +2310,9 @@ NEXT: 18.11 all-candidates tables on Salary, BGV, Offers (Shortlisting/Screening
 ui_stage_table_router (salary/bgv/offers, filters, sort, 500/page, status counts, CSV export, lock rules), StageTable component on BGV + Offers (row opens the existing per-job actions, bulk Request BGV). Proof: 602 rows, 557 ms.
 
 NEXT: 18.12 salary form sent automatically when a candidate clears the configured interview round (+ offers in hand, optional payslip upload, reminders 24h/48h configurable).
+
+## Part 18.12 -- salary form automatic after interview (2026-09-28)
+
+salary_auto.after_interview (trigger + round settings) hooked into interview feedback; remind_due uses reminder_hours list; form: offers in hand, best offer, payslip upload endpoint; send_form uses send_default (template seeded on first use); removal deletes payslips. Decision: after_shortlist now only sends when the trigger is "shortlisted" (owner wants interview_cleared by default).
+
+NEXT: 18.13 salary auto-decision (hike <= X%, within band, department budget enough) else highlighted for HR (approve / counter-offer / reject with reason).
