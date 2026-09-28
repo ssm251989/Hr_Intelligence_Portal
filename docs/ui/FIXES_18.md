@@ -193,3 +193,34 @@ scale (rolled back, +150 live jobs): 154 jobs -> 40 ms, 5 SQL queries in total
 tsc clean, i18n 0 missing (20 new keys en/hi/ta), npm run build OK
 ```
 **Screenshot:** Jobs page chips + table + health column -- pending login proof.
+
+## 18.8 Close a job
+
+**Problem / ask:** "Close job" with a reason. Closing must put the job's resumes on hold automatically (not reject them), and reopening must restore them.
+
+**Change:**
+- **Where:** "Close job" in the job row menu and in the job details, for recruiters and admins. The dialog asks for a reason (position filled / hiring cancelled / on hold by the business / other) and an optional note.
+- **`POST /api/v1/ui/jobs/{id}/close`** (`app/jobs/closing.py`):
+  - the job becomes `closed` (with closed_at, reason and note) and leaves the careers site;
+  - **every active application** moves to `on_hold` with `hold_reason = "job_closed"`, keeping its previous stage. Finished or rejected ones are untouched, and it is never a rejection;
+  - queued emails and open interview-scheduling, confirmation and form links for those applications are cancelled;
+  - the recruiters get an in-app notice (job owner, hiring manager, hiring team; the person closing if the job has none);
+  - optional candidate email: setting `recruitment.jobs.close_email_candidates` (default off) or the tick in the dialog, using the editable template `recruitment.job_closed_candidate`;
+  - everything is audited.
+- **Reopen** (existing J5 dialog) now also returns exactly those applications to their earlier stage.
+- The candidate list shows **"On hold - job closed"** for them.
+- **New:** `app/platform/comms/defaults.py`. Automatic candidate emails get ready-made wording that becomes a published, editable template on first use. It never overwrites an existing template. This also fixes the 17.8 salary-form email, whose template had never existed.
+
+**Verified** (rolled back, on "Demo - RPA Developer"):
+```
+before: [bgv_rejected], [hr_selected], [salary_approved]; on careers site: true
+bad reason -> 400; interviewer -> 403
+close (filled) -> 200 {on_hold: 2, cancelled: {queued_emails: 1}, recruiters_notified: [kg@ctdtechs.com]}
+after:  [bgv_rejected untouched], [on_hold / previous hr_selected / job_closed], [on_hold / previous salary_approved / job_closed]
+        careers site: false; queued email -> suppressed; in-app "Demo - RPA Developer was closed (filled). 2 candidate(s) are on hold."
+close again -> 400 "This job is already closed."
+reopen -> 200 {applications_restored: 2}; back to hr_selected + salary_approved; careers site: true
+candidate email template created on first use -> published, "Update on your application for {{ job_title }}"
+tsc clean, i18n 0 missing, npm run build OK
+```
+**Screenshot:** Close job dialog -- pending login proof.

@@ -34,6 +34,7 @@ class CandidateApplicationRow(BaseModel):
     job_role_id: uuid.UUID
     job_title: str
     status: str
+    hold_reason: Optional[str] = None  # Part 18.8: "job_closed" -> shown as "On hold - job closed"
     source: str
     location: Optional[str] = None
     applied_on: datetime

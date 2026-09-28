@@ -625,7 +625,9 @@ export default function CandidatesListPage() {
                             )}
                           </TableCell>
                         )}
-                        {show("status") && <TableCell><StatusChip status={row.status} /></TableCell>}
+                        {show("status") && <TableCell>{row.hold_reason === "job_closed"
+                          ? <StatusChip tone="muted" emoji="pause" label={t("closejob.on_hold_label")} />
+                          : <StatusChip status={row.status} />}</TableCell>}
                         {show("remarks") && (
                           <TableCell sx={{ maxWidth: 220 }}>
                             {row.remarks ? (

@@ -297,6 +297,7 @@ export interface CandidateApplicationRow {
   job_role_id: UUID;
   job_title: string;
   status: string;
+  hold_reason?: string | null; // Part 18.8: "job_closed"
   source: string;
   location?: string | null;
   applied_on: string;

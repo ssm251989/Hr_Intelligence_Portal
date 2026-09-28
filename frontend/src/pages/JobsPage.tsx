@@ -56,6 +56,7 @@ import TopPerformingJobs from "../components/TopPerformingJobs";
 import AutoCloseNote from "../components/jobs/AutoCloseNote";
 import JobsHealthCard from "../components/jobs/JobsHealthCard";
 import JobHealthChip from "../components/jobs/JobHealthChip";
+import CloseJobDialog from "../components/jobs/CloseJobDialog";
 import { automationApi, type JobsHealth } from "../api/automationApi";
 import JobTemplateLibrary from "../components/jobs/JobTemplateLibrary";
 import { STAGE_STYLE } from "../components/jobs/jobStages";
@@ -171,7 +172,7 @@ function PanelCard({ emoji, title, children }: { emoji: string; title: string; c
 // Delete only while draft/ready_for_publishing (backend delete_job rule); hold/resume on
 // published/on_hold; reopen on closed (J5); "use as template" on any job (J2).
 function JobActionsMenu({
-  job, onChanged, onDeleted, onError, onReopen, onUseTemplate,
+  job, onChanged, onDeleted, onError, onReopen, onUseTemplate, onCloseJob,
 }: {
   job: JobRoleRead;
   onChanged: (updated: JobRoleRead) => void;
@@ -179,6 +180,7 @@ function JobActionsMenu({
   onError: (what: string, error: unknown) => void;
   onReopen: (job: JobRoleRead) => void;
   onUseTemplate: (job: JobRoleRead) => void;
+  onCloseJob: (job: JobRoleRead) => void;
 }) {
   const t = useT();
   const f = useTheme().palette.fresh;
@@ -230,6 +232,12 @@ function JobActionsMenu({
             {t("jobs.action.resume")}
           </MenuItem>
         )}
+        {(job.status === "published" || job.status === "on_hold") && (
+          <MenuItem onClick={() => { setAnchorEl(null); onCloseJob(job); }}>
+            <ListItemIcon><Emoji name="door" size={18} /></ListItemIcon>
+            {t("closejob.action")}
+          </MenuItem>
+        )}
         {job.status === "closed" && (
           <MenuItem onClick={() => { setAnchorEl(null); onReopen(job); }}>
             <ListItemIcon><Emoji name="key" size={18} /></ListItemIcon>
@@ -271,6 +279,7 @@ export default function JobsPage() {
   const [pipeline, setPipeline] = useState<Record<string, JobPipelineRow>>({});
   // Part 18.7: job health for the "needs attention" panel and the Job health column
   const [health, setHealth] = useState<JobsHealth | null>(null);
+  const [closingJob, setClosingJob] = useState<JobRoleRead | null>(null); // Part 18.8
   const healthById = useMemo(() => new Map((health?.jobs ?? []).map((j) => [j.job_id, j])), [health]);
   const [justClosed, setJustClosed] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -646,6 +655,14 @@ export default function JobsPage() {
         }}
       />
 
+      {closingJob && (
+        <CloseJobDialog open jobId={closingJob.id} title={closingJob.title} onClose={() => setClosingJob(null)}
+          onClosed={(r) => {
+            setNotice(t("closejob.done", { title: closingJob.title, count: r.on_hold }));
+            setClosingJob(null);
+            refreshAll();
+          }} />
+      )}
       {notice && (
         <Card role="status" sx={{ p: 1.5, mb: 2, bgcolor: f.okSoft, boxShadow: "none" }}>
           <Stack direction="row" spacing={1} alignItems="center">
@@ -766,6 +783,7 @@ export default function JobsPage() {
                                 onError={(what, error) => setActionError({ what, error })}
                                 onReopen={setReopeningJob}
                                 onUseTemplate={openFromTemplate}
+                                onCloseJob={setClosingJob}
                               />
                             )}
                           </Stack>
@@ -845,6 +863,7 @@ export default function JobsPage() {
         canWrite={canWrite}
         pipeline={viewingJob ? pipeline[viewingJob.id] : undefined}
         onClose={() => setViewingJob(null)}
+        onCloseJob={(job) => { setViewingJob(null); setClosingJob(job); }}
         onUpdated={(updated) => {
           setJobs((prev) => prev.map((j) => (j.id === updated.id ? updated : j)));
           setViewingJob(updated);

@@ -2286,3 +2286,9 @@ NEXT: 18.7 jobs needing attention scales to 100+ jobs (summary chips, Job health
 job_health -> {summary, jobs[level, issues(kind,days,count), tips(codes)]} in 5 grouped queries; JobsHealthCard rewritten (chips filter, search, sort, paging, collapse), JobHealthChip (hover reasons + tips) + "health" column in the Jobs table. Proof: 154 jobs 40 ms.
 
 NEXT: 18.8 close a job (reason, active applications -> On hold - job closed, cancel scheduled emails/interview requests, notify recruiter, optional candidate email; reopen restores stages; off careers site).
+
+## Part 18.8 -- close a job (2026-09-28)
+
+app/jobs/closing.py close_job/restore_applications, POST /ui/jobs/{id}/close, reopen restores, job_roles.closed_at/close_reason/close_note + applications.hold_reason (migration b7d3f1a9c5e2), setting recruitment.jobs.close_email_candidates, comms defaults.py (default wording -> editable published template on first use), CloseJobDialog (row menu + job details), "On hold - job closed" chip. Decision: proof never emailed real candidates (only template creation checked).
+
+NEXT: 18.9 LinkedIn/Naukri import: "Complete setup" (what is needed, opens Settings > Integrations > Job boards with connect form + test).

@@ -39,12 +39,15 @@ export default function JobDetailsDialog({
   onClose,
   onUpdated,
   pipeline,
+  onCloseJob,
 }: {
   job: JobRoleRead | null;
   canWrite: boolean;
   onClose: () => void;
   onUpdated: (job: JobRoleRead) => void;
   pipeline?: JobPipelineRow;
+  /** Part 18.8: opens the Close job dialog */
+  onCloseJob?: (job: JobRoleRead) => void;
 }) {
   const t = useT();
   const f = useTheme().palette.fresh;
@@ -144,6 +147,9 @@ export default function JobDetailsDialog({
         )}
       </DialogContent>
       <DialogActions>
+        {onCloseJob && canWrite && job && (job.status === "published" || job.status === "on_hold") && (
+          <Button color="warning" variant="outlined" onClick={() => onCloseJob(job)} sx={{ mr: "auto" }}>{t("closejob.action")}</Button>
+        )}
         <Button onClick={onClose}>{t("action.close")}</Button>
       </DialogActions>
     </Dialog>

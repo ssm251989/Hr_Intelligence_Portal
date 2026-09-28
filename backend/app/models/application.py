@@ -60,6 +60,7 @@ class Application(Base, TenantOwned):
     # Set only while status == 'on_hold' -- the status to restore on resume (see
     # app/candidates/hold.py). Cleared back to null on resume; never meaningful otherwise.
     previous_status = Column(Text)
+    hold_reason = Column(Text)  # Part 18.8: "job_closed" when the job's closing put it on hold (reopen restores it)
     expected_salary = Column(Numeric)
     approved_salary = Column(Numeric)
     created_at = Column(DateTime(timezone=True), server_default=text("now()"))

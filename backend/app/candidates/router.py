@@ -259,6 +259,7 @@ def row_to_item(
         job_role_id=application.job_role_id,
         job_title=job_title,
         status=application.status,
+        hold_reason=getattr(application, 'hold_reason', None),
         source=candidate.source,
         location=candidate.location,
         applied_on=application.created_at,

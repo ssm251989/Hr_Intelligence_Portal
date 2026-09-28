@@ -84,6 +84,8 @@ def register_all() -> None:
     register(SettingDef("recruitment.salary.target_hike_pct", "int", 20, module="recruitment", group="Salary",
                         json_schema={"type": "integer", "minimum": 0, "maximum": 200}))
     register(SettingDef("recruitment.salary.approvers", "json", [], module="recruitment", group="Salary"))
+    # Part 18.8: closing a job -- also email its candidates (template recruitment.job_closed_candidate)
+    register(SettingDef("recruitment.jobs.close_email_candidates", "bool", False, module="recruitment", group="Jobs"))
     # Part 18.4: module unlock passcode (the passcode itself is only a hash in module_access)
     register(SettingDef("modules.lock.enabled", "bool", True, module="platform", group="Modules"))
     register(SettingDef("modules.lock.mode", "str", "one", module="platform", group="Modules",

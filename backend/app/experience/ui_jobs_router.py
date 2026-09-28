@@ -179,9 +179,37 @@ def reopen_job(
     job.status = "published"
     db.commit()
     db.refresh(job)
+    # Part 18.8: candidates the closing put on hold go back to the stage they were in
+    from app.jobs.closing import restore_applications
+    from app.platform.tenancy.context import require_current_tenant
+
+    restored = restore_applications(db, require_current_tenant(), job, actor=current_user.email)
     log_action(
         db, "job_role", job.id, "job_reopened", "system",
         {"previous_status": "closed", "new_status": "published", "application_deadline": settings["application_deadline"],
-         "positions_count": job.positions_count, "by": current_user.email},
+         "positions_count": job.positions_count, "by": current_user.email, "applications_restored": restored},
     )
-    return {"job_id": str(job.id), "status": job.status}
+    return {"job_id": str(job.id), "status": job.status, "applications_restored": restored}
+
+
+class CloseRequest(BaseModel):
+    reason: str
+    note: Optional[str] = None
+    email_candidates: Optional[bool] = None  # None = the company setting
+
+
+@router.post("/{job_id}/close")
+def close_job(job_id: uuid.UUID, payload: CloseRequest, db: Session = Depends(get_db),
+              current_user: User = Depends(require_roles("recruiter", "admin"))):
+    """Part 18.8: close by hand -> active applications "On hold - job closed", pending emails/links cancelled."""
+    from app.jobs.closing import close_job as do_close
+    from app.platform.tenancy.context import require_current_tenant
+
+    job = db.get(JobRole, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job role not found")
+    try:
+        return do_close(db, require_current_tenant(), job, reason=payload.reason, note=payload.note, actor=current_user.email,
+                        email_candidates=payload.email_candidates)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
