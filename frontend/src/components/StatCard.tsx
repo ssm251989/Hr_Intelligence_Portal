@@ -276,6 +276,12 @@ export default function StatCard({
         sx={(theme) => ({
           height: "100%",
           transition: "transform 220ms ease, box-shadow 220ms ease",
+          ...(color
+            ? {
+                backgroundImage: `linear-gradient(135deg, ${color}${theme.palette.mode === "dark" ? "26" : "14"} 0%, transparent 70%)`,
+                boxShadow: `inset 0 3px 0 ${color}${theme.palette.mode === "dark" ? "CC" : "B3"}, ${theme.palette.fresh.shadow}`,
+              }
+            : {}),
           "&:hover": {
             transform: "translateY(-3px)",
             boxShadow: CARD_SHADOW_HOVER[theme.palette.mode === "dark" ? "dark" : "light"],
@@ -334,9 +340,11 @@ export default function StatCard({
           flex: "1 1 220px",
           position: "relative",
           transition: "transform 220ms ease, box-shadow 220ms ease",
-          ...(hero && color
+          // Part 18.6: every stat card wears its own colour (the hero a stronger wash)
+          ...(color
             ? {
-                backgroundImage: `linear-gradient(135deg, ${color}${dark ? "2E" : "1C"} 0%, transparent 65%)`,
+                backgroundImage: `linear-gradient(135deg, ${color}${hero ? (dark ? "38" : "24") : dark ? "26" : "14"} 0%, transparent 70%)`,
+                boxShadow: `inset 0 3px 0 ${color}${dark ? "CC" : "B3"}, ${theme.palette.fresh.shadow}`,
               }
             : {}),
           "&:hover": {

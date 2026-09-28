@@ -38,7 +38,7 @@ export function resolveTokens(mode: ThemeMode, branding?: Pick<BrandingRead, "pr
 
 /** Chart series derived from the theme, each nudged until it has >= 3:1 contrast on cards. */
 export function chartColors(t: FreshTokens, mode: ThemeMode): string[] {
-  return [t.brand, t.sky, t.sun, t.coral, t.ok, t.muted].map((c) => {
+  return [t.brand, t.sky, t.sun, t.coral, t.violet, t.ok, t.muted].map((c) => {
     let colour = c;
     for (let i = 0; i < 8 && getContrastRatio(colour, t.surface) < 3; i += 1) {
       colour = mode === "light" ? darken(colour, 0.1) : lighten(colour, 0.1);
@@ -95,7 +95,15 @@ export function createAppTheme(mode: ThemeMode, brandingOrPrimary?: BrandingInpu
     components: {
       MuiCssBaseline: {
         styleOverrides: {
-          body: { backgroundColor: t.ground, color: t.ink },
+          // Part 18.6: soft colour glows behind every page (stronger in dark mode)
+          body: {
+            backgroundColor: t.ground, color: t.ink, backgroundAttachment: "fixed",
+            backgroundImage: [
+              `radial-gradient(900px 520px at 0% 0%, ${alpha(t.brand, mode === "dark" ? 0.16 : 0.08)}, transparent 60%)`,
+              `radial-gradient(800px 500px at 100% 0%, ${alpha(t.violet, mode === "dark" ? 0.16 : 0.07)}, transparent 60%)`,
+              `radial-gradient(900px 600px at 50% 110%, ${alpha(t.sky, mode === "dark" ? 0.12 : 0.06)}, transparent 60%)`,
+            ].join(", "),
+          },
           ".num, .MuiTableCell-root": tabular,
           "::selection": { backgroundColor: t.brandSoft },
         },
@@ -114,7 +122,11 @@ export function createAppTheme(mode: ThemeMode, brandingOrPrimary?: BrandingInpu
         styleOverrides: {
           // Every existing card was written as variant="outlined"; redefining that variant
           // gives the whole app the soft two-layer shadow without touching call sites.
-          root: { borderRadius: RADIUS.card, border: "none", boxShadow: t.shadow, backgroundColor: t.surface, transition: "box-shadow 220ms ease" },
+          root: {
+            borderRadius: RADIUS.card, border: "none", boxShadow: t.shadow, backgroundColor: t.surface, transition: "box-shadow 220ms ease",
+            // Part 18.6: in dark mode a faint light edge so cards stand off the navy ground
+            ...(mode === "dark" ? { outline: `1px solid ${alpha("#FFFFFF", 0.06)}`, outlineOffset: -1 } : {}),
+          },
         },
       },
       MuiCardContent: { styleOverrides: { root: { padding: 18, "&:last-child": { paddingBottom: 18 } } } },
@@ -125,7 +137,14 @@ export function createAppTheme(mode: ThemeMode, brandingOrPrimary?: BrandingInpu
           root: { borderRadius: RADIUS.button, fontWeight: 700, padding: "8px 16px", "&.Mui-focusVisible": focusRing },
           sizeSmall: { padding: "5px 12px", borderRadius: 9 },
           sizeLarge: { padding: "11px 20px" },
+          // Part 18.6: primary buttons glow a little (more in dark mode)
           contained: { "&:hover": { boxShadow: t.shadow } },
+          containedPrimary: {
+            backgroundImage: `linear-gradient(135deg, ${t.brand}, ${mode === "dark" ? lighten(t.brand, 0.12) : darken(t.brand, 0.08)})`,
+            boxShadow: `0 4px 16px ${alpha(t.brand, mode === "dark" ? 0.45 : 0.28)}`,
+            "&:hover": { boxShadow: `0 6px 22px ${alpha(t.brand, mode === "dark" ? 0.6 : 0.38)}` },
+            "&.Mui-disabled": { backgroundImage: "none", boxShadow: "none" },
+          },
           outlined: { borderColor: t.line, backgroundColor: t.surface, color: t.ink, "&:hover": { borderColor: t.brand, backgroundColor: t.surface2 } },
           text: { "&:hover": { backgroundColor: t.brandSoft } },
         },
@@ -256,7 +275,7 @@ export function createAppTheme(mode: ThemeMode, brandingOrPrimary?: BrandingInpu
       MuiLinearProgress: {
         styleOverrides: {
           root: { height: 10, borderRadius: 5, backgroundColor: t.line },
-          bar: { borderRadius: 5, backgroundImage: `linear-gradient(90deg, ${t.brand}, ${t.sun})` },
+          bar: { borderRadius: 5, backgroundImage: `linear-gradient(90deg, ${t.brand}, ${t.sky}, ${t.violet})` },
         },
       },
       MuiAvatar: { styleOverrides: { rounded: { borderRadius: 12 } } },
@@ -283,7 +302,7 @@ export function cssVariables(t: FreshTokens): Record<string, string> {
   return {
     "--brand": t.brand, "--brand-ink": t.brandInk, "--brand-soft": t.brandSoft,
     "--coral": t.coral, "--coral-soft": t.coralSoft, "--sun": t.sun, "--sun-soft": t.sunSoft, "--sun-ink": t.sunInk,
-    "--sky": t.sky, "--sky-soft": t.skySoft, "--ok": t.ok, "--ok-soft": t.okSoft,
+    "--sky": t.sky, "--sky-soft": t.skySoft, "--ok": t.ok, "--ok-soft": t.okSoft, "--violet": t.violet, "--violet-soft": t.violetSoft,
     "--ground": t.ground, "--surface": t.surface, "--surface-2": t.surface2,
     "--ink": t.ink, "--muted": t.muted, "--line": t.line, "--shadow": t.shadow,
   };

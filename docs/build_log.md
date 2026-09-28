@@ -2274,3 +2274,9 @@ NEXT: 18.5 switch off People, Org chart, Performance, Compensation, Succession, 
 Default platform.modules.enabled without core_hr/performance/helpdesk + migration a1c5e8f3d7b2 (settings only), platform.modules.offered drives Setup "Choose what you use", GET /setup/modules + scope=all save for Settings > Advanced > Modules (ModulesOnOffCard), import_employees step hidden without People, Home boxes gated by module. Decision: Assets and Exits stay on (not in the owner list).
 
 NEXT: 18.6 colourful light and dark mode (rich dark palette, coloured tiles/chips/charts, contrast checked).
+
+## Part 18.6 -- colourful light/dark (2026-09-28)
+
+New navy/teal dark palette + violet accent (both modes), page glows, gradient glowing primary buttons, per-tile/per-card colours (StatTile auto tone, StatCard wash + top edge), module-coloured header icons, vivid chart series, scripts/contrast-check.mjs (all 32 pairs pass; fixed 2 light-mode pairs that failed before). Public screenshots light+dark.
+
+NEXT: 18.7 jobs needing attention scales to 100+ jobs (summary chips, Job health column with reasons, compact sortable/searchable/paginated table).

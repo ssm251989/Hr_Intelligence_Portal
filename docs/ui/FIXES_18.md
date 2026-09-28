@@ -140,3 +140,30 @@ setup steps: company, entities_locations, branding, mailbox, modules, config_pac
 tsc clean, i18n 0 missing
 ```
 **Screenshot:** menu, Settings > Modules -- pending login proof.
+
+## 18.6 Colourful light and dark mode
+
+**Problem:** dark mode looked dull (near-black green-grey everywhere); light mode was mostly one colour.
+
+**Change** (`theme/tokens.ts`, `theme/createAppTheme.ts`, `ui-kit/StatTile.tsx`, `ui-kit/PageHeader.tsx`, `components/StatCard.tsx`):
+- **Dark palette:**
+  - deep navy ground `#0A1324`, navy cards `#111E36`;
+  - bright accents: teal `#2DD4BF`, coral `#FF8474`, sun `#FFCB57`, sky `#6AADFF`, green `#4ADE80`, and a new **violet** `#B39DFF`;
+  - cards get a faint light edge so they stand off the ground.
+- **Light palette:** cooler, cleaner ground and a new violet. Coral and amber text are darkened so their chips are readable.
+- **Colour everywhere:**
+  - soft colour glows behind every page (teal top-left, violet top-right, sky bottom);
+  - primary buttons have a gradient and a soft glow (stronger in dark mode);
+  - every stat tile and dashboard card wears its own colour (tinted wash and a coloured top edge). Without a set tone, tiles pick a colour from their label, so a row is never all one colour;
+  - page header icons sit on a module colour;
+  - charts gained violet in their series; progress bars run teal → sky → violet.
+- **Contrast checked:** new `node scripts/contrast-check.mjs` tests 16 text/background pairs per mode (WCAG 4.5:1 text, 3:1 chips/icons). All pass. Before the change, light mode had 2 failing pairs: coral chip 2.63, amber text 4.32.
+- Company brand colours still override the defaults (the primary colour is lifted for dark mode).
+
+**Verified:**
+```
+node scripts/contrast-check.mjs -> contrast: all pairs OK (light + dark)
+tsc clean, npm run build OK
+```
+**Screenshots (public pages, both modes):** `login-light.png`, `login-dark.png`, `careers-light.png`, `careers-dark.png`, `candidate-status-light.png`, `candidate-status-dark.png`.
+In-app pages in both modes -- pending login proof.

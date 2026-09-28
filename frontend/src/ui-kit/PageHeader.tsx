@@ -24,11 +24,19 @@ export default function PageHeader({
   below?: ReactNode;
 }) {
   const t = useTheme().palette.fresh;
+  // Part 18.6: every module's header icon sits on its own colour (picked from its emoji)
+  const tones = [
+    { soft: t.brandSoft, edge: t.brand }, { soft: t.skySoft, edge: t.sky }, { soft: t.sunSoft, edge: t.sun },
+    { soft: t.coralSoft, edge: t.coral }, { soft: t.violetSoft, edge: t.violet }, { soft: t.okSoft, edge: t.ok },
+  ];
+  const base = tones[[...emoji].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 3) % tones.length];
+  const tone = { soft: base.soft, edge: `${base.edge}55` };
   return (
     <Box component="header" sx={{ mb: 2.5 }}>
       <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ xs: "flex-start", sm: "center" }} justifyContent="space-between">
         <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 0 }}>
-          <Box sx={{ width: 48, height: 48, borderRadius: "14px", bgcolor: t.brandSoft, display: "grid", placeItems: "center", flexShrink: 0 }}>
+          <Box sx={{ width: 48, height: 48, borderRadius: "14px", display: "grid", placeItems: "center", flexShrink: 0,
+            backgroundImage: `linear-gradient(135deg, ${tone.soft}, ${t.surface})`, boxShadow: `inset 0 0 0 1px ${tone.edge}` }}>
             <Emoji name={emoji} size={26} />
           </Box>
           <Box sx={{ minWidth: 0 }}>

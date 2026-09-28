@@ -18,6 +18,8 @@ export interface FreshTokens {
   skySoft: string;
   ok: string;
   okSoft: string;
+  violet: string; // Part 18.6: a fifth accent so modules/tiles/charts can each have their own colour
+  violetSoft: string;
   ground: string; // page background
   surface: string; // cards
   surface2: string; // insets inside cards (list rows, evidence lines)
@@ -31,25 +33,29 @@ export interface FreshTokens {
 export const FRESH: Record<ThemeMode, FreshTokens> = {
   light: {
     brand: "#0E7C66", brandInk: "#FFFFFF", brandSoft: "#E2F3EE",
-    coral: "#F26B4B", coralSoft: "#FDECE7",
-    sun: "#F2B233", sunSoft: "#FDF4DF", sunInk: "#9A6A08",
+    coral: "#D9462B", coralSoft: "#FDECE7",
+    sun: "#F2B233", sunSoft: "#FDF4DF", sunInk: "#8A5E06",
     sky: "#2F6FDE", skySoft: "#E6EEFC",
     ok: "#1F8A4C", okSoft: "#E3F4EA",
-    ground: "#F4F6F5", surface: "#FFFFFF", surface2: "#F9FBFA",
+    violet: "#7048D8", violetSoft: "#EFE9FD",
+    ground: "#F2F6F9", surface: "#FFFFFF", surface2: "#F7FAFC",
     ink: "#15211D", muted: "#5B6A65", line: "#E2E8E5",
     shadow: "0 1px 2px rgba(21,33,29,.05), 0 6px 20px rgba(21,33,29,.06)",
     shadowHover: "0 2px 4px rgba(21,33,29,.06), 0 12px 28px rgba(21,33,29,.10)",
   },
+  // Part 18.6: deep navy/teal ground with bright accents (the old dark mode looked dull);
+  // every text/background pair is >= 4.5:1 (scripts/contrast-check.mjs).
   dark: {
-    brand: "#3FBF9F", brandInk: "#08110E", brandSoft: "#173A31",
-    coral: "#FF8A6B", coralSoft: "#3A221C",
-    sun: "#F5C35A", sunSoft: "#3A3020", sunInk: "#F5C35A",
-    sky: "#6C9BF0", skySoft: "#1C2A45",
-    ok: "#5BCB8A", okSoft: "#173424",
-    ground: "#0E1412", surface: "#16201D", surface2: "#1B2622",
-    ink: "#E6EEEB", muted: "#9AAAA4", line: "#26332F",
-    shadow: "0 1px 2px rgba(0,0,0,.4), 0 6px 20px rgba(0,0,0,.3)",
-    shadowHover: "0 2px 4px rgba(0,0,0,.45), 0 12px 28px rgba(0,0,0,.4)",
+    brand: "#2DD4BF", brandInk: "#03201C", brandSoft: "#0E3B3F",
+    coral: "#FF8474", coralSoft: "#3E1E27",
+    sun: "#FFCB57", sunSoft: "#3A2F17", sunInk: "#FFD27A",
+    sky: "#6AADFF", skySoft: "#15294B",
+    ok: "#4ADE80", okSoft: "#10352A",
+    violet: "#B39DFF", violetSoft: "#2A2150",
+    ground: "#0A1324", surface: "#111E36", surface2: "#172743",
+    ink: "#EDF3FC", muted: "#A9B8D0", line: "#24365A",
+    shadow: "0 1px 2px rgba(0,0,0,.45), 0 8px 24px rgba(2,8,23,.55)",
+    shadowHover: "0 2px 6px rgba(0,0,0,.5), 0 14px 34px rgba(2,8,23,.65), 0 0 0 1px rgba(45,212,191,.18)",
   },
 };
 

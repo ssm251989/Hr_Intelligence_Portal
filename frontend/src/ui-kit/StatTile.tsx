@@ -7,10 +7,12 @@ import { Link as RouterLink } from "react-router-dom";
 import Emoji from "./Emoji";
 import { useToneColours, type Tone } from "./StatusChip";
 
+const AUTO_TONES: Tone[] = ["brand", "sky", "sun", "coral", "ok"];
+
 // Part 15 C: a number is never alone -- big figure + the word that says what it counts
 // ("12" + "Open jobs"), with an optional trend line ("▲ 2 this week").
 export default function StatTile({
-  emoji, value, label, trend, trendDirection = "up", tone = "brand", to, loading,
+  emoji, value, label, trend, trendDirection = "up", tone: toneProp, to, loading,
 }: {
   emoji: string;
   value: number | string;
@@ -22,8 +24,13 @@ export default function StatTile({
   to?: string;
   loading?: boolean;
 }) {
-  const t = useTheme().palette.fresh;
-  const { bg } = useToneColours(tone);
+  const theme = useTheme();
+  const t = theme.palette.fresh;
+  // Part 18.6: no tone given -> each tile picks its own colour from its label, so a row of
+  // tiles is never all one colour
+  const finalTone: Tone = toneProp ?? AUTO_TONES[[...label].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7) % AUTO_TONES.length];
+  const { bg, fg } = useToneColours(finalTone);
+  const dark = theme.palette.mode === "dark";
   const trendColour = trendDirection === "up" ? t.ok : trendDirection === "down" ? t.coral : t.muted;
   const arrow = trendDirection === "up" ? "▲" : trendDirection === "down" ? "▼" : "•";
   const body = (
@@ -48,6 +55,8 @@ export default function StatTile({
       aria-label={`${value} ${label}${trend ? `, ${trend}` : ""}`}
       sx={{
         textDecoration: "none", color: "inherit", display: "block", height: "100%",
+        backgroundImage: `linear-gradient(145deg, ${bg} 0%, ${dark ? "transparent" : t.surface} 75%)`,
+        boxShadow: `inset 0 3px 0 ${fg}, ${t.shadow}`,
         ...(to ? { transition: "box-shadow 200ms ease, transform 200ms ease", "&:hover": { boxShadow: t.shadowHover, transform: "translateY(-2px)" } } : {}),
       }}
     >
