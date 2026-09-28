@@ -34,7 +34,7 @@ from app.ai_services.resume_parser import (
 )
 from app.audit.service import log_action
 from app.candidates.applications_router import create_application_record
-from app.candidates.resume_extraction import ResumeExtractionError, UnsupportedFileTypeError, extract_text
+from app.candidates.resume_extraction import ResumeExtractionError, UnsupportedFileTypeError, extract_text, needs_vision, vision_media_type
 from app.candidates.router import parse_and_apply_resume
 from app.candidates.storage import save_resume_file
 from app.core.config import settings
@@ -67,6 +67,11 @@ BATCH_POLL_TIMEOUT_SECONDS = 300
 EXPERIENCE_EPSILON = 0.05
 
 _client: Optional[Anthropic] = None
+
+
+def _vision_file(path, text):
+    """(file bytes, name) for a scanned PDF / image so the batch reads it with vision, else (None, None)."""
+    return (path.read_bytes(), path.name) if needs_vision(text) else (None, None)
 
 
 def _get_client():
@@ -201,6 +206,8 @@ def _run_scan(db: Session, actor: str) -> dict:
             per_folder[folder_name]["files_found"] += 1
             try:
                 raw_text = extract_text(path.read_bytes(), path.name)
+                if needs_vision(raw_text) and not vision_media_type(path.name):
+                    raise ResumeExtractionError("No readable text found in this file")
             except (UnsupportedFileTypeError, ResumeExtractionError) as exc:
                 log_action(
                     db, "local_import_run", run_id, "local_import_parse_failed", actor,
@@ -222,7 +229,7 @@ def _run_scan(db: Session, actor: str) -> dict:
     # folder at once -- Part G's cost control: N resumes become one request, not N.
     client = _get_client()
     batch = client.messages.batches.create(
-        requests=[build_batch_request(custom_id, text) for custom_id, text in extracted.items()]
+        requests=[build_batch_request(custom_id, text, *_vision_file(context_by_custom_id[custom_id]["path"], text)) for custom_id, text in extracted.items()]
     )
 
     deadline = time.monotonic() + BATCH_POLL_TIMEOUT_SECONDS

@@ -2388,3 +2388,14 @@ NEXT: 18.26 hand-over (build, i18n, tsc, compileall; screenshots light + dark; P
 All Part 18 items done (18.1-18.25). Checks clean, public screenshots light+dark refreshed, PAGES.md updated. Signed-in screenshots wait for a login. The module passcode is NOT set -- the owner runs hrctl modules set-passcode.
 
 NEXT: STOP -- hand-over reported. Then PART16 steps 16.1-16.10 per RESUME.txt when asked.
+
+## Part 18.27 -- resume parsing fix (2026-09-28)
+
+- **Cause:** Claude's strict structured output rejected the grown resume schema ("Schema is too complex.").
+- **Fix:** switched to a forced tool call, the same shape as the batch path.
+- **OCR:** Claude vision, not Tesseract, because no Tesseract or LibreOffice is on the server and vision needs no install.
+- **.doc:** read with olefile using the piece table.
+- **Errors:** a real reason code plus the fix link is shown in the UI.
+- **Signed-in screenshots:** used a short-lived local session token for the admin, minted in the scratchpad and deleted afterwards. The parse call was intercepted.
+
+NEXT: continue docs/RESUME.txt -> PART16 steps 16.1-16.10.

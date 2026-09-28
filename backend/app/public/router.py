@@ -59,7 +59,7 @@ def _parse_resume_in_background(candidate_id: uuid.UUID) -> None:
             return
         try:
             parse_and_apply_resume(db, candidate)
-        except Exception:
+        except Exception:  # noqa: BLE001 -- the reason is logged + audited inside parse_and_apply_resume
             pass
     finally:
         db.close()
@@ -107,7 +107,7 @@ async def submit_application(
 
     extension = resume.filename.rsplit(".", 1)[-1].lower() if resume.filename and "." in resume.filename else ""
     if extension not in ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=400, detail="Only PDF and DOCX resumes are supported")
+        raise HTTPException(status_code=400, detail="Only PDF, Word (.docx / .doc) and image (JPG / PNG) resumes are supported")
 
     file_bytes = await resume.read()
     try:

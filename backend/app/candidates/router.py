@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import date, datetime, time, timezone
 from typing import Literal, Optional
@@ -34,9 +35,12 @@ from app.screening.service import (
 )
 from app.screening.suitability import attempt_auto_suggest_suitable_job
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/candidates", tags=["candidates"])
 
-ALLOWED_EXTENSIONS = {"pdf", "docx"}
+# Part 18 fix: old Word .doc and photos / scans of a resume are read too (images via Claude vision)
+ALLOWED_EXTENSIONS = {"pdf", "docx", "doc", "jpg", "jpeg", "png"}
+UNSUPPORTED_MESSAGE = "Only PDF, Word (.docx / .doc) and image (JPG / PNG) resumes are supported"
 # "manual" is the existing single-candidate "Upload Resume" flow; "local_import" is the
 # Import wizard's "Import from Local" step (bulk-selecting several files at once) --
 # looping over this same endpoint once per file client-side, same as a single upload,
@@ -121,11 +125,24 @@ def parse_and_apply_resume(
     if precomputed_result is not None:
         result = precomputed_result
     else:
-        raw_text = extract_text(file_path.read_bytes(), file_path.name)
+        file_bytes = file_path.read_bytes()
         from app.platform.ai.tracked import ai_subject  # Part 18.24: cost per candidate
 
-        with ai_subject("candidate", candidate.id):
-            result = parse_resume(raw_text)
+        try:
+            raw_text = extract_text(file_bytes, file_path.name)
+            with ai_subject("candidate", candidate.id):
+                # the file goes along so a scanned PDF / image is read with vision (OCR)
+                result = parse_resume(raw_text, file_bytes=file_bytes, filename=file_path.name)
+        except Exception as exc:
+            reason = exc.as_detail() if isinstance(exc, ResumeParsingError) else {"code": type(exc).__name__, "message": str(exc)}
+            logger.warning("resume parse failed candidate=%s file=%s code=%s: %s", candidate.id, file_path.name, reason["code"], reason["message"])
+            try:
+                log_action(db, "candidate", candidate.id, "ai_resume_parse_failed", actor, reason)
+                db.commit()
+            except Exception:  # noqa: BLE001
+                db.rollback()
+            raise
+        logger.info("resume parsed candidate=%s file=%s read_with=%s", candidate.id, file_path.name, result.get("read_with"))
 
     log_action(db, "candidate", candidate.id, "ai_resume_parser_scored", actor, result)
     candidate.parsed_fields = result
@@ -190,7 +207,7 @@ async def upload_resume(
 
     extension = file.filename.rsplit(".", 1)[-1].lower() if file.filename and "." in file.filename else ""
     if extension not in ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=400, detail="Only PDF and DOCX resumes are supported")
+        raise HTTPException(status_code=400, detail=UNSUPPORTED_MESSAGE)
 
     file_bytes = await file.read()
 
@@ -583,5 +600,6 @@ def parse_candidate_resume(
     except (UnsupportedFileTypeError, ResumeExtractionError) as exc:
         raise HTTPException(status_code=400, detail=f"Could not read resume: {exc}") from exc
     except ResumeParsingError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        # {code, message, fix_url}: the UI shows the real reason (e.g. "AI key not working")
+        raise HTTPException(status_code=502, detail=exc.as_detail()) from exc
     return _with_inferred_gender(candidate)

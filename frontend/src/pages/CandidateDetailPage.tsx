@@ -41,6 +41,7 @@ import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
 import DuplicateBanner from "../components/candidates/DuplicateBanner";
 import CandidateTags from "../components/candidates/CandidateTags";
 import RemoveCandidateDialog from "../components/candidates/RemoveCandidateDialog";
+import ParseProblem, { type ParseProblemInfo, parseProblemFrom } from "../components/candidates/ParseProblem";
 import { ROLE_MATRIX } from "../auth/roles";
 import { useT } from "../i18n";
 import { EmptyState, FriendlyError, InfoTip, PageHeader, StageStepper, StatusChip } from "../ui-kit";
@@ -133,6 +134,7 @@ export default function CandidateDetailPage() {
   const [retryNotice, setRetryNotice] = useState<string | null>(null);
 
   const [parsing, setParsing] = useState(false);
+  const [parseProblem, setParseProblem] = useState<ParseProblemInfo | null>(null);
   const [resumeDownloading, setResumeDownloading] = useState(false);
   const [resumeError, setResumeError] = useState<string | null>(null);
 
@@ -239,11 +241,13 @@ export default function CandidateDetailPage() {
 
   const handleParseResume = async () => {
     setParsing(true);
+    setParseProblem(null);
     try {
       await candidatesApi.parseResume(candidate.id);
       load();
     } catch (err) {
-      setActionError(extractErrorMessage(err, t("candidates.resume.parse_failed")));
+      // the real reason (AI key, model, limit, unreadable file) + where to fix it + Retry
+      setParseProblem(parseProblemFrom(err, t("candidates.resume.parse_failed")));
     } finally {
       setParsing(false);
     }
@@ -532,8 +536,14 @@ export default function CandidateDetailPage() {
                   <ResumePreview candidateId={candidate.id} resumePath={candidate.resume_path} downloading={resumeDownloading} onDownload={handleDownloadResume} />
                   <Box>
                     <SectionTitle>{t("candidates.resume.parsed_title")}</SectionTitle>
+                    {parseProblem && (
+                      <Box sx={{ mb: 1.5 }}>
+                        <ParseProblem problem={parseProblem} onRetry={canWrite ? handleParseResume : undefined} retrying={parsing} />
+                      </Box>
+                    )}
                     {parsed ? (
                       <Stack spacing={1.5}>
+                        {parsed.read_with === "ocr" && <Box><StatusChip tone="sky" emoji="camera" label={t("candidates.parse.ocr_chip")} /></Box>}
                         <Box component="dl" sx={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "6px 12px", m: 0, fontSize: 13 }}>
                           <Fact label={t("candidates.fact.name")}>{parsed.full_name || "—"}</Fact>
                           <Fact label={t("candidates.fact.email")}>{parsed.email || "—"}</Fact>
@@ -554,6 +564,13 @@ export default function CandidateDetailPage() {
                             <Stack direction="row" spacing={0.75} sx={{ flexWrap: "wrap", rowGap: 0.75 }}>
                               {parsed.certificates.map((c) => <StatusChip key={c} tone="ok" emoji="graduation" label={c} />)}
                             </Stack>
+                          </Box>
+                        )}
+                        {canWrite && hasResume && (
+                          <Box>
+                            <Button size="small" onClick={handleParseResume} disabled={parsing}>
+                              {parsing ? t("candidates.resume.parsing") : t("candidates.parse.again")}
+                            </Button>
                           </Box>
                         )}
                       </Stack>

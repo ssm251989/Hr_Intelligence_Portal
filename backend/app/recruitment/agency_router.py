@@ -352,7 +352,7 @@ async def portal_submit(
 
     extension = resume.filename.rsplit(".", 1)[-1].lower() if resume.filename and "." in resume.filename else ""
     if extension not in ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=400, detail="Only PDF and DOCX resumes are supported")
+        raise HTTPException(status_code=400, detail="Only PDF, Word (.docx / .doc) and image (JPG / PNG) resumes are supported")
     file_bytes = await resume.read()
     try:
         extract_text(file_bytes, resume.filename)

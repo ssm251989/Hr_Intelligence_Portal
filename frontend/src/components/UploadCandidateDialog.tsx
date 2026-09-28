@@ -16,6 +16,7 @@ import { applicationsApi, candidatesApi, extractErrorMessage, jobsApi } from "..
 import type { CandidateApplicationRow, CandidateRead, JobRoleRead } from "../api/types";
 import { useT } from "../i18n";
 import CandidateAvatar from "./CandidateAvatar";
+import ParseProblem, { type ParseProblemInfo, parseProblemFrom } from "./candidates/ParseProblem";
 import { useFresh } from "./candidates/stages";
 
 // Manual single-candidate upload + link-to-job -- the only existing real functionality
@@ -42,7 +43,7 @@ export default function UploadCandidateDialog({
   // parsing -- distinct from `uploading` so the dialog can show "Uploading..." then
   // "Parsing resume..." as two separate, honest stages rather than one long spinner.
   const [parsing, setParsing] = useState(false);
-  const [parseFailed, setParseFailed] = useState(false);
+  const [parseProblem, setParseProblem] = useState<ParseProblemInfo | null>(null);
   const [linkJobId, setLinkJobId] = useState("");
   const [linkExpectedSalary, setLinkExpectedSalary] = useState("");
   const [linking, setLinking] = useState(false);
@@ -61,7 +62,7 @@ export default function UploadCandidateDialog({
     setUploadError(null);
     setUploadedCandidate(null);
     setParsing(false);
-    setParseFailed(false);
+    setParseProblem(null);
     setLinkJobId("");
     setLinkExpectedSalary("");
     setLinkError(null);
@@ -90,10 +91,15 @@ export default function UploadCandidateDialog({
     // Best-effort, matching the public careers portal's background parsing -- the
     // candidate already exists regardless of whether this succeeds, so a parse failure
     // here must never surface as an upload failure or block linking to a job below.
+    await runParse(created.id);
+  };
+
+  // Also used by "Retry parsing" -- the real reason is shown when it fails (key, model, limit, file).
+  const runParse = async (candidateId: string) => {
     setParsing(true);
-    setParseFailed(false);
+    setParseProblem(null);
     try {
-      const parsed = await candidatesApi.parseResume(created.id);
+      const parsed = await candidatesApi.parseResume(candidateId);
       setUploadedCandidate(parsed);
       const email = parsed.email?.trim().toLowerCase();
       if (email) {
@@ -106,8 +112,8 @@ export default function UploadCandidateDialog({
           // Best-effort only -- never blocks linking.
         }
       }
-    } catch {
-      setParseFailed(true);
+    } catch (err) {
+      setParseProblem(parseProblemFrom(err, t("candidates.parse.unknown")));
     } finally {
       setParsing(false);
     }
@@ -148,12 +154,12 @@ export default function UploadCandidateDialog({
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".pdf,.docx"
+                  accept=".pdf,.docx,.doc,.jpg,.jpeg,.png"
                   onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
                 />
               </Stack>
               <Typography variant="caption" color="text.secondary">
-                PDF or DOCX only. Creates a candidate with source "Manual" -- link them to a job next.
+                PDF, Word (.docx / .doc) or a photo / scan (JPG, PNG). Creates a candidate with source "Manual" -- link them to a job next.
               </Typography>
             </>
           ) : (
@@ -170,7 +176,7 @@ export default function UploadCandidateDialog({
                 </Stack>
               )}
 
-              {!parsing && !parseFailed && (uploadedCandidate.full_name || uploadedCandidate.photo_path) && (
+              {!parsing && !parseProblem && (uploadedCandidate.full_name || uploadedCandidate.photo_path) && (
                 <Stack direction="row" spacing={1.5} alignItems="center">
                   <CandidateAvatar
                     candidateId={uploadedCandidate.id}
@@ -201,11 +207,11 @@ export default function UploadCandidateDialog({
                 </Alert>
               )}
 
-              {!parsing && parseFailed && (
-                <Alert severity="warning">
-                  Couldn't automatically parse this resume -- you can still link it to a job below, and retry
-                  parsing later from the candidate's page.
-                </Alert>
+              {!parsing && parseProblem && (
+                <ParseProblem problem={parseProblem} onRetry={() => runParse(uploadedCandidate.id)} retrying={parsing} />
+              )}
+              {!parsing && !parseProblem && uploadedCandidate.parsed_fields?.read_with === "ocr" && (
+                <Alert severity="info">{t("candidates.parse.ocr_used")}</Alert>
               )}
 
               <TextField select label="Job" required value={linkJobId} onChange={(e) => setLinkJobId(e.target.value)} fullWidth>

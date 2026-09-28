@@ -221,6 +221,8 @@ export interface ParsedResumeFields {
   full_name?: string | null;
   email?: string | null;
   phone?: string | null;
+  /** "ocr" when the file was a scan / image read with Claude vision */
+  read_with?: "text" | "ocr" | null;
   total_experience_years?: number | null;
   skills: string[];
   education: EducationItem[];

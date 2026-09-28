@@ -689,3 +689,49 @@ settings_check.py                        -> 119/119 settings OK
 **Screenshots** in `docs/ui/screens/`: public pages in light and dark (`login-*`, `careers-*`, `candidate-status-*`). Signed-in pages are **pending login proof**: no login was provided, and I don't create passwords or tokens. Run `SHOT_EMAIL=... SHOT_PASSWORD=... node frontend/scripts/take_screenshots.mjs`.
 
 **Page list:** `docs/ui/PAGES.md` (Part 18 section).
+
+## 18.27 Resume parsing failed on upload ("Couldn't automatically parse this resume")
+
+**Real cause:** a live upload of `Sample/ASWATH_T_AA.pdf` → `POST /candidates/{id}/parse-resume` returned 502. The backend exception was:
+```
+anthropic.BadRequestError: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error',
+  'message': 'Schema is too complex.'}, 'request_id': 'req_011CfW9w4yY2KrFUVA5evERV'}
+app.ai_services.resume_parser.ResumeParsingError: Failed to parse resume: Error code: 400 ... Schema is too complex.
+```
+The resume parser used Claude's strict structured-output mode (`messages.parse(output_format=ResumeParserOutput)`). Once 17.5 / 17.8 added `current_ctc`, `expected_ctc`, `notice_period_days` and `languages`, that schema went over the strict-mode complexity limit, so **every** parse failed. Text extraction was fine (2,232 characters). The careers-portal background parse swallowed the error without logging it.
+
+**Other checks (step 2), all fine:**
+- GenAI connection: "Anthropic (platform key)", company key in use. `platform.genai_test` ok; `recruitment.email_summary` ok ×6.
+- The model `ai.models.resume_extraction = claude-haiku-4-5` is valid (it answered 200 after the fix). Fallback is `claude-haiku-4-5`.
+- Limits aren't blocking: module / user / company limits are 0 or {}, `limits.check()` passes, and `ai.features.disabled = []`.
+- Usage log before the fix: `recruitment.resume_parsing claude-haiku-4-5 error ×2`, i.e. the real failed uploads.
+
+**Fix:**
+- `resume_parser.parse_resume` now uses a forced tool call with the same `ResumeParserOutput` schema. That's the shape the local-import batch path already used, and it has no strict-schema limit. Batch and single parse now share `_resume_content()`.
+- **OCR fallback:** if the text layer has fewer than 80 letters (a scanned PDF or a photo), the file itself goes to Claude, as a PDF `document` block or an `image` block. That's Claude vision, so no Tesseract or LibreOffice install is needed; neither is on this server. The result carries `read_with: "ocr"`. Local folder imports do the same.
+- **More file types:** `.doc` (Word 97-2003) is read through its piece table with `olefile`, which is now in requirements. Upload now accepts JPG/PNG photos of a resume, and DOCX tables are now read too.
+- **The real reason:** `ResumeParsingError(code, message, fix_url)` and `explain_ai_error()` map each failure to:
+  - `AI_KEY`: "AI key not working - fix it in Settings > Integrations > GenAI."
+  - `AI_MODEL`: the model isn't available
+  - `AI_LIMIT`: the limit message
+  - `AI_BILLING`: no credit left
+  - `AI_BUSY`: busy or unreachable
+  - `AI_REQUEST`: the API's own message
+  - `EMPTY_FILE`: no readable text in the file
+
+  The API returns `detail: {code, message, fix_url}`. Every failure is logged (`resume parse failed candidate=... code=...`) and audited (`ai_resume_parse_failed`), including background parses.
+- **UI:** a new `ParseProblem` alert shows the reason, **Retry parsing** and **Fix in Settings**. It's in the upload dialog and on the candidate page (Resume tab), and the candidate page also has "Read the resume again". A scanned file shows "Scanned file - read with OCR".
+
+**Proof:** the real API with real Claude calls, rolled back:
+```
+ASWATH_T_AA.pdf      PARSE 200 {"full_name": "ASWATH T", "email": "aswath9696@gmail.com", "phone": "+91 7200761365", "location": "Trichy, India"} read_with text | skills 14 | jobs 2
+Automation_Anywhere_Architect_Resume_....docx  PARSE 200 {"full_name": "Pradeep Kumar", "email": "gkishore1433@gmail.com", "location": "Pune, India"} read_with text | skills 32 | jobs 3
+Bhavani Shankar - AA.doc  PARSE 200 {"full_name": "Bhavani Shankar P", "email": "bhavanbhavan2@gmail.com", "phone": "8951856943"} read_with text | skills 31 | jobs 3
+scanned_resume.pdf (image-only PDF, text layer = 0 chars)  PARSE 200 {"full_name": "ASWATH T", "email": "aswath9696@gmail.com", "phone": "+91 7200761365", "location": "Trichy, India"} read_with ocr | skills 13 | jobs 2
+bad key -> 502 {'detail': {'code': 'AI_KEY', 'message': 'AI key not working - fix it in Settings > Integrations > GenAI.', 'fix_url': '/settings/integrations/ai'}}
+log: WARNING app.candidates.router resume parse failed candidate=fe4572cc-... code=AI_KEY: AI key not working - ...
+usage: claude-haiku-4-5 ok 3031/588, ok 2194/348, ok 3252/348, ok 2603/663, error (bad key)
+```
+**Live:** the running backend reloaded with the fix. The owner's next real upload (Kishore Gunda, 22:10) shows "AI read the resume" at 22:10:52.
+
+**Screenshots:** `parse-reason-light/dark.png` (the reason with Retry and Fix in Settings) and `parse-ocr-light/dark.png` (the OCR chip after Retry). The parse call was intercepted with the exact 502 body above.

@@ -544,6 +544,13 @@ export const en = {
   "usage.per_candidate": "Cost per candidate",
   "usage.avg": "Average {cost} per candidate (resume reading + scoring + document checks)",
   "usage.none": "Nothing in this period yet.",
+  "candidates.parse.failed_title": "Couldn't automatically parse this resume.",
+  "candidates.parse.fix": "Fix in Settings",
+  "candidates.parse.retry": "Retry parsing",
+  "candidates.parse.again": "Read the resume again",
+  "candidates.parse.unknown": "Something went wrong while reading it. Try again.",
+  "candidates.parse.ocr_used": "Scanned file - it was read with OCR. Check the details before linking.",
+  "candidates.parse.ocr_chip": "Scanned file - read with OCR",
 } as const;
 
 export const hi: Partial<Record<keyof typeof en, string>> = {
@@ -1091,6 +1098,13 @@ export const hi: Partial<Record<keyof typeof en, string>> = {
   "usage.per_candidate": "प्रति उम्मीदवार लागत",
   "usage.avg": "प्रति उम्मीदवार औसत {cost} (रिज़्यूमे पढ़ना + स्कोरिंग + दस्तावेज़ जाँच)",
   "usage.none": "इस अवधि में अभी कुछ नहीं।",
+  "candidates.parse.failed_title": "यह बायोडाटा अपने आप नहीं पढ़ा जा सका।",
+  "candidates.parse.fix": "सेटिंग्स में ठीक करें",
+  "candidates.parse.retry": "फिर से पढ़ें",
+  "candidates.parse.again": "बायोडाटा फिर से पढ़ें",
+  "candidates.parse.unknown": "पढ़ते समय कुछ गलत हो गया। फिर से कोशिश करें।",
+  "candidates.parse.ocr_used": "स्कैन की गई फ़ाइल - इसे OCR से पढ़ा गया। जोड़ने से पहले विवरण जाँच लें।",
+  "candidates.parse.ocr_chip": "स्कैन फ़ाइल - OCR से पढ़ी गई",
 };
 
 export const ta: Partial<Record<keyof typeof en, string>> = {
@@ -1638,4 +1652,11 @@ export const ta: Partial<Record<keyof typeof en, string>> = {
   "usage.per_candidate": "விண்ணப்பதாரர் ஒருவருக்கான செலவு",
   "usage.avg": "விண்ணப்பதாரர் ஒருவருக்கு சராசரி {cost} (ரெஸ்யூமே படித்தல் + மதிப்பீடு + ஆவணச் சரிபார்ப்பு)",
   "usage.none": "இந்தக் காலத்தில் இன்னும் எதுவும் இல்லை.",
+  "candidates.parse.failed_title": "இந்தச் சுயவிவரத்தைத் தானாகப் படிக்க முடியவில்லை.",
+  "candidates.parse.fix": "அமைப்புகளில் சரிசெய்",
+  "candidates.parse.retry": "மீண்டும் படி",
+  "candidates.parse.again": "சுயவிவரத்தை மீண்டும் படி",
+  "candidates.parse.unknown": "படிக்கும்போது ஏதோ தவறு நடந்தது. மீண்டும் முயலவும்.",
+  "candidates.parse.ocr_used": "ஸ்கேன் செய்யப்பட்ட கோப்பு - OCR மூலம் படிக்கப்பட்டது. இணைப்பதற்கு முன் விவரங்களைச் சரிபார்க்கவும்.",
+  "candidates.parse.ocr_chip": "ஸ்கேன் கோப்பு - OCR மூலம் படிக்கப்பட்டது",
 };

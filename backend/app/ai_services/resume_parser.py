@@ -26,8 +26,47 @@ SYSTEM_PROMPT = (
 _client: Anthropic | None = None
 
 
+GENAI_SETTINGS_URL = "/settings/integrations/ai"
+
+
 class ResumeParsingError(Exception):
-    """Raised when the AI resume-parsing call fails or returns unusable output."""
+    """Raised when the AI resume-parsing call fails or returns unusable output.
+
+    `code` + `message` say in plain words what went wrong and where to fix it (shown in the
+    upload dialog and on the candidate page instead of a generic "couldn't parse")."""
+
+    def __init__(self, message: str, code: str = "AI_ERROR", fix_url: Optional[str] = None):
+        super().__init__(message)
+        self.code, self.message, self.fix_url = code, message, fix_url
+
+    def as_detail(self) -> dict:
+        return {"code": self.code, "message": self.message, "fix_url": self.fix_url}
+
+
+def explain_ai_error(exc: Exception) -> ResumeParsingError:
+    """Turns an SDK / limit exception into a reason a recruiter can act on."""
+    import anthropic
+
+    from app.platform.ai.tracked import AIUsageBlocked
+
+    if isinstance(exc, ResumeParsingError):
+        return exc
+    if isinstance(exc, AIUsageBlocked):
+        return ResumeParsingError(f"{exc} (Settings > Integrations > GenAI)", "AI_LIMIT", GENAI_SETTINGS_URL)
+    if isinstance(exc, (anthropic.AuthenticationError, anthropic.PermissionDeniedError)):
+        return ResumeParsingError("AI key not working - fix it in Settings > Integrations > GenAI.", "AI_KEY", GENAI_SETTINGS_URL)
+    if isinstance(exc, anthropic.NotFoundError):
+        return ResumeParsingError("The AI model chosen for resume parsing is not available - pick another in Settings > Integrations > GenAI.", "AI_MODEL", GENAI_SETTINGS_URL)
+    if isinstance(exc, (anthropic.RateLimitError, anthropic.InternalServerError, anthropic.APIConnectionError)):
+        return ResumeParsingError("The AI service is busy or unreachable - try again in a minute.", "AI_BUSY")
+    if isinstance(exc, anthropic.BadRequestError):
+        body = getattr(exc, "body", None) or {}
+        msg = (body.get("error") or {}).get("message") if isinstance(body, dict) else None
+        msg = msg or str(exc)
+        if "credit" in msg.lower() or "billing" in msg.lower():
+            return ResumeParsingError("The AI account has no credit left - top it up or change the key in Settings > Integrations > GenAI.", "AI_BILLING", GENAI_SETTINGS_URL)
+        return ResumeParsingError(f"The AI service refused the request: {msg}", "AI_REQUEST")
+    return ResumeParsingError(f"Failed to parse resume: {exc}", "AI_ERROR")
 
 
 class EducationItem(BaseModel):
@@ -68,19 +107,48 @@ def _get_client():
     return tracked_client(feature="recruitment.resume_parsing", model_key="resume_extraction")
 
 
-def parse_resume(raw_resume_text: str) -> dict:
-    client = _get_client()
+def _resume_content(raw_resume_text: str, file_bytes: Optional[bytes], filename: Optional[str]):
+    """The user message content: the text, or (scan / image with no usable text) the file itself."""
+    from app.candidates.resume_extraction import needs_vision, vision_media_type
+
+    media_type = vision_media_type(filename or "") if file_bytes else None
+    if not needs_vision(raw_resume_text):
+        return f"Resume text:\n{raw_resume_text}", False
+    if media_type is None:
+        raise ResumeParsingError("No readable text found in this file - upload a PDF or a clearer copy.", "EMPTY_FILE")
+    import base64
+
+    data = base64.standard_b64encode(file_bytes).decode()
+    kind = "document" if media_type == "application/pdf" else "image"
+    block = {"type": kind, "source": {"type": "base64", "media_type": media_type, "data": data}}
+    return [block, {"type": "text", "text": "This resume is a scanned file / image. Read it and record its fields."}], True
+
+
+def parse_resume(raw_resume_text: str, file_bytes: Optional[bytes] = None, filename: Optional[str] = None) -> dict:
+    """Structured fields from one resume.
+
+    Uses a forced tool call (the same shape as the batch path below): the strict structured-output
+    mode rejected this schema with 400 "Schema is too complex." once 17.5/17.8 added the CTC /
+    notice / language fields, which is why every upload said "Couldn't automatically parse".
+
+    When the text layer is empty or too thin (a scanned / photographed resume) and the file is a
+    PDF or an image, Claude reads the file itself (vision = the OCR step); the result then carries
+    read_with="ocr" so the UI can say so."""
+    content, use_vision = _resume_content(raw_resume_text, file_bytes, filename)
     try:
-        response = client.messages.parse(
+        response = _get_client().messages.create(
             model=MODEL,
             max_tokens=2048,
             system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": f"Resume text:\n{raw_resume_text}"}],
-            output_format=ResumeParserOutput,
+            messages=[{"role": "user", "content": content}],
+            tools=[_BATCH_TOOL],
+            tool_choice={"type": "tool", "name": BATCH_TOOL_NAME},
         )
+        result = extract_parsed_output_from_message(response)
     except Exception as exc:
-        raise ResumeParsingError(f"Failed to parse resume: {exc}") from exc
-    return response.parsed_output.model_dump()
+        raise explain_ai_error(exc) from exc
+    result["read_with"] = "ocr" if use_vision else "text"
+    return result
 
 
 # --- Part G: local-import batch parsing ---
@@ -101,7 +169,7 @@ _BATCH_TOOL = {
 }
 
 
-def build_batch_request(custom_id: str, raw_resume_text: str) -> dict:
+def build_batch_request(custom_id: str, raw_resume_text: str, file_bytes: Optional[bytes] = None, filename: Optional[str] = None) -> dict:
     """One Message Batches API request (see anthropic.types.messages.batch_create_params.
     Request) for a single resume's text -- custom_id is how extract_parsed_output_from_message
     below matches a batch result back to the file it came from, since results can return in
@@ -126,4 +194,4 @@ def extract_parsed_output_from_message(message) -> dict:
     for block in message.content:
         if block.type == "tool_use" and block.name == BATCH_TOOL_NAME:
             return ResumeParserOutput.model_validate(block.input).model_dump()
-    raise ResumeParsingError("Batch result contained no record_parsed_resume tool call")
+    raise ResumeParsingError("The AI answer had no resume fields in it - try again.", "AI_EMPTY")
