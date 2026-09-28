@@ -84,6 +84,14 @@ def register_all() -> None:
     register(SettingDef("recruitment.salary.target_hike_pct", "int", 20, module="recruitment", group="Salary",
                         json_schema={"type": "integer", "minimum": 0, "maximum": 200}))
     register(SettingDef("recruitment.salary.approvers", "json", [], module="recruitment", group="Salary"))
+    # Part 18.4: module unlock passcode (the passcode itself is only a hash in module_access)
+    register(SettingDef("modules.lock.enabled", "bool", True, module="platform", group="Modules"))
+    register(SettingDef("modules.lock.mode", "str", "one", module="platform", group="Modules",
+                        json_schema={"type": "string", "enum": ["one", "per_module"]}))
+    register(SettingDef("modules.lock.max_attempts", "int", 5, module="platform", group="Modules",
+                        json_schema={"type": "integer", "minimum": 3, "maximum": 20}))
+    register(SettingDef("modules.lock.lockout_minutes", "int", 15, module="platform", group="Modules",
+                        json_schema={"type": "integer", "minimum": 1, "maximum": 1440}))
     # Part 17.15: removed candidates stay in the Recycle bin this many days, then are deleted permanently
     register(SettingDef("recruitment.candidates.recycle_days", "int", 30, module="recruitment", group="Candidates",
                         json_schema={"type": "integer", "minimum": 1, "maximum": 365}))

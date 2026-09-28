@@ -117,6 +117,8 @@ def _licensed_modules(tenant) -> Optional[set[str]]:
 
 
 def nav_for(db, tenant, user, permissions: set[str]) -> list[dict]:
+    from app.platform.module_lock import lock_key_for_page
+
     on = enabled_modules(db, tenant)
     items = []
     for module in MODULES:
@@ -127,7 +129,8 @@ def nav_for(db, tenant, user, permissions: set[str]) -> list[dict]:
                 continue
             allowed = any(p in permissions for p in item.any_of) if item.any_of else (item.permission is None or item.permission in permissions)
             if allowed:
-                items.append({"label_key": item.label_key, "path": item.path, "module": module.code, "group": item.group, "icon": item.icon})
+                items.append({"label_key": item.label_key, "path": item.path, "module": module.code, "group": item.group, "icon": item.icon,
+                              "lock_key": lock_key_for_page(item.path)})  # Part 18.4
     return items
 
 

@@ -82,11 +82,13 @@ configure_logging()
 init_optional_integrations(app)
 app.add_middleware(RateLimitMiddleware)
 from app.platform.modules import ModuleGateMiddleware  # noqa: E402
+from app.platform.module_lock import ModuleLockMiddleware  # noqa: E402
 from app.platform.ops.idempotency import IdempotencyMiddleware  # noqa: E402
 
 app.add_middleware(IdempotencyMiddleware)  # Part 17.13: inside the tenant resolver (needs the tenant)
 
 app.add_middleware(ModuleGateMiddleware)
+app.add_middleware(ModuleLockMiddleware)  # Part 18.4: locked modules -> 403 (inside the tenant resolver)
 app.add_middleware(ObservabilityMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 
@@ -233,6 +235,9 @@ app.include_router(status_public_router)
 from app.experience.ui_candidate_removal_router import router as ui_candidate_removal_router  # noqa: E402
 
 app.include_router(ui_candidate_removal_router)
+from app.experience.module_lock_router import router as module_lock_router  # noqa: E402
+
+app.include_router(module_lock_router)
 install_friendly_errors(app)
 
 

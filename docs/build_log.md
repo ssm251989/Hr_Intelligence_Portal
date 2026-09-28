@@ -2256,3 +2256,9 @@ NEXT: 18.3 health checks read real status (DocuSign per-user OAuth counts; conne
 config_health: esign_connected (company route OR DocuSign keys + a user DocuSign sign-in), CONNECTION_FAILING shows the real error and includes status=error, CONNECTION_NOT_TESTED info, recheck() + POST /setup/config-health/recheck (tests all connections, records result, never disables on failure). Home card: Re-check now + checked time. Real re-check ran on ctd-techs (4 connections OK; only test timestamps/results were written).
 
 NEXT: 18.4 module unlock passcode (bcrypt hash in DB, hrctl modules set-passcode, lock icon, locked page card, 403 API, 5 tries then 15 min lock, audit).
+
+## Part 18.4a -- module unlock passcode: backend (2026-09-28)
+
+app/platform/module_lock.py (LOCKABLE areas with page paths + API rules, other enabled modules from the registry, ModuleLockMiddleware 403 MODULE_LOCKED, 5s cache), module_access table (bcrypt hash only; migration f2a8d6c3b9e1), /api/v1/modules/access (status, unlock, lock, passcode change with current passcode, main admin only), settings modules.lock.enabled/mode/max_attempts/lockout_minutes, bootstrap module_locks + nav lock_key, hrctl modules set-passcode|status (getpass prompt). Decisions: locking is inactive until a passcode exists (otherwise nobody could unlock); shared reads (/jobs, /applications, one candidate) stay open so one locked area never breaks another; wrong tries counted company-wide; the owner passcode was NOT set by me (the owner runs the CLI).
+
+NEXT: 18.4b module lock frontend (locked page card with passcode, lock icon in menu, Settings > Advanced > Modules page).

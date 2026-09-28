@@ -139,6 +139,7 @@ from app.models.secret import Secret, SecretScope
 from app.models.geo import GeoCacheEntry
 from app.models.idempotency import IdempotencyKey
 from app.models.candidate_removal import CandidateRemovalRun
+from app.models.module_access import ModuleAccess
 from app.models.interviewer_pool import InterviewerPool
 from app.models.scoring import ScoreRecalcRun, ScoringRuleSet
 from app.models.agency import AgencyJobAssignment, AgencyMember, AgencySubmission, RecruitmentAgency
