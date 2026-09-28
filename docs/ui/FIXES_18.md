@@ -671,3 +671,21 @@ per-person 1,500/day -> "The AI usage limit for your account today is reached (2
 tsc clean, i18n 0 missing (79 new keys), npm run build OK
 ```
 **Screenshots:** GenAI settings, GenAI usage -- pending login proof.
+
+## 18.26 Hand-over
+
+**Checks (2026-09-28):**
+```
+npm run build (i18n:check + tsc + vite)  -> OK
+i18n:check                               -> OK, 3818 keys used, 0 missing (en / hi / ta)
+contrast-check                           -> all pairs OK (light + dark)
+tsc                                      -> clean
+compileall (app, hrctl, scripts)         -> clean
+alembic current                          -> a3d5f7b9c1e4 (head)
+smoke: home funnel, candidates, jobs-health, stage tables, budgets, genai usage, module access, config-health, bootstrap -> all 200
+settings_check.py                        -> 119/119 settings OK
+```
+
+**Screenshots** in `docs/ui/screens/`: public pages in light and dark (`login-*`, `careers-*`, `candidate-status-*`). Signed-in pages are **pending login proof**: no login was provided, and I don't create passwords or tokens. Run `SHOT_EMAIL=... SHOT_PASSWORD=... node frontend/scripts/take_screenshots.mjs`.
+
+**Page list:** `docs/ui/PAGES.md` (Part 18 section).

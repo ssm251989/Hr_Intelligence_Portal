@@ -2382,3 +2382,9 @@ NEXT: 18.23 GenAI settings (provider, masked key + test, model per feature from 
 tracked.py (model per feature from settings, max tokens, temperature, fallback, feature switch, usage rows with module/user/subject/status/latency, company key) under all 8 legacy AI services; gateway + governed_complete record/limit too; limits.py (module monthly / user daily / company monthly, block|warn, warn % notices, reset day); ui_genai_router (settings, key, test, disconnect, usage, CSV); GenAISettingsPage + GenAIUsagePage + menu. Migration a3d5f7b9c1e4. Decision: one commit for 18.23-18.25 because they share the same files (router + tracked client); each has its own FIXES entry.
 
 NEXT: 18.26 hand-over (build, i18n, tsc, compileall; screenshots light + dark; PAGES.md; report).
+
+## Part 18.26 -- hand-over (2026-09-28)
+
+All Part 18 items done (18.1-18.25). Checks clean, public screenshots light+dark refreshed, PAGES.md updated. Signed-in screenshots wait for a login. The module passcode is NOT set -- the owner runs hrctl modules set-passcode.
+
+NEXT: STOP -- hand-over reported. Then PART16 steps 16.1-16.10 per RESUME.txt when asked.

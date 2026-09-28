@@ -43,3 +43,22 @@ sees every staff page. Screenshots are light mode, in `docs/ui/screens/`.
 | Setup | `/setup` | `platform.settings.configure` | Setup wizard checklist | `setup.png` |
 | Settings | `/settings`, `/settings/:category/:page` | `platform.settings.view` | Settings home with search; branding, mailboxes, email templates, approvals, custom fields, roles, languages, media | `settings.png` |
 | Super-admin console | `/superadmin` | Platform operators | Tenants, licences, health | `superadmin.png` |
+
+## Part 18 pages (2026-09-28)
+
+| Page | Route | Who | What it does | Screenshot |
+|---|---|---|---|---|
+| Locked module card | any page of a locked module | everyone (admins can unlock) | "… is locked - enter passcode" (18.4) | pending login |
+| Settings > Advanced > Modules | `/settings/advanced/modules` | admins | modules on/off, lock/unlock, change passcode, lock settings (18.4, 18.5) | pending login |
+| Jobs (health column + needs-attention table) | `/jobs` | recruiters | chips, health chip with reasons, sortable table; Close job (18.7, 18.8) | pending login |
+| Settings > Integrations > Job boards | `/settings/integrations/job-boards` | admins | LinkedIn / Naukri / Indeed / Monster / Shine setup, test, disconnect (18.9) | pending login |
+| Salary (table + side panel, Finance tab) | `/salary`, `/salary?tab=finance` | HR | all salary-stage candidates, decisions, department budgets dashboard (18.11-18.15) | pending login |
+| BGV / Offers (all-candidates tables) | `/bgv`, `/offers` | HR | stage tables, joining-documents review, BGV decision, joining dates (18.11, 18.17-18.19) | pending login |
+| Candidate: joining documents | `/documents/:token` | candidate (no login) | upload required documents (18.16) | pending (needs a live link) |
+| Candidate: choose joining date | `/joining/:token` | candidate (no login) | pick one of 3 dates (18.19) | pending (needs a live link) |
+| Settings > Hiring > Department budgets / Required documents / Contacts | `/settings/hiring/budgets`, `/documents`, `/contacts` | admins | 18.15, 18.16, 18.20 | pending login |
+| Settings > People & access > Users | `/settings/people/users` | admins | invite, role, switch off/on, password reset (18.22) | pending login |
+| Settings > Company > Offices | `/settings/company/offices` | admins | offices add/edit/delete + map (18.22) | pending login |
+| Settings > Integrations > GenAI | `/settings/integrations/ai` | admins | key, test, models, features, prices, limits (18.23, 18.25) | pending login |
+| GenAI usage | `/genai-usage` | admins / analytics | usage and cost by module, feature, person, day, candidate (18.24) | pending login |
+| Public pages in light + dark | `/login`, `/careers`, `/status/:token` | everyone | 18.6 colour themes | `login-light/-dark.png`, `careers-light/-dark.png`, `candidate-status-light/-dark.png` |
