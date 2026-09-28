@@ -37,6 +37,9 @@ import ScoreCard from "../components/candidates/ScoreCard";
 import WhyThisScore from "../components/scoring/WhyThisScore";
 import { STEPPER_STAGES, stepperIndex, useFresh } from "../components/candidates/stages";
 import { useAuth } from "../auth/AuthContext";
+import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
+import DuplicateBanner from "../components/candidates/DuplicateBanner";
+import RemoveCandidateDialog from "../components/candidates/RemoveCandidateDialog";
 import { ROLE_MATRIX } from "../auth/roles";
 import { useT } from "../i18n";
 import { EmptyState, FriendlyError, InfoTip, PageHeader, StageStepper, StatusChip } from "../ui-kit";
@@ -98,6 +101,9 @@ export default function CandidateDetailPage() {
   const navigate = useNavigate();
   const { can } = useAuth();
   const canWrite = can(ROLE_MATRIX.applicationsCreate);
+  // Part 17.15: "Remove candidate" (Recycle bin) + the possible-duplicate banner
+  const canRemove = useMeBootstrap().can("recruitment.candidate.delete");
+  const [removeOpen, setRemoveOpen] = useState(false);
   const t = useT();
   const f = useFresh();
 
@@ -351,11 +357,35 @@ export default function CandidateDetailPage() {
               >
                 {t("candidates.detail.view_activity")}
               </MenuItem>
+              {canRemove && (
+                <MenuItem
+                  sx={{ color: "error.main" }}
+                  onClick={() => {
+                    setRemoveOpen(true);
+                    setMoreAnchor(null);
+                  }}
+                >
+                  {t("removal.action")}
+                </MenuItem>
+              )}
             </Menu>
           </>
         }
       />
 
+      <DuplicateBanner candidateId={candidate.id} />
+      {canRemove && (
+        <RemoveCandidateDialog
+          open={removeOpen}
+          candidateIds={[candidate.id]}
+          name={candidate.full_name}
+          onClose={() => setRemoveOpen(false)}
+          onDone={() => {
+            setRemoveOpen(false);
+            navigate("/candidates/list");
+          }}
+        />
+      )}
       {actionError && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setActionError(null)}>
           {actionError}

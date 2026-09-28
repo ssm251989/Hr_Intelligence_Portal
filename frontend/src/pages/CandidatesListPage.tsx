@@ -6,6 +6,7 @@ import PersonAddAltOutlinedIcon from "@mui/icons-material/PersonAddAltOutlined";
 import SearchIcon from "@mui/icons-material/Search";
 import TableRowsOutlinedIcon from "@mui/icons-material/TableRowsOutlined";
 import ViewKanbanOutlinedIcon from "@mui/icons-material/ViewKanbanOutlined";
+import PersonRemoveOutlinedIcon from "@mui/icons-material/PersonRemoveOutlined";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
@@ -46,8 +47,10 @@ import ListToolbar, { type ListColumn, type ListViewState } from "../components/
 import SourceIcon from "../components/SourceIcon";
 import UploadCandidateDialog from "../components/UploadCandidateDialog";
 import CandidatesKanban from "../components/candidates/CandidatesKanban";
+import RemoveCandidateDialog from "../components/candidates/RemoveCandidateDialog";
 import { columnOf, planMove, useFresh, type BoardColumnKey, type MovePlan } from "../components/candidates/stages";
 import { useAuth } from "../auth/AuthContext";
+import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
 import { ROLE_MATRIX } from "../auth/roles";
 import { useT } from "../i18n";
 import { EmptyState, FriendlyError, PageHeader, StatusChip, statusStyle } from "../ui-kit";
@@ -90,6 +93,7 @@ export default function CandidatesListPage() {
   const navigate = useNavigate();
   const { can } = useAuth();
   const canWrite = can(ROLE_MATRIX.candidatesWrite);
+  const { can: canPerm } = useMeBootstrap();
   const t = useT();
   const f = useFresh();
   const [jobs, setJobs] = useState<JobRoleRead[]>([]);
@@ -272,6 +276,11 @@ export default function CandidatesListPage() {
       return next;
     });
   };
+
+  // Part 17.15: bulk "Remove selected" works on people (one candidate may have several applications)
+  const canRemove = canPerm("recruitment.candidate.delete");
+  const [bulkRemoveOpen, setBulkRemoveOpen] = useState(false);
+  const selectedCandidateIds = Array.from(new Set(rows.filter((r) => selectedIds.has(r.application_id)).map((r) => r.candidate_id)));
 
   const handleRowDeleted = (applicationId: string) => {
     setSelectedIds((prev) => {
@@ -468,10 +477,29 @@ export default function CandidatesListPage() {
             <Button size="small" variant="outlined" startIcon={<DownloadOutlinedIcon />} onClick={handleExportCsv}>
               {t("candidates.list.export_selected", { count: selectedIds.size })}
             </Button>
+            {canRemove && (
+              <Button size="small" color="error" variant="outlined" startIcon={<PersonRemoveOutlinedIcon />} onClick={() => setBulkRemoveOpen(true)}>
+                {t("removal.action_bulk")}
+              </Button>
+            )}
             <Button size="small" onClick={() => setSelectedIds(new Set())}>{t("candidates.list.clear_selection")}</Button>
           </>
         }
       />
+      {canRemove && (
+        <RemoveCandidateDialog
+          open={bulkRemoveOpen}
+          candidateIds={selectedCandidateIds}
+          name={selectedCandidateIds.length === 1 ? rows.find((r) => r.candidate_id === selectedCandidateIds[0])?.candidate_name : null}
+          onClose={() => setBulkRemoveOpen(false)}
+          onDone={({ deleted, count }) => {
+            setBulkRemoveOpen(false);
+            setSelectedIds(new Set());
+            setNotice({ text: deleted ? t("removal.done_deleted") : `${t("removal.done_removed")} (${count})`, severity: "success" });
+            loadPage();
+          }}
+        />
+      )}
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>

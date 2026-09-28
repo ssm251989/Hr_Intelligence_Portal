@@ -82,7 +82,7 @@ interface ShellItem {
 }
 
 function useShellNav(): ShellItem[] {
-  const { data } = useMeBootstrap();
+  const { data, can } = useMeBootstrap();
   const t = useT();
   return useMemo(() => {
     const nav: NavEntry[] = data?.nav?.length ? data.nav : FALLBACK_NAV;
@@ -96,9 +96,9 @@ function useShellNav(): ShellItem[] {
       path: n.path,
       icon: n.icon ?? "puzzle",
       group: n.group ?? "today",
-      children: NAV_CHILDREN[sectionOf(n.path)]?.map((c) => ({ label: t(c.labelKey), path: c.path })),
+      children: NAV_CHILDREN[sectionOf(n.path)]?.filter((c) => !c.permission || can(c.permission)).map((c) => ({ label: t(c.labelKey), path: c.path })),
     }));
-  }, [data, t]);
+  }, [data, t, can]);
 }
 
 function isActive(item: ShellItem, pathname: string, hash: string): boolean {

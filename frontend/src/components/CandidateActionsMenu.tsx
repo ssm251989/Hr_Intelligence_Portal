@@ -1,13 +1,17 @@
 import { useState } from "react";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
+import PersonRemoveOutlinedIcon from "@mui/icons-material/PersonRemoveOutlined";
 import IconButton from "@mui/material/IconButton";
 import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 
 import { applicationsApi, extractErrorMessage } from "../api/client";
 import { isTerminalApplicationStatus, type CandidateApplicationRow } from "../api/types";
+import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
+import { useT } from "../i18n";
 import ConfirmDialog from "./ConfirmDialog";
+import RemoveCandidateDialog from "./candidates/RemoveCandidateDialog";
 
 // An application can be put on hold from any non-terminal status, resumed only from
 // on_hold, and deleted only while still at 'received' (see backend/app/candidates/hold.py
@@ -28,12 +32,17 @@ export default function CandidateActionsMenu({
   const [pending, setPending] = useState(false);
   const [confirmHoldOpen, setConfirmHoldOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [removeOpen, setRemoveOpen] = useState(false);
+  const { can } = useMeBootstrap();
+  const t = useT();
+  // Part 17.15: "Remove candidate" (Recycle bin) for roles with recruitment.candidate.delete
+  const canRemove = can("recruitment.candidate.delete") && Boolean(row.candidate_id);
 
   const canResume = row.status === "on_hold";
   const canHold = !canResume && !isTerminalApplicationStatus(row.status);
   const canDelete = row.status === "received";
 
-  if (!canResume && !canHold && !canDelete) {
+  if (!canResume && !canHold && !canDelete && !canRemove) {
     return null;
   }
 
@@ -92,10 +101,34 @@ export default function CandidateActionsMenu({
             sx={{ color: "error.main" }}
           >
             <DeleteOutlineIcon fontSize="small" sx={{ mr: 1 }} />
-            Delete
+            Delete application
+          </MenuItem>
+        )}
+        {canRemove && (
+          <MenuItem
+            onClick={() => {
+              setAnchorEl(null);
+              setRemoveOpen(true);
+            }}
+            sx={{ color: "error.main" }}
+          >
+            <PersonRemoveOutlinedIcon fontSize="small" sx={{ mr: 1 }} />
+            {t("removal.action")}
           </MenuItem>
         )}
       </Menu>
+      {canRemove && (
+        <RemoveCandidateDialog
+          open={removeOpen}
+          candidateIds={[row.candidate_id]}
+          name={row.candidate_name}
+          onClose={() => setRemoveOpen(false)}
+          onDone={() => {
+            setRemoveOpen(false);
+            onDeleted(row.application_id);
+          }}
+        />
+      )}
 
       <ConfirmDialog
         open={confirmHoldOpen}

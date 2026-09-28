@@ -502,3 +502,53 @@ retry                   -> transient SMTP error succeeds on try 3; wrong passwor
 frontend                -> tsc clean, i18n:check 0 missing
 ```
 **Screenshot:** `candidate-status.png` (public) in 17.14; `system-health.png`, `jobs-health.png` -- **pending login proof**.
+
+## 17.15 Remove candidates: Recycle bin, restore, delete permanently
+
+**What changed:**
+- **Where "Remove candidate" appears:**
+  - the profile's "..." menu;
+  - each row's menu in the candidate list;
+  - each card's menu on the candidates board (the job pipeline links there, filtered by job);
+  - **Remove selected** for a bulk selection.
+- **Who sees it:** only roles with `recruitment.candidate.delete` (HR Admin by default; Settings > Roles changes it). The menu entry is hidden for everyone else, and the API returns 403.
+- **Step 1 — Recycle bin:**
+  - A reason is required: duplicate, test data, candidate asked to delete their data (privacy), withdrew, or other. A note is optional.
+  - The candidate and their applications are hidden from every list, search, report, scoring and email query by one global filter.
+  - Queued emails and open interview-confirmation, negotiation and form links are cancelled.
+  - They can be restored for `recruitment.candidates.recycle_days` (30 by default).
+- **Step 2 — Delete permanently** (from **Candidates > Recycle bin**, or automatically by the daily `recycle_bin_purge` job):
+  - Removes the candidate, their applications, interviews and everything else linked to them through the database, plus notes, scores and AI results (their audit trail) and consent records.
+  - Removes their resume, photo and BGV files from storage.
+  - Keeps the message log but replaces the person with "removed candidate" (no name, email or body).
+  - Keeps one audit entry: who, when, reason and counts, with no personal data.
+- **Before any permanent delete:** the dialog shows "This removes 1 candidate, 2 applications, 1 interview and 2 files. This cannot be undone." The person must type **DELETE**.
+- **Blocked, with a plain explanation:** a signed offer, onboarding started or completed, or a link to an employee or user record ("use the exit process instead").
+- **Privacy path:** "Candidate asked to delete their data" goes straight to permanent delete after DELETE is typed. It records a completed DPDP **erasure** request in the privacy ledger, keeping only a sha256 of the email.
+- **Bulk:** up to 500 at a time as a background run with a progress bar. Skipped candidates are listed with the reason; 501 or more is refused.
+- **Also added:** the possible-duplicate banner on the profile (from 17.13 detection). Migration `e9c2b5f8a1d4`.
+
+**Verified** (real company, freshly seeded "Demo - Removal Test" candidates with 2 applications, 1 interview, 1 queued + 1 sent email, 1 AI audit row, a resume and a photo on disk; the seeded Demo people were not touched):
+```
+                      candidates apps interviews audit-rows msgs-with-email queued files-on-disk  in list
+before                     1       2      1          1            2           1         2         yes
+summary               -> {"candidates":1,"applications":2,"interviews":1,"files":2,"blocked":null}
+remove (test_data)    -> 200 restore_until 2026-10-27, cancelled queued_emails 1
+after remove               1       2      1          2            2           0         2         no  (profile -> 404; shown in Recycle bin, deleted for good on 2026-10-27)
+restore               -> 200 {"restored":true,"applications":2}                                   yes
+remove again          -> 200
+delete, typed "yes"   -> 400 "Type DELETE to confirm."
+delete, typed DELETE  -> 200 {applications 2, interviews 1, files 2, audit_entries_removed 4, messages_scrubbed 2}
+after delete               0       0      0          0            0           0         0
+kept audit entry      -> actor kg@ctdtechs.com, {reason, reference "removed-xxxx", counts} -- no name/email
+message log           -> rows kept with to_addresses ["removed candidate"]
+privacy, no DELETE    -> 400; with DELETE -> 200 deleted at once + privacy_request_id; ledger: erasure / completed / "sha256:..."
+bulk remove 3         -> 202, run finished 3/3; bulk delete 3 -> 202, finished 3/3, all counts 0 after
+bulk 501 ids          -> 400 "You can remove up to 500 candidates at a time."
+recruiter             -> 403 "Missing permission: recruitment.candidate.delete"
+blocked (rolled back) -> signed offer: "This candidate has signed an offer ... use the offer/exit process instead."
+                         onboarding_started: "This candidate has started onboarding. Use the exit process instead ..."
+regression            -> home funnel, /candidates, /applications, jobs-health, audit, system-health all 200
+frontend              -> tsc clean, i18n 0 missing, npm run build OK
+```
+**Screenshot:** `recycle-bin.png`, `remove-dialog.png` -- **pending login proof**.

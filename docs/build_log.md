@@ -2226,3 +2226,9 @@ NEXT: 17.13 frontend (agent) + 17.15 frontend (Remove on profile/list/pipeline, 
 Talent pool panel (on demand, because it scores up to 1000 people), Jobs needing attention card, public status page /status/:token, System health settings page, audit log filters + CSV export, and a "Leave without saving?" guard (beforeunload + in-app link clicks; react-router useBlocker throws under BrowserRouter, so programmatic navigate/Back are not guarded). tsc and i18n clean.
 
 NEXT: 17.15 frontend (Remove on profile/list/pipeline, Recycle bin page, DELETE dialog, duplicate banner), then 17.14 hand-over.
+
+## Part 17.15b -- remove candidates: frontend (2026-09-28)
+
+RemoveCandidateDialog (reason list, note, counts summary, typed DELETE, bulk progress), Remove in the profile menu / row menu / board card / bulk bar (permission recruitment.candidate.delete), Candidates > Recycle bin page (Restore / Delete permanently; menu entry only for that permission), duplicate banner on the profile. Decision: the job pipeline counts already open the candidates board filtered by job, so Remove on board cards covers the pipeline without a second copy.
+
+NEXT: 17.14 hand-over (build/i18n/tsc/compileall, screenshots, report).

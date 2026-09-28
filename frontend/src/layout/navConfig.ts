@@ -27,11 +27,12 @@ export const FALLBACK_NAV: NavEntry[] = [
 ];
 
 // Sub-pages shown under a menu item (keyed by the section's path prefix).
-export const NAV_CHILDREN: Record<string, { labelKey: string; path: string }[]> = {
+export const NAV_CHILDREN: Record<string, { labelKey: string; path: string; permission?: string }[]> = {
   "/candidates": [
     { labelKey: "nav.sub.dashboard", path: "/candidates/dashboard" },
     { labelKey: "nav.sub.all_candidates", path: "/candidates/list" },
     { labelKey: "nav.sub.import", path: "/candidates/import" },
+    { labelKey: "nav.recycle_bin", path: "/candidates/recycle-bin", permission: "recruitment.candidate.delete" },
   ],
   "/screening": [
     { labelKey: "nav.sub.dashboard", path: "/screening/dashboard" },

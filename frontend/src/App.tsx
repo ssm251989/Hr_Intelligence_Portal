@@ -22,6 +22,7 @@ const BgvPage = lazy(() => import("./pages/BgvPage"));
 const CandidateDetailPage = lazy(() => import("./pages/CandidateDetailPage"));
 const CandidatesDashboardPage = lazy(() => import("./pages/CandidatesDashboardPage"));
 const CandidatesImportPage = lazy(() => import("./pages/CandidatesImportPage"));
+const RecycleBinPage = lazy(() => import("./pages/candidates/RecycleBinPage"));
 const CandidatesListPage = lazy(() => import("./pages/CandidatesListPage"));
 const HrInboxListPage = lazy(() => import("./pages/HrInboxListPage"));
 const InterviewListPage = lazy(() => import("./pages/InterviewListPage"));
@@ -124,6 +125,7 @@ export default function App() {
                 <Route path="/candidates/dashboard" element={<CandidatesDashboardPage />} />
                 <Route path="/candidates/list" element={<CandidatesListPage />} />
                 <Route path="/candidates/import" element={<CandidatesImportPage />} />
+                <Route path="/candidates/recycle-bin" element={<RecycleBinPage />} />
                 <Route path="/candidates/:applicationId" element={<CandidateDetailPage />} />
                 <Route path="/screening" element={<Navigate to="/screening/dashboard" replace />} />
                 <Route path="/screening/dashboard" element={<ScreeningDashboardPage />} />
