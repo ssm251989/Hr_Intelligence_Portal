@@ -2346,3 +2346,9 @@ NEXT: 18.17 documents review (agent checks green/amber/red with reasons; HR appr
 Agent checks (rules + Claude validator behind AI feature recruitment.document_check) with green/amber/red + reasons and cross-checks; DocumentsReviewDrawer on the BGV page (joining documents column), approve one/all, ask again with note, resend link; all approved -> bgv_requested + copy into BGV documents.
 
 NEXT: 18.18 BGV decision by HR (Passed / Resend form / Failed with reason + editable email preview; never auto-failed).
+
+## Part 18.18 -- BGV decision by HR (2026-09-28)
+
+bgv_decision.decide passed/resend/failed (+ preview, editable message, template bgv_unsuccessful, budget release), BgvDecisionBox replaces the old clear/reject box. Decision: Passed allowed even when documents are not all "valid" (warned, audited) because the owner wants HR to decide.
+
+NEXT: 18.19 joining date: HR picks 3 dates after BGV passed -> email "BGV successful" + one-click choice; reminder 48h; HR can propose new dates; chosen date saved.

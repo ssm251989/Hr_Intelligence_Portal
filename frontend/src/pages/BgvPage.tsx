@@ -1,5 +1,6 @@
 import StageTable, { type StageRow } from "../components/stage/StageTable";
 import DocumentsReviewDrawer from "../components/documents/DocumentsReviewDrawer";
+import BgvDecisionBox from "../components/bgv/BgvDecisionBox";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import Alert from "@mui/material/Alert";
@@ -101,7 +102,7 @@ function BgvUploadForm({ onUpload }: { onUpload: (docType: string, file: File) =
   );
 }
 
-function BgvClearForm({ onSubmit }: { onSubmit: (payload: BgvClearRequest) => Promise<void> }) {
+export function BgvClearForm({ onSubmit }: { onSubmit: (payload: BgvClearRequest) => Promise<void> }) {
   const { can } = useAuth();
   const t = useT();
   const f = useTheme().palette.fresh;
@@ -309,11 +310,6 @@ export default function BgvPage() {
     }
   };
 
-  const handleClear = async (applicationId: string, payload: BgvClearRequest) => {
-    const updated = await bgvApi.clear(applicationId, payload);
-    setApplications((prev) => prev.map((app) => (app.id === applicationId ? updated : app)));
-  };
-
   const candidateLabel = (candidateId: string) => {
     const candidate = candidates[candidateId];
     return candidate?.parsed_fields?.full_name || candidate?.full_name || t("offers.shared.candidate_fallback", { id: candidateId.slice(0, 8) });
@@ -472,7 +468,8 @@ export default function BgvPage() {
                   )}
 
                   {IN_PROGRESS_STATUSES.includes(app.status) && (
-                    <BgvClearForm onSubmit={(payload) => handleClear(app.id, payload)} />
+                    <BgvDecisionBox applicationId={app.id} notAllValid={docs.length === 0 || docs.some((d) => d.validation_status !== "valid")}
+                      onDone={() => { if (selectedJobId) void loadJobData(selectedJobId); setStageRefresh((k) => k + 1); }} />
                   )}
                 </Card>
               );

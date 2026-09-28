@@ -162,3 +162,36 @@ def reupload(application_id: UUID, body: ReuploadIn, db: Session = Depends(get_d
 def send_form(application_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     tenant = _need(db, current_user, "recruitment.bgv.edit")
     return jd.send_form(db, tenant, _app(db, tenant, application_id), actor=current_user.email)
+
+
+# ---------------------------------------------------------------- Part 18.18: BGV decision by HR
+
+bgv_router = APIRouter(prefix="/api/v1/ui/bgv", tags=["ui-bgv-decision"])
+
+
+class BgvDecideIn(BaseModel):
+    decision: str
+    note: Optional[str] = Field(None, max_length=1000)
+    reason: Optional[str] = Field(None, max_length=1000)
+    message: Optional[str] = Field(None, max_length=5000)
+    codes: Optional[list[str]] = None
+
+
+@bgv_router.get("/{application_id}/failed-preview")
+def bgv_failed_preview(application_id: UUID, reason: str = "", db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from app.recruitment.bgv_decision import preview_failed
+
+    tenant = _need(db, current_user, "recruitment.bgv.edit")
+    return preview_failed(db, tenant, _app(db, tenant, application_id), reason or "...")
+
+
+@bgv_router.post("/{application_id}/decide")
+def bgv_decide(application_id: UUID, body: BgvDecideIn, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from app.recruitment.bgv_decision import decide
+
+    tenant = _need(db, current_user, "recruitment.bgv.edit")
+    try:
+        return decide(db, tenant, _app(db, tenant, application_id), decision=body.decision, actor=current_user.email, note=body.note,
+                      reason=body.reason, message=body.message, codes=body.codes)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))

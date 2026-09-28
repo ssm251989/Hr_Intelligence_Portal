@@ -42,6 +42,11 @@ DEFAULTS: dict[str, tuple[str, str, list[str]]] = {
         "Please use the same link:\n\n{{ form_link }}\n\nBest regards,\n{{ company_name }} HR",
         ["candidate_first_name", "job_title", "form_link", "documents"],
     ),
+    "recruitment.bgv_unsuccessful": (
+        "{{ job_title }}: background verification update",
+        "{{ message }}\n\nBest regards,\n{{ company_name }} HR",
+        ["message"],
+    ),
     "recruitment.job_closed_candidate": (
         "Update on your application for {{ job_title }}",
         "Hi {{ candidate_first_name }},\n\nThank you for applying for {{ job_title }}. This position has been closed for now, so "

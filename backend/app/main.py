@@ -251,6 +251,9 @@ from app.experience.ui_documents_router import public_router as documents_public
 
 app.include_router(ui_documents_router)
 app.include_router(documents_public_router)
+from app.experience.ui_documents_router import bgv_router as ui_bgv_decision_router  # noqa: E402
+
+app.include_router(ui_bgv_decision_router)
 install_friendly_errors(app)
 
 

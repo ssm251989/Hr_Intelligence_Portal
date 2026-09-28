@@ -482,3 +482,27 @@ interviewer approve -> 403; all test files deleted
 tsc clean, i18n 0 missing (35 new keys), npm run build OK
 ```
 **Screenshot:** BGV table joining-documents column + review drawer -- pending login proof.
+
+## 18.18 BGV decision by HR (no automatic "failed")
+
+**Problem:** BGV could only be "cleared" when every document was marked valid, or "rejected". There was no "send the form again", no reason, and no message to the candidate.
+
+**Change** (`app/recruitment/bgv_decision.py`, `POST /api/v1/ui/bgv/{id}/decide`, `GET …/failed-preview`, `BgvDecisionBox`):
+- HR chooses **Passed / Resend form / Failed** on each BGV card.
+  - **Passed** → `bgv_cleared`. If not every document is marked valid, HR is warned but may still pass: it is their decision and it is recorded. This then starts the joining-date step (18.19).
+  - **Resend form** → HR ticks exactly what is needed (PAN / Aadhaar / education / experience) and adds a note. The candidate gets the upload link with that list and note (`recruitment.documents_reupload`), and the status stays in BGV.
+  - **Failed** → a **reason is required**. **Preview the email** shows the polite "background verification update" message with the reason; HR can edit it before sending (template `recruitment.bgv_unsuccessful`, editable). The status becomes `bgv_rejected` and the reserved budget is released.
+- **The system never marks BGV failed by itself.** Document checks only colour and explain; the only other place that sets "rejected" is HR's own legacy clear endpoint. Every decision is audited with reason, note and documents.
+
+**Verified** (rolled back; emails recorded, not sent):
+```
+passed with no valid documents -> bgv_cleared (HR decision)
+resend without choosing -> 400; resend degree + note -> bgv_pending, requested [education],
+  email documents_reupload "- Education certificates: The degree scan is cut off - please send all pages."
+failed without reason -> 400
+preview -> subject "Demo - RPA Developer: background verification update", message with the reason
+failed with HR-edited message -> bgv_rejected, email recruitment.bgv_unsuccessful sent
+deciding again -> 400 "This candidate is not waiting for a BGV decision."
+tsc clean, i18n 0 missing (23 new keys), npm run build OK
+```
+**Screenshot:** BGV decision dialogs -- pending login proof.
