@@ -74,8 +74,11 @@ def check(db: Session, tenant: TenantContext) -> dict:
                 issues.append(_issue("error", "WORKFLOW_NO_APPROVERS", f"\"{definition.name}\" has an approval step with nobody to approve it.",
                                      "Choose who approves that step, then save.", "/settings/automation/approvals", "Choose approvers", workflow_key=definition.key))
 
+    from app.platform.iam.mfa import is_available as two_step_available
+
     mfa_required = SettingsService(db).get("iam.auth.mfa_required", SettingContext(tenant=tenant))
-    no_mfa = [u for u in db.query(User).filter(User.tenant_id == tenant.tenant_id).all() if not u.mfa_totp_enrolled_at and not u.mfa_email_otp_enabled]
+    no_mfa = [] if not two_step_available(db, tenant) else [  # Part 18.1: no 2-step warnings while it is off
+        u for u in db.query(User).filter(User.tenant_id == tenant.tenant_id).all() if not u.mfa_totp_enrolled_at and not u.mfa_email_otp_enabled]
     admins_no_mfa = [u for u in no_mfa if u.role == "admin"]
     if admins_no_mfa:
         n = len(admins_no_mfa)

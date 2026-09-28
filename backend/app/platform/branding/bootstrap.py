@@ -129,6 +129,7 @@ def build_bootstrap(db: Session, tenant: TenantContext, user: Optional[User], *,
             "direction": "rtl" if resolved_locale in (settings_service.get("org.rtl_locales", ctx) or []) else "ltr",
         },
         "custom_labels": custom_labels,
+        "two_step": bool(settings_service.get("iam.auth.two_step_available", ctx)),  # Part 18.1
         # Part 12: every AI affordance in the UI is gated on these (AI disabled -> hidden).
         "ai": _ai_flags(db, tenant),
     }

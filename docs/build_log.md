@@ -2238,3 +2238,9 @@ NEXT: 17.14 hand-over (build/i18n/tsc/compileall, screenshots, report).
 All Part 17 items done (17.1-17.13, 17.15). Build, i18n, tsc, compileall clean; alembic at e9c2b5f8a1d4. Public screenshots refreshed; signed-in screenshots wait for a login (no credentials were provided). Known issue: the Lottie success tick does not draw (Part 15).
 
 NEXT: STOP -- hand-over reported. Then PART16 steps 16.1-16.10 per RESUME.txt when asked.
+
+## Part 18.1 -- 2-step verification off (2026-09-28)
+
+New setting iam.auth.two_step_available (Advanced, default off) gates every 2-step path: login never challenges/enrols, config-health drops the 2FA warnings, bootstrap exposes two_step=false so the Settings page is hidden. Code kept. Decision: an extra "available" switch rather than deleting code, so it can return (owner asked to keep it).
+
+NEXT: 18.2 one company mailbox for everything (auto-route every purpose, hide per-purpose routing, health not warning).

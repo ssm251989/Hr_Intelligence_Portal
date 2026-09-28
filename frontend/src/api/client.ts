@@ -1122,6 +1122,7 @@ export interface BootstrapRead {
   home_path?: string;
   modules?: string[];
   ux?: { reduce_motion: boolean; page_size: number; direction: "ltr" | "rtl" };
+  two_step?: boolean; // Part 18.1
 }
 
 export const brandingApi = {

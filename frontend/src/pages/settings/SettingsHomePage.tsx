@@ -13,6 +13,7 @@ import { Link as RouterLink, Navigate, useLocation } from "react-router-dom";
 import { platformSettingsApi, type SettingDefinition } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import { ROLE_MATRIX } from "../../auth/roles";
+import { useMeBootstrap } from "../../bootstrap/MeBootstrapContext";
 import { useT } from "../../i18n";
 import { LEGACY, pageForSetting, visibleCategories } from "../../settings/catalog";
 import { Emoji, PageHeader } from "../../ui-kit";
@@ -26,7 +27,8 @@ function norm(s: string): string {
 
 export function useSettingsPerms() {
   const { can } = useAuth();
-  return { admin: can(ROLE_MATRIX.platformSettingsWrite), mailbox: can(ROLE_MATRIX.hrIntegrationWrite) };
+  const { data } = useMeBootstrap();
+  return { admin: can(ROLE_MATRIX.platformSettingsWrite), mailbox: can(ROLE_MATRIX.hrIntegrationWrite), twoStep: Boolean(data?.two_step) };
 }
 
 export default function SettingsHomePage() {

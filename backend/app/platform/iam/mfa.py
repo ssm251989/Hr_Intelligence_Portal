@@ -31,7 +31,14 @@ def _secret_store(db: Session, tenant: TenantContext):
     return get_secret_store(db, Secret, SecretScope, str(tenant.tenant_id))
 
 
+def is_available(db: Session, tenant: TenantContext) -> bool:
+    """Part 18.1: the whole 2-step feature is off unless Settings > Advanced switches it on."""
+    return bool(SettingsService(db).get("iam.auth.two_step_available", SettingContext(tenant=tenant)))
+
+
 def is_mfa_required(db: Session, tenant: TenantContext) -> bool:
+    if not is_available(db, tenant):
+        return False
     return bool(SettingsService(db).get("iam.auth.mfa_required", SettingContext(tenant=tenant)))
 
 

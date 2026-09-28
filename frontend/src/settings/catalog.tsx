@@ -48,6 +48,7 @@ export interface SettingsCategory {
 export interface Perms {
   admin: boolean; // platform settings configure
   mailbox: boolean; // HR mailbox integration
+  twoStep?: boolean; // Part 18.1: 2-step verification switched on (Settings > Advanced)
 }
 
 const ADMIN = (p: Perms) => p.admin;
@@ -86,7 +87,7 @@ export const CATEGORIES: SettingsCategory[] = [
     id: "people", emoji: "people", pages: [
       { id: "users", emoji: "id_card", keywords: "user access assign role", visible: ADMIN, render: () => <AccessControlPanel only="Assignments" /> },
       { id: "roles", emoji: "shield", keywords: "permissions rights", visible: ADMIN, render: () => <AccessControlPanel only="Roles" /> },
-      { id: "two-step", emoji: "lock", keywords: "2fa mfa otp authenticator security", prefixes: ["iam.auth.mfa"], visible: EVERYONE, render: () => <TwoStepPage /> },
+      { id: "two-step", emoji: "lock", keywords: "2fa mfa otp authenticator security", prefixes: ["iam.auth.mfa"], visible: (p) => Boolean(p.twoStep), render: () => <TwoStepPage /> },
       { id: "signin", emoji: "key", keywords: "password lockout session login", prefixes: ["iam.auth."], visible: ADMIN, render: scoped(["iam.auth."], "settingsHome.page.people.signin") },
       { id: "review", emoji: "eyes", advanced: true, keywords: "access review audit", visible: ADMIN, render: () => <AccessControlPanel only="Access review" /> },
     ],

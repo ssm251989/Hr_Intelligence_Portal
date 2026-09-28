@@ -224,6 +224,10 @@ def register_all() -> None:
     register(SettingDef("iam.auth.lockout_threshold", "int", 5, module="iam", group="Authentication"))
     register(SettingDef("iam.auth.lockout_duration_minutes", "int", 15, module="iam", group="Authentication"))
     register(SettingDef("iam.auth.mfa_required", "bool", False, module="iam", group="Authentication"))
+    # Part 18.1: 2-step verification is switched OFF for the product (owner decision). While this is
+    # false nobody is asked for a code or to enrol, and every 2-step screen/warning is hidden.
+    # Settings > Advanced > All settings turns it back on.
+    register(SettingDef("iam.auth.two_step_available", "bool", False, module="iam", group="Advanced"))
     register(SettingDef("iam.auth.remember_device_days", "int", 30, module="iam", group="Authentication"))
     register(SettingDef("iam.auth.access_token_expiry_minutes", "int", 480, module="iam", group="Authentication"))
     register(SettingDef("iam.auth.refresh_token_expiry_days", "int", 30, module="iam", group="Authentication"))
