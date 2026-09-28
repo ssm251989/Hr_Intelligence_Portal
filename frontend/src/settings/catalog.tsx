@@ -19,6 +19,7 @@ import ScoringRulesEditor from "../components/scoring/ScoringRulesEditor";
 import ShortlistingRulesForm from "../components/scoring/ShortlistingRulesForm";
 import BrandingGuideCard from "../components/settings/BrandingGuideCard";
 import IntegrationCard from "../components/settings/IntegrationCard";
+import SystemHealthPage from "../components/settings/SystemHealthPage";
 import { t } from "../i18n";
 import { AuditLogPage, BillingPage, ImportsPage, InterviewsSettingsPage, LanguagesPage, SamplesPage, StoragePage, TwoStepPage } from "./pages";
 
@@ -67,6 +68,7 @@ export const LEGACY: Record<string, string> = {
   "core-hr": "onboarding/org", people: "onboarding/org", employees: "onboarding/org", performance: "performance/cycles",
   helpdesk: "helpdesk/main", assets: "helpdesk/main", exits: "helpdesk/main", "service-desk": "helpdesk/main",
   all: "advanced/all", modules: "advanced/all", platform: "advanced/all", "all-settings": "advanced/all",
+  health: "data/health", "system-health": "data/health",
 };
 
 export const CATEGORIES: SettingsCategory[] = [
@@ -180,6 +182,8 @@ export const CATEGORIES: SettingsCategory[] = [
       { id: "samples", emoji: "page", keywords: "sample files templates download", visible: ADMIN, render: () => <SamplesPage /> },
       { id: "privacy", emoji: "lock", keywords: "retention consent dpdp privacy requests", visible: ADMIN, render: () => <PrivacyPanel /> },
       { id: "audit", emoji: "eyes", keywords: "audit log history who changed", visible: ADMIN, render: () => <AuditLogPage /> },
+      // Part 17.13: is everything the app depends on working? (the ui-kit has no stethoscope emoji)
+      { id: "health", emoji: "check", keywords: "health status database mailbox ai storage jobs", visible: ADMIN, render: () => <SystemHealthPage /> },
     ],
   },
   {

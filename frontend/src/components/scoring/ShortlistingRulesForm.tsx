@@ -18,7 +18,7 @@ import { useTheme } from "@mui/material/styles";
 import { scoringApi, type ShortlistingIn, type ShortlistingRules } from "../../api/scoringApi";
 import { useMeBootstrap } from "../../bootstrap/MeBootstrapContext";
 import { useT } from "../../i18n";
-import { FriendlyError, InfoTip } from "../../ui-kit";
+import { FriendlyError, InfoTip, useConfirmLeave } from "../../ui-kit";
 
 // Part 17.6: when a candidate's Match score reaches the shortlist threshold they can be moved to
 // Shortlisted automatically (with an undo window) -- company defaults (no jobId) or one job's own
@@ -77,6 +77,7 @@ export default function ShortlistingRulesForm({ jobId, onDirtyChange }: { jobId?
 
   const dirty = form != null && loaded != null && JSON.stringify(form) !== JSON.stringify(loaded);
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
+  useConfirmLeave(dirty); // Part 17.13: ask before leaving with unsaved rule changes
 
   if (loadError) return <FriendlyError error={loadError} what={t("scoring.sl.err_load")} onRetry={load} />;
   if (!form || !data || !loaded) return <CircularProgress size={24} aria-label={t("scoring.loading")} />;

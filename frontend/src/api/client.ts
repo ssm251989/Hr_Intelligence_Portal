@@ -818,6 +818,34 @@ export const offersApi = {
 
 // ---- reports ----
 
+// Part 17.13: audit log filters -- group = scoring | offers | shortlisting | settings | candidates | access;
+// actor = part of an email (or "system"); since/until = YYYY-MM-DD (until is inclusive).
+export interface AuditLogQuery {
+  entityType?: string;
+  entityId?: UUID;
+  action?: string;
+  actor?: string;
+  group?: string;
+  since?: string;
+  until?: string;
+  limit?: number;
+  offset?: number;
+}
+
+function auditQueryString(params: AuditLogQuery): string {
+  const query = new URLSearchParams();
+  if (params.entityType) query.set("entity_type", params.entityType);
+  if (params.entityId) query.set("entity_id", params.entityId);
+  if (params.action) query.set("action", params.action);
+  if (params.actor) query.set("actor", params.actor);
+  if (params.group) query.set("group", params.group);
+  if (params.since) query.set("since", params.since);
+  if (params.until) query.set("until", params.until);
+  if (params.limit !== undefined) query.set("limit", String(params.limit));
+  if (params.offset !== undefined) query.set("offset", String(params.offset));
+  return query.toString();
+}
+
 export const reportsApi = {
   pipeline: (jobRoleId?: UUID) =>
     get<PipelineResponse>(`/reports/pipeline${jobRoleId ? `?job_role_id=${jobRoleId}` : ""}`),
@@ -830,15 +858,14 @@ export const reportsApi = {
     get<JobStatusOverviewResponse>(`/reports/job-status-overview${period ? `?period=${period}` : ""}`),
   recentActivity: (limit?: number) =>
     get<RecentActivityResponse>(`/reports/recent-activity${limit ? `?limit=${limit}` : ""}`),
-  auditLog: (params: { entityType?: string; entityId?: UUID; action?: string; limit?: number; offset?: number } = {}) => {
-    const query = new URLSearchParams();
-    if (params.entityType) query.set("entity_type", params.entityType);
-    if (params.entityId) query.set("entity_id", params.entityId);
-    if (params.action) query.set("action", params.action);
-    if (params.limit !== undefined) query.set("limit", String(params.limit));
-    if (params.offset !== undefined) query.set("offset", String(params.offset));
-    const qs = query.toString();
+  auditLog: (params: AuditLogQuery = {}) => {
+    const qs = auditQueryString(params);
     return get<AuditLogPage>(`/reports/audit${qs ? `?${qs}` : ""}`);
+  },
+  /** Part 17.13: the same filters as auditLog, as a CSV file (null when the download failed). */
+  auditLogCsv: (params: Omit<AuditLogQuery, "limit" | "offset"> = {}) => {
+    const qs = auditQueryString(params);
+    return fetchBlob(`/reports/audit/export${qs ? `?${qs}` : ""}`);
   },
   applicationTimeline: (applicationId: UUID) =>
     get<ApplicationTimelineResponse>(`/applications/${applicationId}/timeline`),

@@ -33,7 +33,7 @@ import {
   type FactorKey, type Knockout, type KnockoutType, type PreviewResponse, type RecalcRun, type RulesResponse, type ScoringCatalog, type ScoringRules,
 } from "../../api/scoringApi";
 import { useI18n, useT } from "../../i18n";
-import { Emoji, FriendlyError, InfoTip } from "../../ui-kit";
+import { Emoji, FriendlyError, InfoTip, useConfirmLeave } from "../../ui-kit";
 
 // Part 17.5: the one place to set how the Match score is worked out -- for the whole company
 // (no jobId) or for one job (jobId). Weights of the switched-on factors add up to 100; knock-out
@@ -112,6 +112,7 @@ export default function ScoringRulesEditor({ jobId, onDirtyChange }: { jobId?: s
 
   const dirty = rules != null && JSON.stringify(rules) !== baseline;
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
+  useConfirmLeave(dirty); // Part 17.13: ask before leaving with unsaved rule changes
 
   // the job's candidates to choose from for the preview
   useEffect(() => {

@@ -23,7 +23,7 @@ import { EDUCATION_DEGREE_LEVELS } from "../api/types";
 import type { JobFieldSuggestionsResponse, JobRoleRead } from "../api/types";
 import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
 import { useT } from "../i18n";
-import { Emoji, FriendlyAnimation, FriendlyError, InfoTip } from "../ui-kit";
+import { Emoji, FriendlyAnimation, FriendlyError, InfoTip, confirmDiscard, useConfirmLeave } from "../ui-kit";
 import { formatExperienceRange } from "../utils/experience";
 import JdSideBySide from "./jobs/JdSideBySide";
 import ScoringRulesEditor from "./scoring/ScoringRulesEditor";
@@ -214,6 +214,10 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
   const [copiedFrom, setCopiedFrom] = useState<string | null>(null);
   // unsaved changes on the Scoring / Shortlisting steps (they save themselves)
   const [rulesDirty, setRulesDirty] = useState(false);
+  // Part 17.13: typed changes not yet saved by "Next" (each step saves when you press Next)
+  const [fieldsDirty, setFieldsDirty] = useState(false);
+  const leaveGuard = open && !published && (fieldsDirty || rulesDirty);
+  useConfirmLeave(leaveGuard);
   // autosave
   const [draftOffer, setDraftOffer] = useState<{ draft: WizardDraft; at: string | null } | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -303,18 +307,21 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
 
   const set = <K extends keyof WizardForm>(key: K, value: WizardForm[K]) => {
     touched.current = true;
+    setFieldsDirty(true);
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
   const applyTemplate = (source: JobRoleRead | null) => {
     if (!source) return;
     touched.current = true;
+    setFieldsDirty(true);
     setForm(formFromTemplate(source));
     setCopiedFrom(source.title);
   };
 
   const reset = () => {
     setRulesDirty(false);
+    setFieldsDirty(false);
     window.clearTimeout(saveTimer.current);
     touched.current = false;
     setActiveStep(0);
@@ -330,6 +337,7 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
   };
 
   const handleClose = () => {
+    if (!confirmDiscard(leaveGuard)) return;
     reset();
     onClose();
   };
@@ -488,6 +496,7 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
         }
       }
       setRulesDirty(false);
+      setFieldsDirty(false);
       setActiveStep((s) => s + 1);
     } catch (err) {
       setApiError({ what: t("jobs.err.save_step"), error: err });

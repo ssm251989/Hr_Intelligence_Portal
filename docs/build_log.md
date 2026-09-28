@@ -2220,3 +2220,9 @@ Recycle bin (soft delete: candidates.deleted_at/by/reason/note + applications.re
 Decisions: the proof uses freshly seeded "Demo - Removal Test" candidates (the seeded Demo people stay for the demo); the privacy ledger keeps a hash, not the email, so no personal data survives.
 
 NEXT: 17.13 frontend (agent) + 17.15 frontend (Remove on profile/list/pipeline, Recycle bin page, DELETE confirm dialog, duplicate banner), then 17.14 hand-over.
+
+## Part 17.13 -- automation + reliability frontend (2026-09-28)
+
+Talent pool panel (on demand, because it scores up to 1000 people), Jobs needing attention card, public status page /status/:token, System health settings page, audit log filters + CSV export, and a "Leave without saving?" guard (beforeunload + in-app link clicks; react-router useBlocker throws under BrowserRouter, so programmatic navigate/Back are not guarded). tsc and i18n clean.
+
+NEXT: 17.15 frontend (Remove on profile/list/pipeline, Recycle bin page, DELETE dialog, duplicate banner), then 17.14 hand-over.

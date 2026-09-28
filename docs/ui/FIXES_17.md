@@ -467,3 +467,38 @@ roster now used by negotiation (committed data): Kishore, Suresh A, Jagadeesh - 
 is_interviewer_busy source contains no Excel call; npm run build OK
 ```
 **Screenshot:** `my-availability.png`, `interviewers-pools.png` -- **pending login proof**.
+
+## 17.13 Automation + reliability
+
+**What changed:**
+- **Talent pool re-match:** job details has "Past candidates who match". It scores people already in the database with this job's rules, and "Add to this job" creates a scored application.
+- **Duplicate detection:** by email, phone and resume file hash on upload, local import, agency and careers apply. The earlier record is linked, and a banner shows on the profile (built in 17.15).
+- **Reminders (hourly, in-app, at most once a day each):**
+  - approvals waiting;
+  - scorecards not filled;
+  - offers about to expire;
+  - documents not uploaded.
+- **Jobs needing attention card** (Jobs page): no applicants, a slow stage or an old posting, with tips.
+- **Candidate status page** (`/status/:token`, no login): shows where the application is, never scores or reasons. The careers apply response returns the link.
+- **System health** (Settings > Data & privacy > System health): database, mailbox, AI, storage and background jobs as green, amber or red, with a fix link.
+- **Retries:** email send and storage uploads are retried on temporary errors only. **Idempotency keys:** a double click or a network retry never creates the same thing twice.
+- **Audit log:** who / group / from-to filters, plus CSV export with the same filters. The full log needs `security.audit.export`.
+- **Nightly backup:** `python -m hrctl.backup run` (app DB + control DB + uploads zip, keeps 14), with a restore guide in `docs/BACKUP_RESTORE.md`.
+- **"Leave without saving?" guard:** on the job wizard, the scoring rules, the shortlisting rules and the offer template editor.
+
+**Verified:**
+```
+talent pool, real job   -> checked 3, matching 3 at shortlist score 22
+talent pool, Demo job   -> matching 2; POST add -> 201, status screened, score 67.5
+jobs-health             -> both real open jobs flagged "no applicants yet" with tips
+duplicates              -> found by email, by phone and by file hash (3 seeded pairs)
+reminders/run           -> run 1: 1 scorecard + 2 documents reminders; run 2 (same day): 0 sent
+public status page      -> received/screened/interview states correct; closed job -> "closed"; bad token -> 404
+audit                   -> recruiter GET /reports/audit -> 403; group=scoring returns only scoring actions; CSV export 200
+system-health           -> overall amber (database, mailbox, AI green; storage, jobs amber: no worker heartbeat locally)
+backup run              -> 3 files; pg_restore --list shows 150 tables
+idempotency             -> same key replayed -> same id, 1 pool created; same key on another path -> 409
+retry                   -> transient SMTP error succeeds on try 3; wrong password (535) not retried
+frontend                -> tsc clean, i18n:check 0 missing
+```
+**Screenshot:** `candidate-status.png` (public) in 17.14; `system-health.png`, `jobs-health.png` -- **pending login proof**.

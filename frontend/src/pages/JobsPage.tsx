@@ -54,6 +54,7 @@ import LocationBreakdownPanel from "../components/LocationBreakdownPanel";
 import RecentActivityFeed from "../components/RecentActivityFeed";
 import TopPerformingJobs from "../components/TopPerformingJobs";
 import AutoCloseNote from "../components/jobs/AutoCloseNote";
+import JobsHealthCard from "../components/jobs/JobsHealthCard";
 import JobTemplateLibrary from "../components/jobs/JobTemplateLibrary";
 import { STAGE_STYLE } from "../components/jobs/jobStages";
 import ReopenJobDialog from "../components/jobs/ReopenJobDialog";
@@ -624,6 +625,15 @@ export default function JobsPage() {
           </Stack>
         </Card>
       )}
+
+      {/* Part 17.13: live jobs that need a nudge (hidden when all are fine) */}
+      <JobsHealthCard
+        refreshSignal={dashboardRefreshSignal}
+        onOpenJob={(jobId) => {
+          const job = jobs.find((j) => j.id === jobId);
+          if (job) setViewingJob(job);
+        }}
+      />
 
       {notice && (
         <Card role="status" sx={{ p: 1.5, mb: 2, bgcolor: f.okSoft, boxShadow: "none" }}>

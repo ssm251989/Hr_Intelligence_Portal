@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
+import Chip from "@mui/material/Chip";
 import MenuItem from "@mui/material/MenuItem";
+import Pagination from "@mui/material/Pagination";
 import Skeleton from "@mui/material/Skeleton";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
@@ -13,14 +15,15 @@ import { useTheme } from "@mui/material/styles";
 import { Link as RouterLink } from "react-router-dom";
 
 import { experienceApi, extractErrorMessage, http, reportsApi, type HealthIssue } from "../api/client";
-import type { AuditLogRead } from "../api/types";
+import { downloadBlob } from "../api/scoringApi";
+import type { AuditLogPage as AuditLogPageData, AuditLogRead } from "../api/types";
 import MfaSettingsCard from "../components/MfaSettingsCard";
 import ExcelTrackerImport from "../components/interviews/ExcelTrackerImport";
 import PlatformSettingsPanel from "../components/PlatformSettingsPanel";
 import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
 import { LOCALES, useT } from "../i18n";
 import { en as baseEn } from "../i18n/en";
-import { EmptyState, Emoji, InfoTip, StatTile, StatusChip } from "../ui-kit";
+import { EmptyState, Emoji, FriendlyError, InfoTip, StatTile, StatusChip, humanise } from "../ui-kit";
 
 // Part 16.3: the Settings pages that didn't exist as panels before.
 
@@ -319,27 +322,145 @@ export function StoragePage() {
 }
 
 // ---- Data & privacy > Audit log ----
+// Part 17.13: filters (quick groups, who, dates, exact action), paging, rows in words, CSV export.
+
+const AUDIT_GROUPS = ["scoring", "offers", "shortlisting", "settings", "candidates", "access"] as const;
+const AUDIT_PAGE = 50;
+// Actions with their own words in the bundles (autom.audit.action.<code>); others are humanised.
+const AUDIT_ACTIONS = new Set([
+  "scoring_rules_saved", "scoring_rules_cleared", "score_recalculated",
+  "offer_generated", "offer_sent", "offer_approved", "offer_signed", "salary_approval_decision", "salary_auto_decided",
+  "hr_shortlisting_decision", "shortlist_status_updated", "ai_auto_shortlisted", "auto_shortlist_undone",
+  "setting_changed", "place_fixed", "pool_created", "pool_updated", "pool_deleted", "shortlisting_rules_saved",
+  "candidate_removed", "candidate_restored", "candidate_deleted", "possible_duplicate", "added_from_talent_pool",
+  "agency_member_added", "agency_member_removed", "role_created", "role_updated", "user_invited", "reminder_sent",
+]);
+const AUDIT_ENTITIES = new Set(["application", "candidate", "job", "job_role", "offer", "setting", "user", "role", "agency", "interviewer_pool", "employee"]);
+
+interface AuditFilters { group: string; actor: string; since: string; until: string; action: string }
+const NO_AUDIT_FILTERS: AuditFilters = { group: "", actor: "", since: "", until: "", action: "" };
+const sameFilters = (a: AuditFilters, b: AuditFilters) => JSON.stringify(a) === JSON.stringify(b);
 
 export function AuditLogPage() {
   const t = useT();
   const f = useTheme().palette.fresh;
-  const [rows, setRows] = useState<AuditLogRead[] | null>(null);
-  useEffect(() => { reportsApi.auditLog({ limit: 100 }).then((p) => setRows(p.items)).catch(() => setRows([])); }, []);
-  const words = (s?: string | null) => (s ?? "").replace(/[._]/g, " ");
+  const [filters, setFilters] = useState<AuditFilters>(NO_AUDIT_FILTERS);
+  const [applied, setApplied] = useState<AuditFilters>(NO_AUDIT_FILTERS);
+  const [offset, setOffset] = useState(0);
+  const [data, setData] = useState<AuditLogPageData | null>(null);
+  const [loadError, setLoadError] = useState<unknown>(null);
+  const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  // Typing in "who" / "action" waits a moment before asking the server again.
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      if (sameFilters(applied, filters)) return;
+      setApplied(filters);
+      setOffset(0);
+    }, 400);
+    return () => window.clearTimeout(handle);
+  }, [filters, applied]);
+
+  const query = useMemo(() => ({
+    group: applied.group || undefined, actor: applied.actor.trim() || undefined, since: applied.since || undefined,
+    until: applied.until || undefined, action: applied.action.trim() || undefined,
+  }), [applied]);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setLoadError(null);
+    reportsApi.auditLog({ ...query, limit: AUDIT_PAGE, offset })
+      .then(setData).catch(setLoadError).finally(() => setLoading(false));
+  }, [query, offset]);
+  useEffect(load, [load]);
+
+  const exportCsv = async () => {
+    setExporting(true);
+    setExportError(null);
+    const blob = await reportsApi.auditLogCsv(query).catch(() => null);
+    setExporting(false);
+    if (!blob) {
+      setExportError(t("autom.audit.export_failed"));
+      return;
+    }
+    downloadBlob(blob, `audit-log-${new Date().toISOString().slice(0, 10)}.csv`);
+  };
+
+  const patch = (p: Partial<AuditFilters>) => setFilters((prev) => ({ ...prev, ...p }));
+  const hasFilters = !sameFilters(filters, NO_AUDIT_FILTERS);
+  const whatText = (r: AuditLogRead) => (r.action ? (AUDIT_ACTIONS.has(r.action) ? t(`autom.audit.action.${r.action}`) : humanise(r.action)) : "—");
+  const recordText = (r: AuditLogRead) => (r.entity_type ? (AUDIT_ENTITIES.has(r.entity_type) ? t(`autom.audit.entity.${r.entity_type}`) : humanise(r.entity_type)) : "—");
+  const who = (r: AuditLogRead) => (!r.actor || r.actor === "system" ? t("settingsHome.audit.system") : r.actor);
+  const total = data?.total ?? 0;
+  const pages = Math.max(1, Math.ceil(total / AUDIT_PAGE));
+  const page = Math.floor(offset / AUDIT_PAGE) + 1;
+  const cols = "170px 220px 1fr 150px";
+
   return (
-    <Section title={t("settingsHome.audit.title")} emoji="eyes" intro={t("settingsHome.audit.intro")}>
-      {rows === null ? <Skeleton variant="rounded" height={160} /> : rows.length === 0 ? (
-        <EmptyState compact illustration="no-data" title={t("settingsHome.audit.none")} />
-      ) : (
-        <Stack spacing={0.75}>
-          {rows.map((r) => (
-            <Stack key={r.id} direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ py: 0.75, borderBottom: `1px solid ${f.line}` }}>
-              <Typography sx={{ minWidth: 170, color: f.muted, fontSize: 13 }}>{new Date(r.created_at).toLocaleString()}</Typography>
-              <Typography sx={{ minWidth: 180, fontWeight: 600, fontSize: 14 }}>{r.actor ?? t("settingsHome.audit.system")}</Typography>
-              <Typography sx={{ fontSize: 14 }}>{words(r.action)} · {words(r.entity_type)}</Typography>
-            </Stack>
+    <Section title={t("settingsHome.audit.title")} emoji="eyes" intro={t("autom.audit.intro")}>
+      <Stack spacing={1.5} sx={{ mb: 2 }}>
+        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap role="group" aria-label={t("autom.audit.groups")}>
+          <Chip label={t("autom.audit.group.all")} color={filters.group ? "default" : "primary"} variant={filters.group ? "outlined" : "filled"}
+            onClick={() => patch({ group: "" })} aria-pressed={!filters.group} />
+          {AUDIT_GROUPS.map((g) => (
+            <Chip key={g} label={t(`autom.audit.group.${g}`)} color={filters.group === g ? "primary" : "default"} variant={filters.group === g ? "filled" : "outlined"}
+              onClick={() => patch({ group: filters.group === g ? "" : g })} aria-pressed={filters.group === g} />
           ))}
         </Stack>
+        <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", md: "2fr 1fr 1fr 2fr" } }}>
+          <TextField size="small" label={t("autom.audit.who")} placeholder={t("autom.audit.who_ph")} value={filters.actor} onChange={(e) => patch({ actor: e.target.value })} />
+          <TextField size="small" type="date" label={t("autom.audit.from")} value={filters.since} onChange={(e) => patch({ since: e.target.value })}
+            slotProps={{ inputLabel: { shrink: true } }} />
+          <TextField size="small" type="date" label={t("autom.audit.to")} value={filters.until} onChange={(e) => patch({ until: e.target.value })}
+            slotProps={{ inputLabel: { shrink: true } }} />
+          <TextField size="small" label={t("autom.audit.action")} placeholder="offer_sent" helperText={t("autom.audit.action_hint")} value={filters.action}
+            onChange={(e) => patch({ action: e.target.value })} />
+        </Box>
+        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+          <Typography variant="body2" sx={{ color: f.muted, flex: 1 }} role="status">
+            {data ? t("autom.audit.count", { count: total }) : ""}
+          </Typography>
+          {hasFilters && <Button size="small" onClick={() => setFilters(NO_AUDIT_FILTERS)}>{t("autom.audit.clear")}</Button>}
+          <Button size="small" variant="outlined" onClick={() => void exportCsv()} disabled={exporting || total === 0} startIcon={<Emoji name="package" size={16} />}>
+            {exporting ? t("autom.audit.exporting") : t("autom.audit.export")}
+          </Button>
+        </Stack>
+        {exportError && <Alert severity="error">{exportError}</Alert>}
+      </Stack>
+
+      {loadError != null ? (
+        <FriendlyError compact error={loadError} what={t("autom.audit.err")} onRetry={load} />
+      ) : data === null ? <Skeleton variant="rounded" height={160} /> : data.items.length === 0 ? (
+        <EmptyState compact illustration="no-data" title={hasFilters ? t("autom.audit.none_filtered") : t("settingsHome.audit.none")} />
+      ) : (
+        <Box sx={{ opacity: loading ? 0.6 : 1 }}>
+          <Box sx={{ display: { xs: "none", md: "grid" }, gridTemplateColumns: cols, gap: 1.5, pb: 0.75, borderBottom: `1px solid ${f.line}` }}>
+            {[t("autom.audit.col.when"), t("autom.audit.col.who"), t("autom.audit.col.what"), t("autom.audit.col.record")].map((h) => (
+              <Typography key={h} variant="caption" sx={{ color: f.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em" }}>{h}</Typography>
+            ))}
+          </Box>
+          <Box component="ul" sx={{ listStyle: "none", m: 0, p: 0 }}>
+            {data.items.map((r) => (
+              <Box component="li" key={r.id}
+                sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: cols }, gap: { xs: 0.25, md: 1.5 }, py: 1, borderBottom: `1px solid ${f.line}` }}>
+                <Typography sx={{ color: f.muted, fontSize: 13 }}>{new Date(r.created_at).toLocaleString()}</Typography>
+                <Typography sx={{ fontWeight: 600, fontSize: 14, overflowWrap: "anywhere" }}>{who(r)}</Typography>
+                <Typography sx={{ fontSize: 14 }}>{whatText(r)}</Typography>
+                <Typography sx={{ fontSize: 13, color: f.muted }}>{recordText(r)}</Typography>
+              </Box>
+            ))}
+          </Box>
+          {pages > 1 && (
+            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 1.5 }} flexWrap="wrap" gap={1}>
+              <Typography variant="body2" sx={{ color: f.muted }}>
+                {t("autom.audit.showing", { from: offset + 1, to: Math.min(offset + AUDIT_PAGE, total), count: total })}
+              </Typography>
+              <Pagination count={pages} page={page} onChange={(_e, p) => setOffset((p - 1) * AUDIT_PAGE)} size="small" color="primary" />
+            </Stack>
+          )}
+        </Box>
       )}
     </Section>
   );

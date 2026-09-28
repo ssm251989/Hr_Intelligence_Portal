@@ -18,6 +18,7 @@ import { formatExperienceRange } from "../utils/experience";
 import { categorizeSkills } from "../utils/skills";
 import AutoCloseNote from "./jobs/AutoCloseNote";
 import JdPreview from "./jobs/JdPreview";
+import TalentPoolPanel from "./jobs/TalentPoolPanel";
 import { STAGE_STYLE } from "./jobs/jobStages";
 import JobTypeChip from "./JobTypeChip";
 import PostingLinksEditor from "./PostingLinksEditor";
@@ -127,6 +128,9 @@ export default function JobDetailsDialog({
             {job.additional_notes && <Typography variant="body2" sx={{ color: f.muted }}>{t("jobs.rev.notes")}: {job.additional_notes}</Typography>}
 
             <PostingLinksEditor job={job} canWrite={canWrite} onUpdated={onUpdated} />
+
+            {/* Part 17.13: people from earlier jobs who fit this one */}
+            {job.status !== "closed" && <TalentPoolPanel key={job.id} jobId={job.id} />}
 
             {job.jd_text && (
               <Box sx={{ p: 2.5, borderRadius: "12px", bgcolor: f.surface2, border: `1px solid ${f.line}` }}>

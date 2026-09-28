@@ -17,7 +17,7 @@ import { useTheme } from "@mui/material/styles";
 import { extractErrorMessage } from "../../api/client";
 import { offersExtraApi } from "../../api/offersExtra";
 import { useT } from "../../i18n";
-import { Emoji, FriendlyError, InfoTip, StatusChip } from "../../ui-kit";
+import { Emoji, FriendlyError, InfoTip, StatusChip, confirmDiscard, useConfirmLeave } from "../../ui-kit";
 
 // L-B6: offer letter template editor with a LIVE preview -- editor on the left, the
 // rendered letter on the right. The preview uses the server's own safe letter renderer
@@ -50,6 +50,13 @@ export default function OfferTemplateEditor({ open, onClose }: { open: boolean; 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  // Part 17.13: the text as last loaded / saved -- anything else is unsaved
+  const [savedText, setSavedText] = useState<string | null>(null);
+  const dirty = open && savedText !== null && text !== savedText;
+  useConfirmLeave(dirty);
+  const close = () => {
+    if (confirmDiscard(dirty)) onClose();
+  };
 
   const load = () => {
     setLoadError(null);
@@ -57,6 +64,7 @@ export default function OfferTemplateEditor({ open, onClose }: { open: boolean; 
       .template()
       .then((tpl) => {
         setText(tpl.html_tpl);
+        setSavedText(tpl.html_tpl);
         setSample({ ...tpl.sample_context, "org.display_name": tpl.sample_context["org.display_name"] ?? t("offers.editor.sample_company") });
         setMeta({ version: tpl.version, status: tpl.status });
       })
@@ -118,6 +126,7 @@ export default function OfferTemplateEditor({ open, onClose }: { open: boolean; 
     try {
       const r = await offersExtraApi.saveTemplate(text, true);
       setMeta({ version: r.version, status: r.status });
+      setSavedText(text);
       setSaved(true);
     } catch (err) {
       setSaveError(extractErrorMessage(err, t("offers.editor.save_failed")));
@@ -132,7 +141,7 @@ export default function OfferTemplateEditor({ open, onClose }: { open: boolean; 
   </style></head><body>${preview}</body></html>`;
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="lg" fullScreen={small} aria-labelledby="offer-template-title">
+    <Dialog open={open} onClose={close} fullWidth maxWidth="lg" fullScreen={small} aria-labelledby="offer-template-title">
       <DialogTitle id="offer-template-title" sx={{ display: "flex", alignItems: "center", gap: 1 }}>
         <Emoji name="memo" size={22} />
         {t("offers.editor.title")}
@@ -212,7 +221,7 @@ export default function OfferTemplateEditor({ open, onClose }: { open: boolean; 
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>{t("action.close")}</Button>
+        <Button onClick={close}>{t("action.close")}</Button>
         <Button variant="contained" onClick={save} disabled={saving || !text || Boolean(loadError)}>
           {saving ? t("offers.editor.saving") : t("offers.editor.save")}
         </Button>

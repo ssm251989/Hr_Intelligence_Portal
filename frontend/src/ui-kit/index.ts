@@ -19,3 +19,4 @@ export { celebrate } from "./celebrate";
 export { useReducedMotion, prefersReducedMotion } from "./motion";
 export { default as HomeGreeting, timeOfDay, firstName } from "./HomeGreeting";
 export { PageGrid, Cell } from "./PageGrid";
+export { default as useConfirmLeave, confirmDiscard } from "./useConfirmLeave";
