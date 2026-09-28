@@ -204,39 +204,64 @@ def send_reminders(db: Session, tenant) -> dict:
 
 # ---------------------------------------------------------------- job health
 
-def job_health(db: Session, tenant) -> list[dict]:
+def job_health(db: Session, tenant) -> dict:
+    """Part 18.7: health of every live job, built for 100+ jobs -- a handful of grouped queries
+    (not a few per job). Each job: level green / amber / red, issues with numbers (the page
+    words them in the user's language), and tip codes. Plus summary counts for the chips."""
     from app.models.pipeline import PipelineStage, PipelineTemplate
 
     now = datetime.now(timezone.utc)
-    sla = {}
+    week = now - timedelta(days=7)
+    sla: dict = {}
     tpl = db.query(PipelineTemplate).filter(PipelineTemplate.tenant_id == tenant.tenant_id, PipelineTemplate.is_default.is_(True)).first()
     if tpl:
         sla = {s.code: s.sla_days for s in db.query(PipelineStage).filter(PipelineStage.template_id == tpl.id) if s.sla_days}
+    jobs = db.query(JobRole).filter(JobRole.tenant_id == tenant.tenant_id, JobRole.status == "published").all()
+    ids = [j.id for j in jobs]
+    counts = {r[0]: r[1:] for r in db.query(
+        Application.job_role_id, func.count(Application.id), func.count(Application.id).filter(Application.created_at >= week),
+        func.max(Application.created_at), func.count(Application.id).filter(Application.status == "screened"),
+    ).filter(Application.tenant_id == tenant.tenant_id, Application.job_role_id.in_(ids or [None])).group_by(Application.job_role_id)}
+    slow: dict = {}
+    for job_id, status, scored_at, created_at in db.query(Application.job_role_id, Application.status, Application.scored_at, Application.created_at).filter(
+            Application.tenant_id == tenant.tenant_id, Application.job_role_id.in_(ids or [None]), Application.status.notin_(TERMINAL_APPLICATION_STATUSES)):
+        limit, since = sla.get(status), scored_at or created_at
+        if limit and since and (now - since).days > limit:
+            over = (now - since).days - limit
+            n, worst = slow.get(job_id, (0, 0))
+            slow[job_id] = (n + 1, max(worst, over))
     out = []
-    for job in db.query(JobRole).filter(JobRole.tenant_id == tenant.tenant_id, JobRole.status == "published"):
-        recent = db.query(func.count(Application.id)).filter(Application.job_role_id == job.id, Application.created_at >= now - timedelta(days=7)).scalar() or 0
-        total = db.query(func.count(Application.id)).filter(Application.job_role_id == job.id).scalar() or 0
-        issues, tips = [], []
+    for job in jobs:
+        total, recent, last_at, screened = counts.get(job.id, (0, 0, None, 0))
         age = (now - job.created_at).days if job.created_at else 0
+        issues, tips = [], []
         if recent == 0 and age >= 7:
-            issues.append({"kind": "no_applicants", "text": "No new applicants in the last 7 days"})
-            tips += ["Share the job again (careers site, job boards, referrals)", "Widen the location or allow relocation",
-                     "Relax the must-have skills or the experience range"]
-        slow = 0
-        for app in db.query(Application).filter(Application.job_role_id == job.id, Application.status.notin_(TERMINAL_APPLICATION_STATUSES)):
-            limit = sla.get(app.status)
-            since = app.scored_at or app.created_at
-            if limit and since and (now - since).days > limit:
-                slow += 1
-        if slow:
-            issues.append({"kind": "slow_stage", "text": f"{slow} candidates waiting longer than the stage's time limit"})
-            tips.append("Open the shortlist and decide on the waiting candidates")
-        screened = db.query(func.count(Application.id)).filter(Application.job_role_id == job.id, Application.status == "screened").scalar() or 0
+            quiet = (now - last_at).days if last_at else age
+            issues.append({"kind": "no_applicants", "days": quiet, "count": 0})
+            tips += ["share_again", "widen_location", "relax_skills"]
+        n_slow, worst = slow.get(job.id, (0, 0))
+        if n_slow:
+            issues.append({"kind": "slow_stage", "days": worst, "count": n_slow})
+            tips.append("decide_waiting")
         if total >= 10 and screened >= total * 0.8:
-            tips.append("Most candidates stay below the shortlist threshold - check the job's scoring rules")
-        out.append({"job_id": str(job.id), "title": job.title, "applicants_7d": recent, "applicants_total": total, "age_days": age,
-                    "healthy": not issues, "issues": issues, "suggestions": list(dict.fromkeys(tips))})
-    return sorted(out, key=lambda r: (r["healthy"], -len(r["issues"])))
+            issues.append({"kind": "low_scores", "days": 0, "count": screened})
+            tips.append("check_scoring")
+        level = "green" if not issues else "red" if len(issues) >= 2 or n_slow >= 5 or (issues[0]["kind"] == "no_applicants" and issues[0]["days"] >= 21) else "amber"
+        out.append({"job_id": str(job.id), "title": job.title, "department": job.department, "location": job.location,
+                    "applicants_7d": recent, "applicants_total": total, "age_days": age, "level": level, "healthy": not issues,
+                    "issues": issues, "tips": list(dict.fromkeys(tips))})
+    order = {"red": 0, "amber": 1, "green": 2}
+    out.sort(key=lambda r: (order[r["level"]], -max([i["days"] for i in r["issues"]] or [0])))
+    summary = {
+        "jobs": len(out),
+        "need_attention": sum(1 for r in out if r["level"] != "green"),
+        "red": sum(1 for r in out if r["level"] == "red"),
+        "no_applicants": sum(1 for r in out if any(i["kind"] == "no_applicants" for i in r["issues"])),
+        "waiting_too_long": sum(i["count"] for r in out for i in r["issues"] if i["kind"] == "slow_stage"),
+        "jobs_with_waiting": sum(1 for r in out if any(i["kind"] == "slow_stage" for i in r["issues"])),
+        "low_scores": sum(1 for r in out if any(i["kind"] == "low_scores" for i in r["issues"])),
+    }
+    return {"summary": summary, "jobs": out, "checked_at": now.isoformat()}
 
 
 # ---------------------------------------------------------------- candidate status page

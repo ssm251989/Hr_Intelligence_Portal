@@ -30,15 +30,29 @@ export interface AddedFromPool {
   score: number | null;
 }
 
+// Part 18.7: one row per live job; issue numbers are worded on the page (en/hi/ta)
+export type JobHealthLevel = "green" | "amber" | "red";
+export type JobHealthIssueKind = "no_applicants" | "slow_stage" | "low_scores";
+export type JobHealthTip = "share_again" | "widen_location" | "relax_skills" | "decide_waiting" | "check_scoring";
+
 export interface JobHealthRow {
   job_id: UUID;
   title: string;
+  department: string | null;
+  location: string | null;
   applicants_7d: number;
   applicants_total: number;
   age_days: number;
+  level: JobHealthLevel;
   healthy: boolean;
-  issues: { kind: string; text: string }[];
-  suggestions: string[];
+  issues: { kind: JobHealthIssueKind; days: number; count: number }[];
+  tips: JobHealthTip[];
+}
+
+export interface JobsHealth {
+  summary: { jobs: number; need_attention: number; red: number; no_applicants: number; waiting_too_long: number; jobs_with_waiting: number; low_scores: number };
+  jobs: JobHealthRow[];
+  checked_at: string;
 }
 
 export type HealthLight = "green" | "amber" | "red";
@@ -73,7 +87,7 @@ const enc = encodeURIComponent;
 export const automationApi = {
   talentPool: (jobId: UUID) => http.get<TalentPoolResponse>(`/api/v1/ui/jobs/${enc(jobId)}/talent-pool`),
   addFromPool: (jobId: UUID, candidateId: UUID) => http.post<AddedFromPool>(`/api/v1/ui/jobs/${enc(jobId)}/talent-pool/${enc(candidateId)}`),
-  jobsHealth: () => http.get<JobHealthRow[]>("/api/v1/ui/jobs-health"),
+  jobsHealth: () => http.get<JobsHealth>("/api/v1/ui/jobs-health"),
   systemHealth: (fresh = false) => http.get<SystemHealth>(`/api/v1/ui/system-health${fresh ? "?fresh=true" : ""}`),
 };
 

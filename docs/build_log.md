@@ -2280,3 +2280,9 @@ NEXT: 18.6 colourful light and dark mode (rich dark palette, coloured tiles/chip
 New navy/teal dark palette + violet accent (both modes), page glows, gradient glowing primary buttons, per-tile/per-card colours (StatTile auto tone, StatCard wash + top edge), module-coloured header icons, vivid chart series, scripts/contrast-check.mjs (all 32 pairs pass; fixed 2 light-mode pairs that failed before). Public screenshots light+dark.
 
 NEXT: 18.7 jobs needing attention scales to 100+ jobs (summary chips, Job health column with reasons, compact sortable/searchable/paginated table).
+
+## Part 18.7 -- job health at scale (2026-09-28)
+
+job_health -> {summary, jobs[level, issues(kind,days,count), tips(codes)]} in 5 grouped queries; JobsHealthCard rewritten (chips filter, search, sort, paging, collapse), JobHealthChip (hover reasons + tips) + "health" column in the Jobs table. Proof: 154 jobs 40 ms.
+
+NEXT: 18.8 close a job (reason, active applications -> On hold - job closed, cancel scheduled emails/interview requests, notify recruiter, optional candidate email; reopen restores stages; off careers site).

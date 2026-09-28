@@ -55,6 +55,8 @@ import RecentActivityFeed from "../components/RecentActivityFeed";
 import TopPerformingJobs from "../components/TopPerformingJobs";
 import AutoCloseNote from "../components/jobs/AutoCloseNote";
 import JobsHealthCard from "../components/jobs/JobsHealthCard";
+import JobHealthChip from "../components/jobs/JobHealthChip";
+import { automationApi, type JobsHealth } from "../api/automationApi";
 import JobTemplateLibrary from "../components/jobs/JobTemplateLibrary";
 import { STAGE_STYLE } from "../components/jobs/jobStages";
 import ReopenJobDialog from "../components/jobs/ReopenJobDialog";
@@ -99,10 +101,11 @@ function buildColumns(t: TFunction): ListColumn[] {
     { key: "applications", label: t("jobs.col.applications") },
     { key: "openings", label: t("jobs.col.openings") },
     { key: "status", label: t("jobs.col.status") },
+    { key: "health", label: t("jobhealth.col.health") }, // Part 18.7
     { key: "time_to_hire", label: t("jobs.col.time_to_hire") },
   ];
 }
-const DEFAULT_COLUMNS = ["title", "type", ...PIPELINE_STAGES.map(stageKey), "applications", "openings", "status", "time_to_hire"];
+const DEFAULT_COLUMNS = ["title", "type", ...PIPELINE_STAGES.map(stageKey), "applications", "openings", "status", "health", "time_to_hire"];
 
 interface ViewFilters extends JobFilters {
   tab: StatusTab;
@@ -266,6 +269,9 @@ export default function JobsPage() {
   const canWrite = can(ROLE_MATRIX.jobsWrite);
   const [jobs, setJobs] = useState<JobRoleRead[]>([]);
   const [pipeline, setPipeline] = useState<Record<string, JobPipelineRow>>({});
+  // Part 18.7: job health for the "needs attention" panel and the Job health column
+  const [health, setHealth] = useState<JobsHealth | null>(null);
+  const healthById = useMemo(() => new Map((health?.jobs ?? []).map((j) => [j.job_id, j])), [health]);
   const [justClosed, setJustClosed] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<unknown>(null);
@@ -276,6 +282,9 @@ export default function JobsPage() {
   const [templateOpen, setTemplateOpen] = useState(false);
   const [templateJob, setTemplateJob] = useState<JobRoleRead | null>(null);
   const [dashboardRefreshSignal, setDashboardRefreshSignal] = useState(0);
+  useEffect(() => {
+    automationApi.jobsHealth().then(setHealth).catch(() => setHealth(null));
+  }, [dashboardRefreshSignal]);
   const [stats, setStats] = useState<JobsDashboardStatsResponse | null>(null);
   const [topJobs, setTopJobs] = useState<TopJobItem[]>([]);
   const [departmentBreakdown, setDepartmentBreakdown] = useState<LabeledCount[]>([]);
@@ -582,6 +591,8 @@ export default function JobsPage() {
             </Stack>
           </TableCell>
         );
+      case "health":
+        return <TableCell key={c.key}>{job.status === "published" ? <JobHealthChip row={healthById.get(job.id)} /> : "—"}</TableCell>;
       case "time_to_hire":
         return <TableCell key={c.key}>{job.avg_time_to_hire_days != null ? t("jobs.days", { count: job.avg_time_to_hire_days }) : "—"}</TableCell>;
       default:
@@ -628,7 +639,7 @@ export default function JobsPage() {
 
       {/* Part 17.13: live jobs that need a nudge (hidden when all are fine) */}
       <JobsHealthCard
-        refreshSignal={dashboardRefreshSignal}
+        data={health}
         onOpenJob={(jobId) => {
           const job = jobs.find((j) => j.id === jobId);
           if (job) setViewingJob(job);

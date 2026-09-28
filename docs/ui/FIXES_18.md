@@ -167,3 +167,29 @@ tsc clean, npm run build OK
 ```
 **Screenshots (public pages, both modes):** `login-light.png`, `login-dark.png`, `careers-light.png`, `careers-dark.png`, `candidate-status-light.png`, `candidate-status-dark.png`.
 In-app pages in both modes -- pending login proof.
+
+## 18.7 "Jobs need attention" scales to 100+ jobs
+
+**Problem:** the Jobs page showed a long text block per job (counts, issues, four "things to try" lines). With 100 jobs that becomes a wall of text. The backend also ran several queries per job.
+
+**Change:**
+- **Backend `job_health`** rewritten with grouped queries, a fixed number no matter how many jobs. Each job gets:
+  - a level: green; amber (one issue); red (two or more issues, 5+ candidates waiting, or no applicants for 21+ days);
+  - issues with numbers (`no_applicants` + days quiet, `slow_stage` + count + worst days over, `low_scores`);
+  - tip codes.
+  - The response also has summary counts for the chips.
+- **a) Summary chips** at the top: "2 need attention", "1 need action now", "2 no applicants 7 days", "1 candidates waiting too long". Clicking a chip filters the table below.
+- **b) Job health column** in the Jobs table: green / amber / red chip with an icon. Hover shows the reasons and what to try.
+- **c) Compact "Needs attention" table:** job, issue in one line, days, applicants, health, Open job. It has sorting (job, days, applicants, health), search (job, department, place), and paging at 10 / 25 / 50 / 100. The panel can be collapsed and is hidden when every job is fine.
+- All wording is in en/hi/ta; the backend sends only numbers and codes.
+
+**Verified:**
+```
+GET /api/v1/ui/jobs-health (real data) -> summary {jobs 4, need_attention 2, red 1, no_applicants 2, waiting_too_long 1}
+  Automation Anywhere Architect: red   [no_applicants 33 days, slow_stage 1 candidate 31 days over]
+  RPA Developer:                 amber [no_applicants 10 days]
+  Demo - RPA Developer, Junior AI Developer: green
+scale (rolled back, +150 live jobs): 154 jobs -> 40 ms, 5 SQL queries in total
+tsc clean, i18n 0 missing (20 new keys en/hi/ta), npm run build OK
+```
+**Screenshot:** Jobs page chips + table + health column -- pending login proof.
