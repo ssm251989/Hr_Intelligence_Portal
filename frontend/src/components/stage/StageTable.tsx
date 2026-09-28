@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import SearchIcon from "@mui/icons-material/Search";
 import Box from "@mui/material/Box";
@@ -33,19 +33,24 @@ export interface StageRow {
   department: string | null; location: string | null; status: string; days_in_stage: number | null; updated_at: string | null;
   documents?: number; documents_ok?: number; offer_signed?: boolean; joining_date?: string | null; offer_expires?: string | null;
   expected_salary?: number | null; approved_salary?: number | null; salary_state?: string | null;
+  // Part 18.14 salary rows
+  current_ctc?: number | null; hike_pct?: number | null; band_min?: number | null; band_max?: number | null; budget_after?: number | null;
+  budget_configured?: boolean; reasons?: { code: string; [k: string]: unknown }[]; salary_status?: string; counter?: number | null; form_open?: boolean;
 }
 interface StagePage { total: number; statuses: string[]; status_counts: Record<string, number>; departments: string[]; items: StageRow[] }
-type SortKey = "name" | "job" | "days" | "status";
+export type SortKey = "name" | "job" | "days" | "status" | "hike";
 
 // Part 18.11: every candidate at this stage, across ALL jobs, in one table -- job is a
 // column and a filter; search, status chips (with counts), sorting, paging up to 500 rows,
 // select + bulk actions, export (all matching rows, or just the selected ones).
-export default function StageTable({ stage, onOpen, bulkActions, refreshSignal = 0, extraColumns }: {
+export default function StageTable({ stage, onOpen, bulkActions, refreshSignal = 0, extraColumns, rowTone }: {
   stage: Stage;
   onOpen: (row: StageRow) => void;
   bulkActions?: (selected: StageRow[], clear: () => void) => ReactNode;
   refreshSignal?: number;
-  extraColumns?: { key: string; label: string; render: (r: StageRow) => ReactNode }[];
+  extraColumns?: { key: string; label: string; render: (r: StageRow) => ReactNode; sortKey?: SortKey }[];
+  /** Part 18.14: tint rows that need attention */
+  rowTone?: (r: StageRow) => string | undefined;
 }) {
   const t = useT();
   const [jobs, setJobs] = useState<JobRoleRead[]>([]);
@@ -155,14 +160,14 @@ export default function StageTable({ stage, onOpen, bulkActions, refreshSignal =
               {head("job", t("stage.col.job"))}
               <TableCell>{t("stage.col.department")}</TableCell>
               {head("status", t("stage.col.status"))}
-              {(extraColumns ?? []).map((c) => <TableCell key={c.key}>{c.label}</TableCell>)}
+              {(extraColumns ?? []).map((c) => (c.sortKey ? <Fragment key={c.key}>{head(c.sortKey, c.label)}</Fragment> : <TableCell key={c.key}>{c.label}</TableCell>))}
               {head("days", t("stage.col.days"))}
               <TableCell align="right" />
             </TableRow>
           </TableHead>
           <TableBody>
             {rows.map((r) => (
-              <TableRow key={r.application_id} hover selected={selected.has(r.application_id)} sx={{ cursor: "pointer" }} onClick={() => onOpen(r)}>
+              <TableRow key={r.application_id} hover selected={selected.has(r.application_id)} sx={{ cursor: "pointer", ...(rowTone?.(r) ? { bgcolor: rowTone(r) } : {}) }} onClick={() => onOpen(r)}>
                 <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()}>
                   <Checkbox checked={selected.has(r.application_id)} onChange={() => toggle(r)} />
                 </TableCell>

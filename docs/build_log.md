@@ -2322,3 +2322,9 @@ NEXT: 18.13 salary auto-decision (hike <= X%, within band, department budget eno
 check(): hike <= auto_approve_hike_pct AND within band AND budget -> auto-approve (reserve), else reasons [hike/above_band/budget_short/no_current/no_band]; decide() approve/counter/reject + endpoint; budgets.py + models (reserve/commit/release; hooks on offer signed, BGV rejected, candidate removed); counter-offer default template; org.fiscal_year_start_month. Decision: decisions use recruitment.salary.edit (no separate approve permission exists).
 
 NEXT: 18.14 Salary page = table (+ bulk approve, filters, sort by hike, export, side panel with details/history + approve/counter/reject).
+
+## Part 18.14 -- salary table (2026-09-28)
+
+SalaryPage rewritten: Candidates tab = StageTable(salary) with money/hike/band/budget/status/reason columns, red rows, bulk approve, SalaryPanel drawer (figures, why, history from audit, approve/counter/reject, send form); stage-table salary extras + hike sort; old queue cards kept exported. Finance tab placeholder until 18.15.
+
+NEXT: 18.15 department budgets settings (per dept + FY, quarters, alert %, on exceed) + Salary > Finance dashboard (allocated/reserved/committed/remaining bars, month trend, top roles, alerts, Excel export).

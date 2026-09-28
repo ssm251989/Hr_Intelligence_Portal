@@ -371,3 +371,29 @@ E  9 L -> 10 L, budget cut to 25 L (5.5 L left) -> needs approval [budget_short,
 release A (removed) -> reserved 19.5 L -> 10 L
 ```
 **Screenshot:** part of the 18.14 salary table.
+
+## 18.14 Salary page = table + bulk
+
+**Problem:** the Salary page was a long stack of cards. With 100-500 candidates you had to scroll through each one.
+
+**Change:**
+- **One table** (`StageTable`, stage `salary`) of everyone at the salary stage across all jobs:
+  - columns: name, job, department, status, **current CTC**, **expected CTC**, **hike %** (green, or red when over the limit), **band** min-max, **budget left after** this hire (red when negative), and a **salary status chip** (Waiting for form / Auto-approved / Needs approval / Counter-offer sent / Approved / Rejected) with red reason chips ("Hike 35% > 20% limit", "Above company range by 8% - check", "Department budget short by 4.5 L") while a decision is pending;
+  - days waiting;
+  - rows that need a decision are tinted red.
+- **Filters and actions:** search, job, department and status chips with counts; sort by hike % (and name, job, status, days); paging up to 500; select + **bulk approve**; export all or selected.
+- **Row click → side panel:** the figures, why it needs a decision, the **history** (checked, form sent, reminders, answered, auto-decided, approved / countered / rejected), **Approve / Counter-offer / Reject (reason)**, and "Send the salary form" for people still waiting.
+- Backend: salary rows carry current CTC, hike % (computed when an older check lacks it), band, budget-after, reasons, counter amount, open form and a plain status; `sort=hike` added.
+- The **Finance** tab next to Candidates is 18.15.
+
+**Verified** (rolled back, the 18.13 test candidates, `sort=hike&dir=desc`):
+```
+Bala   50.0%  approved        (HR approved at 10 L)     budget after 28.5 L
+Anil   18.8%  auto_approved                              40.5 L
+Chitra 18.2%  countered       [above_band]               27.5 L
+Esha   11.1%  needs_approval  [budget_short]             -4.5 L  (red)
+Devi   —      rejected        [no_current]
+history (Bala): salary_checked, salary_auto_decided, salary_approve
+tsc clean, i18n 0 missing (49 new keys), npm run build OK
+```
+**Screenshot:** Salary table + side panel -- pending login proof.

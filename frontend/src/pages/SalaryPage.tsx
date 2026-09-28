@@ -1,18 +1,16 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { Link as RouterLink, useSearchParams } from "react-router-dom";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
-import CircularProgress from "@mui/material/CircularProgress";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
 import FormControlLabel from "@mui/material/FormControlLabel";
-import InputAdornment from "@mui/material/InputAdornment";
 import Link from "@mui/material/Link";
-import MenuItem from "@mui/material/MenuItem";
+import Chip from "@mui/material/Chip";
 import Radio from "@mui/material/Radio";
 import RadioGroup from "@mui/material/RadioGroup";
 import FormLabel from "@mui/material/FormLabel";
@@ -23,19 +21,21 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
 
-import { extractErrorMessage, jobsApi, salaryApi } from "../api/client";
-import { SALARY_CHIPS, salaryQueueApi, type SalaryChip, type SalaryQueue, type SalaryQueueItem } from "../api/salaryApi";
-import type { JobRoleRead } from "../api/types";
+import { extractErrorMessage, salaryApi } from "../api/client";
+import { salaryQueueApi, type SalaryChip, type SalaryQueueItem } from "../api/salaryApi";
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
 import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
 import ConfirmDialog from "../components/ConfirmDialog";
-import RefreshButton from "../components/RefreshButton";
 import { Figure, Inset, useMoney, useWhen } from "../components/offers/shared";
 import MoneyField, { DaysField } from "../components/salary/MoneyField";
 import SalaryBandBar from "../components/salary/SalaryBandBar";
 import { useT } from "../i18n";
-import { EmptyState, Emoji, FriendlyError, InfoTip, PageHeader, StatusChip, UserAvatar, type Tone } from "../ui-kit";
+import StageTable, { type StageRow } from "../components/stage/StageTable";
+import SalaryPanel, { lakh, money, reasonText } from "../components/salary/SalaryPanel";
+import FinanceDashboard from "../components/salary/FinanceDashboard";
+import { http } from "../api/client";
+import { Emoji, InfoTip, PageHeader, StatusChip, UserAvatar, type Tone } from "../ui-kit";
 
 // Part 17.8: the Salary page is a QUEUE. Figures come in by themselves (the apply form, the
 // resume, or the candidate's own "Salary & joining details" form) and are checked against the
@@ -141,7 +141,7 @@ function ApprovalBox({ item, onDone }: { item: SalaryQueueItem; onDone: () => Pr
 
 // ---------------------------------------------------------------- edit figures
 
-function FiguresDialog({ item, onClose, onSaved }: { item: SalaryQueueItem; onClose: () => void; onSaved: () => Promise<void> }) {
+export function FiguresDialog({ item, onClose, onSaved }: { item: SalaryQueueItem; onClose: () => void; onSaved: () => Promise<void> }) {
   const t = useT();
   const s = (v: number | null | undefined) => (v == null ? "" : String(Math.round(v)));
   const [current, setCurrent] = useState(s(item.current_ctc));
@@ -205,7 +205,7 @@ function FiguresDialog({ item, onClose, onSaved }: { item: SalaryQueueItem; onCl
 
 // ---------------------------------------------------------------- one row
 
-function QueueCard({ item, onChanged, onEdit }: { item: SalaryQueueItem; onChanged: () => Promise<void>; onEdit: () => void }) {
+export function QueueCard({ item, onChanged, onEdit }: { item: SalaryQueueItem; onChanged: () => Promise<void>; onEdit: () => void }) {
   const t = useT();
   const f = useTheme().palette.fresh;
   const money = useMoney();
@@ -361,118 +361,70 @@ function QueueCard({ item, onChanged, onEdit }: { item: SalaryQueueItem; onChang
 
 // ---------------------------------------------------------------- page
 
+// Part 18.14: the Salary page is ONE table of everyone at the salary stage (all jobs) -- no
+// scrolling through cards. Red rows need a decision; a row opens the side panel (figures,
+// why, history, approve / counter / reject). Bulk approve + export. The finance view is the
+// second tab (18.15).
 export default function SalaryPage() {
   const t = useT();
   const f = useTheme().palette.fresh;
   const [searchParams, setSearchParams] = useSearchParams();
-  const [jobs, setJobs] = useState<JobRoleRead[]>([]);
-  const jobId = searchParams.get("jobId") ?? "";
-  const chip = (searchParams.get("state") ?? "") as SalaryChip | "";
-  const [data, setData] = useState<SalaryQueue | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<unknown>(null);
-  const [editing, setEditing] = useState<SalaryQueueItem | null>(null);
+  const tab = searchParams.get("tab") === "finance" ? "finance" : "candidates";
+  const [open, setOpen] = useState<StageRow | null>(null);
+  const [refresh, setRefresh] = useState(0);
+  const [bulkMsg, setBulkMsg] = useState<string | null>(null);
 
-  const setParam = (key: string, value: string) => {
-    const next = new URLSearchParams(searchParams);
-    if (value) next.set(key, value);
-    else next.delete(key);
-    setSearchParams(next, { replace: true });
-  };
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setData(await salaryQueueApi.queue({ state: chip || undefined, jobId: jobId || undefined }));
-    } catch (err) {
-      setError(err);
-    } finally {
-      setLoading(false);
-    }
-  }, [chip, jobId]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  useEffect(() => {
-    jobsApi.list().then(setJobs).catch(() => setJobs([]));
-  }, []);
-
-  const counts = data?.counts ?? {};
-  const total = data?.total ?? 0;
-  const items = data?.items ?? [];
+  const statusTone = (r: StageRow): "success" | "warning" | "error" | "info" | "default" =>
+    r.salary_status === "needs_approval" ? "error" : r.salary_status === "countered" ? "warning" : r.salary_status === "rejected" ? "default"
+      : r.salary_status === "waiting_form" ? "info" : "success";
 
   return (
     <Box>
-      <PageHeader
-        emoji="money"
-        title={t("salary.title")}
-        purpose={t("salaryQueue.purpose")}
-        tourKey="salary"
-        extra={<RefreshButton loading={loading} onRefresh={() => void load()} label={t("offers.shared.refresh")} />}
-      />
-
-      <Card sx={{ p: { xs: 1.5, sm: 2 }, mb: 2.5 }}>
-        <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems={{ xs: "stretch", md: "center" }}>
-          <Tabs
-            value={chip}
-            onChange={(_, v: string) => setParam("state", v)}
-            variant="scrollable"
-            scrollButtons="auto"
-            allowScrollButtonsMobile
-            sx={{ flex: 1, minWidth: 0 }}
-            aria-label={t("salaryQueue.tabs_label")}
-          >
-            <Tab value="" label={t("salaryQueue.tab.all", { count: total })} />
-            {SALARY_CHIPS.map((k) => (
-              <Tab key={k} value={k} label={t("salaryQueue.tab.with_count", { label: t(`salaryQueue.chip.${k}`), count: counts[k] ?? 0 })} />
-            ))}
-          </Tabs>
-          <TextField
-            select
-            size="small"
-            label={t("salaryQueue.job")}
-            value={jobId}
-            onChange={(e) => setParam("jobId", e.target.value)}
-            sx={{ minWidth: { md: 260 } }}
-            slotProps={{ input: { startAdornment: <InputAdornment position="start"><Emoji name="briefcase" size={16} /></InputAdornment> } }}
-          >
-            <MenuItem value="">{t("salaryQueue.all_jobs")}</MenuItem>
-            {jobs.map((j) => (
-              <MenuItem key={j.id} value={j.id}>{j.title}</MenuItem>
-            ))}
-          </TextField>
-        </Stack>
-        {chip && (
-          <Typography sx={{ mt: 1.25, px: 0.5, fontSize: 14, color: f.muted }}>{t(`salaryQueue.chip_hint.${chip}`)}</Typography>
-        )}
-      </Card>
-
-      {error !== null && !loading ? (
-        <FriendlyError what={t("salaryQueue.error.load")} fix={t("salary.error.fix")} error={error} onRetry={() => void load()} />
-      ) : loading && !data ? (
-        <Box sx={{ display: "grid", placeItems: "center", py: 6 }} role="status" aria-label={t("offers.shared.loading")}>
-          <CircularProgress />
-        </Box>
-      ) : items.length === 0 ? (
-        <Card>
-          <EmptyState
-            illustration="empty"
-            title={chip ? t("salaryQueue.empty.filtered") : t("salaryQueue.empty.none")}
-            hint={chip ? t("salaryQueue.empty.filtered_hint") : t("salaryQueue.empty.none_hint")}
+      <PageHeader emoji="money" title={t("salary.title")} purpose={t("salaryQueue.purpose")} tourKey="salary" />
+      <Tabs value={tab} onChange={(_e, v: string) => { const n = new URLSearchParams(searchParams); if (v === "finance") n.set("tab", v); else n.delete("tab"); setSearchParams(n, { replace: true }); }}
+        sx={{ mb: 2 }}>
+        <Tab value="candidates" label={t("salaryx.tab.candidates")} />
+        <Tab value="finance" label={t("salaryx.tab.finance")} />
+      </Tabs>
+      {tab === "finance" ? <FinanceDashboard /> : (
+        <>
+          {bulkMsg && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setBulkMsg(null)}>{bulkMsg}</Alert>}
+          <StageTable
+            stage="salary"
+            refreshSignal={refresh}
+            onOpen={setOpen}
+            rowTone={(r) => (r.salary_status === "needs_approval" ? f.coralSoft : undefined)}
+            extraColumns={[
+              { key: "current", label: t("salaryx.col.current"), render: (r) => money(r.current_ctc) },
+              { key: "expected", label: t("salaryx.col.expected"), render: (r) => money(r.expected_salary) },
+              { key: "hike", label: t("salaryx.col.hike"), sortKey: "hike", render: (r) => r.hike_pct == null ? "—" : (
+                <Chip size="small" label={`${r.hike_pct}%`} color={(r.reasons ?? []).some((x) => x.code === "hike") ? "error" : "success"} variant="outlined" />) },
+              { key: "band", label: t("salaryx.col.band"), render: (r) => `${lakh(r.band_min)} – ${lakh(r.band_max)}` },
+              { key: "budget", label: t("salaryx.col.budget"), render: (r) => (r.budget_configured ? (
+                <Typography variant="body2" sx={{ color: (r.budget_after ?? 0) < 0 ? f.coral : "inherit", fontWeight: 700 }}>{lakh(r.budget_after)}</Typography>) : "—") },
+              { key: "sstatus", label: t("salaryx.col.salary_status"), render: (r) => (
+                <Stack spacing={0.5} alignItems="flex-start">
+                  <Chip size="small" color={statusTone(r)} label={t(`salaryx.status.${r.salary_status ?? "waiting_form"}`)} />
+                  {["needs_approval", "countered"].includes(r.salary_status ?? "") && (r.reasons ?? []).map((x, i) => <Chip key={i} size="small" color="error" variant="outlined" label={reasonText(t, x)} />)}
+                </Stack>) },
+            ]}
+            bulkActions={(sel, clear) => {
+              const ready = sel.filter((r) => r.salary_status === "needs_approval" || r.salary_status === "countered");
+              return ready.length > 0 ? (
+                <Button size="small" variant="contained" color="success" onClick={async () => {
+                  let ok = 0;
+                  for (const r of ready) {
+                    try { await http.post(`/api/v1/ui/salary/applications/${r.application_id}/decide`, { decision: "approve" }); ok += 1; } catch { /* reported by the count */ }
+                  }
+                  setBulkMsg(t("salaryx.bulk_done", { ok, total: ready.length }));
+                  clear(); setRefresh((k) => k + 1);
+                }}>{t("salaryx.bulk_approve", { count: ready.length })}</Button>
+              ) : null;
+            }}
           />
-        </Card>
-      ) : (
-        <Stack spacing={2}>
-          {items.map((item) => (
-            <QueueCard key={item.application_id} item={item} onChanged={load} onEdit={() => setEditing(item)} />
-          ))}
-        </Stack>
+          <SalaryPanel row={open} onClose={() => setOpen(null)} onChanged={() => setRefresh((k) => k + 1)} />
+        </>
       )}
-
-      {editing && <FiguresDialog item={editing} onClose={() => setEditing(null)} onSaved={load} />}
     </Box>
   );
 }

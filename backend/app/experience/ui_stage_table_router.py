@@ -73,10 +73,34 @@ def _extras(db, stage, app_ids) -> dict:
             out[o.application_id] = {"offer_signed": bool(o.signed), "joining_date": o.joining_date.isoformat() if o.joining_date else None,
                                      "offer_expires": o.expiry_date.isoformat() if o.expiry_date else None}
     elif stage == "salary":
+        from app.models.iam import ActionToken
+        from app.recruitment.salary_auto import FORM_ACTION
+
+        open_forms = {r[0] for r in db.query(ActionToken.entity_id).filter(ActionToken.entity_id.in_(app_ids), ActionToken.action == FORM_ACTION,
+                                                                           ActionToken.responded_at.is_(None), ActionToken.invalidated_at.is_(None))}
         for a in db.query(Application).filter(Application.id.in_(app_ids)):
             check = a.salary_check or {}
-            out[a.id] = {"expected_salary": float(a.expected_salary) if a.expected_salary is not None else None,
-                         "approved_salary": float(a.approved_salary) if a.approved_salary is not None else None, "salary_state": check.get("state")}
+            decision = (check.get("decision") or {}).get("decision")
+            # Part 18.14: one plain status per row
+            if a.status == "salary_rejected":
+                label = "rejected"
+            elif a.status == "salary_approved":
+                label = "approved" if decision == "approved" else "auto_approved"
+            elif a.status == "salary_above_band" or check.get("reasons"):
+                label = "countered" if check.get("counter") else "needs_approval"
+            elif check.get("state") in (None, "waiting") or a.id in open_forms:
+                label = "waiting_form"
+            else:
+                label = "needs_approval"
+            budget = check.get("budget") or {}
+            out[a.id] = {"current_ctc": check.get("current"), "expected_salary": float(a.expected_salary) if a.expected_salary is not None else None,
+                         "approved_salary": float(a.approved_salary) if a.approved_salary is not None else None,
+                         "hike_pct": check.get("hike_pct") if check.get("hike_pct") is not None else (
+                             round(100 * (float(a.expected_salary) - check["current"]) / check["current"], 1)
+                             if a.expected_salary is not None and check.get("current") else None), "band_min": check.get("band_min"), "band_max": check.get("band_max"),
+                         "budget_after": budget.get("after_hire"), "budget_configured": bool(budget.get("configured")),
+                         "reasons": check.get("reasons") or [], "salary_status": label, "counter": (check.get("counter") or {}).get("amount"),
+                         "form_open": a.id in open_forms}
     return out
 
 
@@ -96,13 +120,16 @@ def _guard(db, user, stage):
     return tenant
 
 
-SORTS = {"name": Candidate.full_name, "job": JobRole.title, "status": Application.status,
+from sqlalchemy import Float, cast  # noqa: E402
+
+SORTS = {"hike": cast(Application.salary_check["hike_pct"].astext, Float),
+         "name": Candidate.full_name, "job": JobRole.title, "status": Application.status,
          "days": func.coalesce(Application.updated_at, Application.created_at), "updated": func.coalesce(Application.updated_at, Application.created_at)}
 
 
 @router.get("/{stage}")
 def stage_table(stage: str, page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=500),
-                sort: Literal["name", "job", "days", "status", "updated"] = "days", dir: Literal["asc", "desc"] = "desc",
+                sort: Literal["name", "job", "days", "status", "updated", "hike"] = "days", dir: Literal["asc", "desc"] = "desc",
                 search: Optional[str] = None, job_role_id: Optional[uuid.UUID] = None, status: Optional[str] = None, department: Optional[str] = None,
                 db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     tenant = _guard(db, current_user, stage)
@@ -112,6 +139,8 @@ def stage_table(stage: str, page: int = Query(1, ge=1), page_size: int = Query(5
     col = SORTS[sort]
     # "days in stage" desc = waiting longest first = oldest update first
     order = col.asc() if (sort == "days") == (dir == "desc") else col.desc()
+    if sort == "hike":
+        order = order.nullslast()
     rows = q.order_by(order, Application.id).offset((page - 1) * page_size).limit(page_size).all()
     now = datetime.now(timezone.utc)
     extras = _extras(db, stage, [a.id for a, _c, _j in rows])
