@@ -1,3 +1,4 @@
+import { Link as RouterLink } from "react-router-dom";
 import { useEffect, useState } from "react";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import FolderOutlinedIcon from "@mui/icons-material/FolderOutlined";
@@ -24,6 +25,7 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import Button from "@mui/material/Button";
 import LinearProgress from "@mui/material/LinearProgress";
+import { BoardResumeUpload, type BoardCode } from "./jobboards/JobBoardsPage";
 
 import { candidatesApi, extractErrorMessage, localImportApi } from "../api/client";
 import { candidateSourceLabel, CONNECTED_CANDIDATE_SOURCES, type CandidateSource } from "../api/types";
@@ -216,9 +218,9 @@ export default function ImportCandidatesWizard({ open, onClose, onImported, init
                     {isSelected && <CheckCircleOutlineIcon color="primary" fontSize="small" />}
                   </Stack>
                   <Chip
-                    label={sourceConnected ? "Connected" : "Coming soon"}
+                    label={sourceConnected ? t("boards.state.connected") : t("boards.complete_setup")}
                     size="small"
-                    color={sourceConnected ? "success" : "default"}
+                    color={sourceConnected ? "success" : "warning"}
                     variant={sourceConnected ? "filled" : "outlined"}
                   />
                 </CardContent>
@@ -230,12 +232,24 @@ export default function ImportCandidatesWizard({ open, onClose, onImported, init
     </Grid>
   );
 
-  const renderComingSoon = () => (
-    <Alert severity="info" sx={{ mt: 2 }}>
-      {candidateSourceLabel(selectedSource)} candidate sourcing isn't available yet -- this integration is defined in
-      the data model so it can slot in later with no schema change, but nothing imports from it today.
-    </Alert>
-  );
+  // Part 18.9: not "Coming soon" -- say what the board needs, open its settings, and offer
+  // the ways that work today (upload the board's resumes, forward its emails).
+  const renderComingSoon = () => {
+    const board = selectedSource as BoardCode;
+    return (
+      <Stack spacing={1.5} sx={{ mt: 2 }}>
+        <Alert severity="warning">
+          <Typography sx={{ fontWeight: 700 }}>{t("boards.complete_setup_title", { board: candidateSourceLabel(selectedSource) })}</Typography>
+          <Typography variant="body2">{t(`boards.${board}_needs`)}</Typography>
+        </Alert>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+          <Button variant="contained" component={RouterLink} to="/settings/integrations/job-boards">{t("boards.open_settings")}</Button>
+          <BoardResumeUpload code={board} onDone={(n) => { if (n > 0) onImported(); }} />
+        </Stack>
+        <Typography variant="caption" color="text.secondary">{t("boards.today_upload")}</Typography>
+      </Stack>
+    );
+  };
 
   const renderConfigure = () => {
     if (!connected) return renderComingSoon();

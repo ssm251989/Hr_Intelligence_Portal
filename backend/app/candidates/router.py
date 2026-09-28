@@ -43,6 +43,8 @@ ALLOWED_EXTENSIONS = {"pdf", "docx"}
 # just tagged with the source it actually came through. Nothing else may pass its own
 # source here (e.g. spoofing "career_portal").
 UPLOAD_SOURCES = {"manual", "local_import"}
+# Part 18.9: resumes downloaded from a job board are uploaded with that board as the source
+UPLOAD_SOURCES |= {"linkedin", "naukri", "indeed", "monster", "shine"}
 
 # Aliased so a query can join job_roles twice -- once for the application's actual job
 # (JobRole), once for the candidate's suggested "Suitable For" job (SuitableJob).

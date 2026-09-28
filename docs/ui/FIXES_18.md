@@ -224,3 +224,29 @@ candidate email template created on first use -> published, "Update on your appl
 tsc clean, i18n 0 missing, npm run build OK
 ```
 **Screenshot:** Close job dialog -- pending login proof.
+
+## 18.9 LinkedIn / Naukri import: "Complete setup" instead of "Coming soon"
+
+**Problem:** in Candidates > Import, LinkedIn, Naukri, Indeed, Monster and Shine said "Coming soon" with a technical note, and there was nothing to do.
+
+**Change:**
+- **Import wizard:** these sources now show a **"Complete setup"** chip. Choosing one explains what the board needs (for example LinkedIn: an employer account with Recruiter System Connect / Talent Solutions API access and a client ID and secret; Naukri: an RMS / Resdex account with an API key). It offers **Open job board settings** and **Upload resumes from <board>**.
+- **New Settings > Integrations > Job boards** page, one card per board:
+  - a status chip: Not set up / Saved - waiting for API access / Connected;
+  - the connect form: masked fields, "e.g. from your account manager" placeholder, saved to the encrypted secret store;
+  - Save and test, Test, Disconnect (with confirm), and the last-tested time;
+  - "Bring candidates in today": upload the board's resumes (tagged with that board as the source), or forward the board's application emails to the company mailbox (its address is shown).
+  - API: `GET /api/v1/ui/job-boards`, `POST /{code}/connect`, `POST /{code}/test`, `DELETE /{code}`. Admins change it; recruiters can view.
+- `/candidates/upload` accepts the board sources, so imported people are counted under the right source.
+- **Honest limit:** pulling candidates straight from a board needs that board's partner API. Those adapters are placeholders in the connector catalog, so a test says "Details saved … needs the board's partner API, which isn't switched on yet" instead of pretending to connect. Once an adapter exists, the same card turns **Connected** after a passing test.
+
+**Verified** (rolled back):
+```
+GET job-boards: linkedin [client_id, client_secret], naukri [api_key], indeed [api_key], monster/shine [] -- all not_set_up; mailbox shown
+connect naukri without key -> 400 "Please fill in: api_key"
+connect naukri             -> saved + test {ok: false, error: API_NOT_AVAILABLE} -> state "saved"
+recruiter connect -> 403, recruiter view -> 200
+disconnect -> 204 -> not_set_up
+tsc clean, i18n 0 missing (39 new keys en/hi/ta), npm run build OK
+```
+**Screenshot:** Import wizard "Complete setup", Job boards page -- pending login proof.

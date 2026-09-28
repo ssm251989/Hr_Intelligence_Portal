@@ -2292,3 +2292,9 @@ NEXT: 18.8 close a job (reason, active applications -> On hold - job closed, can
 app/jobs/closing.py close_job/restore_applications, POST /ui/jobs/{id}/close, reopen restores, job_roles.closed_at/close_reason/close_note + applications.hold_reason (migration b7d3f1a9c5e2), setting recruitment.jobs.close_email_candidates, comms defaults.py (default wording -> editable published template on first use), CloseJobDialog (row menu + job details), "On hold - job closed" chip. Decision: proof never emailed real candidates (only template creation checked).
 
 NEXT: 18.9 LinkedIn/Naukri import: "Complete setup" (what is needed, opens Settings > Integrations > Job boards with connect form + test).
+
+## Part 18.9 -- job board import setup (2026-09-28)
+
+Import wizard: "Complete setup" chip + panel (needs per board, open settings, upload board resumes); Settings > Integrations > Job boards (JobBoardsPage: status, masked connect form -> secret store + jobboard.<code> route, test, disconnect, working alternatives); ui_job_boards_router; upload accepts board sources. Decision: no fake "connected" -- boards without an adapter show "Saved - waiting for API access". Also added the missing Settings title for Advanced > Modules.
+
+NEXT: 18.10 one filter system on Candidates/Screening/Shortlisting (job, stage, score, experience, location, notice, source, date, tags, saved filters) and scoring thresholds only in Settings.

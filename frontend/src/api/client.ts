@@ -554,7 +554,7 @@ export const candidatesApi = {
   // source defaults to "manual" server-side (the single-candidate "Upload Resume" flow);
   // the Import wizard's "Import from Local" step passes "local_import" explicitly so
   // those candidates are distinguishable/filterable afterward.
-  upload: (file: File, source?: "manual" | "local_import") => {
+  upload: (file: File, source?: "manual" | "local_import" | "linkedin" | "naukri" | "indeed" | "monster" | "shine") => {
     const form = new FormData();
     form.append("file", file);
     if (source) form.append("source", source);

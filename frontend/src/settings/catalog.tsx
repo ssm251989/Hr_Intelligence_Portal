@@ -12,6 +12,7 @@ import OnboardingPanel from "../components/OnboardingPanel";
 import PerformancePanel from "../components/PerformancePanel";
 import PlatformSettingsPanel from "../components/PlatformSettingsPanel";
 import ModuleLockSettingsPage from "../components/modules/ModuleLockSettingsPage";
+import JobBoardsPage from "../components/jobboards/JobBoardsPage";
 import PrivacyPanel from "../components/PrivacyPanel";
 import RecruitmentPanel from "../components/RecruitmentPanel";
 import ServiceDeskPanel from "../components/ServiceDeskPanel";
@@ -168,6 +169,7 @@ export const CATEGORIES: SettingsCategory[] = [
         ) },
       { id: "maps", emoji: "world_map", keywords: "maps geocoding tiles", prefixes: ["geo.", "maps."], visible: ADMIN, render: scoped(["geo.", "maps."], "settingsHome.page.integrations.maps") },
       { id: "storage", emoji: "file_folder", keywords: "file storage s3 space", visible: ADMIN, render: () => <StoragePage /> },
+      { id: "job-boards", emoji: "globe", keywords: "linkedin naukri indeed monster shine job boards import", visible: ADMIN, render: () => <JobBoardsPage /> },
     ],
   },
   {

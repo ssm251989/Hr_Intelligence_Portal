@@ -238,6 +238,9 @@ app.include_router(ui_candidate_removal_router)
 from app.experience.module_lock_router import router as module_lock_router  # noqa: E402
 
 app.include_router(module_lock_router)
+from app.experience.ui_job_boards_router import router as ui_job_boards_router  # noqa: E402
+
+app.include_router(ui_job_boards_router)
 install_friendly_errors(app)
 
 
