@@ -16,6 +16,8 @@ import JobBoardsPage from "../components/jobboards/JobBoardsPage";
 import BudgetsSettingsPage from "../components/salary/BudgetsSettingsPage";
 import RequiredDocumentsPage from "../components/documents/RequiredDocumentsPage";
 import ContactsSettingsPage from "../components/offers/ContactsSettingsPage";
+import OfficesPage from "../components/people/OfficesPage";
+import UsersPage from "../components/people/UsersPage";
 import PrivacyPanel from "../components/PrivacyPanel";
 import RecruitmentPanel from "../components/RecruitmentPanel";
 import ServiceDeskPanel from "../components/ServiceDeskPanel";
@@ -70,7 +72,7 @@ export const LEGACY: Record<string, string> = {
   communications: "communication/templates", emails: "communication/templates", notifications: "communication/rules",
   privacy: "data/privacy", dpdp: "data/privacy", workflows: "automation/approvals", approvals: "automation/approvals",
   metadata: "data/fields", "custom-fields": "data/fields", fields: "data/fields", access: "people/roles", roles: "people/roles",
-  hiring: "hiring/stages", recruitment: "hiring/stages", scoring: "hiring/scoring", "scoring-rules": "hiring/scoring", shortlisting: "hiring/scoring", interviews: "hiring/interviews", onboarding: "onboarding/plans",
+  hiring: "hiring/stages", recruitment: "hiring/stages", requests: "hiring/stages", "hiring/requests": "hiring/stages", requisitions: "hiring/stages", scoring: "hiring/scoring", "scoring-rules": "hiring/scoring", shortlisting: "hiring/scoring", interviews: "hiring/interviews", onboarding: "onboarding/plans",
   "core-hr": "onboarding/org", people: "onboarding/org", employees: "onboarding/org", performance: "performance/cycles",
   helpdesk: "helpdesk/main", assets: "helpdesk/main", exits: "helpdesk/main", "service-desk": "helpdesk/main",
   all: "advanced/all", modules: "advanced/modules", "module-lock": "advanced/modules", platform: "advanced/all", "all-settings": "advanced/all",
@@ -83,14 +85,17 @@ export const CATEGORIES: SettingsCategory[] = [
       { id: "profile", emoji: "building", prefixes: ["org."], visible: ADMIN, render: scoped(["org."], "settingsHome.page.company.profile") },
       { id: "branding", emoji: "sparkles", keywords: "logo colours colors theme email design", visible: ADMIN,
         render: (go) => (<><BrandingGuideCard onOpen={(id) => go(LEGACY[id] ?? "advanced/all")} /><CommunicationsPanel only="brand" /></>) },
-      { id: "offices", emoji: "pin", keywords: "locations departments", visible: ADMIN, render: () => <CoreHrPanel only="Org" /> },
+      // Part 18.22: real offices (add / edit / delete / map); departments & positions stay underneath
+      { id: "offices", emoji: "pin", keywords: "locations offices map address departments", visible: ADMIN,
+        render: () => (<><OfficesPage /><CoreHrPanel only="Org" /></>) },
       { id: "languages", emoji: "globe", keywords: "hindi tamil rename labels translation", visible: ADMIN, render: () => <LanguagesPage /> },
       { id: "media", emoji: "clapper", keywords: "welcome video tours show me how gif", visible: ADMIN, render: () => <MediaSettingsPanel /> },
     ],
   },
   {
     id: "people", emoji: "people", pages: [
-      { id: "users", emoji: "id_card", keywords: "user access assign role", visible: ADMIN, render: () => <AccessControlPanel only="Assignments" /> },
+      { id: "users", emoji: "id_card", keywords: "user access assign role invite deactivate password reset", visible: ADMIN,
+        render: () => (<><UsersPage /><AccessControlPanel only="Assignments" /></>) },
       { id: "roles", emoji: "shield", keywords: "permissions rights", visible: ADMIN, render: () => <AccessControlPanel only="Roles" /> },
       { id: "two-step", emoji: "lock", keywords: "2fa mfa otp authenticator security", prefixes: ["iam.auth.mfa"], visible: (p) => Boolean(p.twoStep), render: () => <TwoStepPage /> },
       { id: "signin", emoji: "key", keywords: "password lockout session login", prefixes: ["iam.auth."], visible: ADMIN, render: scoped(["iam.auth."], "settingsHome.page.people.signin") },
@@ -99,8 +104,9 @@ export const CATEGORIES: SettingsCategory[] = [
   },
   {
     id: "hiring", emoji: "briefcase", pages: [
-      { id: "stages", emoji: "briefcase", keywords: "pipeline hiring stages", visible: ADMIN, render: () => <RecruitmentPanel only="Pipeline" /> },
-      { id: "requests", emoji: "clipboard", keywords: "job requests requisitions approval", visible: ADMIN, render: () => <RecruitmentPanel only="Requisitions" /> },
+      // Part 18.22: "Hiring stages" and "Job requests" are one page with two tabs (they showed the same thing)
+      { id: "stages", emoji: "briefcase", keywords: "pipeline hiring stages job requests requisitions approval", visible: ADMIN,
+        render: () => <RecruitmentPanel tabs={["Pipeline", "Requisitions"]} /> },
       // Part 17.5/17.6: the Match score's rules + automatic shortlisting (their raw settings live here too).
       { id: "scoring", emoji: "target", keywords: "score weight match threshold knockout shortlist auto-shortlist preset", visible: ADMIN,
         prefixes: ["recruitment.scoring.", "recruitment.shortlisting."],

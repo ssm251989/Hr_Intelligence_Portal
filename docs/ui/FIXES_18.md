@@ -575,3 +575,31 @@ GET /api/v1/setup/values -> company "CTD Techs" / Asia/Kolkata, locations [Chenn
 tsc clean, npm run build OK
 ```
 **Screenshot:** Setup page -- pending login proof.
+
+## 18.22 Settings must work - every screen checked
+
+**Problems found and fixed:**
+1. **Pages showing the wrong content.** Settings pages that share a panel (Users ↔ Roles, Branding ↔ Templates, Hiring ↔ Job requests, Offices ↔ other Core HR tabs) kept the first page's tab, because the panels stored the tab in state seeded from `only`. Four panels now always follow `only`, and each Settings page's content is remounted per page.
+2. **Hiring and Job request showed the same thing.** They are merged into **Hiring stages & job requests** (one page, two tabs); old links redirect.
+3. **Offices & locations** showed departments/positions only. A new **Offices** list has add / edit / delete and a map position (lat/lng, or "Fix position" on the map); departments stay underneath. The office map now shows **every** office, not only offices with employees (with People off it showed none). A delete is refused while people or jobs use the office.
+4. **Users & roles** could only list and assign extra roles. A new **Users** table has **invite** (role, email with a set-password link, or the link to share), **change role** (the RBAC assignment follows; guarded for the last admin), **switch off / on** (new `users.deactivated_at`, migration `f9b1d3e5a7c2`: sign-in refused and existing tokens rejected) and **send password reset**. Admins only.
+5. **Scoring weights:** a number box next to every slider. The total reads "Total must be 100 (now 115)" in red, green at exactly 100, and Save is disabled otherwise.
+6. **Connections:**
+   - every connection shows a status chip (Connected / Not tested / Not working / Disconnected), the last test result and time, and **Test / Edit / Disconnect** (with confirm) / **Connect again**;
+   - secrets are masked with example placeholders; empty keeps the saved value, and the backend now *merges* secrets (editing one field used to wipe the others);
+   - Disconnect removes the routes and stored secret but keeps the row, so message history stays;
+   - the "missing" strip no longer lists email purposes (one mailbox, 18.2).
+7. **Branding & logo:** the read path is verified (bootstrap, public branding, file 200), and the page no longer shows the Templates tab (fix 1).
+
+**Verified** (rolled back; emails recorded; no logo upload so the real logo file is untouched):
+```
+users 21 listed; invite -> 201 + platform.user_invite email; duplicate -> 409
+role -> interviewer: RBAC roles [Interviewer]; demote the only admin -> "This is the only admin. Make someone else an admin first."
+deactivate self -> 400; deactivate -> sign-in "This account has been switched off. Please ask your admin.", old token -> 401
+reactivate -> sign-in 200; reset password -> platform.password_reset_link email; recruiter -> 403
+office add (18.559, 73.786) -> edit "Demo - Pune HQ" -> on the office map -> delete 204
+permissions matrix PATCH -> saved; logo in bootstrap + public branding, file served 200
+settings_check.py -> 119/119 settings saved + reloaded OK (docs/ui/SETTINGS_CHECK.md, now with a per-screen table)
+tsc clean, i18n 0 missing (74 new keys), npm run build OK
+```
+**Screenshot:** Users, Offices, Connections, Scoring rules -- pending login proof.

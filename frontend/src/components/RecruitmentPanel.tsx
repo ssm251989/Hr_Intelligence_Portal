@@ -247,8 +247,14 @@ function AvailabilityAndCtcTab() {
 const TABS = ["Pipeline", "Requisitions", "Availability & CTC"] as const;
 
 /** Part 16.3: `only` shows a single tab (one Settings sub-page) without the tab bar. */
-export default function RecruitmentPanel({ only }: { only?: (typeof TABS)[number] } = {}) {
-  const [tab, setTab] = useState<(typeof TABS)[number]>(only ?? "Pipeline");
+const TAB_KEY: Record<(typeof TABS)[number], string> = { Pipeline: "hiringtabs.pipeline", Requisitions: "hiringtabs.requests", "Availability & CTC": "hiringtabs.availability" };
+
+// Part 18.22: `only` always wins (the tab used to be kept in state, so two Settings pages that
+// reuse this component showed the same tab); `tabs` shows a chosen set with a tab bar.
+export default function RecruitmentPanel({ only, tabs }: { only?: (typeof TABS)[number]; tabs?: (typeof TABS)[number][] } = {}) {
+  const shown = tabs ?? [...TABS];
+  const [picked, setTab] = useState<(typeof TABS)[number]>(shown[0]);
+  const tab = only ?? (shown.includes(picked) ? picked : shown[0]);
 
   return (
     <Card variant="outlined">
@@ -259,9 +265,9 @@ export default function RecruitmentPanel({ only }: { only?: (typeof TABS)[number
         <Typography variant="body2" color="text.secondary" mb={2}>
           {tr("settings.hiring.intro")}
         </Typography>
-        {!only && (<Tabs value={tab} onChange={(_e, value) => setTab(value)} sx={{ mb: 2 }}>
-          {TABS.map((t) => (
-            <Tab key={t} label={t} value={t} />
+        {!only && shown.length > 1 && (<Tabs value={tab} onChange={(_e, value) => setTab(value)} sx={{ mb: 2 }}>
+          {shown.map((t) => (
+            <Tab key={t} label={tr(TAB_KEY[t])} value={t} />
           ))}
         </Tabs>)}
         {tab === "Pipeline" && <PipelineTab />}

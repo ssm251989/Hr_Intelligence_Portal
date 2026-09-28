@@ -32,3 +32,4 @@ class User(Base, TenantOwned):
     failed_login_attempts = Column(Integer, nullable=False, server_default=text("0"))
     locked_until = Column(DateTime(timezone=True))
     password_changed_at = Column(DateTime(timezone=True), server_default=text("now()"))
+    deactivated_at = Column(DateTime(timezone=True))  # Part 18.22: set = cannot sign in (Settings > People & access)

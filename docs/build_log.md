@@ -2370,3 +2370,9 @@ NEXT: 18.21 setup checklist: remove "Invite another admin" and "ready-made templ
 STEPS without config_pack and invite_admins (functions kept), their UI blocks and the template fetch removed from SetupWizardPage. ctd-techs setup now 100%.
 
 NEXT: 18.22 settings must work (branding/logo, offices, users & roles, merge Hiring/Job request, scoring weights number inputs + red when total != 100, every connection with status/connect/test/edit/disconnect, SETTINGS_CHECK.md).
+
+## Part 18.22 -- settings must work (2026-09-28)
+
+Root cause of several "not working" pages: panels seeded their tab from `only` in state, so pages sharing a panel showed the first page (fixed in 4 panels + keyed settings content). Merged Hiring/Job requests; new Offices page (CRUD + map; map now shows all offices); new Users page (invite/role/deactivate/reset; users.deactivated_at f9b1d3e5a7c2, enforced at login + token); scoring weight number inputs + red total text; ConnectionsPanel rewrite (status/test/edit/disconnect/reconnect, masked secrets with examples, backend secret merge + soft disconnect). SETTINGS_CHECK.md 119/119 + per-screen table.
+
+NEXT: 18.23 GenAI settings (provider, masked key + test, model per feature from a list, default + fallback model, max tokens, temperature, on/off per feature, what is in use today, disconnect).

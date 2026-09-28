@@ -2,7 +2,7 @@
 
 Every registered setting, saved through the real API (`PUT /api/v1/settings/{key}`) with a changed, valid value, read back (`GET /api/v1/settings`), and - where the value shows up somewhere - checked there. Everything ran inside a database transaction that was rolled back, so no real setting was changed. Re-run: `backend/.venv/Scripts/python.exe backend/scripts/settings_check.py`.
 
-**Result: 94 of 94 settings OK, 0 failed, 0 secrets skipped.**
+**Result: 119 of 119 settings OK, 0 failed, 0 secrets skipped.**
 
 Settings kept on their own pages (not in this registry) were checked separately in FIXES_17.md 17.11: company logo, brand colours, mailboxes/connections, email templates, approval steps, custom fields, roles.
 
@@ -46,6 +46,11 @@ Settings kept on their own pages (not in this registry) were checked separately 
 | `iam.auth.password_require_complexity` | Authentication | bool | OK | OK | n/a (used by server logic) |  |
 | `iam.auth.refresh_token_expiry_days` | Authentication | int | OK | OK | n/a (used by server logic) |  |
 | `iam.auth.remember_device_days` | Authentication | int | OK | OK | n/a (used by server logic) |  |
+| `iam.auth.two_step_available` | Advanced | bool | OK | OK | n/a (used by server logic) |  |
+| `modules.lock.enabled` | Modules | bool | OK | OK | n/a (used by server logic) |  |
+| `modules.lock.lockout_minutes` | Modules | int | OK | OK | n/a (used by server logic) |  |
+| `modules.lock.max_attempts` | Modules | int | OK | OK | n/a (used by server logic) |  |
+| `modules.lock.mode` | Modules | str | OK | OK | n/a (used by server logic) |  |
 | `onboarding.bgv.block_conversion_until_clear` | Background Verification | bool | OK | OK | n/a (used by server logic) |  |
 | `onboarding.bgv.default_package` | Background Verification | json | OK | OK | n/a (used by server logic) | same-value round trip (list/object setting) |
 | `onboarding.conversion.default_plan_template` | Conversion | str | OK | OK | n/a (used by server logic) |  |
@@ -57,6 +62,7 @@ Settings kept on their own pages (not in this registry) were checked separately 
 | `org.date_format` | Organisation | str | OK | OK | n/a (used by server logic) |  |
 | `org.display_name` | Organisation | str | OK | OK | OK - Company name in the menu, sign-in page and careers site |  |
 | `org.fiscal_year_start` | Organisation | str | OK | OK | n/a (used by server logic) |  |
+| `org.fiscal_year_start_month` | Company | int | OK | OK | n/a (used by server logic) |  |
 | `org.legal_links` | Organisation | json | OK | OK | n/a (used by server logic) | same-value round trip (list/object setting) |
 | `org.legal_name` | Organisation | str | OK | OK | n/a (used by server logic) |  |
 | `org.locale` | Organisation | str | OK | OK | OK - Language of the app (company default): the signed-in admin chose 'en' for themselves, which wins over the company default (as designed) |  |
@@ -67,19 +73,38 @@ Settings kept on their own pages (not in this registry) were checked separately 
 | `performance.ai.bias_terms` | Reviews | json | OK | OK | n/a (used by server logic) | same-value round trip (list/object setting) |
 | `performance.goals.weightage_rules` | Goals | json | OK | OK | n/a (used by server logic) | same-value round trip (list/object setting) |
 | `platform.modules.enabled` | Modules | json | OK | OK | OK - Which modules are in the menu | same-value round trip (list/object setting) |
+| `platform.modules.offered` | Modules | json | OK | OK | n/a (used by server logic) | same-value round trip (list/object setting) |
 | `platform.setup.config_pack` | Setup | json | OK | OK | n/a (used by server logic) | same-value round trip (list/object setting) |
 | `platform.setup.skipped` | Setup | json | OK | OK | n/a (used by server logic) | same-value round trip (list/object setting) |
 | `privacy.dpr_sla_days` | Privacy | int | OK | OK | n/a (used by server logic) |  |
 | `privacy.retention_days` | Privacy | json | OK | OK | n/a (used by server logic) | same-value round trip (list/object setting) |
+| `recruitment.candidates.recycle_days` | Candidates | int | OK | OK | n/a (used by server logic) |  |
 | `recruitment.careers.ask_salary` | Careers site | bool | OK | OK | n/a (used by server logic) |  |
+| `recruitment.contacts` | Joining | json | OK | OK | n/a (used by server logic) | same-value round trip (list/object setting) |
+| `recruitment.documents.auto_send` | Documents | bool | OK | OK | n/a (used by server logic) |  |
+| `recruitment.documents.reminder_hours` | Documents | json | OK | OK | n/a (used by server logic) | same-value round trip (list/object setting) |
+| `recruitment.documents.required` | Documents | json | OK | OK | n/a (used by server logic) | same-value round trip (list/object setting) |
+| `recruitment.jobs.close_email_candidates` | Jobs | bool | OK | OK | n/a (used by server logic) |  |
+| `recruitment.joining.reminder_hours` | Joining | json | OK | OK | n/a (used by server logic) | same-value round trip (list/object setting) |
 | `recruitment.negotiation.busy_source` | Interview Negotiation | enum | OK | OK | n/a (used by server logic) | same-value round trip (list/object setting) |
 | `recruitment.negotiation.max_retry_days` | Interview Negotiation | int | OK | OK | n/a (used by server logic) |  |
 | `recruitment.negotiation.retry_day_offset` | Interview Negotiation | int | OK | OK | n/a (used by server logic) |  |
 | `recruitment.negotiation.slots_offered` | Interview Negotiation | int | OK | OK | n/a (used by server logic) |  |
 | `recruitment.negotiation.slots_to_pick` | Interview Negotiation | int | OK | OK | n/a (used by server logic) |  |
+| `recruitment.reminders.approval_hours` | Reminders | int | OK | OK | n/a (used by server logic) |  |
+| `recruitment.reminders.documents_days` | Reminders | int | OK | OK | n/a (used by server logic) |  |
+| `recruitment.reminders.enabled` | Reminders | bool | OK | OK | n/a (used by server logic) |  |
+| `recruitment.reminders.offer_expiry_days` | Reminders | int | OK | OK | n/a (used by server logic) |  |
+| `recruitment.reminders.scorecard_hours` | Reminders | int | OK | OK | n/a (used by server logic) |  |
 | `recruitment.salary.approval_margin_pct` | Salary | int | OK | OK | n/a (used by server logic) |  |
 | `recruitment.salary.approvers` | Salary | json | OK | OK | n/a (used by server logic) | same-value round trip (list/object setting) |
 | `recruitment.salary.ask_after_shortlist` | Salary | bool | OK | OK | n/a (used by server logic) |  |
+| `recruitment.salary.ask_offers` | Salary | bool | OK | OK | n/a (used by server logic) |  |
+| `recruitment.salary.ask_payslip` | Salary | bool | OK | OK | n/a (used by server logic) |  |
+| `recruitment.salary.auto_approve_hike_pct` | Salary | int | OK | OK | n/a (used by server logic) |  |
+| `recruitment.salary.form_after_round` | Salary | int | OK | OK | n/a (used by server logic) |  |
+| `recruitment.salary.form_trigger` | Salary | str | OK | OK | n/a (used by server logic) |  |
+| `recruitment.salary.reminder_hours` | Salary | json | OK | OK | n/a (used by server logic) | same-value round trip (list/object setting) |
 | `recruitment.salary.target_hike_pct` | Salary | int | OK | OK | n/a (used by server logic) |  |
 | `recruitment.scoring.shortlist_threshold` | Scoring | int | OK | OK | OK - Shortlist threshold on the Screening dashboard |  |
 | `recruitment.shortlisting.auto_shortlist` | Shortlisting | bool | OK | OK | OK - Shortlisting rules form |  |
@@ -103,18 +128,17 @@ Settings kept on their own pages (not in this registry) were checked separately 
 | `ux.page_size` | Lists | int | OK | OK | n/a (used by server logic) |  |
 | `ux.reduce_motion` | Accessibility | bool | OK | OK | n/a (used by server logic) |  |
 
-## Settings on their own pages
+## Settings screens (Part 18.22)
 
-Checked through the real API in a rolled-back transaction (nothing kept).
-
-| Page | Saved | Reloaded | Shows in app |
-|---|---|---|---|
-| Company > Branding: logo | OK (200) | OK (`logo_url` in branding) | OK - sidebar, sign-in, careers (image served 200), email + letter header |
-| Company > Branding: colours | OK (200, other fields kept) | OK | OK - public branding primary colour |
-| Company > Profile (`org.*`) | OK | OK | OK - company name in menu / sign-in / careers |
-| Data > Custom fields | OK (201) | OK | listed on the fields page and forms |
-| People > Roles | OK (201) | OK | listed on the roles page |
-| Communication > Email templates | OK (draft 201, publish 200) | OK (latest published version) | used by the next email sent |
-| Automation > Approval steps | OK (201) | OK | listed on the approvals page |
-| Communication > Mailboxes / connections | OK (201) | OK | listed; the test button checks the real server |
-| Hiring > Scoring rules / Shortlisting | see FIXES_17.md 17.5 / 17.6 | | |
+| Screen | Saved | Reloads | Used in app | How checked |
+|---|---|---|---|---|
+| Company > Branding (logo + colours) | OK | OK | OK: sidebar, login, careers, emails and letters use `logo_url` | bootstrap + public branding return the logo; the file serves 200. The page used to show the Templates tab (panel `only` bug, fixed) |
+| Company > Offices & locations | OK | OK | OK: office map (now every office, not only offices with people) | rolled back: add (with map position) → edit → shown on the map → delete |
+| People & access > Users | OK | OK | OK | invite (email) · change role (RBAC follows) · switch off (sign-in refused, token 401) · switch on (sign-in 200) · password reset link · last-admin / self guards · recruiter 403 |
+| People & access > Roles (permissions matrix) | OK | OK | OK | PATCH role permissions → saved. The Users/Roles pages used to show the same tab (fixed) |
+| Hiring > Hiring stages & job requests | OK | OK | OK | merged into one page with two tabs (they showed the same thing) |
+| Hiring > Scoring rules | OK | OK | OK | weights editable as numbers or sliders; total red "Total must be 100 (now 115)" and Save disabled unless exactly 100 |
+| Hiring > Salary rules / Department budgets / Required documents / Contacts | OK | OK | OK | FIXES_18 18.12-18.20 |
+| Integrations > Connections | OK | OK | OK | status chip, last test, Test, Edit (masked secrets, empty = keep, merged), Disconnect with confirm (routes + secret removed, history kept), Connect again |
+| Integrations > Job boards | OK | OK | n/a until a board API exists | FIXES_18 18.9 |
+| Advanced > Modules | OK | OK | OK | FIXES_18 18.4 / 18.5 |

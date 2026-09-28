@@ -76,7 +76,7 @@ def get_current_user(
             cp_db.close()
 
     user = db.get(User, user_uuid)
-    if user is None:
+    if user is None or getattr(user, "deactivated_at", None) is not None:  # Part 18.22: deactivated = signed out everywhere
         raise _unauthorized()
     if user.role == "agency" and not request.url.path.startswith(AGENCY_ALLOWED_PREFIXES):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Agency accounts can only use the agency portal")

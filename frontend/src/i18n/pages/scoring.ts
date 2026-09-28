@@ -115,7 +115,7 @@ export const en = {
   "scoring.bands.salary.beyond": "More above than that",
 
   "scoring.total.ok": "Total: {total}% - good",
-  "scoring.total.bad": "Total: {total}% - must be 100%",
+  "scoring.total.bad": "Total must be 100 (now {total})",
   "scoring.balance": "Auto-balance",
 
   "scoring.ko.title": "Hard rules",
@@ -362,7 +362,7 @@ export const hi: Partial<Record<keyof typeof en, string>> = {
   "scoring.bands.salary.beyond": "इससे ज़्यादा ऊपर",
 
   "scoring.total.ok": "कुल: {total}% - ठीक है",
-  "scoring.total.bad": "कुल: {total}% - 100% होना चाहिए",
+  "scoring.total.bad": "कुल 100 होना चाहिए (अभी {total})",
   "scoring.balance": "अपने-आप संतुलित करें",
 
   "scoring.ko.title": "सख़्त नियम",
@@ -609,7 +609,7 @@ export const ta: Partial<Record<keyof typeof en, string>> = {
   "scoring.bands.salary.beyond": "அதைவிட அதிகம் மேல்",
 
   "scoring.total.ok": "மொத்தம்: {total}% - சரி",
-  "scoring.total.bad": "மொத்தம்: {total}% - 100% ஆக வேண்டும்",
+  "scoring.total.bad": "மொத்தம் 100 ஆக இருக்க வேண்டும் (இப்போது {total})",
   "scoring.balance": "தானாகச் சமன் செய்",
 
   "scoring.ko.title": "கடுமையான விதிகள்",

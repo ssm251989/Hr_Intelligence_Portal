@@ -476,9 +476,11 @@ export default function ScoringRulesEditor({ jobId, onDirtyChange }: { jobId?: s
                     <Slider value={fr.weight} min={0} max={100} step={1} disabled={readOnly || !fr.enabled} sx={{ flex: 1 }}
                       onChange={(_e, v) => setFactor(key, { weight: v as number })}
                       aria-label={t("scoring.factor.weight_of", { name: t(`scoring.factor.${key}`) })} />
-                    <Typography sx={{ width: 44, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums", color: fr.enabled ? f.ink : f.muted }}>
-                      {fr.weight}%
-                    </Typography>
+                    {/* Part 18.22: type the weight as well as sliding it */}
+                    <TextField size="small" type="number" value={fr.weight} disabled={readOnly || !fr.enabled} sx={{ width: 84 }}
+                      onChange={(e) => setFactor(key, { weight: Math.max(0, Math.min(100, Math.round(Number(e.target.value) || 0))) })}
+                      slotProps={{ htmlInput: { min: 0, max: 100, step: 1, "aria-label": t("scoring.factor.weight_of", { name: t(`scoring.factor.${key}`) }) },
+                        input: { endAdornment: <Typography component="span" sx={{ color: f.muted, ml: 0.5 }}>%</Typography> } }} />
                     {hasSettings ? (
                       <IconButton size="small" onClick={() => setOpen((o) => ({ ...o, [key]: !isOpen }))} aria-expanded={isOpen}
                         aria-label={t("scoring.factor.settings", { name: t(`scoring.factor.${key}`) })}>

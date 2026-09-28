@@ -326,7 +326,9 @@ const TABS = ["Roles", "Assignments", "Access review"] as const;
 
 /** Part 16.3: `only` shows a single tab (one Settings sub-page) without the tab bar. */
 export default function AccessControlPanel({ only }: { only?: (typeof TABS)[number] } = {}) {
-  const [tab, setTab] = useState<(typeof TABS)[number]>(only ?? "Roles");
+  const [picked, setTab] = useState<(typeof TABS)[number]>(only ?? "Roles");
+  // Part 18.22: `only` always wins -- Settings pages that reuse this panel used to keep the first page's tab
+  const tab = only ?? picked;
 
   return (
     <Card variant="outlined">

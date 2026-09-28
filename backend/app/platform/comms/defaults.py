@@ -67,6 +67,18 @@ DEFAULTS: dict[str, tuple[str, str, list[str]]] = {
         "Welcome aboard - we can't wait to work with you.\n\n{{ company_name }} HR",
         ["candidate_first_name", "job_title", "joining_date", "steps", "contacts"],
     ),
+    "platform.user_invite": (
+        "You're invited to {{ company_name }} hiring",
+        "Hi {{ name }},\n\n{{ invited_by }} has invited you to {{ company_name }}'s hiring app as {{ role }}.\n\n"
+        "Set your password here (the link works for 7 days):\n{{ link }}\n\nWelcome aboard!\n{{ company_name }}",
+        ["link"],
+    ),
+    "platform.password_reset_link": (
+        "Reset your password for {{ company_name }}",
+        "Hi {{ name }},\n\nYour admin sent you a link to set a new password (it works for 2 days):\n{{ link }}\n\n"
+        "If you didn't ask for this, you can ignore this email.\n{{ company_name }}",
+        ["link"],
+    ),
     "recruitment.job_closed_candidate": (
         "Update on your application for {{ job_title }}",
         "Hi {{ candidate_first_name }},\n\nThank you for applying for {{ job_title }}. This position has been closed for now, so "

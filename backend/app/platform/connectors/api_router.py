@@ -174,7 +174,13 @@ def update_connection(connection_id: UUID, payload: ConnectionUpdate, db: Sessio
     if payload.secrets is not None:
         store = _tenant_secret_store(db)
         if connection.secret_ref:
-            store.rotate(connection.secret_ref, json.dumps(payload.secrets), created_by=current_user.email)
+            # Part 18.22: fields left empty keep their saved value (editing one secret no longer wipes the rest)
+            try:
+                current = json.loads(store.get(connection.secret_ref) or "{}")
+            except Exception:  # noqa: BLE001
+                current = {}
+            merged = {**current, **{k: v for k, v in payload.secrets.items() if v}}
+            store.rotate(connection.secret_ref, json.dumps(merged), created_by=current_user.email)
         else:
             connection.secret_ref = f"connection-{connection.id}"
             store.put(connection.secret_ref, json.dumps(payload.secrets), created_by=current_user.email)
@@ -185,10 +191,23 @@ def update_connection(connection_id: UUID, payload: ConnectionUpdate, db: Sessio
 
 @connections_router.delete("/{connection_id}", status_code=204)
 def delete_connection(connection_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(require_roles("admin"))):
+    """Part 18.22 "Disconnect": its routes and stored secret are removed and it is switched off
+    (status "disabled"); the row stays so the message log keeps pointing at it. Connect again =
+    Edit + new details + Test."""
+    from app.audit.service import log_action
+
     connection = db.get(Connection, connection_id)
     if connection is not None:
-        db.delete(connection)
+        db.query(ConnectionRoute).filter(ConnectionRoute.connection_id == connection.id).delete(synchronize_session=False)
+        if connection.secret_ref:
+            try:
+                _tenant_secret_store(db).delete(connection.secret_ref)
+            except Exception:  # noqa: BLE001
+                pass
+            connection.secret_ref = None
+        connection.status = "disabled"
         db.commit()
+        log_action(db, "connection", connection.id, "connection_disconnected", current_user.email[:50], {"provider": connection.provider_code})
 
 
 class TestResult(BaseModel):

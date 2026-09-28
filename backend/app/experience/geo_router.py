@@ -67,9 +67,7 @@ def _office_rows(db: Session, tenant) -> list[dict]:
     )
     rows = []
     for loc in db.query(Location).filter(Location.tenant_id == tenant.tenant_id).order_by(Location.name):
-        n = counts.get(loc.id, 0)
-        if not n:
-            continue
+        n = counts.get(loc.id, 0)  # Part 18.22: every office is on the map, with or without people in it
         rows.append({"key": str(loc.id), "label": loc.name, "text": ", ".join(x for x in (loc.name, loc.state) if x),
                      "count": n, "lat": _num(loc.geo_lat), "lng": _num(loc.geo_lng), "link": f"/directory?location={loc.id}",
                      "fix": {"kind": "offices", "location_id": str(loc.id), "text": loc.name}})

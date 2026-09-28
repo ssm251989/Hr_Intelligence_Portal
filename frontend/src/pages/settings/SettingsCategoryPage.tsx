@@ -73,7 +73,7 @@ export default function SettingsCategoryPage() {
         </Card>
         <Box sx={{ minWidth: 0 }}>
           <Typography component="h2" sx={{ fontWeight: 800, fontSize: 20, mb: 1.5 }}>{t(`settingsHome.page.${cat.id}.${current.id}`)}</Typography>
-          <Stack spacing={2.5}>{current.render(go)}</Stack>
+          <Stack key={`${cat.id}/${current.id}`} spacing={2.5}>{current.render(go)}</Stack>
         </Box>
       </Box>
     </Box>

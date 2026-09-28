@@ -74,6 +74,9 @@ def login(payload: UserLogin, request: Request, db: Session = Depends(get_db)):
     if tenant_ctx is not None and user is not None and sessions.is_locked_out(user):
         raise HTTPException(status_code=status.HTTP_423_LOCKED, detail="Account is temporarily locked. Try again later.")
 
+    if user is not None and getattr(user, "deactivated_at", None) is not None:  # Part 18.22
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account has been switched off. Please ask your admin.")
+
     if not user or not verify_password(payload.password, user.hashed_password):
         if tenant_ctx is not None and user is not None:
             sessions.record_failed_login(db, tenant_ctx, user)

@@ -46,7 +46,7 @@ LOCKABLE: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "reports": (("/reports",), (r"^/reports/(pipeline|audit)", r"^/api/v1/intelligence/reports")),
     "settings": (("/settings",), (r"^/api/v1/settings", r"^/api/v1/connections", r"^/api/v1/connection-routes", r"^/api/v1/connectors",
                                   r"^/api/v1/comms", r"^/api/v1/iam", r"^/api/v1/scoring", r"^/api/v1/secrets", r"W:^/api/v1/media",
-                                  r"W:^/api/v1/setup", r"W:^/api/v1/branding")),
+                                  r"W:^/api/v1/setup", r"W:^/api/v1/branding", r"^/api/v1/ui/users", r"^/api/v1/ui/locations")),
     "genai_usage": (("/genai-usage",), (r"^/api/v1/ui/genai",)),
 }
 # never locked: signing in, the menu, the lock API itself, candidate-facing public pages
