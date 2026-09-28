@@ -18,6 +18,7 @@ import RequiredDocumentsPage from "../components/documents/RequiredDocumentsPage
 import ContactsSettingsPage from "../components/offers/ContactsSettingsPage";
 import OfficesPage from "../components/people/OfficesPage";
 import UsersPage from "../components/people/UsersPage";
+import GenAISettingsPage from "../components/genai/GenAISettingsPage";
 import PrivacyPanel from "../components/PrivacyPanel";
 import RecruitmentPanel from "../components/RecruitmentPanel";
 import ServiceDeskPanel from "../components/ServiceDeskPanel";
@@ -167,8 +168,9 @@ export const CATEGORIES: SettingsCategory[] = [
   {
     id: "integrations", emoji: "link", pages: [
       { id: "connections", emoji: "link", keywords: "connections services accounts", visible: ADMIN, render: () => <ConnectionsPanel /> },
-      { id: "ai", emoji: "robot", keywords: "ai claude model provider api key assistant copilot", prefixes: ["ai.", "copilot."], visible: ADMIN,
-        render: scoped(["ai.", "copilot."], "settingsHome.page.integrations.ai") },
+      // Part 18.23: GenAI settings -- provider, key, models, features, prices, limits (+ the older AI/copilot settings below)
+      { id: "ai", emoji: "robot", keywords: "ai genai claude model provider api key assistant copilot limits tokens usage", prefixes: ["ai.", "copilot."], visible: ADMIN,
+        render: () => (<><GenAISettingsPage />{scoped(["copilot."], "settingsHome.page.integrations.ai")()}</>) },
       { id: "esign", emoji: "writing_hand", keywords: "docusign leegality e-sign", visible: EVERYONE,
         render: () => (
           <IntegrationCard emoji="writing_hand" title={t("settingsPage.integration.docusign.title")} description={t("settingsPage.integration.docusign.body")}

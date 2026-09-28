@@ -240,6 +240,13 @@ class AiUsageRecord(Base, TenantOwned):
     cost = Column(Numeric, nullable=False, server_default=text("0"))
     decision_log_id = Column(UUID(as_uuid=True), ForeignKey("ai_decision_log.id"))
     created_at = Column(DateTime(timezone=True), server_default=text("now()"))
+    # Part 18.24: who / which module / for what (e.g. an application) / ok or error / how long
+    module = Column(String(50))
+    user_id = Column(UUID(as_uuid=True))
+    entity_type = Column(String(50))
+    entity_id = Column(UUID(as_uuid=True))
+    status = Column(String(20), nullable=False, server_default=text("'ok'"))
+    latency_ms = Column(Integer)
 
 
 class AiUsageBudget(Base, TenantOwned):

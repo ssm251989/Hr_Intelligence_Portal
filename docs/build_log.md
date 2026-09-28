@@ -2376,3 +2376,9 @@ NEXT: 18.22 settings must work (branding/logo, offices, users & roles, merge Hir
 Root cause of several "not working" pages: panels seeded their tab from `only` in state, so pages sharing a panel showed the first page (fixed in 4 panels + keyed settings content). Merged Hiring/Job requests; new Offices page (CRUD + map; map now shows all offices); new Users page (invite/role/deactivate/reset; users.deactivated_at f9b1d3e5a7c2, enforced at login + token); scoring weight number inputs + red total text; ConnectionsPanel rewrite (status/test/edit/disconnect/reconnect, masked secrets with examples, backend secret merge + soft disconnect). SETTINGS_CHECK.md 119/119 + per-screen table.
 
 NEXT: 18.23 GenAI settings (provider, masked key + test, model per feature from a list, default + fallback model, max tokens, temperature, on/off per feature, what is in use today, disconnect).
+
+## Part 18.23-18.25 -- GenAI settings, usage, limits (2026-09-28)
+
+tracked.py (model per feature from settings, max tokens, temperature, fallback, feature switch, usage rows with module/user/subject/status/latency, company key) under all 8 legacy AI services; gateway + governed_complete record/limit too; limits.py (module monthly / user daily / company monthly, block|warn, warn % notices, reset day); ui_genai_router (settings, key, test, disconnect, usage, CSV); GenAISettingsPage + GenAIUsagePage + menu. Migration a3d5f7b9c1e4. Decision: one commit for 18.23-18.25 because they share the same files (router + tracked client); each has its own FIXES entry.
+
+NEXT: 18.26 hand-over (build, i18n, tsc, compileall; screenshots light + dark; PAGES.md; report).

@@ -122,7 +122,10 @@ def parse_and_apply_resume(
         result = precomputed_result
     else:
         raw_text = extract_text(file_path.read_bytes(), file_path.name)
-        result = parse_resume(raw_text)
+        from app.platform.ai.tracked import ai_subject  # Part 18.24: cost per candidate
+
+        with ai_subject("candidate", candidate.id):
+            result = parse_resume(raw_text)
 
     log_action(db, "candidate", candidate.id, "ai_resume_parser_scored", actor, result)
     candidate.parsed_fields = result

@@ -208,6 +208,23 @@ def register_all() -> None:
 
     # ai.* governance -- Part 12 section D.
     register(SettingDef("ai.enabled", "bool", True, module="ai", group="AI Governance"))
+    # Part 18.23: GenAI settings -- provider, the models to choose from, default / fallback model,
+    # max tokens per request, temperature (empty = the model's own default)
+    register(SettingDef("ai.provider", "str", "anthropic", module="ai", group="GenAI", json_schema={"type": "string", "enum": ["anthropic"]}))
+    register(SettingDef("ai.available_models", "json", [model_catalog.CLAUDE_OPUS_5_5, model_catalog.CLAUDE_SONNET_5, model_catalog.CLAUDE_HAIKU_4_5,
+                                                        model_catalog.CLAUDE_FABLE_5_1], module="ai", group="GenAI"))
+    register(SettingDef("ai.default_model", "str", model_catalog.CLAUDE_SONNET_5, module="ai", group="GenAI"))
+    register(SettingDef("ai.fallback_model", "str", model_catalog.CLAUDE_HAIKU_4_5, module="ai", group="GenAI"))
+    register(SettingDef("ai.max_tokens_per_request", "int", 4096, module="ai", group="GenAI", json_schema={"type": "integer", "minimum": 256, "maximum": 64000}))
+    register(SettingDef("ai.temperature", "str", "", module="ai", group="GenAI"))
+    # Part 18.25: usage limits
+    register(SettingDef("ai.limits.module_monthly_tokens", "json", {}, module="ai", group="GenAI limits"))
+    register(SettingDef("ai.limits.user_daily_tokens", "int", 0, module="ai", group="GenAI limits", json_schema={"type": "integer", "minimum": 0}))
+    register(SettingDef("ai.limits.company_monthly_tokens", "int", 0, module="ai", group="GenAI limits", json_schema={"type": "integer", "minimum": 0}))
+    register(SettingDef("ai.limits.on_limit", "json", {}, module="ai", group="GenAI limits"))
+    register(SettingDef("ai.limits.warn_pct", "int", 80, module="ai", group="GenAI limits", json_schema={"type": "integer", "minimum": 1, "maximum": 99}))
+    register(SettingDef("ai.limits.reset_day", "int", 1, module="ai", group="GenAI limits", json_schema={"type": "integer", "minimum": 1, "maximum": 28}))
+    register(SettingDef("ai.currency", "str", "INR", module="ai", group="GenAI"))
     register(SettingDef("ai.features.disabled", "json", [], module="ai", group="AI Governance"))  # feature codes or "<module>.*"
     register(SettingDef("ai.redaction.enabled", "bool", True, module="ai", group="AI Governance"))
     register(SettingDef("ai.redaction.patterns", "json", {

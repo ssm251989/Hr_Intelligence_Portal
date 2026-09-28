@@ -241,7 +241,10 @@ def _ai_check(db, tenant, doc, text) -> Optional[dict]:
             return None
         from app.ai_services.document_validator import validate_document
 
-        return validate_document(TO_BGV[doc.doc_code], text[:6000])
+        from app.platform.ai.tracked import ai_subject
+
+        with ai_subject("application", doc.application_id):
+            return validate_document(TO_BGV[doc.doc_code], text[:6000])
     except Exception:  # noqa: BLE001 -- AI off / unreachable: the rule checks stand
         return None
 

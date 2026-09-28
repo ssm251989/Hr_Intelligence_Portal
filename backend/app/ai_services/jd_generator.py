@@ -59,11 +59,12 @@ class JDOutput(BaseModel):
     additional_notes_section: str | None = None
 
 
-def _get_client() -> Anthropic:
-    global _client
-    if _client is None:
-        _client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-    return _client
+def _get_client():
+    """Part 18.23-18.25: the tracked client -- model from Settings > GenAI, fallback model,
+    usage counted (tokens, cost, user, module) and limits applied."""
+    from app.platform.ai.tracked import tracked_client
+
+    return tracked_client(feature="recruitment.jd_generation", model_key="jd_generation")
 
 
 def _format_experience_range(min_years, max_years) -> str:

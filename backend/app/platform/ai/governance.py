@@ -28,6 +28,12 @@ AI_FEATURES: dict[str, tuple[str, str]] = {
     "recruitment.interview_kit": ("recruitment", "Interview kit generation"),
     "recruitment.email_summary": ("recruitment", "One-line summaries of candidate emails"),
     "recruitment.document_check": ("recruitment", "Joining document check"),
+    # Part 18.23: the original AI services, now switchable and counted one by one
+    "recruitment.resume_parsing": ("recruitment", "Resume reading"),
+    "recruitment.ranking": ("recruitment", "Candidate ranking"),
+    "recruitment.shortlist_feedback": ("recruitment", "Shortlist feedback wording"),
+    "recruitment.offer_letter": ("recruitment", "Offer letter drafting"),
+    "platform.genai_test": ("platform", "Connection test"),
     "onboarding.document_extraction": ("onboarding", "Document data extraction"),
     "performance.review_draft": ("performance", "Review summary drafts"),
     "separation.exit_summary": ("separation", "Exit interview summaries"),
@@ -211,7 +217,11 @@ def governed_complete(
         safe_messages, safe_system, counts = messages, Redaction(system, {}), {"skipped": True}
     log.redactions_json = counts
     try:
-        raw = gateway.complete(db, tenant, purpose=purpose, system=safe_system.text, messages=safe_messages, **kwargs)
+        from app.platform.ai import limits
+        from app.platform.ai.tracked import _ACTOR
+
+        limits.check(db, tenant, module=AI_FEATURES.get(feature, (feature.split(".")[0], ""))[0], user_id=actor_user_id or _ACTOR.get())
+        raw = gateway.complete(db, tenant, purpose=purpose, system=safe_system.text, messages=safe_messages, _record=False, **kwargs)
     except Exception as exc:
         log.status, log.error = "error", type(exc).__name__
         db.add(log)
@@ -226,8 +236,13 @@ def governed_complete(
     log.final_decision = "pending"
     db.add(log)
     db.flush()
+    from app.platform.ai.tracked import _ACTOR, _SUBJECT
+
+    subject = _SUBJECT.get()
     db.add(AiUsageRecord(tenant_id=tenant.tenant_id, feature=feature, purpose=purpose, model=model, input_tokens=input_tokens,
-                         output_tokens=output_tokens, cost=_cost(db, tenant, model, input_tokens, output_tokens), decision_log_id=log.id))
+                         output_tokens=output_tokens, cost=_cost(db, tenant, model, input_tokens, output_tokens), decision_log_id=log.id,
+                         module=AI_FEATURES.get(feature, (feature.split(".")[0], ""))[0], user_id=actor_user_id or _ACTOR.get(),
+                         entity_type=subject[0] if subject else None, entity_id=subject[1] if subject else None, status="ok"))
     db.commit()
     _maybe_alert(db, tenant)
     return GovernedResult(text=text_out, decision_log_id=log.id, model=model, raw=raw)

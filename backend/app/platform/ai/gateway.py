@@ -24,6 +24,10 @@ _PURPOSE_MODEL_SETTING = {
 }
 
 
+_PURPOSE_FEATURE = {"llm.judgment": "recruitment.ranking", "llm.copilot": "copilot.chat", "llm.scoring": "recruitment.screening",
+                    "llm.resume_extraction": "recruitment.resume_parsing", "llm.embeddings": "copilot.chat"}
+
+
 def complete(
     db: Session, tenant: TenantContext, *, purpose: str, system: str, messages: list[dict],
     model: Optional[str] = None, **kwargs: Any,
@@ -58,7 +62,41 @@ def complete(
         setting_key = _PURPOSE_MODEL_SETTING.get(purpose, "ai.models.candidate_ranking")
         model = SettingsService(db).get(setting_key, SettingContext(tenant=tenant))
 
-    return adapter.complete(system=system, messages=messages, model=model, **kwargs)
+    # Part 18.24/18.25: calls that don't come through governed_complete are counted + limited here
+    record = kwargs.pop("_record", True)
+    feature = kwargs.pop("_feature", None) or _PURPOSE_FEATURE.get(purpose, purpose)
+    if not record:
+        return adapter.complete(system=system, messages=messages, model=model, **kwargs)
+    import time
+
+    from app.platform.ai import governance, limits
+    from app.platform.ai.tracked import _ACTOR, _SUBJECT
+
+    module = governance.AI_FEATURES.get(feature, (feature.split(".")[0], ""))[0]
+    limits.check(db, tenant, module=module, user_id=_ACTOR.get())
+    start = time.monotonic()
+    status = "ok"
+    try:
+        result = adapter.complete(system=system, messages=messages, model=model, **kwargs)
+        return result
+    except Exception:
+        status, result = "error", {}
+        raise
+    finally:
+        from app.models.intelligence import AiUsageRecord
+
+        usage = (result or {}).get("usage") or {} if isinstance(result, dict) else {}
+        tin, tout = int(usage.get("input_tokens", 0) or 0), int(usage.get("output_tokens", 0) or 0)
+        subject = _SUBJECT.get()
+        try:
+            db.add(AiUsageRecord(tenant_id=tenant.tenant_id, feature=feature, purpose=purpose, model=model, input_tokens=tin, output_tokens=tout,
+                                 cost=governance._cost(db, tenant, model, tin, tout), module=module, user_id=_ACTOR.get(),
+                                 entity_type=subject[0] if subject else None, entity_id=subject[1] if subject else None, status=status,
+                                 latency_ms=int((time.monotonic() - start) * 1000)))
+            db.commit()
+            limits.after_call(db, tenant, module=module)
+        except Exception:  # noqa: BLE001
+            db.rollback()
 
 
 def response_text(result: dict) -> str:

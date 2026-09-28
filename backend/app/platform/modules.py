@@ -86,7 +86,8 @@ MODULES: tuple[ModuleDef, ...] = (
               ("/api/v1/intelligence/datasets", "/api/v1/intelligence/reports", "/api/v1/intelligence/metrics",
                "/api/v1/intelligence/dashboards", "/api/v1/intelligence/predictive", "/api/v1/intelligence/warehouse-export", "/api/v1/ui/insights")),
     ModuleDef("copilot", (), ("/api/v1/intelligence/copilot",)),
-    ModuleDef("settings", (NavItem("nav.setup", "/setup", "platform.settings.configure", group="admin", icon="rocket"),
+    ModuleDef("settings", (NavItem("nav.genai_usage", "/genai-usage", "platform.settings.view", group="insights", icon="robot"),  # Part 18.24
+                           NavItem("nav.setup", "/setup", "platform.settings.configure", group="admin", icon="rocket"),
                            NavItem("nav.settings", "/settings", "platform.settings.view", group="admin", icon="gear")), always_on=True),
 )
 _BY_CODE = {m.code: m for m in MODULES}

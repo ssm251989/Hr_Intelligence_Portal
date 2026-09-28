@@ -36,11 +36,12 @@ class DocumentValidatorOutput(BaseModel):
     issues: list[str]
 
 
-def _get_client() -> Anthropic:
-    global _client
-    if _client is None:
-        _client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-    return _client
+def _get_client():
+    """Part 18.23-18.25: the tracked client -- model from Settings > GenAI, fallback model,
+    usage counted (tokens, cost, user, module) and limits applied."""
+    from app.platform.ai.tracked import tracked_client
+
+    return tracked_client(feature="recruitment.document_check", model_key="document_validation")
 
 
 def validate_document(expected_doc_type: str, ocr_text: str) -> dict:

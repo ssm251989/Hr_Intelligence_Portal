@@ -514,8 +514,11 @@ def run_screening(db: Session, application: Application, job: JobRole, candidate
     from app.recruitment.scoring.engine import rules_for_job, score_application, threshold_for_job
 
     tenant = require_current_tenant()
+    from app.platform.ai.tracked import ai_subject  # Part 18.24: cost per application
+
     try:
-        result = match_resume(job.jd_text, candidate.parsed_fields, candidate.location, job.location)
+        with ai_subject("application", application.id):
+            result = match_resume(job.jd_text, candidate.parsed_fields, candidate.location, job.location)
     except ResumeMatchError as exc:
         log_action(
             db, "application", application.id, "ai_screening_failed", actor,

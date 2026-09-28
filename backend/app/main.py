@@ -261,6 +261,9 @@ app.include_router(joining_public_router)
 from app.experience.ui_users_router import router as ui_users_router  # noqa: E402
 
 app.include_router(ui_users_router)
+from app.experience.ui_genai_router import router as ui_genai_router  # noqa: E402
+
+app.include_router(ui_genai_router)
 install_friendly_errors(app)
 
 

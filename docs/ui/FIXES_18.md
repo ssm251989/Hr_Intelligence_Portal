@@ -603,3 +603,71 @@ settings_check.py -> 119/119 settings saved + reloaded OK (docs/ui/SETTINGS_CHEC
 tsc clean, i18n 0 missing (74 new keys), npm run build OK
 ```
 **Screenshot:** Users, Offices, Connections, Scoring rules -- pending login proof.
+
+## 18.23 GenAI settings (full detail)
+
+**Problem:** the AI services called Claude directly with fixed model names. The `ai.models.*` settings were not used, and there was no key test, no fallback, no max tokens or temperature, and several features couldn't be switched off.
+
+**Change:**
+- **One tracked client** (`app/platform/ai/tracked.py`) under every original AI service: resume reading, matching, document check, interview questions, JD, offer letter, shortlist feedback, local import. The gateway path (ranking, assistant) and `governed_complete` record the same way. For each call it:
+  - applies the **model chosen in Settings** (`ai.models.<feature>`, else `ai.default_model`);
+  - caps **max tokens** (`ai.max_tokens_per_request`) and applies **temperature** when one is set;
+  - retries **once with the fallback model** (`ai.fallback_model`) if the call fails;
+  - refuses when the feature is switched off.
+- **Settings > Integrations > GenAI** (`GenAISettingsPage`):
+  - **what is in use today**: provider Anthropic Claude (others later), key source (company key / server key) masked to the last 4 characters, last test result;
+  - **API key**: save the company's own key (encrypted on an "anthropic" connection; the client uses it, else the server key) or go back to the server key; **Test** makes a tiny real call; **Disconnect** switches AI off for the company and removes the company key;
+  - **models**: default and fallback models from an editable list (`ai.available_models`: claude-opus-5-5, claude-sonnet-5, claude-haiku-4-5, claude-fable-5-1; add or remove names); max tokens; temperature (advanced);
+  - **features**: every AI feature with an on/off switch and its own model: resume reading, screening, ranking, shortlist feedback, interview kit, document check, offer letter, JD drafting, email summaries, HR assistant …;
+  - **prices** per 1,000 tokens per model, plus the currency (for 18.24).
+- The older AI and copilot settings stay listed underneath.
+
+**Verified** (real call + rolled-back stand-in run):
+```
+GET /api/v1/ui/genai/settings -> enabled, provider anthropic, key source company (masked), models list, 14 features with model + on/off
+POST /api/v1/ui/genai/test (real) -> ok, "claude-sonnet-5" answered; counted: 13 in / 5 out tokens
+(stand-in) model setting claude-opus-5-5 -> call used claude-opus-5-5, max_tokens 8000 capped to 2048, temperature 0.2
+(stand-in) first model fails -> retried with claude-haiku-4-5 (fallback)
+feature switched off -> "This AI feature is switched off in Settings > Integrations > GenAI."
+recruiter opens GenAI settings -> 403
+```
+
+## 18.24 GenAI usage dashboard
+
+**Change:**
+- **Menu "GenAI usage"** (`/genai-usage`, Insights; covered by the GenAI-usage module lock) shows:
+  - tiles for tokens in, tokens out, cost, requests and errors;
+  - a stacked **by day** chart;
+  - tables **by module / feature / person / model** with share bars;
+  - **cost per candidate** (resume reading counted on the candidate; screening and document checks on their application), with the average per candidate;
+  - limit warnings, and **Export CSV** (every call: when, module, feature, model, user, tokens, cost, status, for what, latency);
+  - periods: today / 7 / 30 / 90 days.
+- Each usage row now stores **module, user, what it was for (candidate / application), ok / error / ok_fallback and latency** (migration `a3d5f7b9c1e4`). The user comes from the signed-in person; automatic jobs show as "System (automatic)".
+
+**Verified:**
+```
+usage (stand-in run): total 3 requests, 1213 in / 805 out; by person Kishore 1000 tokens, a recruiter 1000, System 18;
+  by feature Resume reading 2, Connection test 1; per candidate Demo - Asha Verma 2000 tokens
+prices set (opus 1.5 / 7.5 per 1k) -> cost 3.9; CSV export 5 lines
+```
+
+## 18.25 Usage limits
+
+**Change** (`app/platform/ai/limits.py`, Settings > GenAI > Usage limits):
+- **tokens per module per month** (any number, empty = none), with a per-module choice at 100%: **block** with a friendly message, or **allow with a warning**;
+- a **per-person daily** cap and a **whole-company monthly** cap;
+- **warn at %** (default 80): admins get an in-app notice once per limit per period, and again at 100%;
+- **reset day** of the month (1-28);
+- changes are audited through the settings history.
+- Every tracked call is checked before it runs, including governed and gateway calls.
+
+**Verified** (rolled back, stand-in Claude):
+```
+module limit set just above current use -> next call pushes to 88.5% -> admins told
+  "AI usage for recruitment is at 88.5% of its limit (4,000 of 4,518 tokens)."
+over 100% (block) -> "The AI usage limit for the recruitment module is reached (5,000 of 4,518 tokens). It starts again at the next reset, or an admin can raise it ..."
+mode warn -> the call runs
+per-person 1,500/day -> "The AI usage limit for your account today is reached (2,000 of 1,500 tokens) ..."
+tsc clean, i18n 0 missing (79 new keys), npm run build OK
+```
+**Screenshots:** GenAI settings, GenAI usage -- pending login proof.

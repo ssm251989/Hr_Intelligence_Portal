@@ -13,6 +13,9 @@ defaults both point at, so a model bump is a one-line, one-file change.
 
 CLAUDE_SONNET_5 = "claude-sonnet-5"
 CLAUDE_HAIKU_4_5 = "claude-haiku-4-5"
+# Part 18.23: the list offered in Settings > GenAI (editable there as ai.available_models)
+CLAUDE_OPUS_5_5 = "claude-opus-5-5"
+CLAUDE_FABLE_5_1 = "claude-fable-5-1"
 
 # Current default model per ai_services purpose -- matches exactly what each
 # backend/app/ai_services/*.py file hardcoded before this file existed (see

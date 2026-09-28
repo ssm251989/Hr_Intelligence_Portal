@@ -80,6 +80,9 @@ def get_current_user(
         raise _unauthorized()
     if user.role == "agency" and not request.url.path.startswith(AGENCY_ALLOWED_PREFIXES):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Agency accounts can only use the agency portal")
+    from app.platform.ai.tracked import set_actor  # Part 18.24: AI usage is counted per person
+
+    set_actor(user.id)
     return user
 
 
