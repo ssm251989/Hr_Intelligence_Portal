@@ -2316,3 +2316,9 @@ NEXT: 18.12 salary form sent automatically when a candidate clears the configure
 salary_auto.after_interview (trigger + round settings) hooked into interview feedback; remind_due uses reminder_hours list; form: offers in hand, best offer, payslip upload endpoint; send_form uses send_default (template seeded on first use); removal deletes payslips. Decision: after_shortlist now only sends when the trigger is "shortlisted" (owner wants interview_cleared by default).
 
 NEXT: 18.13 salary auto-decision (hike <= X%, within band, department budget enough) else highlighted for HR (approve / counter-offer / reject with reason).
+
+## Part 18.13 -- salary auto-decision (2026-09-28)
+
+check(): hike <= auto_approve_hike_pct AND within band AND budget -> auto-approve (reserve), else reasons [hike/above_band/budget_short/no_current/no_band]; decide() approve/counter/reject + endpoint; budgets.py + models (reserve/commit/release; hooks on offer signed, BGV rejected, candidate removed); counter-offer default template; org.fiscal_year_start_month. Decision: decisions use recruitment.salary.edit (no separate approve permission exists).
+
+NEXT: 18.14 Salary page = table (+ bulk approve, filters, sort by hike, export, side panel with details/history + approve/counter/reject).

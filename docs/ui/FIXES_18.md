@@ -337,3 +337,37 @@ answered -> no more reminders; the test payslip file was deleted afterwards
 tsc clean, i18n 0 missing, npm run build OK
 ```
 **Screenshot:** the salary form with the new fields -- pending (needs an unanswered demo link).
+
+## 18.13 Salary auto-decision
+
+**Problem:** a salary was approved automatically whenever it was inside the band. There was no hike rule and no budget rule, and a person had nothing to decide with (approve / counter / reject).
+
+**Change** (`app/recruitment/salary_auto.py`, `app/recruitment/budgets.py`):
+- **Auto-approve only when ALL pass** (Settings > Hiring > Salary):
+  - hike over current CTC ≤ **X%** (`recruitment.salary.auto_approve_hike_pct`, default **20**, editable);
+  - expected CTC within the job's band;
+  - the department budget has enough left (no budget set = not checked).
+  - Auto-approved at what the candidate asked; the amount is **reserved** against the department budget.
+- **Otherwise "needs approval"**, and the reasons are stored for the table:
+  - `hike` (e.g. "Hike 35% > 20% limit");
+  - `above_band` ("Above company range - check"; far above = "flagged");
+  - `budget_short` ("Department budget short by 4 L");
+  - `no_current` (current CTC unknown);
+  - `no_band`.
+- **HR decision** `POST /api/v1/ui/salary/applications/{id}/decide` (permission `recruitment.salary.edit`):
+  - **approve** (at an amount or what they asked). This reserves budget, and is refused when the budget is set to "block" and is short;
+  - **counter-offer** an amount. The candidate gets the editable `recruitment.salary_counter_offer` email;
+  - **reject** with a required reason. This releases any reserved budget.
+- **Budget money flow** (tables `department_budgets`, `budget_commitments`, migration `d4f8b2e6a1c3`): *reserved* on approval → *committed* when the offer is signed → *released* when the candidate is rejected at salary or BGV, or removed. The financial year follows `org.fiscal_year_start_month` (default April). The settings page and finance dashboard come in 18.15.
+
+**Verified** (rolled back; test job band 5-12 L, "Demo - Budget Dept" budget 50 L, FY 2026-27; email recorded, not sent):
+```
+A  8 L -> 9.5 L (hike 18.8%, in band)   -> salary_approved automatically; reserved 9.5 L (40.5 L left)
+B  8 L -> 12 L  (hike 50%)              -> needs approval [hike]; HR approve at 10 L -> approved, reserved 19.5 L in total
+C 11 L -> 13 L  (above 12 L band)       -> flagged [above_band]; HR counter 12 L -> counter-offer email sent
+D  ?   -> 9 L   (no current CTC)        -> needs approval [no_current]; reject without reason 400, with reason -> salary_rejected
+E  9 L -> 10 L, budget cut to 25 L (5.5 L left) -> needs approval [budget_short, 4.5 L]; approve with "block" -> 400
+    "The Demo - Budget Dept budget for 2026-27 is short by 450,000; raise the budget ..."
+release A (removed) -> reserved 19.5 L -> 10 L
+```
+**Screenshot:** part of the 18.14 salary table.

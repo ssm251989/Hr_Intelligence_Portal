@@ -202,6 +202,14 @@ def clear_bgv(
     application.status = new_status
     db.commit()
     db.refresh(application)
+    if new_status == "bgv_rejected":  # Part 18.15: money back to the department budget
+        try:
+            from app.platform.tenancy.context import require_current_tenant
+            from app.recruitment import budgets
+
+            budgets.release(db, require_current_tenant(), application.id)
+        except Exception:  # noqa: BLE001
+            pass
 
     log_action(
         db,

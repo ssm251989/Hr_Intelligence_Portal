@@ -22,6 +22,13 @@ DEFAULTS: dict[str, tuple[str, str, list[str]]] = {
         "Your answers are only seen by the hiring team.\n\nBest regards,\n{{ company_name }} HR",
         ["candidate_first_name", "job_title", "form_link"],
     ),
+    "recruitment.salary_counter_offer": (
+        "{{ job_title }}: our salary offer",
+        "Hi {{ candidate_first_name }},\n\nThank you for sharing your salary details for {{ job_title }}. After reviewing them, we would "
+        "like to offer {{ amount }} per year.\n\n{{ note }}\n\nPlease reply to this email to let us know if this works for you, or if "
+        "you would like to talk it through.\n\nBest regards,\n{{ company_name }} HR",
+        ["candidate_first_name", "job_title", "amount"],
+    ),
     "recruitment.job_closed_candidate": (
         "Update on your application for {{ job_title }}",
         "Hi {{ candidate_first_name }},\n\nThank you for applying for {{ job_title }}. This position has been closed for now, so "

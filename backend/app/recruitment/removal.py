@@ -175,6 +175,10 @@ def remove(db: Session, tenant, candidate: Candidate, *, reason: str, note: Opti
         raise RemovalBlocked(blocked)
     now = datetime.now(timezone.utc)
     cancelled = _cancel_pending(db, tenant, candidate, app_ids)
+    from app.recruitment import budgets  # Part 18.15: a removed candidate frees their budget
+
+    for aid in app_ids:
+        budgets.release(db, tenant, aid)
     candidate.deleted_at, candidate.deleted_by, candidate.delete_reason, candidate.delete_note = now, actor[:200], reason, (note or None)
     for a in _q(db, Application).filter(Application.id.in_(app_ids or [None])):
         a.removed_at = now

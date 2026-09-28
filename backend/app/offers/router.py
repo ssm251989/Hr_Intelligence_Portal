@@ -180,6 +180,13 @@ def mark_offer_signed(
         previous_status = application.status
         application.status = "onboarding_started"
         db.commit()
+        try:  # Part 18.15: the hire's money moves from "reserved" to "committed"
+            from app.platform.tenancy.context import require_current_tenant
+            from app.recruitment import budgets
+
+            budgets.commit(db, require_current_tenant(), offer.application_id)
+        except Exception:  # noqa: BLE001
+            pass
         db.refresh(offer)
 
         log_action(

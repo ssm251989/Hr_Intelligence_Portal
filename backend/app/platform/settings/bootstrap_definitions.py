@@ -79,6 +79,12 @@ def register_all() -> None:
     # flagged. The offer suggestion adds target_hike_pct to the current CTC, kept in the band.
     register(SettingDef("recruitment.careers.ask_salary", "bool", True, module="recruitment", group="Careers site"))
     register(SettingDef("recruitment.salary.ask_after_shortlist", "bool", True, module="recruitment", group="Salary"))
+    # Part 18.13: auto-approve when the hike over current CTC is at most this % (and band + budget are fine)
+    register(SettingDef("recruitment.salary.auto_approve_hike_pct", "int", 20, module="recruitment", group="Salary",
+                        json_schema={"type": "integer", "minimum": 0, "maximum": 300}))
+    # Part 18.15: financial year start month (1-12; India = 4, April)
+    register(SettingDef("org.fiscal_year_start_month", "int", 4, module="org", group="Company",
+                        json_schema={"type": "integer", "minimum": 1, "maximum": 12}))
     # Part 18.12: when the salary form goes out, which round, reminders, optional asks
     register(SettingDef("recruitment.salary.form_trigger", "str", "interview_cleared", module="recruitment", group="Salary",
                         json_schema={"type": "string", "enum": ["interview_cleared", "shortlisted", "manual"]}))

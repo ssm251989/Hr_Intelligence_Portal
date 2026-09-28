@@ -87,8 +87,21 @@ def check(db: Session, tenant, application: Application, *, job: Optional[JobRol
     result: dict = {"expected": expected, "current": _num(candidate.current_ctc), "notice_days": candidate.notice_period_days,
                     "band_min": lo, "band_max": hi, "margin_pct": margin, "missing": missing_fields(candidate),
                     "checked_at": datetime.now(timezone.utc).isoformat()}
+    # Part 18.13: auto-approve only when ALL pass -- hike <= X%, inside the band, budget left.
+    hike_limit = float(_setting(db, tenant, "recruitment.salary.auto_approve_hike_pct") or 20)
+    current = result["current"]
+    reasons: list[dict] = []
+    result["hike_limit_pct"] = hike_limit
+    if expected is not None and current:
+        result["hike_pct"] = round(100 * (expected - current) / current, 1)
+        if result["hike_pct"] > hike_limit:
+            reasons.append({"code": "hike", "hike_pct": result["hike_pct"], "limit_pct": hike_limit})
+    elif expected is not None:
+        reasons.append({"code": "no_current"})
     if hi is None:
         result["state"] = "no_band"
+        if expected is not None:
+            reasons.append({"code": "no_band"})
     elif expected is None:
         result["state"] = "waiting"
     else:
@@ -96,7 +109,20 @@ def check(db: Session, tenant, application: Application, *, job: Optional[JobRol
         span = (hi - (lo or 0)) or 1
         result["position_pct"] = round(100 * (expected - (lo or 0)) / span)
         result["over_pct"] = round(max(over, 0), 1)
-        result["state"] = "in_band" if expected <= hi else "needs_approval" if over <= margin else "flagged"
+        if expected > hi:
+            reasons.append({"code": "above_band", "over_pct": result["over_pct"], "band_max": hi})
+    if expected is not None:
+        from app.recruitment import budgets
+
+        result["budget"] = budgets.check(db, tenant, application, job, expected)
+        if not result["budget"]["ok"]:
+            reasons.append({"code": "budget_short", "short_by": result["budget"]["short_by"], "department": result["budget"]["department"],
+                            "block": result["budget"].get("on_exceed") == "block"})
+    result["reasons"] = reasons
+    if expected is not None and hi is not None:
+        far = any(r["code"] == "above_band" and r["over_pct"] > margin for r in reasons)
+        result["state"] = "in_band" if not reasons else "flagged" if far else "needs_approval"
+    result["auto_approvable"] = expected is not None and not reasons
     result["suggestion"] = suggestion(db, tenant, job, candidate, application)
     changed = (application.salary_check or {}).get("state") != result["state"]
     application.salary_check = result
@@ -132,8 +158,12 @@ def apply_stage(db: Session, tenant, application: Application, *, job: JobRole, 
     previous = application.status
     if state == "in_band":
         application.status = "salary_approved"
-        application.approved_salary = application.salary_check.get("suggestion") or application.expected_salary
-        note = "within the band - approved automatically"
+        # Part 18.13: auto-approved at what the candidate asked (all rules passed)
+        application.approved_salary = application.expected_salary or application.salary_check.get("suggestion")
+        note = "hike, band and budget all fine - approved automatically"
+        from app.recruitment import budgets
+
+        budgets.reserve(db, tenant, application, job, _num(application.approved_salary))
     else:
         application.status = "salary_above_band"
         note = "above the band - needs approval" if state == "needs_approval" else "far above the band - flagged"
@@ -286,3 +316,62 @@ def remind_due(db: Session, tenant) -> int:
         db.commit()
         done += 1
     return done
+
+
+# ---------------------------------------------------------------- Part 18.13: HR decision
+
+DECISIONS = ("approve", "counter", "reject")
+
+
+def decide(db: Session, tenant, application: Application, *, decision: str, actor: str, amount: Optional[float] = None,
+           reason: Optional[str] = None) -> dict:
+    """HR's decision for a candidate who needs approval: approve (at `amount` or what they asked),
+    counter-offer an amount (the candidate is emailed), or reject with a reason."""
+    from app.recruitment import budgets
+
+    if decision not in DECISIONS:
+        raise ValueError("decision must be approve, counter or reject")
+    job = db.get(JobRole, application.job_role_id)
+    candidate = db.get(Candidate, application.candidate_id)
+    check_ = dict(application.salary_check or {})
+    if application.status not in ("salary_above_band", SALARY_STAGE, "salary_ok"):
+        raise ValueError("This candidate is not waiting for a salary decision.")
+    if decision == "approve":
+        final = amount if amount is not None else _num(application.expected_salary)
+        if final is None:
+            raise ValueError("Enter the approved amount.")
+        b = budgets.check(db, tenant, application, job, final)
+        if not b["ok"] and b.get("on_exceed") == "block":
+            raise ValueError(f"The {b['department']} budget for {b['fiscal_year']} is short by {b['short_by']:,.0f}; "
+                             "raise the budget in Settings > Hiring > Department budgets first.")
+        application.status, application.approved_salary = "salary_approved", final
+        check_["decision"] = {"by": actor, "at": datetime.now(timezone.utc).isoformat(), "decision": "approved", "amount": final}
+        application.salary_check = check_
+        db.commit()
+        budgets.reserve(db, tenant, application, job, final)
+    elif decision == "counter":
+        if amount is None or amount <= 0:
+            raise ValueError("Enter the counter-offer amount.")
+        check_["counter"] = {"amount": amount, "by": actor, "at": datetime.now(timezone.utc).isoformat(), "note": reason}
+        application.salary_check = check_
+        db.commit()
+        if candidate and candidate.email:
+            try:
+                from app.platform.comms.defaults import send_default
+
+                send_default(db, tenant, "recruitment.salary_counter_offer", to=[candidate.email], related_entity_type="application",
+                             related_entity_id=application.id,
+                             ctx={"candidate_first_name": (candidate.full_name or "").split(" ")[0], "job_title": job.title if job else "",
+                                  "amount": f"{amount:,.0f}", "note": reason or ""})
+            except Exception:  # noqa: BLE001 -- recorded either way; HR can call the candidate
+                pass
+    else:
+        if not (reason or "").strip():
+            raise ValueError("Please give a reason.")
+        application.status = "salary_rejected"
+        check_["decision"] = {"by": actor, "at": datetime.now(timezone.utc).isoformat(), "decision": "rejected", "reason": reason}
+        application.salary_check = check_
+        db.commit()
+        budgets.release(db, tenant, application.id)
+    log_action(db, "application", application.id, f"salary_{decision}", actor[:50], {"amount": amount, "reason": reason})
+    return {"status": application.status, "approved_salary": _num(application.approved_salary), "salary_check": application.salary_check}

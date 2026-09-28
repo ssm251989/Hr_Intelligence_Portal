@@ -121,6 +121,24 @@ def set_figures(application_id: UUID, payload: FiguresIn, db: Session = Depends(
     return salary_auto.check(db, tenant, app, candidate=cand, actor=current_user.email)
 
 
+class DecideIn(BaseModel):
+    decision: str
+    amount: Optional[float] = Field(None, ge=0, le=1_000_000_000)
+    reason: Optional[str] = Field(None, max_length=1000)
+
+
+@router.post("/applications/{application_id}/decide")
+def decide(application_id: UUID, body: DecideIn, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Part 18.13: HR decides a candidate who needs approval -- approve / counter-offer / reject (reason)."""
+    tenant = require_current_tenant()
+    _need(db, tenant, current_user, "recruitment.salary.edit")
+    try:
+        return salary_auto.decide(db, tenant, _app(db, tenant, application_id), decision=body.decision, actor=current_user.email,
+                                  amount=body.amount, reason=body.reason)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 @router.post("/applications/{application_id}/check")
 def recheck(application_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     tenant = require_current_tenant()
