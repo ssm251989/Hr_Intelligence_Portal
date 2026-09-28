@@ -276,3 +276,35 @@ rows carry tags ["rpa","senior"] + notice 15
 tsc clean, i18n 0 missing (14 new keys), npm run build OK
 ```
 **Screenshot:** the three list pages with the filter bar -- pending login proof.
+
+## 18.11 All-candidates tables (no "choose a job first")
+
+**Problem:** BGV and Offers only worked after picking one job, so with many jobs you couldn't see who was waiting where.
+
+**Change:**
+- **New API** `GET /api/v1/ui/stage-table/{salary|bgv|offers}` (+ `/export` CSV):
+  - every candidate at that stage across all jobs;
+  - filters: search, job, department, status; sorting: name / job / status / days in stage;
+  - paging up to **500 rows** a page, and counts per status;
+  - stage figures per row: documents checked (BGV), offer signed and joining date (Offers), expected/approved salary (Salary).
+  - It sits behind each stage's view permission and is covered by the 18.4 module lock.
+- **`StageTable` component** at the top of the **BGV** and **Offers** pages:
+  - search, job and department pickers, status chips with counts, sortable columns;
+  - paging at 25 / 50 / 100 / 250 / 500;
+  - row checkboxes with "Export selected" and "Export all (n)";
+  - bulk **Request BGV** for everyone selected whose salary is approved;
+  - clicking a row opens that candidate's existing actions below (loads the job and scrolls to the card).
+- **Screening and Shortlisting** were already one table across jobs (job column and filter, paging, sort, bulk, export). They got the shared filter bar in 18.10.
+- **Salary** gets its full table + side panel in 18.14. The same endpoint (`stage=salary`) is ready for it.
+
+**Verified** (rolled back, +600 candidates across 20 jobs and 3 departments):
+```
+/stage-table/bgv?page_size=500 -> total 602, 500 rows, counts {salary_approved 121, bgv_requested 120, bgv_pending 120, bgv_cleared 120, bgv_rejected 121}, ~557 ms
+page 2 -> 102 rows
+department=AI & status=bgv_pending, sort name asc -> 30, [Scale Person 007, 027, 047]
+default sort = waiting longest first (29 days)
+/export?department=Finance -> text/csv, 180 rows + header
+real data: bgv 2, salary 1, offers 0
+tsc clean, i18n 0 missing (33 new keys), npm run build OK
+```
+**Screenshot:** BGV and Offers tables -- pending login proof.

@@ -1,3 +1,4 @@
+import StageTable from "../components/stage/StageTable";
 import { useEffect, useRef, useState } from "react";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
@@ -261,7 +262,10 @@ export default function OffersPage() {
   const [searchParams] = useSearchParams();
   const [jobs, setJobs] = useState<JobRoleRead[]>([]);
   const [selectedJobId, setSelectedJobId] = useState("");
+  const [focusApp, setFocusApp] = useState<string | null>(null); // Part 18.11
+  const [stageRefresh, setStageRefresh] = useState(0);
   const [applications, setApplications] = useState<ApplicationRead[]>([]);
+  useEffect(() => setStageRefresh((k) => k + 1), [applications]);
   const [candidates, setCandidates] = useState<Record<string, CandidateRead>>({});
   const [offers, setOffers] = useState<Record<string, OfferRead>>({});
   const [loading, setLoading] = useState(false);
@@ -348,6 +352,12 @@ export default function OffersPage() {
     }
   };
 
+  useEffect(() => {
+    if (!focusApp || loading) return;
+    const el = document.getElementById(`offer-card-${focusApp}`);
+    if (el) { el.scrollIntoView({ behavior: "smooth", block: "start" }); el.focus(); setFocusApp(null); }
+  }, [focusApp, loading, applications]);
+
   const handleJobChange = (jobId: string) => {
     setSelectedJobId(jobId);
     if (jobId) loadJobData(jobId);
@@ -424,6 +434,12 @@ export default function OffersPage() {
       />
       {canWrite && <OfferTemplateEditor open={editorOpen} onClose={() => setEditorOpen(false)} />}
 
+      {/* Part 18.11: every candidate at this stage, across all jobs; a row opens its actions below */}
+      <StageTable stage="offers" refreshSignal={stageRefresh}
+        extraColumns={[
+          { key: "signed", label: t("stage.col.signed"), render: (r) => r.offer_signed ? t("stage.yes") : r.status === "bgv_cleared" ? "—" : t("stage.no") },
+          { key: "joining", label: t("stage.col.joining"), render: (r) => r.joining_date ? new Date(r.joining_date).toLocaleDateString() : "—" },
+        ]} onOpen={(r) => { setFocusApp(r.application_id); if (r.job_id !== selectedJobId) handleJobChange(r.job_id); }} />
       <JobPickerCard jobs={jobs} value={selectedJobId} onChange={handleJobChange} hint={t("offers.pick_hint")} />
 
       {error && (
@@ -467,7 +483,7 @@ export default function OffersPage() {
             {applications.map((app) => {
               const offer = offers[app.id];
               return (
-                <Card key={app.id} sx={{ p: 2.5 }}>
+                <Card key={app.id} id={`offer-card-${app.id}`} tabIndex={-1} sx={{ p: 2.5, outline: "none", scrollMarginTop: 80 }}>
                   <PersonHeader name={candidateLabel(app.candidate_id)} status={app.status} />
 
                   {app.status === "bgv_cleared" && (

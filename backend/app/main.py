@@ -241,6 +241,9 @@ app.include_router(module_lock_router)
 from app.experience.ui_job_boards_router import router as ui_job_boards_router  # noqa: E402
 
 app.include_router(ui_job_boards_router)
+from app.experience.ui_stage_table_router import router as ui_stage_table_router  # noqa: E402
+
+app.include_router(ui_stage_table_router)
 install_friendly_errors(app)
 
 

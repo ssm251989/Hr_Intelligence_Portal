@@ -1,3 +1,4 @@
+import StageTable from "../components/stage/StageTable";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import Alert from "@mui/material/Alert";
@@ -178,7 +179,10 @@ export default function BgvPage() {
   const [searchParams] = useSearchParams();
   const [jobs, setJobs] = useState<JobRoleRead[]>([]);
   const [selectedJobId, setSelectedJobId] = useState("");
+  const [focusApp, setFocusApp] = useState<string | null>(null); // Part 18.11
+  const [stageRefresh, setStageRefresh] = useState(0);
   const [applications, setApplications] = useState<ApplicationRead[]>([]);
+  useEffect(() => setStageRefresh((k) => k + 1), [applications]);
   const [candidates, setCandidates] = useState<Record<string, CandidateRead>>({});
   const [documents, setDocuments] = useState<Record<string, BgvDocumentRead[]>>({});
   const [loading, setLoading] = useState(false);
@@ -239,6 +243,12 @@ export default function BgvPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!focusApp || loading) return;
+    const el = document.getElementById(`bgv-card-${focusApp}`);
+    if (el) { el.scrollIntoView({ behavior: "smooth", block: "start" }); el.focus(); setFocusApp(null); }
+  }, [focusApp, loading, applications]);
 
   const handleJobChange = (jobId: string) => {
     setSelectedJobId(jobId);
@@ -347,6 +357,18 @@ export default function BgvPage() {
         }
       />
 
+      {/* Part 18.11: every candidate at this stage, across all jobs; a row opens its actions below */}
+      <StageTable stage="bgv" refreshSignal={stageRefresh}
+        bulkActions={canWrite ? (sel, clear) => {
+          const ready = sel.filter((r) => r.status === "salary_approved");
+          return ready.length > 0 ? (
+            <Button size="small" variant="contained" onClick={async () => {
+              for (const r of ready) { try { await bgvApi.request(r.application_id); } catch { /* shown per row on reload */ } }
+              clear(); setStageRefresh((k) => k + 1); if (selectedJobId) void loadJobData(selectedJobId);
+            }}>{t("stage.bulk_request_bgv", { count: ready.length })}</Button>
+          ) : null;
+        } : undefined}
+        extraColumns={[{ key: "docs", label: t("stage.col.documents"), render: (r) => r.documents ? `${r.documents_ok ?? 0}/${r.documents}` : "—" }]} onOpen={(r) => { setFocusApp(r.application_id); if (r.job_id !== selectedJobId) handleJobChange(r.job_id); }} />
       <JobPickerCard jobs={jobs} value={selectedJobId} onChange={handleJobChange} hint={t("bgv.pick_hint")} />
 
       {error && (

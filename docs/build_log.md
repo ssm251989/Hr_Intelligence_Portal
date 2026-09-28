@@ -2304,3 +2304,9 @@ NEXT: 18.10 one filter system on Candidates/Screening/Shortlisting (job, stage, 
 notice_max + tags in the shared filter query (5 endpoints), candidates.tags (c9e4a2d8f6b1) + tag endpoints + profile tag editor, CandidateFiltersPanel gains notice/tags/hide/savedKey (Shortlisting gets the panel + saved filters), Screening slider + dashboard threshold panel replaced by ScoringRulesLink (read-only score + link to Settings).
 
 NEXT: 18.11 all-candidates tables on Salary, BGV, Offers (Shortlisting/Screening already across jobs): job column + filter, paging 500+, sorting, bulk actions, export.
+
+## Part 18.11 -- all-candidates stage tables (2026-09-28)
+
+ui_stage_table_router (salary/bgv/offers, filters, sort, 500/page, status counts, CSV export, lock rules), StageTable component on BGV + Offers (row opens the existing per-job actions, bulk Request BGV). Proof: 602 rows, 557 ms.
+
+NEXT: 18.12 salary form sent automatically when a candidate clears the configured interview round (+ offers in hand, optional payslip upload, reminders 24h/48h configurable).
