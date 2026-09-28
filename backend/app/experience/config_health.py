@@ -43,7 +43,11 @@ def check(db: Session, tenant: TenantContext) -> dict:
 
     def _is_routed(purpose: str) -> bool:
         # Part 18.2/18.3: ask the router itself (fallback chain + the one company mailbox)
-        return resolver.try_resolve(purpose) is not None
+        if resolver.try_resolve(purpose) is not None:
+            return True
+        if purpose.startswith("esign."):
+            return esign_connected(db, tenant)
+        return False
 
     for purpose, module in _NEEDED_PURPOSES.items():
         if module and module not in modules:
@@ -97,12 +101,16 @@ def check(db: Session, tenant: TenantContext) -> dict:
                                  "Reconnect it before then so emails and calendars keep working.", "/settings/integrations", "Reconnect",
                                  connection_id=str(connection.id)))
 
-    for connection in db.query(Connection).filter(Connection.tenant_id == tenant.tenant_id, Connection.status == "active").all():
+    for connection in db.query(Connection).filter(Connection.tenant_id == tenant.tenant_id, Connection.status.in_(("active", "error"))).all():
         result = connection.last_test_result or {}
-        if connection.last_tested_at is not None and result.get("success") is False:
+        if connection.status == "error" or (connection.last_tested_at is not None and result.get("success") is False):
             issues.append(_issue("warning", "CONNECTION_FAILING", f"{connection.name} isn't working - its last check failed.",
-                                 "Open it, check the details and test again.", "/settings/integrations", "Check connection",
-                                 connection_id=str(connection.id)))
+                                 f"{result.get('error') or 'Open it, check the details and test again.'}", "/settings/integrations/connections",
+                                 "Check connection", connection_id=str(connection.id)))
+        elif connection.last_tested_at is None:  # Part 18.3: "connected" means connected AND tested
+            issues.append(_issue("info", "CONNECTION_NOT_TESTED", f"{connection.name} hasn't been tested yet.",
+                                 "Press \"Re-check now\" (or Test on the connection) to make sure it works.", "/settings/integrations/connections",
+                                 "Test it", connection_id=str(connection.id)))
 
     if "copilot" in modules and feature_enabled(db, tenant, "copilot.chat"):
         from app.models.intelligence import KnowledgeDocument
@@ -115,3 +123,38 @@ def check(db: Session, tenant: TenantContext) -> dict:
     issues.sort(key=lambda i: order[i["severity"]])
     return {"healthy": not any(i["severity"] == "error" for i in issues), "issues": issues,
             "counts": {s: sum(1 for i in issues if i["severity"] == s) for s in order}}
+
+
+def esign_connected(db: Session, tenant: TenantContext) -> bool:
+    """Part 18.3: e-sign is connected when a company e-sign connection is routed, OR the app has
+    DocuSign keys and at least one person in this company has signed in to DocuSign (offers are
+    sent through that person's DocuSign account -- app/integrations/docusign.py)."""
+    from app.core.config import settings as app_settings
+    from app.models.user_integration import UserIntegration
+
+    if not getattr(app_settings, "DOCUSIGN_INTEGRATION_KEY", None):
+        return False
+    return db.query(UserIntegration.id).filter(UserIntegration.tenant_id == tenant.tenant_id, UserIntegration.provider == "docusign").first() is not None
+
+
+def recheck(db: Session, tenant: TenantContext) -> dict:
+    """Part 18.3 "Re-check now": really test every company connection (records the result and
+    time; a failed test does not switch the connection off), then return the fresh check."""
+    from datetime import datetime as _dt, timezone as _tz
+
+    from app.platform.connectors.api_router import _build_adapter
+
+    tested = []
+    for connection in db.query(Connection).filter(Connection.tenant_id == tenant.tenant_id, Connection.status.in_(("active", "error"))).all():
+        try:
+            result = _build_adapter(connection, db).test_connection()
+            ok, error = bool(result.success), result.error
+        except Exception as exc:  # noqa: BLE001 -- a provider that can't be tested is reported, not fatal
+            ok, error = False, str(exc)[:300]
+        connection.last_tested_at = _dt.now(_tz.utc)
+        connection.last_test_result = {"success": ok, "error": error}
+        if ok and connection.status == "error":
+            connection.status = "active"
+        tested.append({"connection": connection.name, "provider": connection.provider_code, "ok": ok, "error": error})
+    db.commit()
+    return {**check(db, tenant), "tested": tested, "checked_at": _dt.now(_tz.utc).isoformat()}

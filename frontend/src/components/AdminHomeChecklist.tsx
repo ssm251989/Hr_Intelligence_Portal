@@ -13,6 +13,7 @@ import Typography from "@mui/material/Typography";
 
 import { experienceApi, type HealthIssue, type SetupProgress } from "../api/client";
 import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
+import { useT } from "../i18n";
 
 // Part 14 sections 1-2 / L-A3: on the admin home, the setup checklist stays until setup is
 // 100%, and configuration-health problems (errors first) are always listed with a direct
@@ -23,6 +24,22 @@ export default function AdminHomeChecklist() {
   const [progress, setProgress] = useState<SetupProgress | null>(null);
   const [issues, setIssues] = useState<HealthIssue[]>([]);
   const allowed = can("platform.settings.configure");
+  const t = useT();
+  // Part 18.3: "Re-check now" really tests every connection, then refreshes the list
+  const [rechecking, setRechecking] = useState(false);
+  const [checkedAt, setCheckedAt] = useState<string | null>(null);
+  const recheck = async () => {
+    setRechecking(true);
+    try {
+      const r = await experienceApi.configHealthRecheck();
+      setIssues(r.issues);
+      setCheckedAt(r.checked_at);
+    } catch {
+      /* keep the last list */
+    } finally {
+      setRechecking(false);
+    }
+  };
 
   useEffect(() => {
     if (!allowed) return;
@@ -55,7 +72,13 @@ export default function AdminHomeChecklist() {
       {issues.length > 0 && (
         <Card>
           <CardContent>
-            <Typography variant="h6" gutterBottom>Configuration health</Typography>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }} flexWrap="wrap" gap={1}>
+              <Typography variant="h6">{t("health.title")}</Typography>
+              <Stack direction="row" spacing={1} alignItems="center">
+                {checkedAt && <Typography variant="caption" color="text.secondary">{t("health.checked_at", { time: new Date(checkedAt).toLocaleTimeString() })}</Typography>}
+                <Button size="small" variant="outlined" onClick={recheck} disabled={rechecking}>{rechecking ? t("health.rechecking") : t("health.recheck")}</Button>
+              </Stack>
+            </Stack>
             {issues.slice(0, 6).map((issue, i) => (
               <Alert key={`${issue.code}-${i}`} severity={issue.severity} sx={{ mb: 1 }}
                 action={issue.fix_path ? <Button size="small" component={RouterLink} to={issue.fix_path} variant="contained">{issue.action_label ?? "Fix it"}</Button> : undefined}>

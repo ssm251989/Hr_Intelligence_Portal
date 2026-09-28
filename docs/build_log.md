@@ -2250,3 +2250,9 @@ NEXT: 18.2 one company mailbox for everything (auto-route every purpose, hide pe
 email.inbound.default + inbound fallbacks; ConnectorRouter._company_mailbox (same-direction route reuse, non-conditional routes only); config-health and /connectors/purposes use the router for "routed". Mailbox card reworded (one mailbox, all modules). Decision: no data migration needed -- the existing SMTP/IMAP routes serve every purpose through the fallback.
 
 NEXT: 18.3 health checks read real status (DocuSign per-user OAuth counts; connected + last test passed; Re-check now button).
+
+## Part 18.3 -- health checks read real status (2026-09-28)
+
+config_health: esign_connected (company route OR DocuSign keys + a user DocuSign sign-in), CONNECTION_FAILING shows the real error and includes status=error, CONNECTION_NOT_TESTED info, recheck() + POST /setup/config-health/recheck (tests all connections, records result, never disables on failure). Home card: Re-check now + checked time. Real re-check ran on ctd-techs (4 connections OK; only test timestamps/results were written).
+
+NEXT: 18.4 module unlock passcode (bcrypt hash in DB, hrctl modules set-passcode, lock icon, locked page card, 403 API, 5 tries then 15 min lock, audit).

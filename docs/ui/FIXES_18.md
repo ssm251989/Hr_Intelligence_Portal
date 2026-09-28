@@ -47,3 +47,24 @@ router (rolled back): email.inbound.helpdesk            -> imap dbc7bdb9 via ema
 tsc clean, i18n 0 missing
 ```
 **Screenshot:** mailbox card -- pending login proof.
+
+## 18.3 Health checks read the real status
+
+**Problem:** DocuSign is connected, but Home said "Offer letters can't be e-signed yet - connect DocuSign". The check only looked for a company connection row. This app connects DocuSign per person (OAuth sign-in, `app/integrations/docusign.py`), and offers are sent through that person's account. Connections that had never been tested also counted as fine.
+
+**Change:**
+- E-sign counts as connected when a company e-sign connection is routed, or when the app has DocuSign keys and someone in the company has signed in to DocuSign.
+- Every purpose check asks the router, including fallbacks (18.2).
+- A connection is healthy only when it is active **and** its last test passed. A failing one shows its real error (for example "535 login failed"); a never-tested one shows "hasn't been tested yet".
+- New `POST /api/v1/setup/config-health/recheck` really tests every connection. It saves the result and time; a failed test does not switch the connection off.
+- The Home "Configuration health" card has a **Re-check now** button and shows when it last checked (en/hi/ta).
+
+**Verified:**
+```
+before (Home):  UNROUTED_PURPOSE "Offer letters can't be e-signed yet - connect DocuSign"
+after:          no e-sign issue (DocuSign signed in by a user); "Anthropic / Interview Tracker hasn't been tested yet"
+POST recheck -> 200: tested anthropic True, excel_file True, imap True, smtp True -> only COPILOT_NO_KNOWLEDGE left
+rolled back: smtp last test failed -> CONNECTION_FAILING "HR Mailbox (SMTP) isn't working" fix "535 login failed"
+             no DocuSign sign-in  -> UNROUTED_PURPOSE e-sign warning comes back
+```
+**Screenshot:** Home health card -- pending login proof.

@@ -169,6 +169,12 @@ def setup_config_health(db: Session = Depends(get_db), current_user: User = Depe
     return config_health.check(db, require_current_tenant())
 
 
+@router.post("/setup/config-health/recheck")
+def setup_config_health_recheck(db: Session = Depends(get_db), current_user: User = Depends(require("platform.settings.configure"))):
+    """Part 18.3: test every connection now, then return the fresh health list."""
+    return config_health.recheck(db, require_current_tenant())
+
+
 # ---- search + inbox ----
 
 

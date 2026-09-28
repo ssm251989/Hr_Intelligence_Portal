@@ -1602,6 +1602,10 @@ export const experienceApi = {
   inviteAdmin: (email: string, fullName?: string) => post<{ email_sent: boolean; link: string | null }>("/api/v1/setup/invite-admin", { email, full_name: fullName }),
   skipStep: (step: string, undo = false) => post<SetupProgress>(`/api/v1/setup/steps/${step}/skip`, { undo }),
   configHealth: () => get<{ healthy: boolean; issues: HealthIssue[]; counts: Record<string, number> }>("/api/v1/setup/config-health"),
+  // Part 18.3: test every connection now, then return the fresh list
+  configHealthRecheck: () =>
+    post<{ healthy: boolean; issues: HealthIssue[]; counts: Record<string, number>; checked_at: string; tested: { connection: string; provider: string; ok: boolean; error: string | null }[] }>(
+      "/api/v1/setup/config-health/recheck", {}),
   inbox: () => get<InboxItem[]>("/api/v1/inbox/all"),
   views: (listKey: string) => get<SavedViewRow[]>(`/api/v1/views/${listKey}`),
   saveView: (listKey: string, payload: { name: string; config: Record<string, unknown>; is_default?: boolean }) => put<SavedViewRow>(`/api/v1/views/${listKey}`, payload),
