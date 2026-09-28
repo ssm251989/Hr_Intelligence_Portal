@@ -86,6 +86,9 @@ def register_all() -> None:
     register(SettingDef("recruitment.documents.auto_send", "bool", True, module="recruitment", group="Documents"))
     register(SettingDef("recruitment.documents.reminder_hours", "json", [24, 72], module="recruitment", group="Documents",
                         json_schema={"type": "array", "items": {"type": "integer", "minimum": 1, "maximum": 720}, "maxItems": 5}))
+    # Part 18.20: people named in the welcome email -- {"default": [...], "<department>": [...]},
+    # each {"name", "role", "email", "phone"}. Filled in Settings > Hiring > Contacts.
+    register(SettingDef("recruitment.contacts", "json", {"default": []}, module="recruitment", group="Joining"))
     # Part 18.19: remind the candidate to choose a joining date after these hours
     register(SettingDef("recruitment.joining.reminder_hours", "json", [48], module="recruitment", group="Joining",
                         json_schema={"type": "array", "items": {"type": "integer", "minimum": 1, "maximum": 720}, "maxItems": 5}))

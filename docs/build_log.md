@@ -2358,3 +2358,9 @@ NEXT: 18.19 joining date: HR picks 3 dates after BGV passed -> email "BGV succes
 joining_dates.py (nudge after BGV passed, propose 3 dates, public choose, 48h reminder job, history), JoiningDateDrawer on the Offers table, public /joining/:token page, template joining_dates, offers rows carry joining_proposed/chosen.
 
 NEXT: 18.20 when the date is chosen: offer letter (template + salary + date, DocuSign if connected) + welcome email with onboarding steps and department contacts (Settings > Hiring > Contacts); candidate moves to Onboarding.
+
+## Part 18.20 -- offer + welcome after joining date (2026-09-28)
+
+offer_welcome.after_joining_date_chosen: company offer template render (salary, date, manager, expiry), DocuSign via a connected user else email letter, welcome email (steps + department/company contacts), pre-joining portal case; setting recruitment.contacts + Contacts settings page; templates offer_letter_auto, welcome_selected. Fix: offers expiry read through the Offers page helper (the setting key is not registered).
+
+NEXT: 18.21 setup checklist: remove "Invite another admin" and "ready-made template"; every step open/save/reopen/edit.

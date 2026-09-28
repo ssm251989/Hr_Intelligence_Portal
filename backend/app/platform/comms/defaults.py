@@ -54,6 +54,19 @@ DEFAULTS: dict[str, tuple[str, str, list[str]]] = {
         "Best regards,\n{{ company_name }} HR",
         ["candidate_first_name", "job_title", "dates", "choose_link"],
     ),
+    "recruitment.offer_letter_auto": (
+        "{{ job_title }}: your offer letter",
+        "Hi {{ candidate_first_name }},\n\nHere is your offer letter:\n\n{{ letter }}\n\nPlease reply to this email to accept by "
+        "{{ expiry_date }}.\n\nBest regards,\n{{ company_name }} HR",
+        ["candidate_first_name", "job_title", "letter"],
+    ),
+    "recruitment.welcome_selected": (
+        "Congratulations on your selection, {{ candidate_first_name }}!",
+        "Hi {{ candidate_first_name }},\n\nCongratulations - you have been selected for {{ job_title }}! We are delighted to have you "
+        "join {{ company_name }} on {{ joining_date }}.\n\nYour next steps:\n{{ steps }}\n\nPeople you can reach out to:\n{{ contacts }}\n\n"
+        "Welcome aboard - we can't wait to work with you.\n\n{{ company_name }} HR",
+        ["candidate_first_name", "job_title", "joining_date", "steps", "contacts"],
+    ),
     "recruitment.job_closed_candidate": (
         "Update on your application for {{ job_title }}",
         "Hi {{ candidate_first_name }},\n\nThank you for applying for {{ job_title }}. This position has been closed for now, so "

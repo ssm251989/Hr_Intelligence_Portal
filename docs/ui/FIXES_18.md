@@ -530,3 +530,30 @@ HR sees chosen 2026-10-20; Offers table row shows it
 tsc clean, i18n 0 missing (17 new keys), npm run build OK
 ```
 **Screenshot:** joining date page (public) -- pending (needs a live link); drawer -- pending login proof.
+
+## 18.20 Offer letter + welcome (automatic after the date is confirmed)
+
+**Ask:** when the candidate confirms a date, the agent sends the offer letter (template + salary + joining date, e-sign through the connected DocuSign) and a happy "Congratulations on your selection" welcome email. The welcome has the onboarding steps and the contacts (HR, department head, management) from Settings. The candidate then moves to Onboarding.
+
+**Change** (`app/recruitment/offer_welcome.py`, called when the candidate chooses the date in 18.19):
+- **Offer letter:** the company's own offer template (Settings > Offers, latest version, else the built-in wording) filled with the name, job, **approved salary** (Indian grouping, e.g. 12,00,000), **chosen joining date**, reporting manager and expiry (the Offers setting, default 7 days). The Offer row stores the letter, joining date and expiry; the status becomes `offer_sent`.
+- **E-sign:** when someone in the company has connected DocuSign (the job owner or hiring manager first), a DocuSign envelope goes to the candidate. Otherwise the letter is emailed (`recruitment.offer_letter_auto`, editable) and the candidate replies to accept.
+- **Welcome email** `recruitment.welcome_selected` (editable): congratulations, the joining day, **next steps** (sign the offer, fill in the welcome portal (link), join on the date) and **people to contact**. Contacts come from the department's own list first, then the company default.
+- **Settings > Hiring > Contacts for new joiners** (`recruitment.contacts`): the company default plus one list per department, each person with name, role, email, phone.
+- **Onboarding:** when the Onboarding module is on, a pre-joining portal case is created (status `invited`, joining date set). Its welcome-portal link is in the email.
+
+**Verified** (rolled back; emails recorded, not sent; the DocuSign call replaced by a stand-in so no real envelope was created):
+```
+candidate chooses 2026-10-19 -> status offer_sent
+offer: joining 2026-10-19, expiry +7 days, letter contains "12,00,000" and "19 October 2026"
+DocuSign connected (kg@ctdtechs.com) -> envelope ENV-TEST-123 for the letter "Dear Demo - Kavya Rao, We are delighted to offer you the role of ..."
+email: recruitment.welcome_selected
+  steps: "1. Sign your offer letter (you will get a DocuSign email) 2. Fill in your joining details in the welcome portal: …/welcome/<token> 3. Join us on Monday, 19 October 2026"
+  contacts: "- Dept Head (Head of Engineering): head@example.com - HR Desk (HR): hr@example.com +91 90000 00000"
+onboarding case -> invited, joining 2026-10-19
+without DocuSign -> emails [recruitment.offer_letter_auto, recruitment.welcome_selected], step "Sign your offer letter (reply to the offer email)"
+tsc clean, i18n 0 missing (15 new keys), npm run build OK
+```
+The whole post-interview flow (18.12 → 18.20) now runs by itself: interview cleared → salary form → auto/HR salary decision (+ budget) → documents form → agent check + HR approval → BGV (HR decides) → 3 joining dates → offer + welcome → onboarding.
+
+**Screenshot:** Contacts settings page -- pending login proof.
