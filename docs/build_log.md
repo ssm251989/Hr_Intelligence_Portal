@@ -2268,3 +2268,9 @@ NEXT: 18.4b module lock frontend (locked page card with passcode, lock icon in m
 LockedModuleCard (passcode field for admins, "ask your admin" for others), AppLayout shows it instead of the page for a locked module and a lock icon on locked menu items, Settings > Advanced > Modules (ModuleLockSettingsPage: table, unlock/lock per module and all, change passcode, modules.lock.* settings), moduleLockApi + lockKeyForPath. 52 keys en/hi/ta.
 
 NEXT: 18.5 switch off People, Org chart, Performance, Compensation, Succession, Helpdesk; setup "Choose what you use" shows only real modules and really updates the menu.
+
+## Part 18.5 -- modules off: People, Performance, Helpdesk (2026-09-28)
+
+Default platform.modules.enabled without core_hr/performance/helpdesk + migration a1c5e8f3d7b2 (settings only), platform.modules.offered drives Setup "Choose what you use", GET /setup/modules + scope=all save for Settings > Advanced > Modules (ModulesOnOffCard), import_employees step hidden without People, Home boxes gated by module. Decision: Assets and Exits stay on (not in the owner list).
+
+NEXT: 18.6 colourful light and dark mode (rich dark palette, coloured tiles/chips/charts, contrast checked).

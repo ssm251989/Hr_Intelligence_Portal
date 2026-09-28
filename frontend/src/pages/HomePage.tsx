@@ -75,9 +75,13 @@ function widget(key: string, editing: boolean): ReactNode {
   }
 }
 
+// Part 18.5: boxes that belong to a module which can be switched off
+const WIDGET_MODULE: Partial<Record<string, string>> = { team_goals: "performance", my_goals: "performance", tickets: "helpdesk", assets: "assets" };
+
 /** A saved layout only ever REARRANGES this home's boxes: unknown keys drop, new boxes join. */
-function reconcile(kind: HomeKind, saved: LayoutItem[] | null): LayoutItem[] {
-  const base = DEFAULTS[kind];
+function reconcile(kind: HomeKind, saved: LayoutItem[] | null, modules?: string[]): LayoutItem[] {
+  const on = (key: string) => !WIDGET_MODULE[key] || !modules || modules.includes(WIDGET_MODULE[key]!);
+  const base = DEFAULTS[kind].filter((b) => on(b.i));
   if (!saved?.length) return base;
   const known = new Set(base.map((b) => b.i));
   const kept = saved.filter((s) => known.has(s.i));
@@ -90,7 +94,8 @@ export default function HomePage() {
   const theme = useTheme();
   const f = theme.palette.fresh;
   const wide = useMediaQuery(theme.breakpoints.up("md"));
-  const { can } = useMeBootstrap();
+  const { can, data: me } = useMeBootstrap();
+  const modules = me?.modules;
   const [home, setHome] = useState<MyHome | null>(null);
   const [preview, setPreview] = useState<HomeKind | null>(null);
   const [layout, setLayout] = useState<LayoutItem[]>([]);
@@ -102,13 +107,13 @@ export default function HomePage() {
   const load = useCallback((kind?: HomeKind) => {
     homeApi.mine(kind).then((h) => {
       setHome(h);
-      setLayout(reconcile(h.kind, h.layout));
+      setLayout(reconcile(h.kind, h.layout, modules));
     }).catch(() => {
       const fallback: MyHome = { kind: "employee", own_kind: "employee", layout: null, layout_source: "built_in", can_set_defaults: false };
       setHome(fallback);
-      setLayout(DEFAULTS.employee);
+      setLayout(reconcile("employee", null, modules));
     });
-  }, []);
+  }, [modules]);
 
   useEffect(() => load(preview ?? undefined), [load, preview]);
 

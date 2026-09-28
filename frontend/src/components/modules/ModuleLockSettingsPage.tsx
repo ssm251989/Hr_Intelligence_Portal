@@ -24,6 +24,7 @@ import { ALL_MODULES, moduleLockApi, type ModuleLockStatus } from "../../api/mod
 import { useMeBootstrap } from "../../bootstrap/MeBootstrapContext";
 import { useT } from "../../i18n";
 import PlatformSettingsPanel from "../PlatformSettingsPanel";
+import ModulesOnOffCard from "./ModulesOnOffCard";
 
 type Ask = { kind: "unlock"; module: string } | { kind: "change" } | null;
 
@@ -88,6 +89,7 @@ export default function ModuleLockSettingsPage() {
     <Stack spacing={2}>
       {notice && <Alert severity="success" onClose={() => setNotice(null)}>{notice}</Alert>}
       {error && !ask && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
+      <ModulesOnOffCard />
       <Card>
         <CardContent>
           <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems={{ sm: "center" }} gap={1} mb={1}>

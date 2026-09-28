@@ -32,7 +32,6 @@ import LogoUploader from "../components/branding/LogoUploader";
 import { useT } from "../i18n";
 import { Emoji, FriendlyError, PageHeader, StatusChip } from "../ui-kit";
 
-const MODULE_CODES = ["onboarding", "core_hr", "performance", "helpdesk", "assets", "separation", "analytics", "copilot"];
 const TIMEZONES = ["Asia/Kolkata", "Asia/Dubai", "Asia/Singapore", "Europe/London", "America/New_York", "UTC"];
 const LOCALES = ["en-IN", "hi-IN", "ta-IN", "en-GB", "en-US"];
 const CURRENCIES = ["INR", "USD", "AED", "SGD", "GBP", "EUR"];
@@ -53,7 +52,9 @@ export default function SetupWizardPage() {
   const [company, setCompany] = useState({ display_name: "", legal_name: "", timezone: "Asia/Kolkata", locale: "en-IN", currency: "INR" });
   const [office, setOffice] = useState({ entity_name: "", location_name: "", city: "" });
   const [colour, setColour] = useState("#0E7C66");
-  const [modules, setModules] = useState<string[]>(MODULE_CODES);
+  // Part 18.5: only the modules that exist, are allowed and are offered (from the server)
+  const [moduleCodes, setModuleCodes] = useState<string[]>([]);
+  const [modules, setModules] = useState<string[]>([]);
   const [invite, setInvite] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [check, setCheck] = useState<EmployeesFileResult | null>(null);
@@ -68,7 +69,9 @@ export default function SetupWizardPage() {
     });
     setOffice((o) => ({ ...o, entity_name: o.entity_name || v.entities[0]?.name || v.company.legal_name || "" }));
     if (v.branding.primary_color) setColour(v.branding.primary_color);
-    if (v.modules.length) setModules(v.modules.filter((m) => MODULE_CODES.includes(m)));
+    const offered = (v.available_modules ?? []).map((m) => m.code);
+    setModuleCodes(offered);
+    setModules((v.available_modules ?? []).filter((m) => m.on).map((m) => m.code));
   }).catch(setError), []);
   useEffect(() => { load(); setupApi.templates().then(setTemplates).catch(() => setTemplates([])); }, [load]);
 
@@ -222,7 +225,7 @@ export default function SetupWizardPage() {
 
             {step.step === "modules" && (
               <Stack>
-                {MODULE_CODES.map((m) => (
+                {moduleCodes.map((m) => (
                   <FormControlLabel key={m} label={t(`setup.module.${m}`)}
                     control={<Checkbox checked={modules.includes(m)} onChange={(e) => setModules((prev) => (e.target.checked ? [...prev, m] : prev.filter((c) => c !== m)))} />} />
                 ))}

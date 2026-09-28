@@ -72,14 +72,19 @@ def progress(db: Session, tenant: TenantContext) -> dict:
         "config_pack": (_has_tenant_value(db, tenant, "platform.setup.config_pack"), "A ready-made template was applied."),
         "invite_admins": (admins >= 2, f"{admins} admin(s) -- invite at least one more so you're never locked out."),
     }
+    from app.platform.modules import enabled_modules
+
+    on = enabled_modules(db, tenant)
     steps = []
     for step in STEPS:
+        if step == "import_employees" and "core_hr" not in on:
+            continue  # Part 18.5: no employee records module -> no "import employees" step
         done, detail = checks[step]
         steps.append({"step": step, "done": bool(done), "skipped": step in skipped and not done, "detail": detail,
                       "skippable": step in SKIPPABLE, "fix_path": _FIX_PATHS[step]})
     complete = sum(1 for s in steps if s["done"])
     settled = sum(1 for s in steps if s["done"] or s["skipped"])
-    return {"steps": steps, "percent": round(100 * complete / len(steps)), "complete": settled == len(steps),
+    return {"steps": steps, "percent": round(100 * complete / max(1, len(steps))), "complete": settled == len(steps),
             "done_count": complete, "skipped_count": settled - complete}
 
 
@@ -101,6 +106,7 @@ def values(db: Session, tenant: TenantContext) -> dict:
         "mailbox": {"connected": mailbox_ok, "detail": mailbox_detail},
         "employees": {"count": db.query(Employee).filter(Employee.tenant_id == tenant.tenant_id).count()},
         "modules": s.get("platform.modules.enabled", ctx) or [],
+        "available_modules": available_modules(db, tenant),  # Part 18.5
         "template": s.get("platform.setup.config_pack", ctx) or None,
         "admins": [{"email": u.email, "name": u.full_name} for u in db.query(User).filter(User.tenant_id == tenant.tenant_id, User.role == "admin").order_by(User.created_at)],
     }
@@ -228,14 +234,32 @@ def set_company(db: Session, tenant: TenantContext, *, display_name: str, legal_
     return progress(db, tenant)
 
 
-def set_modules(db: Session, tenant: TenantContext, modules: list[str], *, actor: str) -> dict:
-    from app.platform.modules import MODULES
+def available_modules(db: Session, tenant: TenantContext, *, offered_only: bool = True) -> list[dict]:
+    """Part 18.5: the modules that exist AND this company's licence allows; `offered_only` =
+    only those the Setup checklist offers (platform.modules.offered)."""
+    from app.platform.modules import MODULES, _licensed_modules
 
-    known = {m.code for m in MODULES if not m.always_on}
-    unknown = sorted(set(modules) - known)
+    s, ctx = SettingsService(db), SettingContext(tenant=tenant)
+    offered = set(s.get("platform.modules.offered", ctx) or [])
+    wanted = set(s.get("platform.modules.enabled", ctx) or [])
+    licensed = _licensed_modules(tenant)
+    return [{"code": m.code, "on": m.code in wanted, "offered": m.code in offered}
+            for m in MODULES if not m.always_on and (licensed is None or m.code in licensed) and (not offered_only or m.code in offered)]
+
+
+def set_modules(db: Session, tenant: TenantContext, modules: list[str], *, actor: str, scope: str = "offered") -> dict:
+    """Setup's "Choose what you use" saves only the modules it offers (the others keep their
+    state); Settings > Modules (`scope="all"`) can switch any allowed module."""
+    allowed = {m["code"] for m in available_modules(db, tenant, offered_only=(scope != "all"))}
+    unknown = sorted(set(modules) - allowed)
     if unknown:
-        raise SetupError(f"unknown module(s): {', '.join(unknown)}")
-    SettingsService(db).set("platform.modules.enabled", sorted(set(modules)), scope_type="tenant", scope_id=None, actor=actor, tenant=tenant)
+        raise SetupError(f"These modules can't be switched on here: {', '.join(unknown)}")
+    current = set(SettingsService(db).get("platform.modules.enabled", SettingContext(tenant=tenant)) or [])
+    new = (current - allowed) | set(modules)
+    SettingsService(db).set("platform.modules.enabled", sorted(new), scope_type="tenant", scope_id=None, actor=actor, tenant=tenant)
+    from app.platform import module_lock
+
+    module_lock.invalidate(tenant.tenant_id)
     return progress(db, tenant)
 
 

@@ -10,6 +10,7 @@ export interface SetupValues {
   mailbox: { connected: boolean; detail: string };
   employees: { count: number };
   modules: string[];
+  available_modules?: { code: string; on: boolean; offered: boolean }[]; // Part 18.5
   template: { template?: string; name?: string; applied_at?: string; source?: string } | null;
   admins: { email: string; name: string | null }[];
 }
@@ -38,4 +39,10 @@ export const setupApi = {
   templates: () => http.get<SetupTemplate[]>("/api/v1/setup/templates"),
   applyTemplate: (key: string) => http.post<{ template: string; name: string; added: Record<string, number>; progress: SetupProgress }>(`/api/v1/setup/templates/${key}/apply`),
   saveBrandColours: (payload: { primary_color?: string; secondary_color?: string }) => http.put<unknown>("/api/v1/comms/brand-theme", payload),
+};
+
+// Part 18.5: every module the company may switch on (Settings > Advanced > Modules)
+export const modulesApi = {
+  list: () => http.get<{ code: string; on: boolean; offered: boolean }[]>("/api/v1/setup/modules"),
+  save: (modules: string[]) => http.post<SetupProgress>("/api/v1/setup/modules", { modules, scope: "all" }),
 };

@@ -59,6 +59,10 @@ export const en = {
   "lock.module.separation": "Exits",
   "lock.module.analytics": "Analytics",
   "lock.module.copilot": "HR assistant",
+  "modules.title": "Modules switched on",
+  "modules.intro": "Switch on only what you use. A module that is off disappears from the menu; its data is kept and comes back when you switch it on again.",
+  "modules.saved": "Saved. The menu is updated.",
+  "modules.err": "We couldn't save the modules",
 } as const;
 
 export const hi: Partial<Record<keyof typeof en, string>> = {
@@ -121,6 +125,10 @@ export const hi: Partial<Record<keyof typeof en, string>> = {
   "lock.module.separation": "निकास",
   "lock.module.analytics": "एनालिटिक्स",
   "lock.module.copilot": "HR सहायक",
+  "modules.title": "चालू मॉड्यूल",
+  "modules.intro": "जो इस्तेमाल करते हैं वही चालू करें। बंद मॉड्यूल मेनू से हट जाता है; उसका डेटा रखा रहता है और दोबारा चालू करने पर वापस आता है।",
+  "modules.saved": "सहेजा गया। मेनू अपडेट हो गया।",
+  "modules.err": "मॉड्यूल सहेजे नहीं जा सके",
 };
 
 export const ta: Partial<Record<keyof typeof en, string>> = {
@@ -183,4 +191,8 @@ export const ta: Partial<Record<keyof typeof en, string>> = {
   "lock.module.separation": "வெளியேற்றங்கள்",
   "lock.module.analytics": "பகுப்பாய்வு",
   "lock.module.copilot": "HR உதவியாளர்",
+  "modules.title": "இயக்கத்தில் உள்ள தொகுதிகள்",
+  "modules.intro": "நீங்கள் பயன்படுத்துவதை மட்டும் இயக்கவும். அணைக்கப்பட்ட தொகுதி மெனுவிலிருந்து மறையும்; அதன் தரவு வைக்கப்படும், மீண்டும் இயக்கினால் திரும்ப வரும்.",
+  "modules.saved": "சேமிக்கப்பட்டது. மெனு புதுப்பிக்கப்பட்டது.",
+  "modules.err": "தொகுதிகளைச் சேமிக்க முடியவில்லை",
 };

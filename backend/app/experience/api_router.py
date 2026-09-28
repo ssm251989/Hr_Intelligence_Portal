@@ -51,14 +51,21 @@ def setup_company(payload: CompanyStep, db: Session = Depends(get_db), current_u
 
 class ModulesStep(BaseModel):
     modules: list[str]
+    scope: str = "offered"  # Part 18.5: "all" = Settings > Modules (any allowed module)
 
 
 @router.post("/setup/modules")
 def setup_modules(payload: ModulesStep, db: Session = Depends(get_db), current_user: User = Depends(require("platform.settings.configure"))):
     try:
-        return setup_wizard.set_modules(db, require_current_tenant(), payload.modules, actor=current_user.email)
+        return setup_wizard.set_modules(db, require_current_tenant(), payload.modules, actor=current_user.email, scope=payload.scope)
     except setup_wizard.SetupError as exc:
         raise _bad(exc)
+
+
+@router.get("/setup/modules")
+def setup_modules_list(db: Session = Depends(get_db), current_user: User = Depends(require("platform.settings.view"))):
+    """Part 18.5: every module this company may switch on, with on/off and whether Setup offers it."""
+    return setup_wizard.available_modules(db, require_current_tenant(), offered_only=False)
 
 
 class ConfigPackStep(BaseModel):

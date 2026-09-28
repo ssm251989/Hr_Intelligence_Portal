@@ -114,3 +114,29 @@ public branding            -> 200 (never locked)
 frontend                   -> tsc clean, i18n 0 missing (52 new keys en/hi/ta), npm run build OK
 ```
 **Screenshot:** locked page card, Settings > Modules -- pending login proof. There is no passcode on the real company yet, so nothing shows as locked until the owner sets one.
+
+## 18.5 Modules removed from the product menu
+
+**Problem / ask:** switch off and hide People (employee records + directory), Org chart, Performance, Compensation, Succession and Helpdesk, keeping the code. "Choose what you use" must show only real, allowed modules, and switching must really update the menu.
+
+**Change:**
+- The default switched-on list no longer has `core_hr` (People, Directory, Org chart), `performance` (Performance, Compensation, Succession) or `helpdesk`.
+- Data migration `a1c5e8f3d7b2` removed those three from every company's `platform.modules.enabled`. It is a settings change only, no records are touched, and it has a downgrade.
+- **Setup "Choose what you use"** now comes from the server: the modules that exist, the licence allows, and `platform.modules.offered` lists (Pre-boarding & onboarding, Assets, Exits, Analytics & report builder, HR assistant). Saving changes only those, and the menu reloads.
+- **Settings > Advanced > Modules** has a "Modules switched on" card with a switch for every allowed module (People, Performance, Helpdesk can come back here). Saving updates the menu straight away.
+- With People off, the Setup "Import employees" step is not shown. Home hides the goals, tickets and assets boxes when their module is off.
+- Their APIs return 404 (existing module gate).
+
+**Verified:**
+```
+ctd-techs platform.modules.enabled: before [analytics, assets, copilot, core_hr, helpdesk, onboarding, performance, separation]
+                                    after  [analytics, assets, copilot, onboarding, separation]
+bootstrap nav: no /people, /org-chart, /performance, /compensation, /succession, /helpdesk
+GET /api/v1/ui/people, /api/v1/performance/goals, /api/v1/service-desk/tickets -> 404
+setup steps: company, entities_locations, branding, mailbox, modules, config_pack, invite_admins (no import_employees)
+(rolled back) setup offers [onboarding, assets, separation, analytics, copilot]; setup tries core_hr -> 400
+              Settings switch on helpdesk -> 200, nav gains /helpdesk, helpdesk API 200
+              setup switches off assets   -> nav loses /assets, helpdesk kept
+tsc clean, i18n 0 missing
+```
+**Screenshot:** menu, Settings > Modules -- pending login proof.
