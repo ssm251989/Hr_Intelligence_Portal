@@ -111,6 +111,12 @@ def _documents_reminders(db, tenant):
     return {"reminded": remind_due(db, tenant)}
 
 
+def _joining_reminders(db, tenant):
+    from app.recruitment.joining_dates import remind_due
+
+    return {"reminded": remind_due(db, tenant)}
+
+
 def _recycle_bin_purge(db, tenant):
     from app.recruitment.removal import purge_expired
 
@@ -130,6 +136,7 @@ JOBS = {
     "reminders": _reminders,
     "recycle_bin_purge": _recycle_bin_purge,
     "documents_reminders": _documents_reminders,
+    "joining_reminders": _joining_reminders,
 }
 
 
@@ -171,6 +178,7 @@ celery_app.conf.beat_schedule = {
     "auto-shortlist-release": {"task": "hrms.fan_out", "schedule": 300.0, "args": ("auto_shortlist_release",)},
     "salary-form-reminders": {"task": "hrms.fan_out", "schedule": 3600.0, "args": ("salary_form_reminders",)},
     "reminders": {"task": "hrms.fan_out", "schedule": 3600.0, "args": ("reminders",)},
+    "joining-reminders": {"task": "hrms.fan_out", "schedule": 3600.0, "args": ("joining_reminders",)},
     "documents-reminders": {"task": "hrms.fan_out", "schedule": 3600.0, "args": ("documents_reminders",)},
     "recycle-bin-purge": {"task": "hrms.fan_out", "schedule": 86400.0, "args": ("recycle_bin_purge",)},
 }

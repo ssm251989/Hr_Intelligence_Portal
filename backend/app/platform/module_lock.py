@@ -42,7 +42,7 @@ LOCKABLE: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "candidate_emails": (("/hr-inbox", "/candidate-emails"), (r"^/hr-inbox", r"^/api/v1/ui/hr-inbox", r"^/api/v1/ui/candidate-emails")),
     "salary": (("/salary",), (APP + r"(validate-salary|salary|approve-salary)", r"^/api/v1/ui/salary", r"^/api/v1/ui/stage-table/salary", r"^/api/v1/ui/budgets")),
     "bgv": (("/bgv",), (APP + r"bgv", r"^/api/v1/ui/stage-table/bgv", r"^/api/v1/ui/documents", r"^/api/v1/ui/bgv/")),
-    "offers": (("/offers",), (APP + r"offer", r"^/api/v1/ui/offers", r"^/api/v1/recruitment/(offers|offer-components)", r"^/api/v1/ui/stage-table/offers")),
+    "offers": (("/offers",), (APP + r"offer", r"^/api/v1/ui/offers", r"^/api/v1/recruitment/(offers|offer-components)", r"^/api/v1/ui/stage-table/offers", r"^/api/v1/ui/joining")),
     "reports": (("/reports",), (r"^/reports/(pipeline|audit)", r"^/api/v1/intelligence/reports")),
     "settings": (("/settings",), (r"^/api/v1/settings", r"^/api/v1/connections", r"^/api/v1/connection-routes", r"^/api/v1/connectors",
                                   r"^/api/v1/comms", r"^/api/v1/iam", r"^/api/v1/scoring", r"^/api/v1/secrets", r"W:^/api/v1/media",

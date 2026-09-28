@@ -506,3 +506,27 @@ deciding again -> 400 "This candidate is not waiting for a BGV decision."
 tsc clean, i18n 0 missing (23 new keys), npm run build OK
 ```
 **Screenshot:** BGV decision dialogs -- pending login proof.
+
+## 18.19 Joining date (3 options)
+
+**Ask:** after BGV passes, HR picks 3 tentative joining dates. The candidate is emailed "Background verification successful" with the dates and chooses one with one click. Remind after 48 h; HR can propose new dates; the chosen date is saved and shown to HR.
+
+**Change** (`app/recruitment/joining_dates.py`, `/api/v1/ui/joining/*`, `/api/v1/public/joining/{token}`):
+- **BGV passed (18.18)** → the recruiters get an in-app nudge: "BGV passed for … - pick 3 joining dates."
+- **Offers page:** a "BGV passed" row without a chosen date shows **Pick 3 dates** (or "Dates sent"), and clicking it opens the **Joining date** drawer. HR picks 3 future dates (+ optional note) and presses **Email the 3 dates**. Validation: exactly 3 different future dates.
+- **Candidate email:** `recruitment.joining_dates` ("background verification successful - choose your joining date"), with the dates written out and a link to **`/joining/:token`**. That page has three big buttons, and one click saves the choice.
+- **Reminder** after `recruitment.joining.reminder_hours` (default [48]) via an hourly job. **Propose new dates** replaces the old link, which then stops working. The earlier proposals are kept in history.
+- **Saved:** the chosen date is stored on the application and shown in the drawer and in the Offers table's Joining date column. Choosing starts 18.20 (offer + welcome).
+
+**Verified** (rolled back; emails recorded, not sent):
+```
+BGV passed -> bgv_cleared + in-app "BGV passed for Demo - Meera Nair (Demo - RPA Developer) - pick 3 joining dates."
+2 dates -> 400; a date today -> "The dates must be in the future."
+propose 3 -> email recruitment.joining_dates "- Monday, 12 October 2026 - Monday, 19 October 2026 - Monday, 26 October 2026"
+new dates -> old link 404; candidate sees the new 3 dates
+reminder at 49h -> 1 sent, then 0
+choose a date not offered -> 400; choose 2026-10-20 -> saved; choose again -> 409
+HR sees chosen 2026-10-20; Offers table row shows it
+tsc clean, i18n 0 missing (17 new keys), npm run build OK
+```
+**Screenshot:** joining date page (public) -- pending (needs a live link); drawer -- pending login proof.

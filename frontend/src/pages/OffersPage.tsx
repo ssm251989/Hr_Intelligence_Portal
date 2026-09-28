@@ -1,7 +1,9 @@
-import StageTable from "../components/stage/StageTable";
+import StageTable, { type StageRow } from "../components/stage/StageTable";
+import JoiningDateDrawer from "../components/offers/JoiningDateDrawer";
 import { useEffect, useRef, useState } from "react";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
+import Chip from "@mui/material/Chip";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import CircularProgress from "@mui/material/CircularProgress";
@@ -263,6 +265,7 @@ export default function OffersPage() {
   const [jobs, setJobs] = useState<JobRoleRead[]>([]);
   const [selectedJobId, setSelectedJobId] = useState("");
   const [focusApp, setFocusApp] = useState<string | null>(null); // Part 18.11
+  const [joiningFor, setJoiningFor] = useState<StageRow | null>(null); // Part 18.19
   const [stageRefresh, setStageRefresh] = useState(0);
   const [applications, setApplications] = useState<ApplicationRead[]>([]);
   useEffect(() => setStageRefresh((k) => k + 1), [applications]);
@@ -438,8 +441,19 @@ export default function OffersPage() {
       <StageTable stage="offers" refreshSignal={stageRefresh}
         extraColumns={[
           { key: "signed", label: t("stage.col.signed"), render: (r) => r.offer_signed ? t("stage.yes") : r.status === "bgv_cleared" ? "—" : t("stage.no") },
-          { key: "joining", label: t("stage.col.joining"), render: (r) => r.joining_date ? new Date(r.joining_date).toLocaleDateString() : "—" },
-        ]} onOpen={(r) => { setFocusApp(r.application_id); if (r.job_id !== selectedJobId) handleJobChange(r.job_id); }} />
+          { key: "joining", label: t("stage.col.joining"), render: (r) => {
+            const d = r.joining_date ?? r.joining_chosen;
+            if (d) return new Date(d).toLocaleDateString();
+            if (r.status === "bgv_cleared") return (r.joining_proposed ?? []).length ? <Chip size="small" color="info" label={t("joining.waiting_short")} /> : <Chip size="small" color="warning" label={t("joining.pick_dates")} />;
+            return "—";
+          } },
+        ]}
+        onOpen={(r) => {
+          // Part 18.19: BGV passed and no offer yet -> the joining-date step
+          if (r.status === "bgv_cleared" && !r.joining_chosen) { setJoiningFor(r); return; }
+          setFocusApp(r.application_id); if (r.job_id !== selectedJobId) handleJobChange(r.job_id);
+        }} />
+      <JoiningDateDrawer applicationId={joiningFor?.application_id ?? null} name={joiningFor?.name} onClose={() => setJoiningFor(null)} onChanged={() => setStageRefresh((k) => k + 1)} />
       <JobPickerCard jobs={jobs} value={selectedJobId} onChange={handleJobChange} hint={t("offers.pick_hint")} />
 
       {error && (

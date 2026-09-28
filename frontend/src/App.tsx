@@ -54,6 +54,7 @@ const OnboardingDashboardPage = lazy(() => import("./pages/onboarding/Onboarding
 const WelcomePortalPage = lazy(() => import("./pages/onboarding/WelcomePortalPage"));
 const SalaryDetailsFormPage = lazy(() => import("./pages/salary/SalaryDetailsFormPage"));
 const DocumentsFormPage = lazy(() => import("./pages/documents/DocumentsFormPage")); // Part 18.16
+const JoiningDatePage = lazy(() => import("./pages/joining/JoiningDatePage")); // Part 18.19
 const CandidateStatusPage = lazy(() => import("./pages/public/CandidateStatusPage"));
 const PerformancePage = lazy(() => import("./pages/performance/PerformancePage"));
 const TeamPerformancePage = lazy(() => import("./pages/performance/TeamPerformancePage"));
@@ -104,6 +105,7 @@ export default function App() {
               <Route path="/welcome/:token" element={<WelcomePortalPage />} />
               <Route path="/salary-details/:token" element={<SalaryDetailsFormPage />} />
               <Route path="/documents/:token" element={<DocumentsFormPage />} />
+              <Route path="/joining/:token" element={<JoiningDatePage />} />
               <Route path="/status/:token" element={<CandidateStatusPage />} />
               <Route path="/careers" element={<CareersLayout />}>
                 <Route index element={<CareersListPage />} />

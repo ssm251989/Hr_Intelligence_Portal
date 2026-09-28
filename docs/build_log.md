@@ -2352,3 +2352,9 @@ NEXT: 18.18 BGV decision by HR (Passed / Resend form / Failed with reason + edit
 bgv_decision.decide passed/resend/failed (+ preview, editable message, template bgv_unsuccessful, budget release), BgvDecisionBox replaces the old clear/reject box. Decision: Passed allowed even when documents are not all "valid" (warned, audited) because the owner wants HR to decide.
 
 NEXT: 18.19 joining date: HR picks 3 dates after BGV passed -> email "BGV successful" + one-click choice; reminder 48h; HR can propose new dates; chosen date saved.
+
+## Part 18.19 -- joining date (2026-09-28)
+
+joining_dates.py (nudge after BGV passed, propose 3 dates, public choose, 48h reminder job, history), JoiningDateDrawer on the Offers table, public /joining/:token page, template joining_dates, offers rows carry joining_proposed/chosen.
+
+NEXT: 18.20 when the date is chosen: offer letter (template + salary + date, DocuSign if connected) + welcome email with onboarding steps and department contacts (Settings > Hiring > Contacts); candidate moves to Onboarding.

@@ -195,3 +195,81 @@ def bgv_decide(application_id: UUID, body: BgvDecideIn, db: Session = Depends(ge
                       reason=body.reason, message=body.message, codes=body.codes)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+# ---------------------------------------------------------------- Part 18.19: joining date
+
+joining_router = APIRouter(prefix="/api/v1/ui/joining", tags=["ui-joining"])
+joining_public_router = APIRouter(prefix="/api/v1/public/joining", tags=["joining-public"])
+
+
+class ProposeIn(BaseModel):
+    dates: list[str]
+    note: Optional[str] = Field(None, max_length=500)
+
+
+@joining_router.get("/{application_id}")
+def joining_info(application_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from app.recruitment.joining_dates import info
+
+    tenant = _need(db, current_user, "recruitment.offer.view")
+    app = _app(db, tenant, application_id)
+    return {"status": app.status, **info(app)}
+
+
+@joining_router.post("/{application_id}/propose")
+def joining_propose(application_id: UUID, body: ProposeIn, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from app.recruitment.joining_dates import propose
+
+    tenant = _need(db, current_user, "recruitment.offer.edit")
+    try:
+        return propose(db, tenant, _app(db, tenant, application_id), body.dates, actor=current_user.email, note=body.note)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+def _joining_token(db, token):
+    from datetime import datetime, timezone
+
+    from app.models.iam import ActionToken
+    from app.recruitment.joining_dates import ACTION
+
+    tenant = require_current_tenant()
+    row = db.query(ActionToken).filter(ActionToken.tenant_id == tenant.tenant_id, ActionToken.token == token, ActionToken.action == ACTION).first()
+    if row is None or row.invalidated_at is not None:
+        raise HTTPException(status_code=404, detail="This link isn't valid any more - HR may have sent new dates.")
+    if row.expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=410, detail="This link has expired. Please ask the HR team for new dates.")
+    app = db.get(Application, row.entity_id)
+    if app is None:
+        raise HTTPException(status_code=404, detail="This link isn't valid.")
+    return tenant, row, app
+
+
+@joining_public_router.get("/{token}")
+def joining_public_view(token: str, db: Session = Depends(get_db)):
+    from app.recruitment.joining_dates import info
+
+    _tenant, row, app = _joining_token(db, token)
+    cand = db.get(Candidate, app.candidate_id)
+    job = db.get(JobRole, app.job_role_id)
+    data = info(app)
+    return {"candidate_first_name": (cand.full_name or "").replace("Demo - ", "").split(" ")[0] if cand else "", "job_title": job.title if job else "",
+            "dates": data.get("proposed", []), "chosen": data.get("chosen"), "note": data.get("note")}
+
+
+class ChooseIn(BaseModel):
+    date: str
+
+
+@joining_public_router.post("/{token}")
+def joining_public_choose(token: str, body: ChooseIn, db: Session = Depends(get_db)):
+    from app.recruitment.joining_dates import choose
+
+    tenant, row, app = _joining_token(db, token)
+    if row.responded_at is not None:
+        raise HTTPException(status_code=409, detail="You have already chosen a date. Please reply to the HR email to change it.")
+    try:
+        return choose(db, tenant, row, app, body.date)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))

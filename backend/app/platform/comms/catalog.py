@@ -23,6 +23,7 @@ TEMPLATES: dict[str, tuple[str, str]] = {
     "recruitment.documents_request": ("Joining documents request", "Sent when the salary is approved: the upload link and the list of documents."),
     "recruitment.documents_reupload": ("Documents needed again", "Sent when HR asks the candidate to upload some documents again."),
     "recruitment.bgv_unsuccessful": ("BGV unsuccessful", "Sent when HR marks background verification failed; HR previews and edits the message first."),
+    "recruitment.joining_dates": ("BGV successful - choose joining date", "Sent when HR proposes 3 joining dates after BGV passed (and as the 48h reminder)."),
     "recruitment.job_closed_candidate": ("Job closed - application on hold", "Sent to candidates (if switched on) when a job is closed; their application is kept on hold."),
     "recruitment.agency_invite": ("Agency portal invitation", "Sent to a recruitment agency's user to set their password."),
     "recruitment.job_requisition_approval": ("Job needs approval", "Sent to approvers when a new job is waiting for them."),

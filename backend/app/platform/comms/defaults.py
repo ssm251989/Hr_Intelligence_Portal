@@ -47,6 +47,13 @@ DEFAULTS: dict[str, tuple[str, str, list[str]]] = {
         "{{ message }}\n\nBest regards,\n{{ company_name }} HR",
         ["message"],
     ),
+    "recruitment.joining_dates": (
+        "{{ job_title }}: background verification successful - choose your joining date",
+        "Hi {{ candidate_first_name }},\n\nGreat news - your background verification is complete and successful.\n\n"
+        "Please choose the joining date that suits you best:\n{{ dates }}\n\nChoose with one click here:\n{{ choose_link }}\n\n{{ note }}\n\n"
+        "Best regards,\n{{ company_name }} HR",
+        ["candidate_first_name", "job_title", "dates", "choose_link"],
+    ),
     "recruitment.job_closed_candidate": (
         "Update on your application for {{ job_title }}",
         "Hi {{ candidate_first_name }},\n\nThank you for applying for {{ job_title }}. This position has been closed for now, so "

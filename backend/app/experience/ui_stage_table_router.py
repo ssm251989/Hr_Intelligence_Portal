@@ -79,9 +79,14 @@ def _extras(db, stage, app_ids) -> dict:
     elif stage == "offers":
         from app.models.offer import Offer
 
+        # Part 18.19: dates HR proposed / the date the candidate chose
+        for a in db.query(Application).filter(Application.id.in_(app_ids)):
+            j = (a.custom_fields or {}).get("joining") or {}
+            out[a.id] = {"joining_proposed": j.get("proposed") or [], "joining_chosen": j.get("chosen")}
+
         for o in db.query(Offer).filter(Offer.application_id.in_(app_ids)):
-            out[o.application_id] = {"offer_signed": bool(o.signed), "joining_date": o.joining_date.isoformat() if o.joining_date else None,
-                                     "offer_expires": o.expiry_date.isoformat() if o.expiry_date else None}
+            out.setdefault(o.application_id, {}).update({"offer_signed": bool(o.signed), "joining_date": o.joining_date.isoformat() if o.joining_date else None,
+                                                         "offer_expires": o.expiry_date.isoformat() if o.expiry_date else None})
     elif stage == "salary":
         from app.models.iam import ActionToken
         from app.recruitment.salary_auto import FORM_ACTION
