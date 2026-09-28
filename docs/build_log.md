@@ -2232,3 +2232,9 @@ NEXT: 17.15 frontend (Remove on profile/list/pipeline, Recycle bin page, DELETE 
 RemoveCandidateDialog (reason list, note, counts summary, typed DELETE, bulk progress), Remove in the profile menu / row menu / board card / bulk bar (permission recruitment.candidate.delete), Candidates > Recycle bin page (Restore / Delete permanently; menu entry only for that permission), duplicate banner on the profile. Decision: the job pipeline counts already open the candidates board filtered by job, so Remove on board cards covers the pipeline without a second copy.
 
 NEXT: 17.14 hand-over (build/i18n/tsc/compileall, screenshots, report).
+
+## Part 17.14 -- hand-over (2026-09-28)
+
+All Part 17 items done (17.1-17.13, 17.15). Build, i18n, tsc, compileall clean; alembic at e9c2b5f8a1d4. Public screenshots refreshed; signed-in screenshots wait for a login (no credentials were provided). Known issue: the Lottie success tick does not draw (Part 15).
+
+NEXT: STOP -- hand-over reported. Then PART16 steps 16.1-16.10 per RESUME.txt when asked.

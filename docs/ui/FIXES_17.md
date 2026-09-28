@@ -552,3 +552,28 @@ regression            -> home funnel, /candidates, /applications, jobs-health, a
 frontend              -> tsc clean, i18n 0 missing, npm run build OK
 ```
 **Screenshot:** `recycle-bin.png`, `remove-dialog.png` -- **pending login proof**.
+
+## 17.14 Hand-over
+
+**Checks (2026-09-28):**
+```
+npm run build        -> OK (i18n:check + tsc -b + vite build)
+i18n:check           -> OK, 3433 keys, 0 missing (en / hi / ta)
+tsc                  -> clean
+compileall           -> clean (app, hrctl, scripts)
+alembic current      -> e9c2b5f8a1d4 (head)
+```
+
+**Fresh screenshots (public pages, Playwright, `docs/ui/screens/`):**
+- `login.png` (with the company logo)
+- `careers.png`
+- `candidate-status.png` (17.13, Demo candidate: at the interview stage)
+- `salary-details-form.png` (17.8, a Demo candidate's link that has already been answered)
+- `careers-job.png` is not refreshed: no job is published on the careers site right now.
+
+**Signed-in pages are still "pending login proof".** No `backend/.env.verify` was provided, and I don't create passwords or tokens. To take them, run from `frontend/`:
+```
+SHOT_EMAIL=<you> SHOT_PASSWORD=<pw> node scripts/take_screenshots.mjs
+```
+
+**Known issue, not fixed:** the small success-tick animation (FriendlyAnimation "success", Part 15) draws nothing. The Lottie layers stay `display:none`, both with and without reduced motion; you can see it on the salary form's "already answered" card. The text is correct. It predates Part 17.
