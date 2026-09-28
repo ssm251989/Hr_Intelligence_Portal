@@ -2364,3 +2364,9 @@ NEXT: 18.20 when the date is chosen: offer letter (template + salary + date, Doc
 offer_welcome.after_joining_date_chosen: company offer template render (salary, date, manager, expiry), DocuSign via a connected user else email letter, welcome email (steps + department/company contacts), pre-joining portal case; setting recruitment.contacts + Contacts settings page; templates offer_letter_auto, welcome_selected. Fix: offers expiry read through the Offers page helper (the setting key is not registered).
 
 NEXT: 18.21 setup checklist: remove "Invite another admin" and "ready-made template"; every step open/save/reopen/edit.
+
+## Part 18.21 -- setup checklist trimmed (2026-09-28)
+
+STEPS without config_pack and invite_admins (functions kept), their UI blocks and the template fetch removed from SetupWizardPage. ctd-techs setup now 100%.
+
+NEXT: 18.22 settings must work (branding/logo, offices, users & roles, merge Hiring/Job request, scoring weights number inputs + red when total != 100, every connection with status/connect/test/edit/disconnect, SETTINGS_CHECK.md).

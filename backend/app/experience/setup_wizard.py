@@ -20,8 +20,11 @@ from app.models.user import User
 from app.platform.settings.resolver import SettingContext, SettingsService
 from app.platform.tenancy.context import TenantContext
 
-STEPS = ("company", "entities_locations", "branding", "mailbox", "import_employees", "modules", "config_pack", "invite_admins")
-SKIPPABLE = {"branding", "import_employees", "config_pack", "invite_admins", "modules"}
+# Part 18.21: "Start from a ready-made template" and "Invite another admin" are no longer setup
+# steps (owner decision). Their functions/endpoints stay for API use; admins are added in
+# Settings > People & access.
+STEPS = ("company", "entities_locations", "branding", "mailbox", "import_employees", "modules")
+SKIPPABLE = {"branding", "import_employees", "modules"}
 _FIX_PATHS = {
     "company": "/setup?step=company", "entities_locations": "/setup?step=entities_locations", "branding": "/setup?step=branding",
     "mailbox": "/setup?step=mailbox", "import_employees": "/setup?step=import_employees", "modules": "/setup?step=modules",

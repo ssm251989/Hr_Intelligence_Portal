@@ -25,7 +25,7 @@ import { useTheme } from "@mui/material/styles";
 
 import { apiUrl, experienceApi, type SetupProgress } from "../api/client";
 import { downloadBlob } from "../api/scoringApi";
-import { setupApi, type EmployeesFileResult, type SetupTemplate, type SetupValues } from "../api/setupApi";
+import { setupApi, type EmployeesFileResult, type SetupValues } from "../api/setupApi";
 import { useBootstrap } from "../bootstrap/BootstrapContext";
 import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
 import LogoUploader from "../components/branding/LogoUploader";
@@ -44,7 +44,6 @@ export default function SetupWizardPage() {
   const { reload: reloadBranding } = useBootstrap();
   const [progress, setProgress] = useState<SetupProgress | null>(null);
   const [values, setValues] = useState<SetupValues | null>(null);
-  const [templates, setTemplates] = useState<SetupTemplate[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -55,7 +54,6 @@ export default function SetupWizardPage() {
   // Part 18.5: only the modules that exist, are allowed and are offered (from the server)
   const [moduleCodes, setModuleCodes] = useState<string[]>([]);
   const [modules, setModules] = useState<string[]>([]);
-  const [invite, setInvite] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [check, setCheck] = useState<EmployeesFileResult | null>(null);
 
@@ -73,7 +71,7 @@ export default function SetupWizardPage() {
     setModuleCodes(offered);
     setModules((v.available_modules ?? []).filter((m) => m.on).map((m) => m.code));
   }).catch(setError), []);
-  useEffect(() => { load(); setupApi.templates().then(setTemplates).catch(() => setTemplates([])); }, [load]);
+  useEffect(() => { load(); }, [load]);
 
   const steps = progress?.steps ?? [];
   const current = params.get("step") ?? steps.find((s) => !s.done && !s.skipped)?.step ?? "company";
@@ -231,50 +229,6 @@ export default function SetupWizardPage() {
                 ))}
                 <Button variant="contained" disabled={busy} sx={{ alignSelf: "flex-start", mt: 1 }}
                   onClick={() => run(() => experienceApi.setModules(modules).then(() => reloadMe()), t("setup.saved.modules"))}>{t("setup.save")}</Button>
-              </Stack>
-            )}
-
-            {step.step === "config_pack" && (
-              <Stack spacing={2}>
-                {values.template?.name && <Alert severity="success">{t("setup.tpl.applied", { name: values.template.name })}</Alert>}
-                {templates === null ? <CircularProgress size={24} /> : (
-                  <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(3, 1fr)" }, gap: 2 }}>
-                    {templates.map((tpl) => (
-                      <Card key={tpl.key} variant="outlined" sx={{ display: "flex", flexDirection: "column" }}>
-                        <CardContent sx={{ flex: 1 }}>
-                          <Typography sx={{ fontWeight: 800 }}>{tpl.name}</Typography>
-                          <Typography sx={{ fontSize: 13, color: f.muted, mb: 1 }}>{tpl.line}</Typography>
-                          {tpl.adds.map((a) => (
-                            <Box key={a.what} sx={{ mb: 0.75 }}>
-                              <Typography sx={{ fontSize: 12.5, fontWeight: 700 }}>{a.what}</Typography>
-                              <Typography sx={{ fontSize: 12.5, color: f.muted }}>{a.items.join(" · ")}</Typography>
-                            </Box>
-                          ))}
-                        </CardContent>
-                        <Box sx={{ p: 2, pt: 0 }}>
-                          <Button variant="contained" fullWidth disabled={busy}
-                            onClick={() => window.confirm(t("setup.tpl.confirm", { name: tpl.name })) && run(() => setupApi.applyTemplate(tpl.key), t("setup.saved.template", { name: tpl.name }))}>
-                            {t("setup.tpl.apply")}
-                          </Button>
-                        </Box>
-                      </Card>
-                    ))}
-                  </Box>
-                )}
-                <Typography sx={{ fontSize: 13, color: f.muted }}>{templates?.[0]?.note}</Typography>
-              </Stack>
-            )}
-
-            {step.step === "invite_admins" && (
-              <Stack spacing={1.5} sx={{ maxWidth: 520 }}>
-                <Typography sx={{ fontSize: 14 }}>{t("setup.admins.now", { list: values.admins.map((a) => a.email).join(", ") })}</Typography>
-                <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-                  <TextField label={t("setup.admins.email")} type="email" value={invite} onChange={(e) => setInvite(e.target.value)} sx={{ flex: 1 }} />
-                  <Button variant="contained" disabled={busy || !/^\S+@\S+\.\S+$/.test(invite)}
-                    onClick={() => run(() => experienceApi.inviteAdmin(invite).then((r) => { setInvite(""); if (!r.email_sent && r.link) window.prompt(t("setup.admins.link"), r.link); }), t("setup.saved.invite"), false)}>
-                    {t("setup.admins.invite")}
-                  </Button>
-                </Stack>
               </Stack>
             )}
 

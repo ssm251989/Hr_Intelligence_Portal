@@ -557,3 +557,21 @@ tsc clean, i18n 0 missing (15 new keys), npm run build OK
 The whole post-interview flow (18.12 → 18.20) now runs by itself: interview cleared → salary form → auto/HR salary decision (+ budget) → documents form → agent check + HR approval → BGV (HR decides) → 3 joining dates → offer + welcome → onboarding.
 
 **Screenshot:** Contacts settings page -- pending login proof.
+
+## 18.21 Setup checklist
+
+**Ask:** remove "Invite another admin" and "Start from a ready-made template". Every step must open its form, save, reopen with the saved values, and be editable again.
+
+**Change:**
+- `setup_wizard.STEPS` is now **company → offices & entities → branding → mailbox → (import employees, only when People is on) → choose what you use**. The two steps are gone from the checklist, the Home "Finish setting up" card and the Setup page (their UI blocks are removed). The functions and endpoints stay for API use, and admins are added in Settings > People & access.
+- Reopening a step shows the saved values and can be edited again (17.10 `setup/values`). "Choose what you use" comes from the real module list (18.5).
+
+**Verified:**
+```
+GET /api/v1/setup/progress -> [company ✓, entities_locations ✓, branding ✓, mailbox ✓, modules ✓] percent 100
+  (before: 8 steps incl. import_employees, config_pack, invite_admins)
+GET /api/v1/setup/values -> company "CTD Techs" / Asia/Kolkata, locations [Chennai Office, Demo - Bengaluru office, Demo - Chennai office],
+  mailbox connected, modules on [onboarding, assets, separation, analytics, copilot]
+tsc clean, npm run build OK
+```
+**Screenshot:** Setup page -- pending login proof.
