@@ -24,9 +24,9 @@ export function explainError(err: unknown): Explained {
   if (err instanceof ApiError) {
     // Part 14 section 8 envelope: {code, message, fix, fix_path} -- the server already knows
     // the plain-language fix and which settings page repairs it.
-    const body = typeof err.detail === "object" && err.detail !== null ? (err.detail as { message?: string; fix?: string; fix_path?: string }) : null;
+    const body = typeof err.detail === "object" && err.detail !== null ? (err.detail as { message?: string; fix?: string; fix_path?: string; fix_label?: string }) : null;
     const detail = typeof err.detail === "string" ? err.detail : body?.message;
-    if (body?.fix) return { what: detail || tr("error.failed"), fix: body.fix, actionLabel: body.fix_path ? tr("error.open_settings") : undefined, actionTo: body.fix_path };
+    if (body?.fix) return { what: detail || tr("error.failed"), fix: body.fix, actionLabel: body.fix_path ? (body.fix_label ?? tr("error.open_settings")) : undefined, actionTo: body.fix_path };
     if (err.status === 401) return { what: tr("error.signed_out"), fix: tr("error.signed_out_fix"), actionLabel: tr("action.sign_in"), actionTo: "/login" };
     if (err.status === 403) return { what: tr("error.no_access"), fix: tr("error.no_access_fix"), actionLabel: tr("action.go_home"), actionTo: "/" };
     if (err.status === 404) return { what: detail || tr("error.not_found"), fix: tr("error.not_found_fix"), actionLabel: tr("action.go_home"), actionTo: "/" };

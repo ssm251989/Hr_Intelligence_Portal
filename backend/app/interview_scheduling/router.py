@@ -2,6 +2,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_roles
@@ -87,21 +88,21 @@ def propose_slots(
     if application.status != "hr_selected":
         raise HTTPException(
             status_code=400,
-            detail="Application must be HR-selected before interview slots can be proposed",
+            detail="This candidate isn't at the Shortlisted step, so there is no interview to arrange.",
         )
 
     settings_row = get_interview_scheduling_settings(db)  # Part 17.12: interviewers come from the app's pools
 
     candidate = db.get(Candidate, application.candidate_id)
     if not candidate or not candidate.email:
-        raise HTTPException(status_code=400, detail="Candidate has no email on file")
+        raise HTTPException(status_code=400, detail="The candidate has no email address, so we can't send them interview times. Add their email first.")
     job = db.get(JobRole, application.job_role_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
     hr_integration = get_hr_integration(db)
     if not is_smtp_configured(hr_integration):
-        raise HTTPException(status_code=400, detail="Configure the HR mailbox's SMTP settings to send interview slot emails")
+        raise HTTPException(status_code=400, detail="The HR mailbox isn't connected, so interview emails can't be sent. Connect it in Settings > Communication > Mailboxes.")
 
     try:
         result = propose_interview_slots(
@@ -114,8 +115,7 @@ def propose_slots(
     if result["slots_offered"] == 0:
         raise HTTPException(
             status_code=409,
-            detail="No interviewer availability found for any of the proposed slots -- check the "
-            "Interviewer Pool and connected Google Calendars",
+            detail="No interviewer is free at any of those times. Check who is in the interviewer pool and their availability.",
         )
 
     return ProposeInterviewSlotsResponse(slots_offered=result["slots_offered"], expires_at=result["expires_at"])
@@ -142,7 +142,11 @@ def retry_negotiation_endpoint(
 
     ineligible_reason = check_retry_eligibility(db, application)
     if ineligible_reason:
-        raise HTTPException(status_code=409, detail=ineligible_reason)
+        # Part 18.28: plain words + what the page can offer instead (wait / book it yourself)
+        from app.interview_scheduling.live_status import status as live_status
+
+        raise HTTPException(status_code=409, detail={"code": "NOT_NOW", "message": ineligible_reason,
+                                                      "scheduling": live_status(db, application)})
 
     try:
         outcome, invalidated_count, reason = retry_negotiation(db, application, current_user)
@@ -151,3 +155,57 @@ def retry_negotiation_endpoint(
             status_code=409, detail={"code": "TRACKER_LOCKED", "message": str(exc)},
         ) from exc
     return RetryNegotiationResponse(outcome=outcome, invalidated_stale_tokens=invalidated_count, reason=reason)
+
+
+# ---------------------------------------------------------------- Part 18.28: live status + actions
+
+class ChangeInterviewerIn(BaseModel):
+    email: str
+
+
+def _app_or_404(db: Session, application_id: uuid.UUID) -> Application:
+    application = db.get(Application, application_id)
+    if not application:
+        raise HTTPException(status_code=404, detail="Application not found")
+    return application
+
+
+def _run(fn, *args):
+    from app.interview_scheduling.live_status import SchedulingActionError
+
+    try:
+        return fn(*args)
+    except SchedulingActionError as exc:
+        raise HTTPException(status_code=400, detail={"code": "SCHEDULING", "message": str(exc)}) from exc
+
+
+@router.get("/applications/{application_id}/status")
+def scheduling_status_endpoint(application_id: uuid.UUID, db: Session = Depends(get_db),
+                               current_user: User = Depends(require_roles("recruiter", "hiring_manager", "admin"))):
+    from app.interview_scheduling.live_status import status
+
+    return status(db, _app_or_404(db, application_id))
+
+
+@router.post("/applications/{application_id}/resend")
+def scheduling_resend_endpoint(application_id: uuid.UUID, db: Session = Depends(get_db),
+                               current_user: User = Depends(require_roles("recruiter", "hiring_manager", "admin"))):
+    from app.interview_scheduling.live_status import resend
+
+    return _run(resend, db, _app_or_404(db, application_id), current_user)
+
+
+@router.post("/applications/{application_id}/cancel")
+def scheduling_cancel_endpoint(application_id: uuid.UUID, db: Session = Depends(get_db),
+                               current_user: User = Depends(require_roles("recruiter", "hiring_manager", "admin"))):
+    from app.interview_scheduling.live_status import cancel
+
+    return _run(cancel, db, _app_or_404(db, application_id), current_user)
+
+
+@router.post("/applications/{application_id}/change-interviewer")
+def scheduling_change_endpoint(application_id: uuid.UUID, payload: ChangeInterviewerIn, db: Session = Depends(get_db),
+                               current_user: User = Depends(require_roles("recruiter", "hiring_manager", "admin"))):
+    from app.interview_scheduling.live_status import change_interviewer
+
+    return _run(change_interviewer, db, _app_or_404(db, application_id), payload.email, current_user)

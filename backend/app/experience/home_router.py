@@ -158,6 +158,34 @@ _DROPS = {
 }
 
 
+# Part 18.28: "interviewed" / "passed" come from real interview rows, never from the status
+# label alone. Statuses at those two steps count only as far as the records prove.
+_INTERVIEW_STEP = {"interview_scheduled", "interview_selected", "salary_ok", "salary_above_band", "salary_approved", "salary_rejected"}
+
+
+def _counts_with_evidence(db: Session, q):
+    """[(status, has_interview, has_selected_interview, n)] for an Application.status query."""
+    from sqlalchemy import exists
+
+    from app.models.application import Application
+    from app.models.interview import Interview
+
+    has_iv = exists().where(Interview.application_id == Application.id)
+    has_sel = exists().where(Interview.application_id == Application.id, Interview.decision == "selected")
+    rows = q.with_entities(Application.status, has_iv, has_sel, func.count()).group_by(Application.status, has_iv, has_sel).all()
+    return [(status or "received", bool(iv), bool(sel), n) for status, iv, sel, n in rows]
+
+
+def _proven_rank(status: str, rank: int, has_iv: bool, has_sel: bool, *, interview_rank: int, passed_rank: Optional[int]) -> int:
+    if status not in _INTERVIEW_STEP:
+        return rank
+    if not has_iv:
+        return min(rank, interview_rank - 1)
+    if passed_rank is not None and not has_sel:
+        return min(rank, passed_rank - 1)
+    return rank
+
+
 @router.get("/home/hiring-flow")
 def hiring_flow(job_id: Optional[str] = None, db: Session = Depends(get_db),
                 current_user: User = Depends(require("recruitment.pipeline.view"))):
@@ -167,18 +195,16 @@ def hiring_flow(job_id: Optional[str] = None, db: Session = Depends(get_db),
     q = db.query(Application.status, func.count()).filter(Application.tenant_id == tenant.tenant_id)
     if job_id:
         q = q.filter(Application.job_role_id == job_id)
-    counts = dict(q.group_by(Application.status).all())
-
     reached = [0] * len(_LADDER)
     drops: dict[tuple[int, str], int] = {}
-    for status, n in counts.items():
+    for status, has_iv, has_sel, n in _counts_with_evidence(db, q):
         if status in _DROPS:
             rank, label = _DROPS[status]
             for i in range(rank + 1):
                 reached[i] += n
             drops[(rank, label)] = drops.get((rank, label), 0) + n
         else:
-            rank = _RANK.get(status or "received", 0)
+            rank = _proven_rank(status, _RANK.get(status, 0), has_iv, has_sel, interview_rank=3, passed_rank=4)
             for i in range(rank + 1):
                 reached[i] += n
 
@@ -260,12 +286,10 @@ def hiring_funnel(period: str = "30d", job_id: Optional[str] = None, locale: str
     q = (db.query(Application.status, func.count()).filter(Application.tenant_id == tenant.tenant_id, Application.created_at >= since))
     if job_id:
         q = q.filter(Application.job_role_id == job_id)
-    counts = {status or "received": n for status, n in q.group_by(Application.status).all()}
-
     reached = [0] * len(_FUNNEL)
     stopped = [0] * len(_FUNNEL)
-    for status, n in counts.items():
-        rank = _FUNNEL_RANK.get(status, 0)
+    for status, has_iv, has_sel, n in _counts_with_evidence(db, q):
+        rank = _proven_rank(status, _FUNNEL_RANK.get(status, 0), has_iv, has_sel, interview_rank=3, passed_rank=None)
         for i in range(rank + 1):
             reached[i] += n
         if status in _FUNNEL_STOPPED:

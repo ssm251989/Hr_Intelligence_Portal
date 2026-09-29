@@ -41,6 +41,8 @@ import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
 import DuplicateBanner from "../components/candidates/DuplicateBanner";
 import CandidateTags from "../components/candidates/CandidateTags";
 import RemoveCandidateDialog from "../components/candidates/RemoveCandidateDialog";
+import SchedulingStatusCard from "../components/interviews/SchedulingStatusCard";
+import ScheduleInterviewDialog from "../components/ScheduleInterviewDialog";
 import ParseProblem, { type ParseProblemInfo, parseProblemFrom } from "../components/candidates/ParseProblem";
 import { ROLE_MATRIX } from "../auth/roles";
 import { useT } from "../i18n";
@@ -132,6 +134,8 @@ export default function CandidateDetailPage() {
   const [retryingNegotiation, setRetryingNegotiation] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
   const [retryNotice, setRetryNotice] = useState<string | null>(null);
+  const [bookOpen, setBookOpen] = useState(false);
+  const [schedKey, setSchedKey] = useState(0);
 
   const [parsing, setParsing] = useState(false);
   const [parseProblem, setParseProblem] = useState<ParseProblemInfo | null>(null);
@@ -259,6 +263,7 @@ export default function CandidateDetailPage() {
     setRetryNotice(null);
     try {
       const result = await interviewSchedulingApi.retryNegotiation(application.id);
+      setSchedKey((k) => k + 1);
       setRetryNotice(
         result.outcome === "started"
           ? t("candidates.retry.started")
@@ -398,6 +403,10 @@ export default function CandidateDetailPage() {
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setActionError(null)}>
           {actionError}
         </Alert>
+      )}
+      {/* Part 18.28: live interview-scheduling status from the real records, with what HR can do */}
+      {["hr_selected", "interview_scheduled", "interview_selected", "interview_rejected"].includes(application.status) && (
+        <SchedulingStatusCard key={schedKey} applicationId={application.id} candidateName={candidate.full_name ?? null} canWrite={canWrite} onChanged={load} />
       )}
 
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "340px minmax(0, 1fr)" }, gap: 2.25, alignItems: "start" }}>
@@ -675,7 +684,13 @@ export default function CandidateDetailPage() {
                       <Box sx={{ mb: 3 }}>
                         <SectionTitle>{t("candidates.retry.title")}</SectionTitle>
                         <Alert severity="warning" sx={{ mb: 1 }}>{t("candidates.retry.warning")}</Alert>
-                        {retryError && <Alert severity="error" sx={{ mb: 1 }}>{retryError}</Alert>}
+                        {retryError && (
+                          <Alert severity="info" sx={{ mb: 1 }} action={<Button size="small" onClick={() => setBookOpen(true)}>{t("sched.book")}</Button>}>
+                            {retryError}
+                          </Alert>
+                        )}
+                        <ScheduleInterviewDialog open={bookOpen} presetApplicationId={application.id} onClose={() => setBookOpen(false)}
+                          onScheduled={() => { setBookOpen(false); setSchedKey((k) => k + 1); load(); }} />
                         {retryNotice && <Alert severity="info" sx={{ mb: 1 }}>{retryNotice}</Alert>}
                         <Button size="small" variant="outlined" disabled={retryingNegotiation} onClick={handleRetryNegotiation}>
                           {retryingNegotiation ? t("candidates.retry.retrying") : t("candidates.retry.button")}

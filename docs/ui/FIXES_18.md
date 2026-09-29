@@ -735,3 +735,66 @@ usage: claude-haiku-4-5 ok 3031/588, ok 2194/348, ok 3252/348, ok 2603/663, erro
 **Live:** the running backend reloaded with the fix. The owner's next real upload (Kishore Gunda, 22:10) shows "AI read the resume" at 22:10:52.
 
 **Screenshots:** `parse-reason-light/dark.png` (the reason with Retry and Fix in Settings) and `parse-ocr-light/dark.png` (the OCR chip after Retry). The parse call was intercepted with the exact 502 body above.
+
+## 18.28 Interviewer "jr": retry blocked, no interview, dashboard showed "done / selected"
+
+**Trace (real data, application `1e031a6f…`, Kishore Gunda → Junior AI Developer):**
+```
+22:11:07  ai_auto_shortlisted (score 96)                     status = hr_selected
+22:13:54  retry -> manual_scheduling_required               (no interviewer in any pool for this job yet)
+22:14:49  retry -> 22:14:53 interviewer_attempt offer_sent  Jagadeesh <jr@ctdtechs.com>, times for 29 Sep
+          retry again -> 409 "A negotiation was started less than 10 minutes ago and may still be in flight"
+22:25:57  retry (link now >10 min old) -> old link invalidated, 22:26:01 new offer to Jagadeesh for 30 Sep
+negotiation_tokens: 22:14:49 interviewer (invalidated 22:25:57) | 22:25:57 interviewer, live until 3 Oct, no reply
+interviews for this application: none
+message log: negotiation emails go straight out through the HR mailbox (SMTP), so they are not in the message log; they are in the audit log above
+interviewer "jr": availability row "Jagadeesh" jr@ctdtechs.com, source excel_import, weekly hours {} (none), no employee / user link;
+                  member of pool "AI interviewers" (this job)
+```
+**In three lines:**
+1. The system emailed Jagadeesh interview times twice. It is waiting for him to pick 2 of the 3 times, then for Kishore to pick one; the interview row is only created at that point, so none exists yet. Nothing failed.
+2. The red message was the "don't double-send" guard, written in developer words and without offering a way forward.
+3. The dashboard's "1 interview done / 1 passed" was **not** Kishore. It was Kranthi Kumar's old selected interview; that candidate went to the Recycle bin on 28 Sep 11:10, but their interview rows were still counted.
+
+**Fixes:**
+- **Removed candidates:** their interviews are now hidden everywhere, like their candidate and application records (`removal._hide_removed` + Interview).
+- **Stage counts come from real records.** The Home flow and funnel count "interviewed" only with an interview row, and "passed" only with a `selected` interview (`_counts_with_evidence` / `_proven_rank`).
+- **"Validate Salary":** it's gone at Shortlisted, and `validate-salary` now needs `interview_selected` plus a selected interview. Before, one click made a shortlisted candidate look "interview passed".
+- **Finding and fixing bad stages:** `app/recruitment/stage_consistency.py` and `hrctl stages check|fix --tenant <slug>` (no deletes; each change is audit-logged `stage_corrected_to_records`).
+  - Found 1: **Demo - Asha Verma**, `salary_approved` with 0 interviews (Recycle bin). Moved to `hr_selected`; the check now shows 0.
+- **Live status on the candidate page:** `GET /interview-scheduling/applications/{id}/status` and `SchedulingStatusCard`, e.g. "Waiting for Jagadeesh to pick interview times - email sent 28 Sept, 22:25 · The link in the email works until 3 Oct". The buttons:
+  - **Resend email:** the same link again.
+  - **Change interviewer:** stops the current link and sends the times to the chosen person; only people with availability can be picked.
+  - **Book manually:** the booking dialog with this candidate already picked.
+  - **Cancel:** the links stop working.
+- **Plain words:**
+  - The retry guard now says "We're already arranging this interview (started N min ago). You can wait, or book it yourself.", shown as an info message with a **Book manually** button.
+  - All negotiation, scheduling and hold messages were reworded ("Application must be HR-selected…", "terminal status '…'", "SMTP settings…", "Interviewer Pool and connected Google Calendars").
+- **Adding an interviewer is checked:** they need an email and at least one day with hours. Otherwise: 400 `INTERVIEWER_NO_AVAILABILITY` "Jagadeesh has no availability yet…" with an **Add availability** button (`/interviews/interviewers?edit=<email>` opens their editor). "Has availability" in the Interviewers list now means real hours, not just a row.
+
+**Proof:** real API on the real data, rolled back, with emails stubbed so nothing was sent:
+```
+status now            waiting_interviewer · Jagadeesh jr@ctdtechs.com · sent 2026-09-28T22:25:57 · round 2026-09-30
+retry (link >10 min)  200 started, 1 stale link invalidated
+retry straight away   409 "We're already arranging this interview (started 1 min ago). You can wait, or book it yourself."
+raw interview rows    (1 total, 1 selected)  -> Interviews dashboard now: completed 0, selected 0
+Home flow             received 1, screened 1, shortlisted 1, interview 0, passed 0
+Home funnel           applied 1, screened 1, shortlisted 1, interviewed 0
+validate salary @Shortlisted -> 400 "The salary is checked after the interview. Record the interview result (scorecard and decision) first."
+add jr to a pool      400 INTERVIEWER_NO_AVAILABILITY, fix_path /interviews/interviewers?edit=jr@ctdtechs.com, "Add availability"
+change to jr          400 "Jagadeesh has no availability yet ... Add the days and hours they can interview first."
+save jr hours         200 has_availability true -> add to pool 201
+resend                200 waiting_interviewer, email to jr@ctdtechs.com
+change interviewer    200 waiting_interviewer, new link to jr@ctdtechs.com
+cancel                200 cancelled, live links 0
+book manually         201 -> status "scheduled" 2026-10-01 10:30 -> funnel interviewed 1
+hrctl stages check    1 found (Demo - Asha Verma salary_approved, 0 interviews) -> fix -> check 0
+```
+**Screenshots:**
+- `sched-status-light/dark.png`: the live status line and the four buttons, from real data.
+- `sched-change-light/dark.png`: jr is picked and shows "no availability yet" with Add availability; Send is disabled.
+- `sched-book-light/dark.png`: Book manually with Kishore Gunda already picked.
+
+Every write was blocked in the browser (0 attempted).
+
+**What you need to do:** add Jagadeesh's hours in Interviews > Interviewers (his imported row has none), or wait for his reply to the 22:26 email. Is jr@ctdtechs.com a mailbox he actually reads? If not, use **Change interviewer**.

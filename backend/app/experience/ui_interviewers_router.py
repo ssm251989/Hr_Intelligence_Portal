@@ -113,7 +113,7 @@ def _row(db, tenant, email: str, name: Optional[str], row: Optional[InterviewerA
         "exceptions": [e for e in (row.exceptions_json if row else []) or [] if str(e.get("date")) >= today],
         "max_interviews_per_day": row.max_interviews_per_day if row else None,
         "max_interviews_per_week": row.max_interviews_per_week if row else None,
-        "has_availability": row is not None, "booked_next_7_days": week, "pools": _pools_of(db, tenant, email),
+        "has_availability": has_hours(row), "booked_next_7_days": week, "pools": _pools_of(db, tenant, email),
         "free_tomorrow": [s.astimezone(tz).strftime("%H:%M") for s in free_slots(db, tenant, email, slots)],
         "source": row.source if row else None,
     }
@@ -216,12 +216,43 @@ def _clean_members(emails: list[str]) -> list[str]:
     return out
 
 
+def has_hours(row) -> bool:
+    """Part 18.28: availability means at least one day with hours, not just a row (an Excel
+    import can leave a row with an empty week)."""
+    return row is not None and any((row.weekly_pattern_json or {}).values())
+
+
+def interviewer_problem(db: Session, tenant, email: str) -> Optional[dict]:
+    """Part 18.28: an interviewer can only be used when they have an email AND availability
+    (the days / hours they can interview). Returns the plain-words problem, or None."""
+    email = (email or "").strip().lower()
+    if "@" not in email:
+        return {"code": "INTERVIEWER_NO_EMAIL", "message": f"'{email or '(blank)'}' isn't an email address.",
+                "fix": "Give the interviewer's work email.", "fix_path": "/interviews/interviewers", "fix_label": "Open interviewers"}
+    row = db.query(InterviewerAvailability).filter(InterviewerAvailability.tenant_id == tenant.tenant_id,
+                                                   InterviewerAvailability.interviewer_email == email).first()
+    if not has_hours(row):
+        who = (row.interviewer_name if row and row.interviewer_name else None) or email
+        return {"code": "INTERVIEWER_NO_AVAILABILITY", "message": f"{who} has no availability yet, so we can't offer interview times for them.",
+                "fix": "Add the days and hours they can interview first.", "fix_path": f"/interviews/interviewers?edit={email}",
+                "fix_label": "Add availability", "email": email}
+    return None
+
+
+def _check_members_ready(db: Session, tenant, emails: list[str]) -> None:
+    for e in emails:
+        problem = interviewer_problem(db, tenant, e)
+        if problem:
+            raise HTTPException(status_code=400, detail=problem)
+
+
 @router.post("/pools", status_code=201)
 def create_pool(payload: PoolIn, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     tenant = require_current_tenant()
     _need(db, tenant, current_user, "recruitment.interview.edit")
     if payload.job_role_id is None and not payload.skills:
         raise HTTPException(status_code=400, detail="Pick the job this pool is for, or the skills it covers")
+    _check_members_ready(db, tenant, _clean_members(payload.member_emails))
     p = InterviewerPool(tenant_id=tenant.tenant_id, name=payload.name.strip(), job_role_id=payload.job_role_id,
                         skills_json=[s.strip() for s in payload.skills if s.strip()], member_emails_json=_clean_members(payload.member_emails), active=payload.active)
     db.add(p)
@@ -240,7 +271,9 @@ def update_pool(pool_id: UUID, payload: PoolIn, db: Session = Depends(get_db), c
         raise HTTPException(status_code=404, detail="Pool not found")
     p.name, p.job_role_id, p.active = payload.name.strip(), payload.job_role_id, payload.active
     p.skills_json = [s.strip() for s in payload.skills if s.strip()]
-    p.member_emails_json = _clean_members(payload.member_emails)
+    members = _clean_members(payload.member_emails)
+    _check_members_ready(db, tenant, [e for e in members if e not in (p.member_emails_json or [])])  # only newly added people
+    p.member_emails_json = members
     db.commit()
     log_action(db, "interviewer_pool", p.id, "pool_updated", current_user.email[:50], {"name": p.name, "members": len(p.member_emails_json)})
     jobs = dict(db.query(JobRole.id, JobRole.title).filter(JobRole.tenant_id == tenant.tenant_id).all())

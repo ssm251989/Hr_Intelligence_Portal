@@ -221,7 +221,7 @@ def schedule_interview(
     if application.status not in SCHEDULABLE_STATUSES:
         raise HTTPException(
             status_code=400,
-            detail="Application must be HR-selected before an interview can be scheduled",
+            detail="This candidate isn't at the Shortlisted step, so an interview can't be booked yet.",
         )
     interviewer = None
     if payload.interviewer_id:
@@ -301,7 +301,7 @@ def submit_interview_feedback(
         if application.status != "interview_scheduled":
             raise HTTPException(
                 status_code=400,
-                detail="Application is not awaiting an interview decision",
+                detail="This interview already has a result, or the candidate has moved on.",
             )
 
     for field, value in updates.items():
@@ -350,7 +350,7 @@ def generate_questions(
     assert_application_not_on_hold(application)
     job = db.get(JobRole, application.job_role_id)
     if not job or not job.jd_text:
-        raise HTTPException(status_code=400, detail="Job description not yet generated")
+        raise HTTPException(status_code=400, detail="Write or generate the job description first.")
 
     missing_skills = application.missing_skills or []
     try:

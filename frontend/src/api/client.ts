@@ -666,7 +666,20 @@ export const interviewSchedulingApi = {
   // see backend app/interview_scheduling/router.py retry_negotiation_endpoint.
   retryNegotiation: (applicationId: UUID) =>
     post<RetryNegotiationResponse>(`/interview-scheduling/applications/${applicationId}/retry-negotiation`),
+  // Part 18.28: live scheduling status + Resend / Change interviewer / Cancel
+  status: (applicationId: UUID) => get<SchedulingStatus>(`/interview-scheduling/applications/${applicationId}/status`),
+  resend: (applicationId: UUID) => post<SchedulingStatus>(`/interview-scheduling/applications/${applicationId}/resend`),
+  cancel: (applicationId: UUID) => post<SchedulingStatus>(`/interview-scheduling/applications/${applicationId}/cancel`),
+  changeInterviewer: (applicationId: UUID, email: string) =>
+    post<SchedulingStatus>(`/interview-scheduling/applications/${applicationId}/change-interviewer`, { email }),
 };
+
+export interface SchedulingStatus {
+  state: "not_started" | "waiting_interviewer" | "waiting_candidate" | "needs_manual" | "scheduled" | "done" | "cancelled";
+  message: string | null; interviewer_name: string | null; interviewer_email: string | null; sent_at: string | null;
+  expires_at: string | null; round_day: string | null; interview_id: string | null; scheduled_at: string | null;
+  can_resend: boolean; can_change: boolean; can_cancel: boolean; can_book: boolean;
+}
 
 // ---- shortlisting (redesign) ----
 

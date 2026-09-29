@@ -119,6 +119,18 @@ export default function InterviewersPage() {
     Promise.all([interviewersApi.all(), interviewersApi.pools()]).then(([a, p]) => { setPeople(a); setPools(p); }).catch(setError);
   }, []);
   useEffect(() => { load(); jobsApi.list().then(setJobs).catch(() => setJobs([])); }, [load]);
+  // Part 18.28: ?edit=<email> (from "Add availability" links) opens that person's availability
+  const editEmail = params.get("edit");
+  useEffect(() => {
+    if (!editEmail || !people || !canEdit) return;
+    const hit = people.items.find((a) => a.email === editEmail.toLowerCase());
+    setEditError(null);
+    setEditing(hit ?? ({ email: editEmail.toLowerCase(), name: "", weekly_pattern: {}, exceptions: [], max_interviews_per_day: null,
+      max_interviews_per_week: null, has_availability: false, booked_next_7_days: 0, pools: [], free_tomorrow: [], source: null } as Availability));
+    const next = new URLSearchParams(params);
+    next.delete("edit");
+    setParams(next, { replace: true });
+  }, [editEmail, people, canEdit, params, setParams]);
 
   const removePool = async (p: Pool) => {
     if (!window.confirm(t("interviewers.pool.remove_confirm", { name: p.name }))) return;

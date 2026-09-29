@@ -2399,3 +2399,23 @@ NEXT: STOP -- hand-over reported. Then PART16 steps 16.1-16.10 per RESUME.txt wh
 - **Signed-in screenshots:** used a short-lived local session token for the admin, minted in the scratchpad and deleted afterwards. The parse call was intercepted.
 
 NEXT: continue docs/RESUME.txt -> PART16 steps 16.1-16.10.
+
+## Part 18.28 -- interview scheduling truth + plain words (2026-09-29)
+
+- **Cause:**
+  - The negotiation was waiting on Jagadeesh (emailed 22:14 and 22:26); there was no fault.
+  - The dashboard counted a Recycle-bin candidate's selected interview.
+  - Salary validation was allowed at Shortlisted, which is a stage label without an interview.
+- **Fixed:**
+  - Removed candidates' interviews are hidden.
+  - The flow and funnel come from interview records.
+  - Salary is checked only after an interview decision.
+  - New `hrctl stages check|fix`; it corrected 1 demo row.
+- **Added:**
+  - A live status card on the candidate page (Resend / Change interviewer / Book manually / Cancel).
+  - A plain-language retry message and other messages.
+  - Interviewer readiness check (email + hours).
+- **Decision:** "availability" means at least one day with hours. Only newly added pool members are checked, so existing pools still save.
+- **Note:** old test assertions in `tests/test_reports.py` may still expect the previous developer wording (not run, per the rules).
+
+NEXT: continue docs/RESUME.txt -> PART16 16.1 (already met: content fills the width, 16-24px right padding at 1366/1536/1920/2560 -- verified, log only), then 16.2 plain-language sweep.

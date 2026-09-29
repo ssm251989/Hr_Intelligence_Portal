@@ -253,12 +253,11 @@ def _in_flight_or_scheduled_reason(
         .first()
     )
     if live_token is not None and (live_token_max_age is None or now - live_token.created_at < live_token_max_age):
-        if live_token_max_age is not None:
-            minutes = int(live_token_max_age.total_seconds() // 60)
-            return f"A negotiation was started less than {minutes} minutes ago and may still be in flight -- wait before retrying"
-        return "Application already has a live negotiation in progress"
+        # Part 18.28: plain words (shown to HR as-is), with how long ago it started
+        ago = max(1, int((now - live_token.created_at).total_seconds() // 60))
+        return f"We're already arranging this interview (started {ago} min ago). You can wait, or book it yourself."
     if db.query(Interview).filter(Interview.application_id == application.id).first() is not None:
-        return "An interview has already been scheduled for this application"
+        return "An interview is already booked for this candidate."
     return None
 
 
@@ -344,7 +343,7 @@ def _has_live_negotiation_or_scheduled_interview(db: Session, application: Appli
     if reason is not None:
         return reason
     if _is_flagged_for_manual_scheduling(db, application):
-        return "Application is flagged for manual scheduling and needs a human to pick it up"
+        return "No interviewer could be found automatically, so this interview needs to be booked by hand."
     return None
 
 
@@ -577,57 +576,66 @@ def _advance_interviewer_round(
             _log_attempt(db, application, actor_user.email, name, round_day, "no_email_on_file")
             continue
 
-        row = _create_negotiation_row(
-            db, application=application, role="interviewer", interviewer_user_id=None,
-            interviewer_email=email, actor_email=actor_user.email, candidate_name=candidate.full_name,
-            job_title=job.title, interviewer_name=name, round_day=round_day, tracker_path=tracker_path,
-            slot_hours_json=_format_slot_hours(mechanics["slot_hours"]), required_picks=mechanics["slots_to_pick"],
-        )
-        try:
-            subject, text_body, html_body = _render_negotiation_email(
-                db, "recruitment.negotiation.interviewer_offer",
-                candidate_name=candidate.full_name or "a candidate", job_title=job.title,
-                round_day=round_day.strftime("%d %b %Y"), picker_url=_token_url(row.token),
-                required_picks=mechanics["slots_to_pick"], token_expiry_days=TOKEN_EXPIRY_DAYS,
-            )
-        except NegotiationEmailRenderError:
-            # Same "row already committed live, must not survive an email that never
-            # actually went out" reasoning as the SmtpError branch right below.
-            _invalidate_batch(db, [row])
-            raise
-        try:
-            send_hr_email(hr_integration, to=email, subject=subject, body=text_body, html_body=html_body)
-        except SmtpError:
-            # The row is already committed live (see _create_negotiation_row) -- a failed
-            # send must not leave it behind for the idempotency guard to trip over.
-            # Re-raised unchanged so every existing caller's own SmtpError handling (skip +
-            # audit log) still runs exactly as before.
-            _invalidate_batch(db, [row])
-            raise
-        try:
-            append_interview_log_row(
-                Path(tracker_path),
-                {
-                    "Candidate": candidate.full_name or "", "Job Title": job.title, "Assigned Interviewer": name,
-                    "Slots Offered": ", ".join(_format_slot(t) for t in slot_times),
-                    "Status": "Awaiting Interviewer Response",
-                },
-            )
-        except TrackerFileLockedError as exc:
-            # See TrackerLockedNegotiationError's own docstring -- the interviewer's send
-            # already succeeded, but with no Interview Log row recorded for it, the row must
-            # not survive as a live token either (same "no orphan tokens" reasoning as the
-            # SmtpError branch above).
-            _invalidate_batch(db, [row])
-            raise TrackerLockedNegotiationError(str(exc)) from exc
-        _log_attempt(db, application, actor_user.email, name, round_day, "offer_sent")
-        log_action(
-            db, "application", application.id, _BATCH_STARTED_ACTION, actor_user.email,
-            {"interviewer": name, "round_day": round_day.isoformat(), "job_title": job.title},
-        )
-        return "started"
+        return _offer_to_interviewer(db, application, candidate, job, tracker_path, round_day, actor_user, hr_integration,
+                                     name=name, email=email, mechanics=mechanics, slot_times=slot_times)
 
     return "exhausted"
+
+
+def _offer_to_interviewer(db: Session, application: Application, candidate: Candidate, job: JobRole, tracker_path: str,
+                          round_day: date, actor_user: User, hr_integration, *, name: str, email: str, mechanics: dict,
+                          slot_times: list) -> str:
+    """Creates the interviewer's negotiation row and emails them the times (one pool member).
+    Shared by _advance_interviewer_round's pool walk and Part 18.28's "Change interviewer"."""
+    row = _create_negotiation_row(
+        db, application=application, role="interviewer", interviewer_user_id=None,
+        interviewer_email=email, actor_email=actor_user.email, candidate_name=candidate.full_name,
+        job_title=job.title, interviewer_name=name, round_day=round_day, tracker_path=tracker_path,
+        slot_hours_json=_format_slot_hours(mechanics["slot_hours"]), required_picks=mechanics["slots_to_pick"],
+    )
+    try:
+        subject, text_body, html_body = _render_negotiation_email(
+            db, "recruitment.negotiation.interviewer_offer",
+            candidate_name=candidate.full_name or "a candidate", job_title=job.title,
+            round_day=round_day.strftime("%d %b %Y"), picker_url=_token_url(row.token),
+            required_picks=mechanics["slots_to_pick"], token_expiry_days=TOKEN_EXPIRY_DAYS,
+        )
+    except NegotiationEmailRenderError:
+        # Same "row already committed live, must not survive an email that never
+        # actually went out" reasoning as the SmtpError branch right below.
+        _invalidate_batch(db, [row])
+        raise
+    try:
+        send_hr_email(hr_integration, to=email, subject=subject, body=text_body, html_body=html_body)
+    except SmtpError:
+        # The row is already committed live (see _create_negotiation_row) -- a failed
+        # send must not leave it behind for the idempotency guard to trip over.
+        # Re-raised unchanged so every existing caller's own SmtpError handling (skip +
+        # audit log) still runs exactly as before.
+        _invalidate_batch(db, [row])
+        raise
+    try:
+        append_interview_log_row(
+            Path(tracker_path),
+            {
+                "Candidate": candidate.full_name or "", "Job Title": job.title, "Assigned Interviewer": name,
+                "Slots Offered": ", ".join(_format_slot(t) for t in slot_times),
+                "Status": "Awaiting Interviewer Response",
+            },
+        )
+    except TrackerFileLockedError as exc:
+        # See TrackerLockedNegotiationError's own docstring -- the interviewer's send
+        # already succeeded, but with no Interview Log row recorded for it, the row must
+        # not survive as a live token either (same "no orphan tokens" reasoning as the
+        # SmtpError branch above).
+        _invalidate_batch(db, [row])
+        raise TrackerLockedNegotiationError(str(exc)) from exc
+    _log_attempt(db, application, actor_user.email, name, round_day, "offer_sent")
+    log_action(
+        db, "application", application.id, _BATCH_STARTED_ACTION, actor_user.email,
+        {"interviewer": name, "round_day": round_day.isoformat(), "job_title": job.title},
+    )
+    return "started"
 
 
 def attempt_auto_negotiate_interview_slots(db: Session, application: Application, actor_user: User) -> tuple[Optional[str], Optional[str]]:
@@ -647,7 +655,7 @@ def attempt_auto_negotiate_interview_slots(db: Session, application: Application
     "check the tracker" copy), None when outcome is "started". Never raises.
     """
     if application.status != "hr_selected":
-        return None, "Application is not in Shortlisted status"
+        return None, "This candidate isn't at the Shortlisted step, so there is no interview to arrange."
 
     blocking_reason = _has_live_negotiation_or_scheduled_interview(db, application)
     if blocking_reason:
@@ -659,19 +667,19 @@ def attempt_auto_negotiate_interview_slots(db: Session, application: Application
 
     candidate = db.get(Candidate, application.candidate_id)
     if not candidate or not candidate.email:
-        reason = "Candidate has no email on file"
+        reason = "The candidate has no email address, so we can't send them interview times. Add their email first."
         _skip(db, application, actor_user.email, reason)
         return None, reason
 
     job = db.get(JobRole, application.job_role_id)
     if not job:
-        reason = "Job not found"
+        reason = "The job for this application can't be found."
         _skip(db, application, actor_user.email, reason)
         return None, reason
 
     hr_integration = get_hr_integration(db)
     if not is_smtp_configured(hr_integration):
-        reason = "HR mailbox's SMTP settings are not configured -- cannot send negotiation emails"
+        reason = "The HR mailbox isn't connected, so interview emails can't be sent. Connect it in Settings > Communication > Mailboxes."
         _skip(db, application, actor_user.email, reason)
         return None, reason
 
@@ -693,7 +701,7 @@ def attempt_auto_negotiate_interview_slots(db: Session, application: Application
     try:
         outcome = _advance_interviewer_round(db, application, candidate, job, tracker_path, round_day, actor_user, hr_integration)
     except (SmtpError, TrackerLockedNegotiationError, NegotiationEmailRenderError) as exc:
-        reason = str(exc) or "Could not send the interviewer negotiation email"
+        reason = str(exc) or "We couldn't send the email to the interviewer. Check the HR mailbox and try again."
         _skip(db, application, actor_user.email, reason)
         _flag_send_failed(db, application, tracker_path, candidate, job)
         return None, reason
@@ -706,7 +714,7 @@ def attempt_auto_negotiate_interview_slots(db: Session, application: Application
     try:
         outcome = _advance_interviewer_round(db, application, candidate, job, tracker_path, retry_day, actor_user, hr_integration)
     except (SmtpError, TrackerLockedNegotiationError, NegotiationEmailRenderError) as exc:
-        reason = str(exc) or "Could not send the interviewer negotiation email"
+        reason = str(exc) or "We couldn't send the email to the interviewer. Check the HR mailbox and try again."
         _skip(db, application, actor_user.email, reason)
         _flag_send_failed(db, application, tracker_path, candidate, job)
         return None, reason
@@ -715,7 +723,7 @@ def attempt_auto_negotiate_interview_slots(db: Session, application: Application
         return "started", None
 
     _flag_for_manual_scheduling(db, application, tracker_path, candidate, job, actor_user.email)
-    return None, f"No eligible interviewer was available for {job.title} on the day(s) tried -- this application needs to be scheduled manually"
+    return None, f"No interviewer was free for {job.title} on the days we tried. Add an interviewer (with an email and availability) or book the interview yourself."
 
 
 def _live_tokens(db: Session, application: Application, now: Optional[datetime] = None) -> list[NegotiationToken]:
@@ -760,7 +768,7 @@ def check_retry_eligibility(db: Session, application: Application, now: Optional
     """
     now = now or datetime.now(timezone.utc)
     if application.status != "hr_selected":
-        return "Application is not in Shortlisted status"
+        return "This candidate isn't at the Shortlisted step, so there is no interview to arrange."
     return _in_flight_or_scheduled_reason(db, application, now, live_token_max_age=RETRY_MIDFLIGHT_WINDOW)
 
 
@@ -829,7 +837,7 @@ def advance_after_interviewer_batch_resolved(db: Session, application: Applicati
 
     hr_integration = get_hr_integration(db)
     if not is_smtp_configured(hr_integration):
-        _skip(db, application, actor_email, "HR mailbox's SMTP settings are not configured -- cannot send negotiation emails")
+        _skip(db, application, actor_email, "The HR mailbox isn't connected, so interview emails can't be sent. Connect it in Settings > Communication > Mailboxes.")
         return
 
     try:
@@ -871,7 +879,7 @@ def _start_candidate_round(db: Session, application: Application, interviewer_ro
 
     hr_integration = get_hr_integration(db)
     if not is_smtp_configured(hr_integration):
-        _skip(db, application, interviewer_row.actor_email, "HR mailbox's SMTP settings are not configured -- cannot send negotiation emails")
+        _skip(db, application, interviewer_row.actor_email, "The HR mailbox isn't connected, so interview emails can't be sent. Connect it in Settings > Communication > Mailboxes.")
         return
 
     row = _create_negotiation_row(
@@ -899,7 +907,7 @@ def _start_candidate_round(db: Session, application: Application, interviewer_ro
         # succeeded (no tracker row / audit log below, which describe a round that was
         # actually started).
         _invalidate_batch(db, [row])
-        _skip(db, application, interviewer_row.actor_email, str(exc) or "Could not send the candidate negotiation email")
+        _skip(db, application, interviewer_row.actor_email, str(exc) or "We couldn't send the interview times to the candidate. Check the HR mailbox and try again.")
         return
 
     try:
@@ -967,7 +975,7 @@ def _reprompt_candidate(db: Session, application: Application, candidate_row: Ne
 
     hr_integration = get_hr_integration(db)
     if not is_smtp_configured(hr_integration):
-        _skip(db, application, candidate_row.actor_email, "HR mailbox's SMTP settings are not configured -- cannot send negotiation emails")
+        _skip(db, application, candidate_row.actor_email, "The HR mailbox isn't connected, so interview emails can't be sent. Connect it in Settings > Communication > Mailboxes.")
         return NegotiationPageState(status="declined", row=candidate_row)
 
     new_row = _create_negotiation_row(
@@ -991,7 +999,7 @@ def _reprompt_candidate(db: Session, application: Application, candidate_row: Ne
         send_hr_email(hr_integration, to=candidate.email, subject=subject, body=text_body, html_body=html_body)
     except SmtpError as exc:
         _invalidate_batch(db, [new_row])
-        _skip(db, application, candidate_row.actor_email, str(exc) or "Could not send the candidate negotiation email")
+        _skip(db, application, candidate_row.actor_email, str(exc) or "We couldn't send the interview times to the candidate. Check the HR mailbox and try again.")
         return NegotiationPageState(status="declined", row=candidate_row)
 
     log_action(

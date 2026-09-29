@@ -28,10 +28,13 @@ export default function ScheduleInterviewDialog({
   open,
   onClose,
   onScheduled,
+  presetApplicationId,
 }: {
   open: boolean;
   onClose: () => void;
   onScheduled: (interview: InterviewRead) => void;
+  /** Part 18.28: "Book manually" from a candidate's page -- that candidate is already picked */
+  presetApplicationId?: string;
 }) {
   const t = useT();
   const [candidateOptions, setCandidateOptions] = useState<CandidateApplicationRow[]>([]);
@@ -61,14 +64,17 @@ export default function ScheduleInterviewDialog({
     setLoadingCandidates(true);
     candidatesApi
       .listApplications({ status: "hr_selected", pageSize: 200 })
-      .then((result) => setCandidateOptions(result.items))
+      .then((result) => {
+        setCandidateOptions(result.items);
+        if (presetApplicationId) setSelectedApplication(result.items.find((r) => r.application_id === presetApplicationId) ?? null);
+      })
       .catch(() => setCandidateOptions([]))
       .finally(() => setLoadingCandidates(false));
     usersApi
       .list()
       .then(setInterviewers)
       .catch(() => setInterviewers([]));
-  }, [open]);
+  }, [open, presetApplicationId]);
 
   useEffect(() => {
     if (!interviewerId) {

@@ -15,7 +15,8 @@ from app.schemas.salary import SalaryApprovalRequest, SalaryStatusResponse
 
 router = APIRouter(prefix="/applications", tags=["salary"])
 
-VALIDATABLE_STATUSES = {"hr_selected", "interview_selected"}
+# Part 18.28: only after an interview decision (salary before the interview made candidates look "selected")
+VALIDATABLE_STATUSES = {"interview_selected"}
 
 
 def _get_application_or_404(db: Session, application_id: uuid.UUID) -> Application:
@@ -33,10 +34,13 @@ def validate_salary(
 ):
     application = _get_application_or_404(db, application_id)
     assert_application_not_on_hold(application)
-    if application.status not in VALIDATABLE_STATUSES:
+    from app.models.interview import Interview
+
+    if application.status not in VALIDATABLE_STATUSES or db.query(Interview).filter(
+            Interview.application_id == application.id, Interview.decision == "selected").first() is None:
         raise HTTPException(
             status_code=400,
-            detail="Application must be HR-selected or interview-selected before salary validation",
+            detail="The salary is checked after the interview. Record the interview result (scorecard and decision) first.",
         )
     if application.expected_salary is None:
         raise HTTPException(status_code=400, detail="Application has no expected salary set")

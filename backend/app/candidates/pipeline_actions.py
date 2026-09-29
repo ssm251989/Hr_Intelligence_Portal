@@ -72,8 +72,21 @@ def compute_next_actions(db: Session, application: Application) -> list[NextActi
             ),
         ]
 
-    if status in ("hr_selected", "interview_selected"):
-        actions = [
+    # Part 18.28: salary is checked only AFTER the interview (a real interview decision) --
+    # "Validate Salary" at Shortlisted made a candidate look interviewed and selected.
+    if status == "hr_selected":
+        return [
+            NextAction(
+                key="schedule_interview",
+                label="Schedule Interview",
+                kind="navigate",
+                route=_job_route("/interviews", job_id),
+                description="Needs a date/time and interviewer -- opens the Interviews page.",
+            )
+        ]
+
+    if status == "interview_selected":
+        return [
             NextAction(
                 key="validate_salary",
                 label="Validate Salary",
@@ -83,18 +96,6 @@ def compute_next_actions(db: Session, application: Application) -> list[NextActi
                 description="Requires an expected salary on the application and the job's salary band to be set.",
             )
         ]
-        if status == "hr_selected":
-            actions.insert(
-                0,
-                NextAction(
-                    key="schedule_interview",
-                    label="Schedule Interview",
-                    kind="navigate",
-                    route=_job_route("/interviews", job_id),
-                    description="Needs a date/time and interviewer -- opens the Interviews page.",
-                ),
-            )
-        return actions
 
     if status == "interview_scheduled":
         interview = (

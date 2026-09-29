@@ -27,6 +27,9 @@ from app.audit.service import log_action
 from app.models.application import Application
 from app.models.audit_log import AuditLog
 from app.models.candidate import Candidate
+from app.models.interview import Interview
+
+_APPS = Application.__table__
 
 REASONS = ("duplicate", "test_data", "privacy_request", "withdrawn", "other")
 INCLUDE_REMOVED = "include_removed"  # execution option: see the recycle bin itself
@@ -45,6 +48,11 @@ def _hide_removed(execute_state) -> None:
     execute_state.statement = execute_state.statement.options(
         with_loader_criteria(Candidate, lambda cls: cls.deleted_at.is_(None), include_aliases=True),
         with_loader_criteria(Application, lambda cls: cls.removed_at.is_(None), include_aliases=True),
+        # Part 18.28: their interviews too -- otherwise a removed candidate's interview still
+        # counted as "done / passed" on the Interviews dashboard. (Core table, so the
+        # Application criteria above don't apply inside this subquery.)
+        with_loader_criteria(Interview, lambda cls: cls.application_id.notin_(
+            select(_APPS.c.id).where(_APPS.c.removed_at.isnot(None))), include_aliases=True),
     )
 
 

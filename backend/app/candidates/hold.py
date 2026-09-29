@@ -20,7 +20,7 @@ def put_application_on_hold(db: Session, application: Application, actor: str) -
     if application.status in TERMINAL_APPLICATION_STATUSES:
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot put an application on hold from terminal status '{application.status}'.",
+            detail="This candidate's process has already finished, so it can't be put on hold.",
         )
 
     previous_status = application.status
@@ -38,7 +38,7 @@ def resume_application_from_hold(db: Session, application: Application, actor: s
     """on_hold -> the status stored in previous_status when it was put on hold."""
     if application.status != "on_hold":
         raise HTTPException(
-            status_code=400, detail=f"Only an on-hold application can be resumed, not '{application.status}'."
+            status_code=400, detail="This candidate isn't on hold, so there is nothing to resume."
         )
     # previous_status is always set by put_application_on_hold before this point is
     # reachable -- there's no code path that sets status='on_hold' any other way. A missing
@@ -48,7 +48,7 @@ def resume_application_from_hold(db: Session, application: Application, actor: s
     if not application.previous_status:
         raise HTTPException(
             status_code=409,
-            detail="This application has no recorded previous status to resume to. It must be corrected manually.",
+            detail="We don't know which step this candidate was at before the hold. Move them to the right step by hand.",
         )
 
     restored_status = application.previous_status
@@ -70,5 +70,5 @@ def assert_application_not_on_hold(application: Application) -> None:
     if application.status == "on_hold":
         raise HTTPException(
             status_code=400,
-            detail="This application is on hold. Resume it before performing pipeline actions.",
+            detail="This candidate is on hold. Resume them first.",
         )
