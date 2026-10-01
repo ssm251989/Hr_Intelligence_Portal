@@ -75,5 +75,20 @@ def install(app: FastAPI) -> None:
 
         rid = request_id_var.get()
         log.exception("unhandled error (request %s)", rid)
-        return JSONResponse(status_code=500, content={"detail": {"code": "UNEXPECTED", "message": "Something went wrong on our side. Please try again.",
-                                                                 "fix": f"If it keeps happening, contact support and quote reference {rid}.", "fix_path": "", "request_id": rid}})
+        reason = (str(exc).strip().splitlines() or [""])[0][:200] or type(exc).__name__
+        response = JSONResponse(status_code=500, content={"detail": {"code": "UNEXPECTED", "message": f"Something went wrong - {reason}",
+                                                                     "fix": f"Please try again. If it keeps happening, contact support and quote reference {rid}.", "fix_path": "", "request_id": rid}})
+        # Starlette runs this handler in ServerErrorMiddleware, OUTSIDE CORSMiddleware, so
+        # without these headers the browser drops the body and the UI says "couldn't reach the server".
+        origin = request.headers.get("origin")
+        if origin and origin in cors_origins():
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Vary"] = "Origin"
+        return response
+
+
+def cors_origins() -> list[str]:
+    import os
+
+    # same list main.py gives CORSMiddleware
+    return [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",") if o.strip()]

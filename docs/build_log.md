@@ -2419,3 +2419,11 @@ NEXT: continue docs/RESUME.txt -> PART16 steps 16.1-16.10.
 - **Note:** old test assertions in `tests/test_reports.py` may still expect the previous developer wording (not run, per the rules).
 
 NEXT: continue docs/RESUME.txt -> PART16 16.1 (already met: content fills the width, 16-24px right padding at 1366/1536/1920/2560 -- verified, log only), then 16.2 plain-language sweep.
+
+## Fix -- onboarding page server error (2026-10-01)
+- **Cause:** `/api/v1/ui/onboarding/board` read `Offer.job_role_id` / `Offer.candidate_id`, which don't exist. On the real tenant (1 case linked to an offer) this gave an `AttributeError` → 500. The 500 had no CORS headers, so the UI showed "couldn't reach the server".
+- **Fixed:** the job and candidate come from the offer's application. Unhandled 500s now return "Something went wrong - <reason>" with CORS headers for allowed origins.
+- **Tests:** 2 regression tests added; `tests/test_onboarding.py` 40 passed.
+- **Pending:** live 200 + /onboarding screenshot with a sign-in (not available in this session).
+
+NEXT: owner signs in and checks /onboarding (expect 4 joiner cards on ctd-techs); then continue docs/RESUME.txt -> PART16 16.1 (log only), then 16.2 plain-language sweep.

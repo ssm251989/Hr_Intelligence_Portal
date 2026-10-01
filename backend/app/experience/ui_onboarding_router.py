@@ -97,6 +97,7 @@ def _form_names(db: Session, tenant, keys: list[str]) -> dict[str, Any]:
 
 def _people(db: Session, cases: list[PreboardingCase]) -> dict[UUID, dict]:
     """Name + role for each case: employee (pre_hire) row first, then candidate, then email."""
+    from app.models.application import Application
     from app.models.candidate import Candidate
     from app.models.core_hr import Employee
     from app.models.job_role import JobRole
@@ -109,8 +110,10 @@ def _people(db: Session, cases: list[PreboardingCase]) -> dict[UUID, dict]:
         offer = db.get(Offer, case.offer_id) if case.offer_id else None
         role = _text((case.attributes_json or {}).get("designation"))
         department = None
-        if offer is not None and offer.job_role_id:
-            job = db.get(JobRole, offer.job_role_id)
+        # an offer has no job of its own -- the job comes from the offer's application
+        application = db.get(Application, offer.application_id) if offer is not None and offer.application_id else None
+        if application is not None and application.job_role_id:
+            job = db.get(JobRole, application.job_role_id)
             if job is not None:
                 role = role or job.title
                 department = job.department
@@ -266,10 +269,10 @@ def board(lang: str = "en", db: Session = Depends(get_db), current_user: User = 
         if offer.id in started:
             continue
         application = db.get(Application, offer.application_id) if offer.application_id else None
-        candidate = db.get(Candidate, offer.candidate_id or (application.candidate_id if application else None)) if (offer.candidate_id or application) else None
+        candidate = db.get(Candidate, application.candidate_id) if application is not None and application.candidate_id else None
         if candidate is None or not candidate.email:
             continue
-        job = db.get(JobRole, offer.job_role_id) if offer.job_role_id else None
+        job = db.get(JobRole, application.job_role_id) if application.job_role_id else None
         ready_offers.append({"offer_id": str(offer.id), "name": candidate.full_name or candidate.email, "email": candidate.email,
                              "role": job.title if job else None, "joining_date": _iso(offer.joining_date)})
 

@@ -798,3 +798,31 @@ hrctl stages check    1 found (Demo - Asha Verma salary_approved, 0 interviews) 
 Every write was blocked in the browser (0 attempted).
 
 **What you need to do:** add Jagadeesh's hours in Interviews > Interviewers (his imported row has none), or wait for his reply to the 22:26 email. Is jr@ctdtechs.com a mailbox he actually reads? If not, use **Change interviewer**.
+
+## Fix: Onboarding page showed "We couldn't reach the server"
+
+**Real cause:** a code bug that only shows with certain data. It was not a migration, a router or a module lock:
+- The route is registered: unauthenticated `GET /api/v1/ui/onboarding/board?lang=en` returns `401 {"detail":"Could not validate credentials"}`, not 404.
+- Migrations are current: `alembic current` = `a3d5f7b9c1e4 (head)`.
+- `board()` read `offer.job_role_id` and `offer.candidate_id`, but `Offer` has neither column (the job and candidate belong to the offer's **application**).
+- The real tenant has an onboarding case linked to an offer, so every board load raised:
+```
+tenant ctd-techs: signed_offers 1, cases 4, cases_with_offer 1
+Offer has candidate_id: False job_role_id: False
+old code -> AttributeError: 'Offer' object has no attribute 'job_role_id'   (ui_onboarding_router.py:112)
+```
+**Why it looked like a network error:** Starlette runs the catch-all `Exception` handler in `ServerErrorMiddleware`, which sits *outside* `CORSMiddleware`. The JSON 500 went out without `Access-Control-Allow-Origin`, the browser dropped it, `fetch` threw a `TypeError`, and `FriendlyError` showed `error.offline`.
+
+**Change:**
+- `app/experience/ui_onboarding_router.py`: the job (role and department) and the candidate now come from `offer.application_id` → `Application`. This affects the joiner cards and the "ready offers" list.
+- `app/experience/errors.py`: an unhandled 500 now says **"Something went wrong - <reason>"**, keeps the support reference, and adds the CORS header itself for allowed origins only. `cors_origins()` is shared with `main.py`'s `CORSMiddleware`, so the two lists can't drift apart.
+
+**Proof:**
+```
+tests/test_onboarding.py::test_board_with_offer_linked_case_and_signed_offer   old code: FAIL (AttributeError ... job_role_id)   fixed: PASS
+tests/test_onboarding.py::test_unhandled_500_is_json_with_cors_headers        PASS (localhost:5173 gets the header, other origin does not;
+                                                                                    message "Something went wrong - table onboarding_x is missing")
+tests/test_onboarding.py                                                       40 passed
+live server after reload                                                       /health 200, board route 401 without sign-in
+```
+**Screenshot:** /onboarding with data -- pending login proof. Signed-in calls and token creation were not allowed in this session, so no live 200 or screenshot was taken.

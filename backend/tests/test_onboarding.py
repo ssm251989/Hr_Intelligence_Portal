@@ -384,3 +384,61 @@ def test_api_assignment_preview(client):
     client.post("/api/v1/onboarding/assignment-rules", json={"name": "r", "target_type": "role", "target_ref": "Employee"})
     preview = client.post("/api/v1/onboarding/assignment-rules/preview", json={"context": {}})
     assert preview.status_code == 200 and "Employee" in preview.json()["roles"]
+
+
+# ---- HR board (fix: onboarding page "couldn't reach the server") ----
+
+
+def test_board_with_offer_linked_case_and_signed_offer(client, db_session):
+    """Offer has no job_role_id/candidate_id of its own -- the board used to read them and 500."""
+    from app.models.application import Application
+    from app.models.candidate import Candidate
+    from app.models.job_role import JobRole
+    from app.models.offer import Offer
+
+    job = JobRole(title="Backend Engineer", department="Engineering")
+    db_session.add(job)
+    db_session.flush()
+    rows = []
+    for name in ("Meera Joiner", "Arun Waiting"):
+        candidate = Candidate(full_name=name, email=f"{name.split()[0].lower()}-{datetime.now().timestamp()}@example.com")
+        db_session.add(candidate)
+        db_session.flush()
+        application = Application(job_role_id=job.id, candidate_id=candidate.id, status="salary_approved")
+        db_session.add(application)
+        db_session.flush()
+        offer = Offer(application_id=application.id, signed=True, joining_date=TODAY + timedelta(days=10))
+        db_session.add(offer)
+        db_session.commit()
+        rows.append((candidate, offer))
+    _portal(db_session).create_case_from_offer(rows[0][1].id)
+
+    resp = client.get("/api/v1/ui/onboarding/board?lang=en")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    card = next(c for c in body["cards"] if c["email"] == rows[0][0].email)
+    assert card["role"] == "Backend Engineer" and card["department"] == "Engineering"
+    ready = next(o for o in body["ready_offers"] if o["offer_id"] == str(rows[1][1].id))
+    assert ready["name"] == "Arun Waiting" and ready["role"] == "Backend Engineer"
+
+
+def test_unhandled_500_is_json_with_cors_headers(db_session):
+    """ServerErrorMiddleware sits outside CORS -- the handler must add the header itself."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    @app.get("/__test_boom")
+    def _boom():
+        raise RuntimeError("table onboarding_x is missing")
+
+    try:
+        with TestClient(app, raise_server_exceptions=False) as c:
+            resp = c.get("/__test_boom", headers={"Origin": "http://localhost:5173"})
+            other = c.get("/__test_boom", headers={"Origin": "https://evil.example"})
+    finally:
+        app.router.routes[:] = [r for r in app.router.routes if getattr(r, "path", None) != "/__test_boom"]
+    assert resp.status_code == 500
+    assert resp.headers.get("access-control-allow-origin") == "http://localhost:5173"
+    assert resp.json()["detail"]["message"] == "Something went wrong - table onboarding_x is missing"
+    assert "access-control-allow-origin" not in other.headers

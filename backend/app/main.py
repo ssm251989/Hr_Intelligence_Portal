@@ -97,10 +97,12 @@ app.add_middleware(SecurityHeadersMiddleware)
 # add order -- meaning tenant context is set before CORS or any router logic ever executes).
 app.add_middleware(TenantResolverMiddleware)
 
+from app.experience.errors import cors_origins  # noqa: E402 -- shared with the 500 handler
+
 app.add_middleware(
     CORSMiddleware,
     # Part 13: per-installation list (CORS_ORIGINS, comma-separated); dev default unchanged.
-    allow_origins=[o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",") if o.strip()],
+    allow_origins=cors_origins(),
     allow_methods=["*"],
     allow_headers=["*"],
 )
