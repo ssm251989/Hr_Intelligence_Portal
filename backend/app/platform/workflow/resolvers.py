@@ -58,7 +58,7 @@ def resolve(db: Session, tenant: TenantContext, spec: dict, context: dict) -> se
         return inner
 
     if resolver_type in _ORG_HIERARCHY_RESOLVERS:
-        raise ResolverNotSupportedError(f"Approver resolver {resolver_type!r} needs Part 7's Core HR org model, not built yet.")
+        raise ResolverNotSupportedError(f"This approval step picks the approver by {resolver_type.replace('_', ' ')}, which needs employee records (People). Choose a named person or a role instead.")
 
     raise ResolverNotSupportedError(f"Unknown approver resolver type: {resolver_type!r}")
 

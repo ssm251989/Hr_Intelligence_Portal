@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -30,8 +30,21 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string);
 }
 
+// Part 16.2: people edit «Candidate name», never {{ candidate_name }}; the {{ }} form is only
+// what is saved and sent to the renderer.
+function toFriendly(tpl: string, label: (field: string) => string): string {
+  return tpl.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (m, name: string) => (FIELDS.includes(name) ? `«${label(name)}»` : m));
+}
+
+function toRaw(text: string, label: (field: string) => string): string {
+  return text.replace(/«([^»]+)»/g, (m, shown: string) => {
+    const field = FIELDS.find((fl) => label(fl).toLowerCase() === shown.trim().toLowerCase());
+    return field ? `{{ ${field} }}` : m;
+  });
+}
+
 function renderLocally(tpl: string, sample: Record<string, string>): string {
-  return tpl.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (m, name: string) => (name in sample ? escapeHtml(sample[name]) : `<mark>${escapeHtml(m)}</mark>`));
+  return tpl.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_m, name: string) => (name in sample ? escapeHtml(sample[name]) : `<mark>«${escapeHtml(name)}»</mark>`));
 }
 
 export default function OfferTemplateEditor({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -52,6 +65,7 @@ export default function OfferTemplateEditor({ open, onClose }: { open: boolean; 
   const [saved, setSaved] = useState(false);
   // Part 17.13: the text as last loaded / saved -- anything else is unsaved
   const [savedText, setSavedText] = useState<string | null>(null);
+  const label = useCallback((field: string) => t(`offers.editor.field.${field}`), [t]);
   const dirty = open && savedText !== null && text !== savedText;
   useConfirmLeave(dirty);
   const close = () => {
@@ -63,8 +77,8 @@ export default function OfferTemplateEditor({ open, onClose }: { open: boolean; 
     offersExtraApi
       .template()
       .then((tpl) => {
-        setText(tpl.html_tpl);
-        setSavedText(tpl.html_tpl);
+        setText(toFriendly(tpl.html_tpl, label));
+        setSavedText(toFriendly(tpl.html_tpl, label));
         setSample({ ...tpl.sample_context, "org.display_name": tpl.sample_context["org.display_name"] ?? t("offers.editor.sample_company") });
         setMeta({ version: tpl.version, status: tpl.status });
       })
@@ -85,7 +99,7 @@ export default function OfferTemplateEditor({ open, onClose }: { open: boolean; 
     if (!open || !text) return;
     const handle = window.setTimeout(() => {
       offersExtraApi
-        .previewTemplate(text)
+        .previewTemplate(toRaw(text, label))
         .then((r) => {
           setOffline(false);
           if (r.error) setPreviewError(r.error);
@@ -97,14 +111,14 @@ export default function OfferTemplateEditor({ open, onClose }: { open: boolean; 
         .catch(() => {
           setOffline(true);
           setPreviewError(null);
-          setPreview(renderLocally(text, sample));
+          setPreview(renderLocally(toRaw(text, label), sample));
         });
     }, 450);
     return () => window.clearTimeout(handle);
-  }, [text, open, sample]);
+  }, [text, open, sample, label]);
 
   const insert = (field: string) => {
-    const token = `{{ ${field} }}`;
+    const token = `«${label(field)}»`;
     const el = inputRef.current;
     if (!el) {
       setText((prev) => prev + token);
@@ -124,7 +138,7 @@ export default function OfferTemplateEditor({ open, onClose }: { open: boolean; 
     setSaving(true);
     setSaveError(null);
     try {
-      const r = await offersExtraApi.saveTemplate(text, true);
+      const r = await offersExtraApi.saveTemplate(toRaw(text, label), true);
       setMeta({ version: r.version, status: r.status });
       setSavedText(text);
       setSaved(true);

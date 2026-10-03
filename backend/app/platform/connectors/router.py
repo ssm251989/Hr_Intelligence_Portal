@@ -28,8 +28,10 @@ class NoConnectionForPurposeError(Exception):
     issue (Part 14 section 8: a plain-language fix + link to Integrations), never a 500."""
 
     def __init__(self, purpose: str):
-        self.purpose = purpose
-        super().__init__(f"No connection routed for purpose: {purpose}")
+        from app.platform.connectors.purposes import plain_name
+
+        self.purpose = purpose  # the key stays for code; people see plain words (Part 16.2)
+        super().__init__(f"{plain_name(purpose)} isn't connected yet")
 
 
 @dataclass

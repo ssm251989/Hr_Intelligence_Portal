@@ -29,7 +29,7 @@ def _resolve_relation(db: Session, tenant: TenantContext, spec: dict, event_ctx:
     relation = spec["relation"]
     resolver = _RELATION_RESOLVERS.get(relation)
     if resolver is None:
-        raise RecipientResolutionError(f"No relation resolver registered for {relation!r} (Part 7 Core HR required)")
+        raise RecipientResolutionError(f"Can't work out who the {relation.replace('_', ' ')} is: employee records (People) aren't set up.")
     return resolver(db, tenant, spec, event_ctx)
 
 
@@ -106,5 +106,5 @@ class RecipientResolver:
         if "expression" in recipients_spec:
             return _resolve_expression(self.db, self.tenant, recipients_spec, event_ctx)
         if "role" in recipients_spec:
-            raise RecipientResolutionError("role+scope recipient resolution requires Part 5's IAM roles/scopes")
+            raise RecipientResolutionError("Sending to a role needs roles set up in Settings > People > Roles.")
         raise RecipientResolutionError(f"Unrecognized recipients_json shape: {list(recipients_spec.keys())}")

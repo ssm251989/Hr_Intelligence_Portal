@@ -399,7 +399,7 @@ def resend_outbound(message_id: UUID, db: Session = Depends(get_db), current_use
     if not message.to_addresses:
         raise HTTPException(status_code=400, detail="No recipients to resend to")
     if not message.purpose:
-        raise HTTPException(status_code=400, detail="This message has no purpose to route a resend through")
+        raise HTTPException(status_code=400, detail="This message can't be resent: we don't know which mailbox it was sent from.")
 
     try:
         resolved = ConnectorRouter(db).resolve(message.purpose, {})

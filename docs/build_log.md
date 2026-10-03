@@ -2483,3 +2483,24 @@ NEXT: 19.3 proof -- demo tenants A (Jobs only) and B (Candidates + Screening) th
 - **Left:** demo-a/demo-b (owner may delete with hrctl tenant delete); PLATFORM_SMTP_* must be set for real activation emails.
 
 NEXT: remaining PART 18 items per RESUME.txt -> PART16 16.1 (already met, log only), then 16.2 plain-language sweep.
+
+## Part 16.1 -- full-screen layout (2026-10-03, log only)
+Already met (checked earlier: content fills the width, 16-24px page padding at 1366/1536/1920/2560). No change.
+
+## Part 16.2 -- plain-language sweep, leftovers (2026-10-03)
+Most of 16.2 was already built: friendly template list with the key under "Advanced", a «Job title» picker with sample values, plain health messages with one-click fixes. This sweep fixed what was left:
+- **Offer letter editor:** shows «Candidate name» instead of {{ candidate_name }}. It converts to {{ }} only to preview or save, and the offline preview marks unknown blanks as «name». The tip text is changed in en/hi/ta.
+- **"Isn't connected" errors:** NoConnectionForPurposeError now reads "The company mailbox (sending email) isn't connected yet" (purposes.plain_name) instead of "No connection routed for purpose: email.outbound.default". It is shown inside the friendly config error.
+- **Backend messages reworded** (no tenant, purpose, Part N, llm.*, {start, end}):
+  - wrong-company token, session refresh,
+  - message resend,
+  - interviewer hours validation,
+  - comms recipient resolution (x2),
+  - approval resolver,
+  - Anthropic embeddings.
+- **Scan:** English UI strings now have 0 hits for Part N / {{ / email.inbound / esign. / llm. / recruitment.* / system.*. Two hits are left on purpose:
+  - "hrctl tenant create" on the CTD Techs-only console (a command name).
+  - "kept for audit purposes" (plain English).
+- **Checks:** tsc clean, i18n 0 missing, npm run build OK, compileall OK.
+
+NEXT: PART16 16.3 settings reorganised (check against the catalog's categories + search; much is already there) -> 16.4 bulk resumes.

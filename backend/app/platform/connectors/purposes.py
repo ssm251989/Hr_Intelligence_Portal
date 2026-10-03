@@ -21,6 +21,22 @@ def fallback_for(purpose: str) -> str | None:
     return _FALLBACK_CHAIN.get(purpose)
 
 
+# Part 16.2: what a purpose means in plain words (purpose keys are never shown to people)
+_PLAIN = (
+    ("email.outbound.", "The company mailbox (sending email)"), ("email.inbound.", "The company mailbox (reading replies)"),
+    ("calendar.", "A calendar (Google or Outlook)"), ("meeting.", "A video-meeting service (Google Meet, Teams or Zoom)"),
+    ("llm.", "The AI service (Settings > Integrations > GenAI)"), ("esign.", "E-signing (DocuSign or Leegality)"),
+    ("bgv.", "A background-check provider"), ("storage.", "File storage"), ("geo.", "Maps"), ("chat.", "Team chat"),
+    ("analytics.", "The data warehouse"),
+)
+
+
+def plain_name(purpose: str) -> str:
+    if purpose.startswith("jobboard."):
+        return f"The {purpose.split('.', 1)[1].replace('_', ' ').title()} job board"
+    return next((name for prefix, name in _PLAIN if purpose.startswith(prefix)), "A connected service")
+
+
 def _register_all() -> None:
     if _PURPOSES:
         return

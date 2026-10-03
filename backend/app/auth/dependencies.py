@@ -59,7 +59,7 @@ def get_current_user(
     token_tid = payload.get("tid")
     current_tenant = get_current_tenant()
     if token_tid is not None and current_tenant is not None and token_tid != str(current_tenant.tenant_id):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Token was not issued for this tenant")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This sign-in belongs to a different company. Please sign in again.")
 
     # Part 13: a platform impersonation token dies the moment its session is ended from
     # the console, not only at its (already short) expiry.

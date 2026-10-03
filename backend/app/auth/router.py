@@ -142,7 +142,7 @@ def _issue_full_session(db: Session, tenant_ctx, user: User, request: Request, p
 def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
     tenant_ctx = get_current_tenant()
     if tenant_ctx is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No tenant context to refresh a session in")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="We couldn't tell which company this is. Please sign in again.")
     try:
         new_plaintext, new_row, user = sessions.rotate_refresh_token(db, tenant_ctx, payload.refresh_token)
     except sessions.InvalidRefreshTokenError as exc:

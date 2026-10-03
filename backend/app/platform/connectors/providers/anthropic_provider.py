@@ -29,7 +29,7 @@ class AnthropicAdapter:
         return response.model_dump()
 
     def embed(self, texts: list[str], model: str) -> list[list[float]]:
-        raise NotImplementedError("Anthropic has no embeddings API -- use a different llm.embeddings connection")
+        raise NotImplementedError("Claude (Anthropic) can't make search embeddings. Connect another AI provider for embeddings.")
 
     def test_connection(self) -> ProviderResult:
         try:

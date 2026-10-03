@@ -58,11 +58,11 @@ class AvailabilityIn(BaseModel):
     def _pattern(cls, v: dict) -> dict:
         for key, day in v.items():
             if key not in _WEEKDAY_KEYS:
-                raise ValueError(f"unknown day '{key}' (use mon..sun)")
+                raise ValueError(f"{key!r} isn't a day of the week")
             if day is False:
                 continue
             if not isinstance(day, list):
-                raise ValueError(f"{key}: use false (not working) or a list of {{start, end}} times")
+                raise ValueError(f"{key}: choose \"not working\" or add the times they can interview")
             for r in day:
                 start, end = str(r.get("start", ""))[:5], str(r.get("end", ""))[:5]
                 if len(start) != 5 or len(end) != 5 or start >= end:
