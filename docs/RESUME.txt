@@ -12,7 +12,8 @@ RESUME AFTER A RESTART - read this whole file, then act.
    commit ("wip: resume after restart") and push.
 
 3. Continue from where docs/build_log.md says you stopped, in this order:
-   a0) FIRST docs/PART18_OWNER_CHANGES.txt items 18.1 -> 18.26 (newest
+   a00) FIRST docs/PART19_MODULE_ACTIVATION.txt (proof in docs/ui/FIXES_19.md)
+   a0) then docs/PART18_OWNER_CHANGES.txt items 18.1 -> 18.26 (newest
        owner changes; override everything else; proof in FIXES_18.md)
    a) then docs/PART17_FIXES_PROMPT.txt items 17.1 -> 17.15 (17.14 hand-over last) (owner's
       review fixes - highest priority; it overrides PART 15/16 where they
