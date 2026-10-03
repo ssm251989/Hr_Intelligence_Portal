@@ -296,40 +296,62 @@ def console_audit(limit: int = 200, admin: PlatformAdmin = Depends(current_admin
              "tenant_id": str(r.tenant_id) if r.tenant_id else None, "details": r.details_json} for r in rows]
 
 
-# ---- Part 19.2: module activation requests (all installations) ----
+# ---- Part 19.2 / 19.2b / 19.2c: activation requests, approvers, platform mailbox (all installations) ----
 
 
-def _activation_error(exc) -> HTTPException:
+def _act_error(exc) -> HTTPException:
     return HTTPException(status_code=exc.status_code, detail={"code": exc.code, "message": str(exc)})
 
 
 @router.get("/activation-requests")
 def activation_requests(status: Optional[str] = None, admin: PlatformAdmin = Depends(current_admin)):
+    from app.platform import activation, platform_mail
+
+    return {"requests": activation.list_requests(status), "approvers": activation.list_approvers(), "mailbox": platform_mail.health(),
+            "settings": platform_mail.all_settings()}
+
+
+@router.get("/activation-requests/{request_id}/history")
+def activation_history(request_id: UUID, admin: PlatformAdmin = Depends(current_admin)):
     from app.platform import activation
 
-    return {"requests": activation.list_requests(status), "approvers": activation.approvers()}
+    return activation.history(request_id)
+
+
+class ResendIn(BaseModel):
+    priority: Optional[int] = None
+    all: bool = False
 
 
 @router.post("/activation-requests/{request_id}/resend")
-def activation_resend(request_id: UUID, admin: PlatformAdmin = Depends(current_admin)):
-    """Only a hash is kept, so this makes a new code (the old one stops working) and emails it."""
+def activation_resend(request_id: UUID, body: ResendIn, admin: PlatformAdmin = Depends(current_admin)):
     from app.platform import activation
 
     try:
-        return activation.renew_code(request_id, admin.email, show=False)
+        return activation.console_resend(request_id, admin.email, priority=body.priority, everyone=body.all)
     except activation.ActivationError as exc:
-        raise _activation_error(exc)
+        raise _act_error(exc)
 
 
 @router.post("/activation-requests/{request_id}/new-code")
 def activation_new_code(request_id: UUID, admin: PlatformAdmin = Depends(current_admin)):
-    """A new code, emailed AND shown once here (for sharing by phone)."""
     from app.platform import activation
 
     try:
-        return activation.renew_code(request_id, admin.email, show=True)
+        return activation.console_new_code(request_id, admin.email)
     except activation.ActivationError as exc:
-        raise _activation_error(exc)
+        raise _act_error(exc)
+
+
+@router.post("/activation-requests/{request_id}/show-code")
+def activation_show_code(request_id: UUID, admin: PlatformAdmin = Depends(current_admin)):
+    """CTD super-admin only; audit-logged (superadmin_audit + request history)."""
+    from app.platform import activation
+
+    try:
+        return activation.console_show_code(request_id, admin.email)
+    except activation.ActivationError as exc:
+        raise _act_error(exc)
 
 
 @router.post("/activation-requests/{request_id}/cancel")
@@ -339,4 +361,89 @@ def activation_cancel(request_id: UUID, admin: PlatformAdmin = Depends(current_a
     try:
         return activation.cancel(request_id, admin.email)
     except activation.ActivationError as exc:
-        raise _activation_error(exc)
+        raise _act_error(exc)
+
+
+class ApproverIn(BaseModel):
+    email: str
+    name: Optional[str] = None
+    active: bool = True
+
+
+@router.put("/activation-approvers/{priority}")
+def approver_set(priority: int, body: ApproverIn, admin: PlatformAdmin = Depends(current_admin)):
+    from app.platform import activation
+
+    try:
+        return activation.set_approver(priority, body.email, admin.email, name=body.name, active=body.active)
+    except activation.ActivationError as exc:
+        raise _act_error(exc)
+
+
+@router.delete("/activation-approvers/{priority}")
+def approver_remove(priority: int, admin: PlatformAdmin = Depends(current_admin)):
+    from app.platform import activation
+
+    try:
+        return activation.remove_approver(priority, admin.email)
+    except activation.ActivationError as exc:
+        raise _act_error(exc)
+
+
+class ReorderIn(BaseModel):
+    emails: list[str]
+
+
+@router.post("/activation-approvers/reorder")
+def approver_reorder(body: ReorderIn, admin: PlatformAdmin = Depends(current_admin)):
+    from app.platform import activation
+
+    try:
+        return activation.reorder_approvers(body.emails, admin.email)
+    except activation.ActivationError as exc:
+        raise _act_error(exc)
+
+
+class MailboxIn(BaseModel):
+    host: str
+    port: int = 587
+    user: str = ""
+    starttls: bool = True
+    from_name: str = "CTD Techs HRMS"
+    from_address: str
+    password: Optional[str] = None  # None = keep the stored one
+
+
+@router.put("/platform-mailbox")
+def mailbox_set(body: MailboxIn, admin: PlatformAdmin = Depends(current_admin)):
+    from app.platform import platform_mail
+
+    try:
+        platform_mail.set_mailbox(host=body.host, port=body.port, user=body.user, starttls=body.starttls, from_name=body.from_name,
+                                  from_address=body.from_address, password=body.password, actor=admin.email)
+    except platform_mail.MailError as exc:
+        raise HTTPException(status_code=400, detail={"code": "BAD_MAILBOX", "message": exc.reason})
+    return platform_mail.health()
+
+
+class MailTestIn(BaseModel):
+    to: str
+
+
+@router.post("/platform-mailbox/test")
+def mailbox_test(body: MailTestIn, admin: PlatformAdmin = Depends(current_admin)):
+    from app.platform import platform_mail
+
+    return platform_mail.test(body.to, admin.email)
+
+
+@router.put("/platform-settings")
+def platform_settings_set(body: dict, admin: PlatformAdmin = Depends(current_admin)):
+    from app.platform import platform_mail
+
+    try:
+        for key, value in body.items():
+            platform_mail.set_setting(key, value, admin.email)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "BAD_SETTING", "message": str(exc)})
+    return platform_mail.all_settings()

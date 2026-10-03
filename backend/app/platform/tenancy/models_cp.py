@@ -2,7 +2,7 @@
 CONTROL_PLANE_DATABASE_URL database, never in a tenant's own database.
 """
 
-from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, text
+from sqlalchemy import Boolean, CheckConstraint, Column, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from app.platform.tenancy.database_cp import ControlPlaneBase
@@ -205,6 +205,52 @@ class ActivationRequest(ControlPlaneBase):
     created_at = Column(DateTime(timezone=True), server_default=text("now()"))
     activated_at = Column(DateTime(timezone=True))
     activated_by = Column(Text)
+    # Part 19.2b/c: request number, the code kept encrypted (SecretStore) so escalations and
+    # retries send the SAME code, priority escalation, delivery + retry state, client resends
+    number = Column(String(20), unique=True)  # ACT-2026-00012
+    code_ref = Column(Text)  # SecretStore ref of the encrypted code; never shown to the company
+    current_priority = Column(Integer)
+    delivery = Column(String(20), nullable=False, server_default=text("'sending'"))  # sending|sent|retrying|failed|not_actioned
+    first_sent_at = Column(DateTime(timezone=True))
+    last_sent_at = Column(DateTime(timezone=True))
+    first_failed_at = Column(DateTime(timezone=True))
+    next_retry_at = Column(DateTime(timezone=True))
+    retry_count = Column(Integer, nullable=False, server_default=text("0"))
+    resend_count = Column(Integer, nullable=False, server_default=text("0"))
+    resends_today = Column(Integer, nullable=False, server_default=text("0"))
+    resend_day = Column(Date)
+    last_resend_at = Column(DateTime(timezone=True))
+
+
+class ActivationApprover(ControlPlaneBase):
+    """Part 19.2b: who gets activation codes, by priority (1 first, then escalation to 2, 3 ...).
+    Every email is @ctdtechs.com; managed only by CTD Techs (console / hrctl)."""
+
+    __tablename__ = "activation_approvers"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    priority = Column(Integer, nullable=False, unique=True)
+    name = Column(Text)
+    email = Column(Text, nullable=False)
+    active = Column(Boolean, nullable=False, server_default=text("true"))
+    updated_by = Column(Text)
+    updated_at = Column(DateTime(timezone=True), server_default=text("now()"))
+
+
+class ActivationEvent(ControlPlaneBase):
+    """Part 19.2b/c: request history -- every send, resend, escalation and retry, with who
+    triggered it and whether it was delivered (and why not)."""
+
+    __tablename__ = "activation_events"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    request_id = Column(UUID(as_uuid=True), ForeignKey("activation_requests.id", ondelete="CASCADE"), nullable=False, index=True)
+    at = Column(DateTime(timezone=True), server_default=text("now()"))
+    kind = Column(String(30), nullable=False)  # request|resend|escalation|retry|new_code|code_shown|cancelled|lock_alert
+    sent_to = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    by = Column(Text)  # client <email> | system | ctd <email>
+    status = Column(String(20), nullable=False)  # sent|failed|done
+    reason = Column(Text)
 
 
 class PlatformConfig(ControlPlaneBase):

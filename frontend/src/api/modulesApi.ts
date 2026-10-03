@@ -24,14 +24,22 @@ export interface ModuleCard {
 
 export interface ActivationRequestInfo {
   id: string;
+  number: string | null; // ACT-2026-00012 -- quote it to CTD Techs
   modules: string[];
   status: "pending" | "expired" | "activated" | "cancelled" | "replaced";
   requested_at: string | null;
   requested_by: string | null;
   expires_at: string;
   email_sent: boolean;
+  delivery: "sent" | "sending" | "not_sent"; // never the technical reason
+  sent_at: string | null;
+  first_sent_at: string | null;
+  resend_count: number;
+  resend_available_at: string | null;
+  resends_left_today: number;
   locked_until: string | null;
   tries_left: number;
+  support: { phone: string | null; email: string | null; hours: string | null };
 }
 
 export interface ModulesState {
@@ -45,6 +53,8 @@ export const modulesApi19 = {
   request: (modules: string[], withNeeds = false) =>
     http.post<ModulesState & { requested: ActivationRequestInfo }>("/api/v1/modules/request", { modules, with_needs: withNeeds }),
   activate: (code: string) => http.post<ModulesState & { activated: string[]; names: string }>("/api/v1/modules/activate", { code }),
+  resend: () => http.post<ModulesState & { resent: ActivationRequestInfo }>("/api/v1/modules/request/resend"),
+  cancelRequest: () => http.post<ModulesState>("/api/v1/modules/request/cancel"),
   off: (modules: string[], withDependents = false) =>
     http.post<ModulesState & { switched_off: string[] }>("/api/v1/modules/off", { modules, with_dependents: withDependents }),
 };
@@ -73,9 +83,35 @@ export interface ConsoleActivationRequest extends ActivationRequestInfo {
   requested_by_name: string | null;
   emailed_to: string[];
   email_error: string | null;
+  delivery_raw: "sending" | "sent" | "retrying" | "failed" | "not_actioned";
+  current_priority: number | null;
+  retry_count: number;
+  next_retry_at: string | null;
+  attention: boolean;
+  has_code: boolean;
   activated_at: string | null;
   activated_by: string | null;
 }
+
+export interface ApproverRow { priority: number; name: string | null; email: string; active: boolean; updated_by: string | null; updated_at: string | null }
+
+export interface MailboxHealth {
+  ok: boolean;
+  reason: string | null;
+  mailbox: { host: string; port?: number; user?: string; starttls?: boolean; from_name?: string; from_address?: string; source: "console" | "env" | "none"; password_set: boolean };
+  last: { ok: boolean; reason: string | null; at: string } | null;
+}
+
+export interface MailboxIn { host: string; port: number; user: string; starttls: boolean; from_name: string; from_address: string; password?: string | null }
+
+export interface ConsoleActivationState {
+  requests: ConsoleActivationRequest[];
+  approvers: ApproverRow[];
+  mailbox: MailboxHealth;
+  settings: Record<string, string | number | boolean>;
+}
+
+export interface ActivationEventRow { at: string | null; kind: string; sent_to: string[]; by: string | null; status: "sent" | "failed" | "done"; reason: string | null }
 
 // ---- Part 19.1: Screening against a pasted job description (no Jobs module needed) ----
 

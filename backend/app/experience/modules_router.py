@@ -67,6 +67,26 @@ def activate(body: CodeIn, db: Session = Depends(get_db), current_user: User = D
     return {**_state(db, current_user), **done}
 
 
+@router.post("/request/resend")
+def resend_request(db: Session = Depends(get_db), current_user: User = Depends(require("platform.settings.configure"))):
+    """[Resend request] / [Try sending again] -- cooldown and a daily limit (platform settings)."""
+    try:
+        info = activation.resend_request(db, require_current_tenant(), current_user)
+    except activation.ActivationError as exc:
+        _raise(exc)
+    return {**_state(db, current_user), "resent": info}
+
+
+@router.post("/request/cancel")
+def cancel_request(db: Session = Depends(get_db), current_user: User = Depends(require("platform.settings.configure"))):
+    """[Cancel request] -- the waiting modules go back to Off."""
+    try:
+        activation.cancel_request(db, require_current_tenant(), current_user)
+    except activation.ActivationError as exc:
+        _raise(exc)
+    return _state(db, current_user)
+
+
 class OffIn(BaseModel):
     modules: list[str] = Field(min_length=1, max_length=20)
     with_dependents: bool = False

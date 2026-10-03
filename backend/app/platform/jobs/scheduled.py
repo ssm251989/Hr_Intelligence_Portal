@@ -184,7 +184,16 @@ def fan_out(job_name: str) -> int:
 
 # Beat schedule (seconds). Tenant-local timing (e.g. report delivery hour) is handled
 # inside each job against the tenant's own timezone; beat only sets the polling cadence.
+@celery_app.task(name="hrms.activation_sweep", queue="default")
+def activation_sweep() -> dict:
+    """Part 19.2b/c: platform-level (not per company) -- retries + escalation of activation emails."""
+    from app.platform.activation import sweep
+
+    return sweep()
+
+
 celery_app.conf.beat_schedule = {
+    "activation-sweep": {"task": "hrms.activation_sweep", "schedule": 60.0},
     "workflow-timers": {"task": "hrms.fan_out", "schedule": 300.0, "args": ("workflow_timers",)},
     "ticket-escalations": {"task": "hrms.fan_out", "schedule": 300.0, "args": ("ticket_escalations",)},
     "report-schedules": {"task": "hrms.fan_out", "schedule": 600.0, "args": ("report_schedules",)},

@@ -1,10 +1,12 @@
-"""Part 19.2: who gets module activation codes (CTD Techs only -- run on the server).
+"""Part 19.2 / 19.2b: who gets module activation codes (CTD Techs only -- run on the server).
 
-    .venv/Scripts/python.exe -m hrctl.activation show
-    .venv/Scripts/python.exe -m hrctl.activation set-approver kg@ctdtechs.com [other@ctdtechs.com ...]
+    .venv/Scripts/python.exe -m hrctl.activation approvers list
+    .venv/Scripts/python.exe -m hrctl.activation approvers set --priority 1 --name "KG" --email kg@ctdtechs.com [--inactive]
+    .venv/Scripts/python.exe -m hrctl.activation approvers remove --priority 2
     .venv/Scripts/python.exe -m hrctl.activation requests [--status pending]
+    .venv/Scripts/python.exe -m hrctl.activation sweep        (retries + escalation once, now)
 
-Every approver must be a ctdtechs.com address (ACTIVATION_ALLOWED_DOMAIN); anything else is refused.
+Every approver must be a ctdtechs.com address; anything else is refused. Changes are audit-logged.
 """
 
 import argparse
@@ -18,20 +20,35 @@ def main(argv=None) -> int:
 
     parser = argparse.ArgumentParser(prog="hrctl activation")
     sub = parser.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("show", help="the approvers activation codes go to")
-    s = sub.add_parser("set-approver", help="replace the approver list (ctdtechs.com only)")
-    s.add_argument("emails", nargs="+")
+    ap = sub.add_parser("approvers", help="the priority list activation codes go to")
+    asub = ap.add_subparsers(dest="action", required=True)
+    asub.add_parser("list")
+    s = asub.add_parser("set")
+    s.add_argument("--priority", type=int, required=True)
+    s.add_argument("--email", required=True)
+    s.add_argument("--name")
+    s.add_argument("--inactive", action="store_true")
+    rm = asub.add_parser("remove")
+    rm.add_argument("--priority", type=int, required=True)
     r = sub.add_parser("requests", help="activation requests across companies")
     r.add_argument("--status")
+    sub.add_parser("sweep", help="retry failed sends and escalate now")
     args = parser.parse_args(argv)
 
+    actor = "hrctl (server)"
     try:
-        if args.cmd == "show":
-            print(json.dumps({"approvers": activation.approvers(), "allowed_domain": activation.settings.ACTIVATION_ALLOWED_DOMAIN}, indent=1))
-        elif args.cmd == "set-approver":
-            print(json.dumps({"approvers": activation.set_approvers(args.emails, actor="hrctl (server)")}, indent=1))
-        else:
+        if args.cmd == "approvers":
+            if args.action == "list":
+                out = activation.list_approvers()
+            elif args.action == "set":
+                out = activation.set_approver(args.priority, args.email, actor, name=args.name, active=not args.inactive)
+            else:
+                out = activation.remove_approver(args.priority, actor)
+            print(json.dumps(out, indent=1))
+        elif args.cmd == "requests":
             print(json.dumps(activation.list_requests(args.status), indent=1, default=str))
+        else:
+            print(json.dumps(activation.sweep(), indent=1))
     except activation.ActivationError as exc:
         print(f"refused: {exc}", file=sys.stderr)
         return 2

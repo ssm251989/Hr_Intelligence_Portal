@@ -1571,15 +1571,32 @@ export const superAdminApi = {
   setStatus: (token: string, slug: string, status: string, reason?: string) =>
     consoleRequest<{ status: string }>(`/api/v1/superadmin/tenants/${slug}/status`, token, { method: "POST", body: JSON.stringify({ status, reason }) }),
   health: (token: string, slug: string) => consoleRequest<{ database: { ok: boolean }; connections?: { name: string; ok: boolean }[] }>(`/api/v1/superadmin/tenants/${slug}/health`, token),
-  // Part 19.2: module activation requests across installations
+  // Part 19.2 / 19.2b / 19.2c: activation requests, approvers, platform mailbox (CTD Techs console)
   activationRequests: (token: string) =>
-    consoleRequest<{ requests: import("./modulesApi").ConsoleActivationRequest[]; approvers: string[] }>("/api/v1/superadmin/activation-requests", token),
-  activationResend: (token: string, id: string) =>
-    consoleRequest<{ email_error: string | null }>(`/api/v1/superadmin/activation-requests/${id}/resend`, token, { method: "POST" }),
+    consoleRequest<import("./modulesApi").ConsoleActivationState>("/api/v1/superadmin/activation-requests", token),
+  activationHistory: (token: string, id: string) =>
+    consoleRequest<import("./modulesApi").ActivationEventRow[]>(`/api/v1/superadmin/activation-requests/${id}/history`, token),
+  activationResend: (token: string, id: string, target: { priority?: number; all?: boolean }) =>
+    consoleRequest<{ sent: boolean; email_error: string | null; number: string }>(`/api/v1/superadmin/activation-requests/${id}/resend`, token,
+      { method: "POST", body: JSON.stringify(target) }),
   activationNewCode: (token: string, id: string) =>
-    consoleRequest<{ code: string; email_error: string | null }>(`/api/v1/superadmin/activation-requests/${id}/new-code`, token, { method: "POST" }),
+    consoleRequest<{ sent: boolean; email_error: string | null; number: string }>(`/api/v1/superadmin/activation-requests/${id}/new-code`, token, { method: "POST" }),
+  activationShowCode: (token: string, id: string) =>
+    consoleRequest<{ number: string; code: string; expires_at: string }>(`/api/v1/superadmin/activation-requests/${id}/show-code`, token, { method: "POST" }),
   activationCancel: (token: string, id: string) =>
     consoleRequest<{ status: string }>(`/api/v1/superadmin/activation-requests/${id}/cancel`, token, { method: "POST" }),
+  approverSet: (token: string, priority: number, body: { email: string; name?: string | null; active: boolean }) =>
+    consoleRequest<import("./modulesApi").ApproverRow[]>(`/api/v1/superadmin/activation-approvers/${priority}`, token, { method: "PUT", body: JSON.stringify(body) }),
+  approverRemove: (token: string, priority: number) =>
+    consoleRequest<import("./modulesApi").ApproverRow[]>(`/api/v1/superadmin/activation-approvers/${priority}`, token, { method: "DELETE" }),
+  approverReorder: (token: string, emails: string[]) =>
+    consoleRequest<import("./modulesApi").ApproverRow[]>("/api/v1/superadmin/activation-approvers/reorder", token, { method: "POST", body: JSON.stringify({ emails }) }),
+  mailboxSet: (token: string, body: import("./modulesApi").MailboxIn) =>
+    consoleRequest<import("./modulesApi").MailboxHealth>("/api/v1/superadmin/platform-mailbox", token, { method: "PUT", body: JSON.stringify(body) }),
+  mailboxTest: (token: string, to: string) =>
+    consoleRequest<{ ok: boolean; reason: string | null }>("/api/v1/superadmin/platform-mailbox/test", token, { method: "POST", body: JSON.stringify({ to }) }),
+  platformSettingsSet: (token: string, body: Record<string, unknown>) =>
+    consoleRequest<Record<string, unknown>>("/api/v1/superadmin/platform-settings", token, { method: "PUT", body: JSON.stringify(body) }),
 };
 
 // ---- Part 14: setup wizard, config health, search, unified inbox, views, drafts, versions ----

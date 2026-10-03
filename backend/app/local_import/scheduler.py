@@ -86,6 +86,17 @@ def _current_interval_minutes() -> int:
             db.close()
 
 
+def _run_activation_sweep() -> None:
+    try:
+        from app.platform.activation import sweep
+
+        result = sweep()
+        if any(v for k, v in result.items() if k != "skipped"):
+            logger.info("activation sweep: %s", result)
+    except Exception:  # noqa: BLE001
+        logger.exception("activation sweep failed")
+
+
 def start_scheduler() -> BackgroundScheduler:
     global _scheduler
     scheduler = BackgroundScheduler()
@@ -96,6 +107,8 @@ def start_scheduler() -> BackgroundScheduler:
         trigger=IntervalTrigger(minutes=HR_INBOX_POLL_INTERVAL_MINUTES),
         id=HR_INBOX_POLL_JOB_ID,
     )
+    # Part 19.2b/c: activation emails -- retries with backoff + escalation by priority (one process at a time)
+    scheduler.add_job(_run_activation_sweep, trigger=IntervalTrigger(minutes=1), id="activation_sweep")
     scheduler.start()
     _scheduler = scheduler
     return scheduler

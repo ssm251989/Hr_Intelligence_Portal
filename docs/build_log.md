@@ -2517,3 +2517,24 @@ NEXT: PART16 16.3 settings reorganised (check against the catalog's categories +
 - **Test email:** `hrctl platform mailbox test --to kg@ctdtechs.com` -> {"ok": true}; mailpit shows "Test email from the CTD Techs HRMS platform mailbox" to kg@ctdtechs.com (22:17:50). In dev, mail stays in mailpit; production needs real SMTP details in the console.
 
 NEXT: part-19.2b approvers by priority + escalation + resend, part-19.2c friendly failure + retries + console, then 19.3 proof.
+
+## Part 19.2b + 19.2c -- approver priorities, escalation, resend, friendly failure, retries, console (2026-10-03)
+- **19.2b approvers:** control-plane `activation_approvers` (priority, name, email, active), seeded P1 = KG kg@ctdtechs.com; P2/P3 empty until the owner provides them.
+  - Only @ctdtechs.com is accepted (console + `hrctl activation approvers list|set|remove`); every change goes to superadmin_audit with old -> new.
+  - Reorder is done with up/down buttons (accessible) instead of drag.
+- **Escalation:** a new request goes to P1 only. Not actioned within `activation.escalation_minutes` (default 1440) -> next active priority, with "Escalation: not actioned by <prev> since <time>". Nobody left -> "Not actioned" (red). Optional "send to all priorities at once". The SAME code is used throughout.
+- **Code storage (decision):** the bcrypt hash stays the only thing checked. The code is ALSO kept encrypted in the control-plane SecretStore, because escalation/retries resend the same code and CTD can "Show code" (audit-logged). It is never shown to the company and is deleted when used or cancelled.
+- **Resend:**
+  - Company side: Resend request / Try sending again (15 min cooldown, 5 a day), Cancel request, Request a new code when expired; "sent on … - resent n times".
+  - Console: resend to P1/P2/P3 or all, Generate new code, Show code, Cancel.
+  - Everything goes into the request history (activation_events).
+- **19.2c:**
+  - **Request numbers:** ACT-YYYY-NNNNN (sequence; old requests numbered).
+  - **Friendly not-sent message:** request number, support phone/email/hours (platform settings, empty until set), Copy request number. Never the SMTP reason or the code.
+  - **Automatic retries:** in the background (1, 5, 15, 60 min, then hourly, up to 24 h -> "Email not delivered"). A refused address moves to the next priority.
+  - **Sweep:** every minute (in-app APScheduler + Celery beat task), with a Postgres advisory lock. The company page refreshes every 30 s while not sent.
+  - **Console health:** red "Activation emails can't be sent - <reason>. [Fix platform mailbox]".
+- **Console UI:** ActivationConsole (requests with red rows on top + history + actions menu, approvers, platform mailbox + Send test email, platform settings). The old ActivationRequestsCard is removed.
+- **Checks:** compileall, cp alembic d19b2c3e4f5a, tsc, i18n 4006/0 missing, npm run build OK.
+
+NEXT: part-19.3 proof (approvers + escalation with a 2-min escalation time, resend + cooldown + 6th refused, console resend to P2, demo A/B, broken mailbox password -> friendly message -> retries -> fixed -> delivered, Show code audit; mailpit emails + screenshots) in FIXES_19.md.
