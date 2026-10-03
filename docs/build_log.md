@@ -2469,3 +2469,17 @@ NEXT: part-19 frontend -- module picker cards (Setup + Settings > Company > Modu
 - **Checks:** tsc clean, i18n 3919 keys 0 missing (new bundle modules19.ts en/hi/ta), npm run build OK, compileall OK.
 
 NEXT: 19.3 proof -- demo tenants A (Jobs only) and B (Candidates + Screening) through request -> captured email to kg@ctdtechs.com -> code -> menus/403; wrong / expired / used code; non-ctdtechs approver refused; FIXES_19.md; then the remaining PART 18 items per RESUME.txt.
+
+## Part 19.3 -- proof (2026-10-03)
+- **Demo companies:** demo-a "Demo - A (Jobs only)" and demo-b "Demo - B (Candidates + Screening)", shared_rls, hosts demo-a/demo-b.localhost.
+- **Live 403s:** from a multi-mode server on :8010, without signing in (the module gate runs before auth). The owner's :8000 was untouched.
+- **Request / activate:** service functions run as each demo admin row. The code is read from captured email (a local SMTP sink stands in for mailpit; no Docker here).
+- **Results:** A = Jobs only (menu: Jobs + GenAI usage). B = Candidates + Screening, with needs asked. Wrong / used / expired code, 5-try lockout + email to CTD Techs, and the switch-off dependency guard all work. A non-ctdtechs approver is refused at startup and in hrctl. Resume upload + AI read + pasted-JD score with 0 jobs. All in docs/ui/FIXES_19.md.
+- **Fixed by the proof:**
+  - DetachedInstanceError after a successful activation (500 + lost audit).
+  - Expired code left the page stuck (open_request now returns the expired request).
+  - New companies defaulted to Assets/Exits/Analytics on (platform.modules.enabled default -> []).
+- **Pending:** signed-in screenshots (no login available to this session).
+- **Left:** demo-a/demo-b (owner may delete with hrctl tenant delete); PLATFORM_SMTP_* must be set for real activation emails.
+
+NEXT: remaining PART 18 items per RESUME.txt -> PART16 16.1 (already met, log only), then 16.2 plain-language sweep.

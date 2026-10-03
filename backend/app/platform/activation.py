@@ -240,9 +240,17 @@ def request_info(req) -> Optional[dict]:
 
 
 def open_request(tenant) -> Optional[dict]:
+    """The waiting request; else the latest one if it expired (the page then offers "Request a new code")."""
+    from app.platform.tenancy.models_cp import ActivationRequest
+
     cp_db = _cp()
     try:
-        return request_info(_open_request(cp_db, tenant.tenant_id))
+        req = _open_request(cp_db, tenant.tenant_id)
+        if req is None:
+            last = (cp_db.query(ActivationRequest).filter(ActivationRequest.tenant_id == tenant.tenant_id)
+                    .order_by(ActivationRequest.created_at.desc()).first())
+            req = last if last is not None and last.status == "expired" else None
+        return request_info(req)
     finally:
         cp_db.close()
 
@@ -286,13 +294,14 @@ def request_activation(db, tenant, modules: list[str], user, *, with_needs: bool
         _email_code(req, code)
         del code  # never kept, never logged
         module_status.mark_pending(db, tenant, keys, actor)
+        replaced = str(previous.id) if previous is not None else None  # read before the session closes
         db.commit()
         cp_db.commit()
         info = request_info(req)
     finally:
         cp_db.close()
     log_action(db, "company_module", None, "activation_requested", actor[:50],
-               {"modules": keys, "request_id": info["id"], "email_sent": info["email_sent"], "replaced": str(previous.id) if previous is not None else None})
+               {"modules": keys, "request_id": info["id"], "email_sent": info["email_sent"], "replaced": replaced})
     return info
 
 
@@ -355,11 +364,12 @@ def activate_with_code(db, tenant, code: str, user) -> dict:
             raise ActivationError("None of the modules in this request are waiting any more. Request activation again.", "NOTHING_WAITING", 409)
         module_status.activate(db, tenant, keys, actor)
         match.status, match.activated_at, match.activated_by = "activated", now, actor
+        request_id = str(match.id)  # read before the session closes
         db.commit()
         cp_db.commit()
     finally:
         cp_db.close()
-    log_action(db, "company_module", None, "modules_activated", actor[:50], {"modules": keys, "request_id": str(match.id)})
+    log_action(db, "company_module", None, "modules_activated", actor[:50], {"modules": keys, "request_id": request_id})
     return {"activated": keys, "names": _names(keys)}
 
 

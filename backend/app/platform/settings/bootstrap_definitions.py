@@ -241,9 +241,9 @@ def register_all() -> None:
     # Part 14: module enablement (within the licence), setup wizard, per-user UX prefs.
     # Part 18.5: People (core_hr: employee records, directory, org chart), Performance (+ compensation,
     # succession) and Helpdesk are OFF by default -- code kept, switch on in Settings > Advanced > Modules.
-    register(SettingDef("platform.modules.enabled", "json",
-                        ["recruitment", "onboarding", "assets", "separation", "analytics", "copilot"],
-                        module="platform", group="Modules"))
+    # Part 19.1: a new company starts with nothing switched on -- the hiring modules come from
+    # "Choose what you use" (activation code), the others from Settings > Company > Modules
+    register(SettingDef("platform.modules.enabled", "json", [], module="platform", group="Modules"))
     # Part 18.5: which modules the Setup checklist "Choose what you use" offers
     register(SettingDef("platform.modules.offered", "json", ["onboarding", "assets", "separation", "analytics", "copilot"],
                         module="platform", group="Modules"))
