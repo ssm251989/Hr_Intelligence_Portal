@@ -88,7 +88,12 @@ def search(db: Session, tenant: TenantContext, user: User, q: str) -> dict:
         groups.append({"type": "report", "label_key": "search.reports", "items": [
             {"id": str(r.id), "title": r.name, "subtitle": r.dataset_code, "path": f"/reports?report={r.id}"} for r in visible]})
 
-    return {"query": q, "groups": [g for g in groups if g["items"]]}
+    # Part 19.1: no results from a module that isn't active for the company
+    from app.platform import module_status
+
+    active = module_status.active_modules(db, tenant)
+    owner = {"candidate": "candidates", "job": "jobs"}
+    return {"query": q, "groups": [g for g in groups if g["items"] and (g["type"] not in owner or owner[g["type"]] in active)]}
 
 
 def _requests(db: Session, tenant: TenantContext, user: User, q: str, pattern: str) -> list[dict]:

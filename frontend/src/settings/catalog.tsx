@@ -11,7 +11,8 @@ import MetadataPanel from "../components/MetadataPanel";
 import OnboardingPanel from "../components/OnboardingPanel";
 import PerformancePanel from "../components/PerformancePanel";
 import PlatformSettingsPanel from "../components/PlatformSettingsPanel";
-import ModuleLockSettingsPage from "../components/modules/ModuleLockSettingsPage";
+import ModulePicker from "../components/modules/ModulePicker";
+import ModulesOnOffCard from "../components/modules/ModulesOnOffCard";
 import JobBoardsPage from "../components/jobboards/JobBoardsPage";
 import BudgetsSettingsPage from "../components/salary/BudgetsSettingsPage";
 import RequiredDocumentsPage from "../components/documents/RequiredDocumentsPage";
@@ -44,6 +45,8 @@ export interface SettingsPageDef {
   /** extra words people might search for */
   keywords?: string;
   visible: (p: Perms) => boolean;
+  /** Part 19.1: hidden when this "Choose what you use" module isn't active */
+  module?: string;
   render: (go: (path: string) => void) => ReactNode;
 }
 
@@ -57,6 +60,7 @@ export interface Perms {
   admin: boolean; // platform settings configure
   mailbox: boolean; // HR mailbox integration
   twoStep?: boolean; // Part 18.1: 2-step verification switched on (Settings > Advanced)
+  modules?: string[]; // Part 19.1: modules active for the company (bootstrap.company_modules.active)
 }
 
 const ADMIN = (p: Perms) => p.admin;
@@ -76,7 +80,7 @@ export const LEGACY: Record<string, string> = {
   hiring: "hiring/stages", recruitment: "hiring/stages", requests: "hiring/stages", "hiring/requests": "hiring/stages", requisitions: "hiring/stages", scoring: "hiring/scoring", "scoring-rules": "hiring/scoring", shortlisting: "hiring/scoring", interviews: "hiring/interviews", onboarding: "onboarding/plans",
   "core-hr": "onboarding/org", people: "onboarding/org", employees: "onboarding/org", performance: "performance/cycles",
   helpdesk: "helpdesk/main", assets: "helpdesk/main", exits: "helpdesk/main", "service-desk": "helpdesk/main",
-  all: "advanced/all", modules: "advanced/modules", "module-lock": "advanced/modules", platform: "advanced/all", "all-settings": "advanced/all",
+  all: "advanced/all", modules: "company/modules", "module-lock": "company/modules", "advanced/modules": "company/modules", platform: "advanced/all", "all-settings": "advanced/all",
   health: "data/health", "system-health": "data/health",
 };
 
@@ -91,6 +95,9 @@ export const CATEGORIES: SettingsCategory[] = [
         render: () => (<><OfficesPage /><CoreHrPanel only="Org" /></>) },
       { id: "languages", emoji: "globe", keywords: "hindi tamil rename labels translation", visible: ADMIN, render: () => <LanguagesPage /> },
       { id: "media", emoji: "clapper", keywords: "welcome video tours show me how gif", visible: ADMIN, render: () => <MediaSettingsPanel /> },
+      // Part 19.1: "Choose what you use" + activation code; the other (non-hiring) modules underneath
+      { id: "modules", emoji: "puzzle", keywords: "modules choose what you use activation code activate switch on off", visible: ADMIN,
+        render: () => (<><ModulePicker /><ModulesOnOffCard /></>) },
     ],
   },
   {
@@ -106,26 +113,26 @@ export const CATEGORIES: SettingsCategory[] = [
   {
     id: "hiring", emoji: "briefcase", pages: [
       // Part 18.22: "Hiring stages" and "Job requests" are one page with two tabs (they showed the same thing)
-      { id: "stages", emoji: "briefcase", keywords: "pipeline hiring stages job requests requisitions approval", visible: ADMIN,
+      { id: "stages", emoji: "briefcase", module: "jobs", keywords: "pipeline hiring stages job requests requisitions approval", visible: ADMIN,
         render: () => <RecruitmentPanel tabs={["Pipeline", "Requisitions"]} /> },
       // Part 17.5/17.6: the Match score's rules + automatic shortlisting (their raw settings live here too).
-      { id: "scoring", emoji: "target", keywords: "score weight match threshold knockout shortlist auto-shortlist preset", visible: ADMIN,
+      { id: "scoring", emoji: "target", module: "screening", keywords: "score weight match threshold knockout shortlist auto-shortlist preset", visible: ADMIN,
         prefixes: ["recruitment.scoring.", "recruitment.shortlisting."],
         render: () => (<><ScoringRulesEditor /><ShortlistingRulesForm /></>) },
-      { id: "screening", emoji: "magnifier", keywords: "ai negotiation tracker blind", prefixes: ["recruitment."], visible: ADMIN,
+      { id: "screening", emoji: "magnifier", module: "screening", keywords: "ai negotiation tracker blind", prefixes: ["recruitment."], visible: ADMIN,
         render: scoped(["recruitment."], "settingsHome.page.hiring.screening") },
-      { id: "interviews", emoji: "calendar", keywords: "interview scheduling availability interviewer pools negotiation slots", prefixes: ["recruitment.negotiation."], visible: EVERYONE, render: () => <InterviewsSettingsPage /> },
-      { id: "availability", emoji: "hourglass", keywords: "interviewer availability ctc salary components", visible: ADMIN,
+      { id: "interviews", emoji: "calendar", module: "interviews", keywords: "interview scheduling availability interviewer pools negotiation slots", prefixes: ["recruitment.negotiation."], visible: EVERYONE, render: () => <InterviewsSettingsPage /> },
+      { id: "availability", emoji: "hourglass", module: "interviews", keywords: "interviewer availability ctc salary components", visible: ADMIN,
         render: () => <RecruitmentPanel only="Availability & CTC" /> },
-      { id: "offers", emoji: "envelope", keywords: "salary bands ctc offer expiry", prefixes: ["compensation.", "offers."], visible: ADMIN,
+      { id: "offers", emoji: "envelope", module: "offers", keywords: "salary bands ctc offer expiry", prefixes: ["compensation.", "offers."], visible: ADMIN,
         render: scoped(["compensation.", "offers."], "settingsHome.page.hiring.offers") },
-      { id: "bgv", emoji: "shield", keywords: "background checks verification vendor", prefixes: ["onboarding.bgv."], visible: ADMIN,
+      { id: "bgv", emoji: "shield", module: "bgv", keywords: "background checks verification vendor", prefixes: ["onboarding.bgv."], visible: ADMIN,
         render: scoped(["onboarding.bgv."], "settingsHome.page.hiring.bgv") },
-      { id: "documents", emoji: "file_folder", keywords: "required documents joining pan aadhaar payslip certificate upload", visible: ADMIN, render: () => <RequiredDocumentsPage /> },
-      { id: "contacts", emoji: "id_card", keywords: "contacts welcome email hr department head management joining", visible: ADMIN, render: () => <ContactsSettingsPage /> },
-      { id: "budgets", emoji: "bank", keywords: "department budget finance hiring cost money fiscal year", visible: ADMIN, render: () => <BudgetsSettingsPage /> },
-      { id: "careers", emoji: "globe", keywords: "careers site benefits faq", prefixes: ["careers."], visible: ADMIN, render: scoped(["careers."], "settingsHome.page.hiring.careers") },
-      { id: "boards", emoji: "link", keywords: "linkedin naukri indeed job boards posting", visible: EVERYONE,
+      { id: "documents", emoji: "file_folder", module: "bgv", keywords: "required documents joining pan aadhaar payslip certificate upload", visible: ADMIN, render: () => <RequiredDocumentsPage /> },
+      { id: "contacts", emoji: "id_card", module: "offers", keywords: "contacts welcome email hr department head management joining", visible: ADMIN, render: () => <ContactsSettingsPage /> },
+      { id: "budgets", emoji: "bank", module: "salary", keywords: "department budget finance hiring cost money fiscal year", visible: ADMIN, render: () => <BudgetsSettingsPage /> },
+      { id: "careers", emoji: "globe", module: "jobs", keywords: "careers site benefits faq", prefixes: ["careers."], visible: ADMIN, render: scoped(["careers."], "settingsHome.page.hiring.careers") },
+      { id: "boards", emoji: "link", module: "jobs", keywords: "linkedin naukri indeed job boards posting", visible: EVERYONE,
         render: () => (
           <IntegrationCard emoji="handshake" title={t("settingsPage.integration.linkedin.title")} description={t("settingsPage.integration.linkedin.body")}
             connectLabel={t("settingsPage.integration.linkedin.connect")} fetchStatus={integrationsApi.linkedinStatus} connect={integrationsApi.connectLinkedin} />
@@ -134,8 +141,8 @@ export const CATEGORIES: SettingsCategory[] = [
   },
   {
     id: "onboarding", emoji: "waving_hand", pages: [
-      { id: "plans", emoji: "clipboard", keywords: "onboarding checklist tasks", visible: ADMIN, render: () => <OnboardingPanel /> },
-      { id: "documents", emoji: "page", keywords: "documents letters portal forms policies", prefixes: ["onboarding.", "core_hr."], visible: ADMIN,
+      { id: "plans", emoji: "clipboard", module: "onboarding", keywords: "onboarding checklist tasks", visible: ADMIN, render: () => <OnboardingPanel /> },
+      { id: "documents", emoji: "page", module: "onboarding", keywords: "documents letters portal forms policies", prefixes: ["onboarding.", "core_hr."], visible: ADMIN,
         render: scoped(["onboarding.documents", "onboarding.portal", "onboarding.conversion", "core_hr."], "settingsHome.page.onboarding.documents") },
       { id: "fields", emoji: "label", keywords: "employee fields custom", visible: ADMIN, render: () => <MetadataPanel only="Custom Fields" /> },
       { id: "org", emoji: "building", keywords: "org structure departments positions", visible: ADMIN, render: () => <CoreHrPanel only="Org" /> },
@@ -183,7 +190,7 @@ export const CATEGORIES: SettingsCategory[] = [
         ) },
       { id: "maps", emoji: "world_map", keywords: "maps geocoding tiles", prefixes: ["geo.", "maps."], visible: ADMIN, render: scoped(["geo.", "maps."], "settingsHome.page.integrations.maps") },
       { id: "storage", emoji: "file_folder", keywords: "file storage s3 space", visible: ADMIN, render: () => <StoragePage /> },
-      { id: "job-boards", emoji: "globe", keywords: "linkedin naukri indeed monster shine job boards import", visible: ADMIN, render: () => <JobBoardsPage /> },
+      { id: "job-boards", emoji: "globe", module: "jobs", keywords: "linkedin naukri indeed monster shine job boards import", visible: ADMIN, render: () => <JobBoardsPage /> },
     ],
   },
   {
@@ -212,13 +219,13 @@ export const CATEGORIES: SettingsCategory[] = [
   {
     id: "advanced", emoji: "tools", pages: [
       { id: "all", emoji: "tools", keywords: "all settings raw", visible: ADMIN, render: () => <PlatformSettingsPanel /> },
-      { id: "modules", emoji: "lock", keywords: "modules lock unlock passcode", visible: ADMIN, render: () => <ModuleLockSettingsPage /> },
     ],
   },
 ];
 
 export function visibleCategories(p: Perms): SettingsCategory[] {
-  return CATEGORIES.map((c) => ({ ...c, pages: c.pages.filter((pg) => pg.visible(p)) })).filter((c) => c.pages.length > 0);
+  const moduleOn = (pg: SettingsPageDef) => !pg.module || !p.modules || p.modules.includes(pg.module);
+  return CATEGORIES.map((c) => ({ ...c, pages: c.pages.filter((pg) => pg.visible(p) && moduleOn(pg)) })).filter((c) => c.pages.length > 0);
 }
 
 /** The page that owns a raw setting key (longest matching prefix), else Advanced. */

@@ -19,6 +19,7 @@ import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
 
 import { superAdminApi, type ConsoleTenantRow } from "../api/client";
+import ActivationRequestsCard from "../components/modules/ActivationRequestsCard";
 import { t as tr, useT } from "../i18n";
 import { EmptyState, Emoji, FriendlyError, humanise, Illustration, InfoTip, PageHeader, StatusChip } from "../ui-kit";
 
@@ -218,6 +219,8 @@ export default function SuperAdminPage() {
           </TableContainer>
         </Card>
       )}
+
+      {token && loaded && <ActivationRequestsCard token={token} />}
 
       <Dialog open={Boolean(suspending)} onClose={() => setSuspending(null)} maxWidth="sm" fullWidth aria-labelledby="suspend-title">
         <DialogTitle id="suspend-title">{t("console.suspend_title", { name: suspending?.name ?? "" })}</DialogTitle>

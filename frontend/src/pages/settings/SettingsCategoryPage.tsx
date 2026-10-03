@@ -25,7 +25,7 @@ export default function SettingsCategoryPage() {
   const navigate = useNavigate();
   const { category = "", page } = useParams();
   const perms = useSettingsPerms();
-  const cats = useMemo(() => visibleCategories(perms), [perms.admin, perms.mailbox]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cats = useMemo(() => visibleCategories(perms), [perms.admin, perms.mailbox, perms.modules?.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
   const cat = cats.find((c) => c.id === category);
   const current = cat?.pages.find((p) => p.id === page);
   const [advancedOpen, setAdvancedOpen] = useState(Boolean(current?.advanced));

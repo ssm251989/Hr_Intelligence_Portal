@@ -2452,3 +2452,20 @@ Spec: `Claude outputs/PART19_MODULE_ACTIVATION.txt` (owner, 2026-10-03; done bef
 - **Checks:** compileall OK, alembic (tenant + control plane) upgraded. Live: onboarding -> 403 MODULE_NOT_ACTIVE (ctd-techs); candidates -> 401 (active, sign-in needed). `hrctl activation set-approver someone@gmail.com` -> refused.
 
 NEXT: part-19 frontend -- module picker cards (Setup + Settings > Company > Modules), request / waiting / code entry + confetti, menu/Home/settings/search from company_modules, remove passcode screens, talent-pool + pasted-JD screening pages, console requests table; then 19.3 proof.
+
+## Part 19.1 + 19.2 (frontend) -- module picker, activation code, talent pool, pasted-JD screening (2026-10-03)
+- **ModulePicker:** cards with emoji, name, one line, "What you get", "Needs: …", a status chip (Active / Waiting for activation code / Off) and a switch. It asks "Also switch on Screening?" and "Switch off …? (others need it)". "Request activation" opens a waiting banner with code entry (XXXX-XXXX) and the expiry; an expired code gets "Request a new code"; confetti on activation. The same component is used in Setup (modules step, with other modules underneath) and Settings > Company > Modules (legacy advanced/modules links redirect).
+- **Follows company modules:**
+  - menu (server-filtered nav),
+  - pages opened directly (ModuleNotActiveCard),
+  - Home boxes (stats/flow -> candidates, feedback -> interviews),
+  - settings pages (15 tagged; empty categories disappear),
+  - global search (candidate/job groups).
+- **Without Jobs:**
+  - /candidates/dashboard and /candidates/list show the Talent pool (multi-upload + automatic AI read, no job fields).
+  - Screening shows "Score against a job description" (paste or upload, results best first, earlier runs).
+- **Console:** an activation requests table (resend / new code shown once / cancel) with the approver list.
+- **Removed:** LockedModuleCard, ModuleLockSettingsPage, moduleLockApi, 150 passcode strings (lock.save / lock.cancel kept, used elsewhere).
+- **Checks:** tsc clean, i18n 3919 keys 0 missing (new bundle modules19.ts en/hi/ta), npm run build OK, compileall OK.
+
+NEXT: 19.3 proof -- demo tenants A (Jobs only) and B (Candidates + Screening) through request -> captured email to kg@ctdtechs.com -> code -> menus/403; wrong / expired / used code; non-ctdtechs approver refused; FIXES_19.md; then the remaining PART 18 items per RESUME.txt.

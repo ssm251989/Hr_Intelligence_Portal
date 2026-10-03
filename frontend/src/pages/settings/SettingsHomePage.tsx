@@ -28,7 +28,8 @@ function norm(s: string): string {
 export function useSettingsPerms() {
   const { can } = useAuth();
   const { data } = useMeBootstrap();
-  return { admin: can(ROLE_MATRIX.platformSettingsWrite), mailbox: can(ROLE_MATRIX.hrIntegrationWrite), twoStep: Boolean(data?.two_step) };
+  return { admin: can(ROLE_MATRIX.platformSettingsWrite), mailbox: can(ROLE_MATRIX.hrIntegrationWrite), twoStep: Boolean(data?.two_step),
+    modules: data?.company_modules?.active }; // Part 19.1
 }
 
 export default function SettingsHomePage() {
@@ -36,7 +37,7 @@ export default function SettingsHomePage() {
   const f = useTheme().palette.fresh;
   const location = useLocation();
   const perms = useSettingsPerms();
-  const cats = useMemo(() => visibleCategories(perms), [perms.admin, perms.mailbox]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cats = useMemo(() => visibleCategories(perms), [perms.admin, perms.mailbox, perms.modules?.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
   const [q, setQ] = useState("");
   const [defs, setDefs] = useState<SettingDefinition[]>([]);
 

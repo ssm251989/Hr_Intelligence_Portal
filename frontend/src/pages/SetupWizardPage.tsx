@@ -30,6 +30,7 @@ import { useBootstrap } from "../bootstrap/BootstrapContext";
 import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
 import LogoUploader from "../components/branding/LogoUploader";
 import { useT } from "../i18n";
+import ModulePicker from "../components/modules/ModulePicker";
 import { Emoji, FriendlyError, PageHeader, StatusChip } from "../ui-kit";
 
 const TIMEZONES = ["Asia/Kolkata", "Asia/Dubai", "Asia/Singapore", "Europe/London", "America/New_York", "UTC"];
@@ -222,13 +223,16 @@ export default function SetupWizardPage() {
             )}
 
             {step.step === "modules" && (
-              <Stack>
+              <Stack spacing={1}>
+                {/* Part 19.1: choose what you use -- switched on with an activation code from CTD Techs */}
+                <ModulePicker variant="setup" onChange={() => void load()} />
+                {moduleCodes.length > 0 && <Typography variant="subtitle2" sx={{ pt: 2 }}>{t("mod19.other_modules")}</Typography>}
                 {moduleCodes.map((m) => (
                   <FormControlLabel key={m} label={t(`setup.module.${m}`)}
                     control={<Checkbox checked={modules.includes(m)} onChange={(e) => setModules((prev) => (e.target.checked ? [...prev, m] : prev.filter((c) => c !== m)))} />} />
                 ))}
-                <Button variant="contained" disabled={busy} sx={{ alignSelf: "flex-start", mt: 1 }}
-                  onClick={() => run(() => experienceApi.setModules(modules).then(() => reloadMe()), t("setup.saved.modules"))}>{t("setup.save")}</Button>
+                {moduleCodes.length > 0 && <Button variant="outlined" disabled={busy} sx={{ alignSelf: "flex-start", mt: 1 }}
+                  onClick={() => run(() => experienceApi.setModules(modules).then(() => reloadMe()), t("setup.saved.modules"))}>{t("setup.save")}</Button>}
               </Stack>
             )}
 

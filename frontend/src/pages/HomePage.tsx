@@ -76,7 +76,11 @@ function widget(key: string, editing: boolean): ReactNode {
 }
 
 // Part 18.5: boxes that belong to a module which can be switched off
-const WIDGET_MODULE: Partial<Record<string, string>> = { team_goals: "performance", my_goals: "performance", tickets: "helpdesk", assets: "assets" };
+// (Part 19.1: the hiring boxes follow "Choose what you use")
+const WIDGET_MODULE: Partial<Record<string, string>> = {
+  team_goals: "performance", my_goals: "performance", tickets: "helpdesk", assets: "assets",
+  stats: "candidates", flow: "candidates", feedback: "interviews",
+};
 
 /** A saved layout only ever REARRANGES this home's boxes: unknown keys drop, new boxes join. */
 function reconcile(kind: HomeKind, saved: LayoutItem[] | null, modules?: string[]): LayoutItem[] {
@@ -95,7 +99,7 @@ export default function HomePage() {
   const f = theme.palette.fresh;
   const wide = useMediaQuery(theme.breakpoints.up("md"));
   const { can, data: me } = useMeBootstrap();
-  const modules = me?.modules;
+  const modules = me?.modules ? [...me.modules, ...(me.company_modules?.active ?? [])] : undefined;
   const [home, setHome] = useState<MyHome | null>(null);
   const [preview, setPreview] = useState<HomeKind | null>(null);
   const [layout, setLayout] = useState<LayoutItem[]>([]);

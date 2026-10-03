@@ -3,6 +3,7 @@ import { Navigate, Route, BrowserRouter, Routes, useLocation } from "react-route
 import CircularProgress from "@mui/material/CircularProgress";
 
 import { AuthProvider } from "./auth/AuthContext";
+import ByModule from "./components/modules/ByModule";
 import { BootstrapProvider } from "./bootstrap/BootstrapContext";
 import { MeBootstrapProvider } from "./bootstrap/MeBootstrapContext";
 import { AppThemeProvider } from "./theme/ThemeModeContext";
@@ -52,6 +53,7 @@ const InterviewersPage = lazy(() => import("./pages/interviews/InterviewersPage"
 const EmployeeProfilePage = lazy(() => import("./pages/people/EmployeeProfilePage"));
 const OrgChartPage = lazy(() => import("./pages/people/OrgChartPage"));
 const OnboardingDashboardPage = lazy(() => import("./pages/onboarding/OnboardingDashboardPage"));
+const TalentPoolPage = lazy(() => import("./pages/TalentPoolPage"));
 const WelcomePortalPage = lazy(() => import("./pages/onboarding/WelcomePortalPage"));
 const SalaryDetailsFormPage = lazy(() => import("./pages/salary/SalaryDetailsFormPage"));
 const DocumentsFormPage = lazy(() => import("./pages/documents/DocumentsFormPage")); // Part 18.16
@@ -127,8 +129,9 @@ export default function App() {
                 <Route path="/overview" element={<OverviewPage />} />
                 <Route path="/jobs" element={<JobsPage />} />
                 <Route path="/candidates" element={<Navigate to="/candidates/dashboard" replace />} />
-                <Route path="/candidates/dashboard" element={<CandidatesDashboardPage />} />
-                <Route path="/candidates/list" element={<CandidatesListPage />} />
+                {/* Part 19.1: without the Jobs module, Candidates is one talent pool */}
+                <Route path="/candidates/dashboard" element={<ByModule module="jobs" on={<CandidatesDashboardPage />} off={<TalentPoolPage />} />} />
+                <Route path="/candidates/list" element={<ByModule module="jobs" on={<CandidatesListPage />} off={<TalentPoolPage />} />} />
                 <Route path="/candidates/import" element={<CandidatesImportPage />} />
                 <Route path="/candidates/recycle-bin" element={<RecycleBinPage />} />
                 <Route path="/genai-usage" element={<GenAIUsagePage />} />

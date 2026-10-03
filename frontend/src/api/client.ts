@@ -1125,7 +1125,7 @@ export interface NavEntry {
   module?: string;
   group?: "today" | "hiring" | "people" | "insights" | "admin";
   icon?: string;
-  lock_key?: string | null; // Part 18.4
+  module_key?: string | null; // Part 19.1: the "Choose what you use" module this page belongs to
 }
 
 export interface NotificationGroup {
@@ -1147,7 +1147,7 @@ export interface BootstrapRead {
   modules?: string[];
   ux?: { reduce_motion: boolean; page_size: number; direction: "ltr" | "rtl" };
   two_step?: boolean; // Part 18.1
-  module_locks?: { active: boolean; locked: string[]; pages: Record<string, string[]> }; // Part 18.4
+  company_modules?: { active: string[]; pages: Record<string, string[]> }; // Part 19.1
 }
 
 export const brandingApi = {
@@ -1571,6 +1571,15 @@ export const superAdminApi = {
   setStatus: (token: string, slug: string, status: string, reason?: string) =>
     consoleRequest<{ status: string }>(`/api/v1/superadmin/tenants/${slug}/status`, token, { method: "POST", body: JSON.stringify({ status, reason }) }),
   health: (token: string, slug: string) => consoleRequest<{ database: { ok: boolean }; connections?: { name: string; ok: boolean }[] }>(`/api/v1/superadmin/tenants/${slug}/health`, token),
+  // Part 19.2: module activation requests across installations
+  activationRequests: (token: string) =>
+    consoleRequest<{ requests: import("./modulesApi").ConsoleActivationRequest[]; approvers: string[] }>("/api/v1/superadmin/activation-requests", token),
+  activationResend: (token: string, id: string) =>
+    consoleRequest<{ email_error: string | null }>(`/api/v1/superadmin/activation-requests/${id}/resend`, token, { method: "POST" }),
+  activationNewCode: (token: string, id: string) =>
+    consoleRequest<{ code: string; email_error: string | null }>(`/api/v1/superadmin/activation-requests/${id}/new-code`, token, { method: "POST" }),
+  activationCancel: (token: string, id: string) =>
+    consoleRequest<{ status: string }>(`/api/v1/superadmin/activation-requests/${id}/cancel`, token, { method: "POST" }),
 };
 
 // ---- Part 14: setup wizard, config health, search, unified inbox, views, drafts, versions ----
