@@ -45,10 +45,14 @@ def request_bgv(
 ):
     application = _get_application_or_404(db, application_id)
     assert_application_not_on_hold(application)
-    if application.status != "salary_approved":
+    from app.platform import module_registry, module_status
+    from app.platform.tenancy.context import require_current_tenant
+
+    # Part 19.1: with the Salary module off, BGV follows the interview straight away
+    if application.status not in module_registry.ready_statuses(module_status.active_modules(db, require_current_tenant()), "bgv"):
         raise HTTPException(
             status_code=400,
-            detail="Application must have an approved salary before BGV can be requested",
+            detail="This candidate isn't ready for background verification yet. The step before it (salary or interview) isn't finished.",
         )
 
     previous_status = application.status

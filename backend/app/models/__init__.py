@@ -140,6 +140,8 @@ from app.models.geo import GeoCacheEntry
 from app.models.idempotency import IdempotencyKey
 from app.models.candidate_removal import CandidateRemovalRun
 from app.models.module_access import ModuleAccess
+from app.models.company_module import CompanyModule
+from app.models.jd_screening import JdScreening, JdScreeningResult
 from app.models.department_budget import BudgetCommitment, DepartmentBudget
 from app.models.candidate_document import CandidateDocument
 from app.models.interviewer_pool import InterviewerPool

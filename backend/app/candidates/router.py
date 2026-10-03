@@ -239,7 +239,8 @@ async def upload_resume(
 
 @router.get("", response_model=list[CandidateRead])
 def list_candidates(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    candidates = db.query(Candidate).order_by(Candidate.created_at.desc()).all()
+    # Part 19.1: the talent pool (Candidates without the Jobs module) -- Recycle bin left out
+    candidates = db.query(Candidate).filter(Candidate.deleted_at.is_(None)).order_by(Candidate.created_at.desc()).all()
     return [_with_inferred_gender(c) for c in candidates]
 
 

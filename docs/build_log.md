@@ -2427,3 +2427,28 @@ NEXT: continue docs/RESUME.txt -> PART16 16.1 (already met: content fills the wi
 - **Pending:** live 200 + /onboarding screenshot with a sign-in (not available in this session).
 
 NEXT: owner signs in and checks /onboarding (expect 4 joiner cards on ctd-techs); then continue docs/RESUME.txt -> PART16 16.1 (log only), then 16.2 plain-language sweep.
+
+## Part 19.1 + 19.2 (backend) -- choose what you use + activation code by email (2026-10-03)
+Spec: `Claude outputs/PART19_MODULE_ACTIVATION.txt` (owner, 2026-10-03; done before the rest of PART 18; it replaces 18.4).
+- **Registry:** `app/platform/module_registry.py` is the ONE list: 12 modules, needs, pages, API rules, hiring stage FLOW, email templates, background jobs. Built from 18.4's LOCKABLE.
+- **Status:** `company_modules` (tenant DB, RLS), statuses off|pending|active. Tenant migration b19c1d2e3f4a. `ModuleActivationMiddleware` answers 403 MODULE_NOT_ACTIVE "This module is not active for your company".
+- **Driven by status:** menu (bootstrap nav + `company_modules`), Setup step, background jobs (JOB_MODULE), emails (`comms.send`/`dispatch_event` -> suppressed with reason), auto-screening, auto-shortlisting, and the stage order (`ready_statuses`: no Salary -> BGV/offer straight after the interview).
+- **Activation:** `app/platform/activation.py` + control-plane `activation_requests`/`platform_config` (cp migration c19a2b3d4e5f).
+  - Code: 8 characters, no 0/O/1/I. bcrypt of sha256(code|tenant|modules). Expires after ACTIVATION_CODE_DAYS (7). Works once. 5 wrong -> 30 min lock + email to CTD Techs.
+  - The email goes only to the approvers, through the PLATFORM mailbox (PLATFORM_SMTP_*).
+  - Approvers: env ACTIVATION_APPROVER_EMAILS / ACTIVATION_ALLOWED_DOMAIN, or `hrctl activation set-approver`. Anything outside ctdtechs.com is refused at startup and at send.
+- **API:** `/api/v1/modules` (list/request/activate/off); superadmin `/activation-requests` (list/resend/new-code/cancel).
+- **No Jobs needed:** `/api/v1/ui/screening/jd` scores the talent pool against a pasted or uploaded job description (tables jd_screenings / jd_screening_results). GET /candidates (talent pool) leaves out the Recycle bin.
+- **Retired 18.4:** module_lock.py, module_lock_router, `hrctl modules set-passcode`, `modules.lock.*` settings. `hrctl modules status` shows company modules now.
+- **Decisions:**
+  - The table is named `company_modules`, not `tenant_modules`: the control plane already has a `tenant_modules` licence table.
+  - Existing companies: all 10 hiring modules active. Onboarding is active only if it is on today. ctd-techs = OFF, because kg@ctdtechs.com switched every optional module off on 2026-10-03 21:19 (setting `[]`).
+  - The `module_access` table is kept but unused (empty for ctd-techs; dropping it = data change, contract later).
+  - A new request replaces the open one (its modules are carried over), so a company has at most one live code.
+  - Resend = a new code: only the hash is stored, so the old code can't be sent again.
+  - A code activates only modules that are still waiting (one switched off after the request needs a new code).
+  - GenAI usage is never chosen; it is included with any AI module.
+  - The spec's "/api/v1/candidates" is "/candidates" in this API; both that and /api/v1/ui/candidates are gated.
+- **Checks:** compileall OK, alembic (tenant + control plane) upgraded. Live: onboarding -> 403 MODULE_NOT_ACTIVE (ctd-techs); candidates -> 401 (active, sign-in needed). `hrctl activation set-approver someone@gmail.com` -> refused.
+
+NEXT: part-19 frontend -- module picker cards (Setup + Settings > Company > Modules), request / waiting / code entry + confetti, menu/Home/settings/search from company_modules, remove passcode screens, talent-pool + pasted-JD screening pages, console requests table; then 19.3 proof.

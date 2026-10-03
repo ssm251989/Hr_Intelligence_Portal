@@ -75,6 +75,10 @@ def maybe_auto_shortlist(db: Session, tenant, application: Application, *, job: 
     from app.models.comms import OutboundMessage
     from app.models.candidate import Candidate
 
+    from app.platform import module_status
+
+    if not module_status.is_active(db, tenant, "shortlisting"):
+        return False  # Part 19.1: no Shortlisting module -> nothing is shortlisted automatically
     cfg = config(db, tenant, job)
     if not cfg["auto_shortlist"] or application.status != "screened" or knocked_out:
         return False

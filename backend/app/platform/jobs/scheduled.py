@@ -140,9 +140,26 @@ JOBS = {
 }
 
 
+def _module_guard(job_name: str, fn):
+    """Part 19.1: a job that belongs to a module (module_registry.JOB_MODULE) is skipped for a
+    company that doesn't have that module active."""
+    from app.platform import module_registry, module_status
+
+    module = module_registry.JOB_MODULE.get(job_name)
+    if module is None:
+        return fn
+
+    def guarded(db, tenant):
+        if not module_status.is_active(db, tenant, module):
+            return {"skipped": f"module {module} not active"}
+        return fn(db, tenant)
+
+    return guarded
+
+
 @celery_app.task(base=TenantTask, name="hrms.run_tenant_job", bind=True, queue="low")
 def run_tenant_job(self, job_name: str):
-    result = _with_session(JOBS[job_name])
+    result = _with_session(_module_guard(job_name, JOBS[job_name]))
     log.info("job %s done: %s", job_name, result)
     return result
 

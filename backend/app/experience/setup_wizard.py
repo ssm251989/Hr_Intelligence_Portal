@@ -71,7 +71,7 @@ def progress(db: Session, tenant: TenantContext) -> dict:
         "branding": (db.query(BrandTheme).filter(BrandTheme.tenant_id == tenant.tenant_id, BrandTheme.is_default.is_(True)).count() > 0, "A default brand theme exists."),
         "mailbox": (mailbox_ok, mailbox_detail),
         "import_employees": (db.query(Employee).filter(Employee.tenant_id == tenant.tenant_id).count() > 0, "Employees imported."),
-        "modules": (_has_tenant_value(db, tenant, "platform.modules.enabled"), "Modules chosen."),
+        "modules": (_modules_chosen(db, tenant), "Modules chosen (active or waiting for the activation code)."),
         "config_pack": (_has_tenant_value(db, tenant, "platform.setup.config_pack"), "A ready-made template was applied."),
         "invite_admins": (admins >= 2, f"{admins} admin(s) -- invite at least one more so you're never locked out."),
     }
@@ -240,6 +240,7 @@ def set_company(db: Session, tenant: TenantContext, *, display_name: str, legal_
 def available_modules(db: Session, tenant: TenantContext, *, offered_only: bool = True) -> list[dict]:
     """Part 18.5: the modules that exist AND this company's licence allows; `offered_only` =
     only those the Setup checklist offers (platform.modules.offered)."""
+    from app.platform import module_registry
     from app.platform.modules import MODULES, _licensed_modules
 
     s, ctx = SettingsService(db), SettingContext(tenant=tenant)
@@ -247,7 +248,15 @@ def available_modules(db: Session, tenant: TenantContext, *, offered_only: bool 
     wanted = set(s.get("platform.modules.enabled", ctx) or [])
     licensed = _licensed_modules(tenant)
     return [{"code": m.code, "on": m.code in wanted, "offered": m.code in offered}
-            for m in MODULES if not m.always_on and (licensed is None or m.code in licensed) and (not offered_only or m.code in offered)]
+            for m in MODULES if not m.always_on and m.code not in module_registry.BY_KEY  # Part 19.1: those are on the module picker
+            and (licensed is None or m.code in licensed) and (not offered_only or m.code in offered)]
+
+
+def _modules_chosen(db: Session, tenant: TenantContext) -> bool:
+    """Part 19.1: the "Choose what you use" step is done once any module is active or requested."""
+    from app.models.company_module import CompanyModule
+
+    return db.query(CompanyModule).filter(CompanyModule.tenant_id == tenant.tenant_id, CompanyModule.status.in_(("active", "pending"))).count() > 0
 
 
 def set_modules(db: Session, tenant: TenantContext, modules: list[str], *, actor: str, scope: str = "offered") -> dict:
@@ -260,9 +269,6 @@ def set_modules(db: Session, tenant: TenantContext, modules: list[str], *, actor
     current = set(SettingsService(db).get("platform.modules.enabled", SettingContext(tenant=tenant)) or [])
     new = (current - allowed) | set(modules)
     SettingsService(db).set("platform.modules.enabled", sorted(new), scope_type="tenant", scope_id=None, actor=actor, tenant=tenant)
-    from app.platform import module_lock
-
-    module_lock.invalidate(tenant.tenant_id)
     return progress(db, tenant)
 
 

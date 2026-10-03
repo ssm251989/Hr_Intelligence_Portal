@@ -80,15 +80,18 @@ from app.platform.ops.security_headers import SecurityHeadersMiddleware  # noqa:
 
 configure_logging()
 init_optional_integrations(app)
+from app.platform.activation import check_startup as _check_activation  # noqa: E402
+
+_check_activation()  # Part 19.2: refuse to start with an activation approver outside ctdtechs.com
 app.add_middleware(RateLimitMiddleware)
 from app.platform.modules import ModuleGateMiddleware  # noqa: E402
-from app.platform.module_lock import ModuleLockMiddleware  # noqa: E402
+from app.platform.module_status import ModuleActivationMiddleware  # noqa: E402
 from app.platform.ops.idempotency import IdempotencyMiddleware  # noqa: E402
 
 app.add_middleware(IdempotencyMiddleware)  # Part 17.13: inside the tenant resolver (needs the tenant)
 
 app.add_middleware(ModuleGateMiddleware)
-app.add_middleware(ModuleLockMiddleware)  # Part 18.4: locked modules -> 403 (inside the tenant resolver)
+app.add_middleware(ModuleActivationMiddleware)  # Part 19.1: module not active for this company -> 403 (inside the tenant resolver)
 app.add_middleware(ObservabilityMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 
@@ -195,6 +198,12 @@ app.include_router(settings_home_router)
 from app.experience.ui_people_router import router as ui_people_router  # noqa: E402
 
 app.include_router(ui_people_router)
+from app.experience.modules_router import router as modules_router  # noqa: E402 -- Part 19.1/19.2
+
+app.include_router(modules_router)
+from app.experience.ui_jd_screening_router import router as ui_jd_screening_router  # noqa: E402 -- Part 19.1
+
+app.include_router(ui_jd_screening_router)
 from app.experience.ui_onboarding_router import router as ui_onboarding_router  # noqa: E402
 
 app.include_router(ui_onboarding_router)
@@ -237,9 +246,7 @@ app.include_router(status_public_router)
 from app.experience.ui_candidate_removal_router import router as ui_candidate_removal_router  # noqa: E402
 
 app.include_router(ui_candidate_removal_router)
-from app.experience.module_lock_router import router as module_lock_router  # noqa: E402
 
-app.include_router(module_lock_router)
 from app.experience.ui_job_boards_router import router as ui_job_boards_router  # noqa: E402
 
 app.include_router(ui_job_boards_router)

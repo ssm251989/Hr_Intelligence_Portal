@@ -130,20 +130,19 @@ def build_bootstrap(db: Session, tenant: TenantContext, user: Optional[User], *,
         },
         "custom_labels": custom_labels,
         "two_step": bool(settings_service.get("iam.auth.two_step_available", ctx)),  # Part 18.1
-        "module_locks": _module_locks(db, tenant),  # Part 18.4
+        "company_modules": _company_modules(db, tenant),  # Part 19.1
         # Part 12: every AI affordance in the UI is gated on these (AI disabled -> hidden).
         "ai": _ai_flags(db, tenant),
     }
 
 
-def _module_locks(db: Session, tenant: TenantContext) -> dict:
-    """Part 18.4: which areas are locked, and the page paths that belong to each, so the menu
-    shows a lock and a locked page shows the passcode card."""
-    from app.platform import module_lock
+def _company_modules(db: Session, tenant: TenantContext) -> dict:
+    """Part 19.1: the modules active for this company and the page paths of every module, so
+    the app can hide what isn't active and show "not active" on a page opened directly."""
+    from app.platform import module_registry, module_status
 
-    locked = sorted(module_lock.locked_keys(db, tenant))
-    pages = {key: list(p) for key, (p, _rules) in module_lock.LOCKABLE.items()}
-    return {"active": module_lock.is_active(db, tenant), "locked": locked, "pages": pages}
+    return {"active": sorted(module_status.active_modules(db, tenant)),
+            "pages": {m.key: list(m.pages) for m in module_registry.MODULES}}
 
 
 def _ai_flags(db: Session, tenant: TenantContext) -> dict:

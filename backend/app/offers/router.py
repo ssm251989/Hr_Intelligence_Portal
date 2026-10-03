@@ -87,9 +87,13 @@ def generate_offer(
 ):
     application = _get_application_or_404(db, application_id)
     assert_application_not_on_hold(application)
-    if application.status != "bgv_cleared":
+    from app.platform import module_registry, module_status
+    from app.platform.tenancy.context import require_current_tenant
+
+    # Part 19.1: stages of switched-off modules are skipped (no Salary/BGV -> offer after the interview)
+    if application.status not in module_registry.ready_statuses(module_status.active_modules(db, require_current_tenant()), "offers"):
         raise HTTPException(
-            status_code=400, detail="Application must be bgv_cleared before an offer can be generated"
+            status_code=400, detail="This candidate isn't ready for an offer yet. The step before it (background check, salary or interview) isn't finished."
         )
 
     # Part 17.8: approved figure, else the suggested offer inside the band, else what they expect

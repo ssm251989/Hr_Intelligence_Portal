@@ -178,3 +178,41 @@ class SuperAdminAudit(ControlPlaneBase):
     tenant_id = Column(UUID(as_uuid=True))
     details_json = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
     created_at = Column(DateTime(timezone=True), server_default=text("now()"))
+
+
+class ActivationRequest(ControlPlaneBase):
+    """Part 19.2: a company asked for modules; CTD Techs got the code by email. Only a bcrypt
+    hash of the code is kept, bound to this company + this exact module list."""
+
+    __tablename__ = "activation_requests"
+    __table_args__ = (CheckConstraint("status IN ('pending','activated','expired','cancelled','replaced')", name="activation_requests_status_check"),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    modules = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    code_hash = Column(Text, nullable=False)
+    status = Column(String(20), nullable=False, server_default=text("'pending'"))
+    company_name = Column(Text)
+    domain = Column(Text)
+    requested_by_name = Column(Text)
+    requested_by_email = Column(Text)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    attempts = Column(Integer, nullable=False, server_default=text("0"))
+    locked_until = Column(DateTime(timezone=True))
+    emailed_at = Column(DateTime(timezone=True))
+    emailed_to = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    email_error = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"))
+    activated_at = Column(DateTime(timezone=True))
+    activated_by = Column(Text)
+
+
+class PlatformConfig(ControlPlaneBase):
+    """Part 19.2: platform-level values only CTD Techs changes (hrctl), e.g. the activation approvers."""
+
+    __tablename__ = "platform_config"
+
+    key = Column(String(100), primary_key=True)
+    value_json = Column(JSONB, nullable=False)
+    updated_by = Column(Text)
+    updated_at = Column(DateTime(timezone=True), server_default=text("now()"))

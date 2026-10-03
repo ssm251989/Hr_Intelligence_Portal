@@ -57,6 +57,13 @@ def send(
     should match. Always logs to outbound_messages, whether the render/route/send below
     succeeds or fails, so the log reflects a real attempt either way."""
     to = filter_suppressed_and_opted_out(db, tenant, to, channel=channel, event_group=template_key)
+    from app.platform import module_registry, module_status
+
+    off_module = module_registry.module_for_template(template_key)  # Part 19.1: no email for a module that isn't active
+    if off_module is not None and not module_status.is_active(db, tenant, off_module):
+        off_module = module_registry.BY_KEY[off_module].name
+    else:
+        off_module = None
 
     outbound = OutboundMessage(
         tenant_id=tenant.tenant_id, rule_id=rule_id, channel=channel, purpose=purpose,
@@ -67,6 +74,11 @@ def send(
     db.commit()
     db.refresh(outbound)
 
+    if off_module is not None:
+        outbound.status = "suppressed"
+        outbound.error = f"Not sent: the {off_module} module is not active for this company"
+        db.commit()
+        return outbound
     if not to:
         outbound.status = "suppressed"
         outbound.error = "Every recipient is suppressed or opted out"
@@ -129,6 +141,11 @@ def send(
 def dispatch_event(db: Session, tenant: TenantContext, event_type: str, event_ctx: dict) -> list[OutboundMessage]:
     """The rule-driven half of the pipeline -- every enabled, condition-passing
     notification_rules row for this event_type fires its own send()."""
+    from app.platform import module_registry, module_status
+
+    module = module_registry.module_for_template(event_type)  # Part 19.1: rules of a module that isn't active don't fire
+    if module is not None and not module_status.is_active(db, tenant, module):
+        return []
     matcher = NotificationRuleMatcher(db)
     rules = matcher.match(tenant, event_type, event_ctx)
     resolver = RecipientResolver(db, tenant)

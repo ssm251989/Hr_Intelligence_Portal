@@ -602,6 +602,12 @@ def attempt_auto_screen(db: Session, application: Application, actor: str = "sys
     """
     if not is_eligible_for_screening(application):
         return None
+    from app.platform import module_status
+    from app.platform.tenancy.context import get_current_tenant
+
+    tenant = get_current_tenant()
+    if tenant is not None and not module_status.is_active(db, tenant, "screening"):
+        return None  # Part 19.1: no Screening module -> no automatic screening
     job = db.get(JobRole, application.job_role_id)
     candidate = db.get(Candidate, application.candidate_id)
     if not job or not job.jd_text or not candidate or not candidate.parsed_fields:

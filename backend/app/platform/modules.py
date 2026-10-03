@@ -98,7 +98,12 @@ def enabled_modules(db, tenant) -> set[str]:
     exist for this tenant) and the tenant's own setting."""
     from app.platform.settings.resolver import SettingContext, SettingsService
 
+    from app.platform import module_registry, module_status
+
     wanted = set(SettingsService(db).get("platform.modules.enabled", SettingContext(tenant=tenant)) or [])
+    # Part 19.1: a module of the "Choose what you use" registry (onboarding) is on only when
+    # it is active for the company (activation code), not through this setting
+    wanted = {c for c in wanted if c not in module_registry.BY_KEY} | (module_status.active_modules(db, tenant) & set(_BY_CODE))
     licensed = _licensed_modules(tenant)
     return {m.code for m in MODULES if m.always_on or (m.code in wanted and (licensed is None or m.code in licensed))}
 
@@ -118,9 +123,10 @@ def _licensed_modules(tenant) -> Optional[set[str]]:
 
 
 def nav_for(db, tenant, user, permissions: set[str]) -> list[dict]:
-    from app.platform.module_lock import lock_key_for_page
+    from app.platform import module_registry, module_status
 
     on = enabled_modules(db, tenant)
+    active = module_status.active_modules(db, tenant)
     items = []
     for module in MODULES:
         if module.code not in on:
@@ -129,9 +135,10 @@ def nav_for(db, tenant, user, permissions: set[str]) -> list[dict]:
             if (item.only_flat_role or getattr(user, "role", None) == "agency") and item.only_flat_role != getattr(user, "role", None):
                 continue
             allowed = any(p in permissions for p in item.any_of) if item.any_of else (item.permission is None or item.permission in permissions)
-            if allowed:
+            key = module_registry.module_for_page(item.path)  # Part 19.1: hidden when its module isn't active
+            if allowed and (key is None or key in active):
                 items.append({"label_key": item.label_key, "path": item.path, "module": module.code, "group": item.group, "icon": item.icon,
-                              "lock_key": lock_key_for_page(item.path)})  # Part 18.4
+                              "module_key": key})
     return items
 
 

@@ -85,5 +85,19 @@ class Settings:
     SUPERADMIN_SESSION_MINUTES: int = int(os.getenv("SUPERADMIN_SESSION_MINUTES", "30"))
     IMPERSONATION_MAX_MINUTES: int = int(os.getenv("IMPERSONATION_MAX_MINUTES", "30"))
 
+    # ---- Part 19.2: module activation codes go to CTD Techs (platform-level, never editable by
+    # a client admin; `hrctl activation set-approver` overrides the list in the control plane).
+    # Every approver must be in ACTIVATION_ALLOWED_DOMAIN, which must be ctdtechs.com or under it.
+    ACTIVATION_APPROVER_EMAILS: tuple = tuple(e.strip().lower() for e in os.getenv("ACTIVATION_APPROVER_EMAILS", "kg@ctdtechs.com").split(",") if e.strip())
+    ACTIVATION_ALLOWED_DOMAIN: str = os.getenv("ACTIVATION_ALLOWED_DOMAIN", "ctdtechs.com").strip().lower()
+    ACTIVATION_CODE_DAYS: int = int(os.getenv("ACTIVATION_CODE_DAYS", "7"))
+    # The PLATFORM system mailbox (not a client's mailbox): activation emails go out through it.
+    PLATFORM_SMTP_HOST: str = os.getenv("PLATFORM_SMTP_HOST", "")
+    PLATFORM_SMTP_PORT: int = int(os.getenv("PLATFORM_SMTP_PORT", "587"))
+    PLATFORM_SMTP_USER: str = os.getenv("PLATFORM_SMTP_USER", "")
+    PLATFORM_SMTP_PASSWORD: str = os.getenv("PLATFORM_SMTP_PASSWORD", "")
+    PLATFORM_SMTP_STARTTLS: bool = os.getenv("PLATFORM_SMTP_STARTTLS", "true").lower() == "true"
+    PLATFORM_MAIL_FROM: str = os.getenv("PLATFORM_MAIL_FROM", "HR Platform <no-reply@ctdtechs.com>")
+
 
 settings = Settings()

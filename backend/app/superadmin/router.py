@@ -294,3 +294,49 @@ def console_audit(limit: int = 200, admin: PlatformAdmin = Depends(current_admin
     rows = cp_db.query(SuperAdminAudit).order_by(SuperAdminAudit.created_at.desc()).limit(min(limit, 1000)).all()
     return [{"at": r.created_at.isoformat() if r.created_at else None, "admin": r.admin_email, "action": r.action,
              "tenant_id": str(r.tenant_id) if r.tenant_id else None, "details": r.details_json} for r in rows]
+
+
+# ---- Part 19.2: module activation requests (all installations) ----
+
+
+def _activation_error(exc) -> HTTPException:
+    return HTTPException(status_code=exc.status_code, detail={"code": exc.code, "message": str(exc)})
+
+
+@router.get("/activation-requests")
+def activation_requests(status: Optional[str] = None, admin: PlatformAdmin = Depends(current_admin)):
+    from app.platform import activation
+
+    return {"requests": activation.list_requests(status), "approvers": activation.approvers()}
+
+
+@router.post("/activation-requests/{request_id}/resend")
+def activation_resend(request_id: UUID, admin: PlatformAdmin = Depends(current_admin)):
+    """Only a hash is kept, so this makes a new code (the old one stops working) and emails it."""
+    from app.platform import activation
+
+    try:
+        return activation.renew_code(request_id, admin.email, show=False)
+    except activation.ActivationError as exc:
+        raise _activation_error(exc)
+
+
+@router.post("/activation-requests/{request_id}/new-code")
+def activation_new_code(request_id: UUID, admin: PlatformAdmin = Depends(current_admin)):
+    """A new code, emailed AND shown once here (for sharing by phone)."""
+    from app.platform import activation
+
+    try:
+        return activation.renew_code(request_id, admin.email, show=True)
+    except activation.ActivationError as exc:
+        raise _activation_error(exc)
+
+
+@router.post("/activation-requests/{request_id}/cancel")
+def activation_cancel(request_id: UUID, admin: PlatformAdmin = Depends(current_admin)):
+    from app.platform import activation
+
+    try:
+        return activation.cancel(request_id, admin.email)
+    except activation.ActivationError as exc:
+        raise _activation_error(exc)

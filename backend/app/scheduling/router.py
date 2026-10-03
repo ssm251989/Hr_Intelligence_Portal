@@ -313,7 +313,18 @@ def submit_interview_feedback(
 
     db.commit()
     db.refresh(interview)
-    if application.status == "interview_selected":  # Part 17.8: salary stage -> decide from the band check
+    from app.platform import module_status
+    from app.platform.tenancy.context import require_current_tenant as _tenant_now
+
+    _active = module_status.active_modules(db, _tenant_now()) if application.status == "interview_selected" else set()
+    if application.status == "interview_selected" and "salary" not in _active and "bgv" in _active:
+        try:  # Part 19.1: no Salary module -> the documents form goes out straight after the interview
+            from app.recruitment.joining_docs import after_salary_approved
+
+            after_salary_approved(db, _tenant_now(), application, actor=current_user.email)
+        except Exception:  # noqa: BLE001
+            pass
+    if application.status == "interview_selected" and "salary" in _active:  # Part 17.8: salary stage -> decide from the band check
         try:
             from app.platform.tenancy.context import require_current_tenant
             from app.recruitment.salary_auto import check
