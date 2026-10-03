@@ -2504,3 +2504,16 @@ Most of 16.2 was already built: friendly template list with the key under "Advan
 - **Checks:** tsc clean, i18n 0 missing, npm run build OK, compileall OK.
 
 NEXT: PART16 16.3 settings reorganised (check against the catalog's categories + search; much is already there) -> 16.4 bulk resumes.
+
+## Part 19.2c-A -- why the activation email to CTD Techs failed (2026-10-03)
+- **Owner's request** (ctd-techs, 22:06:28, by kg@ctdtechs.com, modules [jobs]). The request was saved; its stored send error, verbatim:
+  `The platform mailbox isn't set up (PLATFORM_SMTP_HOST).`
+- **Root cause:** no PLATFORM mailbox was ever configured. PLATFORM_SMTP_HOST is empty in .env, and the dev mailpit could not run (no Docker on this machine).
+- **The owner's own state:** between 22:05:28 and 22:05:38 kg@ctdtechs.com switched off every ctd-techs hiring module, then requested Jobs. Nothing is active for ctd-techs until a code is entered. That was the owner's own action and is left as is.
+- **Fix:**
+  - The platform mailbox is now set in the control plane (console / `hrctl platform mailbox set|test`). The password is in the control-plane SecretStore; env PLATFORM_SMTP_* is only a fallback.
+  - Failures get a plain reason (not set up / sign-in failed / can't reach / TLS / timeout / address refused).
+  - Dev: mailpit v1.31.4 (Windows binary in %LOCALAPPDATA%\mailpit, SMTP 127.0.0.1:1025 with login, UI http://127.0.0.1:8025). Its dev password is only in its auth file and the SecretStore.
+- **Test email:** `hrctl platform mailbox test --to kg@ctdtechs.com` -> {"ok": true}; mailpit shows "Test email from the CTD Techs HRMS platform mailbox" to kg@ctdtechs.com (22:17:50). In dev, mail stays in mailpit; production needs real SMTP details in the console.
+
+NEXT: part-19.2b approvers by priority + escalation + resend, part-19.2c friendly failure + retries + console, then 19.3 proof.
