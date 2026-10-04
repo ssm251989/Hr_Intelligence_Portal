@@ -407,7 +407,9 @@ def _render_negotiation_email(db: Session, template_key: str, **extra_ctx) -> tu
 
 
 def _token_url(token: str) -> str:
-    return f"{settings.APP_BASE_URL}/interview-negotiation/{token}"
+    from app.platform.links import public_base_url
+
+    return f"{public_base_url()}/interview-negotiation/{token}"  # the company's public address, never hardcoded
 
 
 def _create_negotiation_row(
@@ -456,7 +458,7 @@ def _create_negotiation_row(
     return row
 
 
-def _invalidate_batch(db: Session, rows: list[NegotiationToken], now: Optional[datetime] = None) -> None:
+def _invalidate_batch(db: Session, rows: list[NegotiationToken], now: Optional[datetime] = None, reason: str = "send_failed") -> None:
     """_create_negotiation_row above already commits a row before the caller ever attempts
     to send its email -- if that send then fails, the row must not survive as live, or
     _has_live_negotiation_or_scheduled_interview's idempotency guard blocks every retry of
@@ -467,6 +469,7 @@ def _invalidate_batch(db: Session, rows: list[NegotiationToken], now: Optional[d
     now = now or datetime.now(timezone.utc)
     for row in rows:
         row.invalidated_at = now
+        row.invalidated_reason = row.invalidated_reason or reason  # fix 2026-10-04: the page tells people why
     db.commit()
 
 
@@ -811,7 +814,7 @@ def retry_negotiation(db: Session, application: Application, actor_user: User) -
     now = datetime.now(timezone.utc)
     stale = _live_tokens(db, application, now)
     if stale:
-        _invalidate_batch(db, stale, now)
+        _invalidate_batch(db, stale, now, reason="replaced")
         log_action(
             db, "application", application.id, _STALE_TOKENS_INVALIDATED_ACTION, actor_user.email,
             {"invalidated_count": len(stale)},
@@ -1197,22 +1200,68 @@ class NegotiationPageState:
 
 
 def _lookup_row(db: Session, token: str, now: datetime) -> tuple[str, Optional[NegotiationToken]]:
+    """fix 2026-10-04: say WHY a link doesn't work -- picked / declined / cancelled / replaced /
+    expired -- instead of one "already handled" or "not recognized" for everything."""
     row = db.query(NegotiationToken).filter(NegotiationToken.token == token).first()
     if row is None:
+        from app.models.retired_link import RetiredLink, token_hash
+
+        if db.query(RetiredLink).filter(RetiredLink.token_hash == token_hash(token)).first() is not None:
+            return "cancelled", None  # its record was deleted (e.g. the candidate was removed)
         return "invalid", None
     if row.invalidated_at is not None:
-        return "already_handled", row
+        if row.responded_at is not None:
+            return ("picked" if row.selected_slots else "declined"), row
+        if row.invalidated_reason == "cancelled":
+            return "cancelled", row
+        return "replaced", row
     if row.expires_at < now:
         return "expired", row
     return "pending", row
+
+
+def _booked_time(db: Session, row: NegotiationToken) -> Optional[datetime]:
+    interview = (db.query(Interview).filter(Interview.application_id == row.application_id)
+                 .order_by(Interview.created_at.desc()).first())
+    return interview.scheduled_at if interview is not None else None
+
+
+def reissue_after_expiry(db: Session, row: NegotiationToken) -> bool:
+    """An expired link that is still the latest one for a shortlisted candidate with no interview:
+    start arranging again (fresh times, new emails). At most once per 10 minutes per application."""
+    from app.interview_scheduling import automation
+
+    application = db.get(Application, row.application_id)
+    if application is None or application.status != "hr_selected":
+        return False
+    if db.query(Interview).filter(Interview.application_id == application.id).first() is not None:
+        return False
+    latest = (db.query(NegotiationToken).filter(NegotiationToken.application_id == application.id)
+              .order_by(NegotiationToken.created_at.desc()).first())
+    if latest is None or latest.id != row.id:
+        return False
+    recent = (db.query(AuditLog).filter(AuditLog.entity_id == application.id, AuditLog.action == "interview_link_reissued")
+              .order_by(AuditLog.created_at.desc()).first())
+    if recent is not None and recent.created_at > datetime.now(timezone.utc) - timedelta(minutes=10):
+        return True  # already re-arranged a moment ago
+    _invalidate_batch(db, [row], reason="expired")
+    log_action(db, "application", application.id, "interview_link_reissued", "system", {"expired_role": row.role})
+    result = automation.start(db, require_current_tenant(), application, None, trigger="link_expired", force=True)
+    return result.get("outcome") == "started"
 
 
 def get_negotiation_form(db: Session, token: str, now: Optional[datetime] = None) -> NegotiationPageState:
     """The single entry point behind GET /interview-negotiation/{token}."""
     now = now or datetime.now(timezone.utc)
     status, row = _lookup_row(db, token, now)
+    if status == "expired" and row is not None:
+        resent = reissue_after_expiry(db, row)
+        status = ("expired_resent" if row.role == "interviewer" else "expired_rearranging") if resent else "expired"
     if status != "pending":
-        return NegotiationPageState(status=status, row=row)
+        return NegotiationPageState(status=status, row=row, scheduled_at=_booked_time(db, row) if status == "picked" and row else None)
+    if row.opened_at is None:  # the recruiter sees "opened at" on the profile
+        row.opened_at = now
+        db.commit()
     return NegotiationPageState(status="form", row=row)
 
 
@@ -1230,7 +1279,7 @@ def submit_negotiation_response(
     now = now or datetime.now(timezone.utc)
     status, row = _lookup_row(db, token, now)
     if status != "pending":
-        return NegotiationPageState(status=status, row=row)
+        return NegotiationPageState(status=status, row=row, scheduled_at=_booked_time(db, row) if status == "picked" and row else None)
 
     application = db.get(Application, row.application_id)
     if application is None:

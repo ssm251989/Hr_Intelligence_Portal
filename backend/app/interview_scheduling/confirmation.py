@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session
 from app.audit.service import log_action
 from app.core.crypto import decrypt
 from app.core.config import settings
+from app.platform.links import public_base_url
 from app.integrations.hr_email import send_hr_email
 from app.integrations.google_calendar import (
     APP_TIMEZONE,
@@ -185,7 +186,7 @@ def propose_interview_slots(
                 "token": token_row.token,
                 "slot_time": slot_time,
                 "interviewer_name": result["assigned_interviewer"],
-                "url": f"{settings.APP_BASE_URL}/interview-confirm/{token_row.token}",
+                "url": f"{public_base_url(db)}/interview-confirm/{token_row.token}",
             }
         )
 

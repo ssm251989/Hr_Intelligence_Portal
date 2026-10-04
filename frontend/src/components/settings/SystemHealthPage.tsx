@@ -17,14 +17,15 @@ import { Emoji, FriendlyError, StatusChip, type Tone } from "../../ui-kit";
 // working? One traffic-light card per part (database, mailbox, AI, storage, background jobs),
 // in plain words, with a link to the page that fixes it.
 
-const EMOJI: Record<string, string> = { database: "package", mailbox: "mail", ai: "robot", storage: "file_folder", jobs: "gear" };
+const EMOJI: Record<string, string> = { database: "package", mailbox: "mail", ai: "robot", storage: "file_folder", jobs: "gear", links: "link" };
 const FIX: Record<string, string> = {
+  links: "/settings/company/profile",
   mailbox: "/settings/communication/mailboxes",
   ai: "/settings/integrations/ai",
   storage: "/settings/integrations/storage",
 };
 const TONE: Record<HealthLight, Tone> = { green: "ok", amber: "sun", red: "coral" };
-const KNOWN = new Set(["database", "mailbox", "ai", "storage", "jobs"]);
+const KNOWN = new Set(["database", "mailbox", "ai", "storage", "jobs", "links"]);
 
 const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "—");
 

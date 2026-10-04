@@ -57,7 +57,7 @@ def status(db: Session, application: Application) -> dict:
            "can_resend": False, "can_change": False, "can_cancel": False, "can_book": False,
            # fix 2026-10-04: why nothing happened yet, in plain words, and "send now"
            "undo_until": None, "next_try_at": None, "meeting_link": None, "can_send_now": False,
-           "invite_sent_to": None}
+           "invite_sent_to": None, "opened_at": None}
     interview = (db.query(Interview).filter(Interview.application_id == application.id)
                  .order_by(Interview.created_at.desc()).first())
     if interview is not None:
@@ -80,10 +80,19 @@ def status(db: Session, application: Application) -> dict:
         waiting_for = "candidate" if row.role == "candidate" else "interviewer"
         out.update(state=f"waiting_{waiting_for}", interviewer_name=row.interviewer_name, interviewer_email=row.interviewer_email,
                    sent_at=row.created_at.isoformat(), expires_at=row.expires_at.isoformat(), round_day=row.round_day.isoformat(),
+                   opened_at=row.opened_at.isoformat() if row.opened_at else None,
                    can_resend=True, can_change=True, can_cancel=True, can_book=True)
         return out
     out["can_book"] = shortlisted
     out["can_send_now"] = shortlisted
+    latest = (db.query(NegotiationToken).filter(NegotiationToken.application_id == application.id)
+              .order_by(NegotiationToken.created_at.desc()).first())
+    if shortlisted and latest is not None and latest.invalidated_at is None and latest.responded_at is None and latest.expires_at <= now:
+        # fix 2026-10-04: the link in the last email expired before anyone answered -> [Resend link]
+        out.update(state="link_expired", interviewer_name=latest.interviewer_name, interviewer_email=latest.interviewer_email,
+                   sent_at=latest.created_at.isoformat(), expires_at=latest.expires_at.isoformat(),
+                   opened_at=latest.opened_at.isoformat() if latest.opened_at else None, can_resend=True, can_change=True)
+        return out
     from app.interview_scheduling import automation
 
     undo = automation.undo_window(db, application) if shortlisted else None
@@ -133,6 +142,13 @@ def resend(db: Session, application: Application, actor: User) -> dict:
 
     live = _live(db, application, datetime.now(timezone.utc))
     if not live:
+        latest = (db.query(NegotiationToken).filter(NegotiationToken.application_id == application.id)
+                  .order_by(NegotiationToken.created_at.desc()).first())
+        if latest is not None and latest.invalidated_at is None and latest.responded_at is None:
+            neg.reissue_after_expiry(db, latest)  # expired link: fresh times + new emails
+            log_action(db, "application", application.id, RESENT_ACTION, actor.email, {"what": "new link after expiry"})
+            db.commit()
+            return status(db, application)
         raise SchedulingActionError("There's no interview email waiting for a reply, so there is nothing to resend.")
     row = live[0]
     candidate, job, hr = _context(db, application)
@@ -163,7 +179,7 @@ def cancel(db: Session, application: Application, actor: User) -> dict:
 
     live = _live(db, application, datetime.now(timezone.utc))
     if live:
-        neg._invalidate_batch(db, live)
+        neg._invalidate_batch(db, live, reason="cancelled")
     log_action(db, "application", application.id, CANCELLED_ACTION, actor.email, {"stopped_links": len(live)})
     db.commit()
     return status(db, application)
@@ -195,7 +211,7 @@ def change_interviewer(db: Session, application: Application, email: str, actor:
     now = datetime.now(timezone.utc)
     live = _live(db, application, now)
     if live:
-        neg._invalidate_batch(db, live, now)
+        neg._invalidate_batch(db, live, now, reason="replaced")
     neg.clear_manual_scheduling_flag(db, application, actor.email)
     mechanics = neg._negotiation_mechanics(db, tenant)
     round_day = neg._tomorrow_ist(now)

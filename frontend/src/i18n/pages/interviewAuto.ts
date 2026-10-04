@@ -27,6 +27,13 @@ export const en = {
   "autom.sys.job.late": "Late",
   "autom.sys.job.failed": "Failed",
   "autom.sys.job.last_run": "last run {when}",
+  "sched.title.link_expired": "Interview link expired",
+  "sched.link_expired": "The link sent to {name} expired on {time} before they answered.",
+  "sched.link_opened": "Link opened {time}",
+  "sched.link_not_opened": "Link not opened yet",
+  "sched.resend_link": "Resend link",
+  "autom.sys.item.links": "Email links",
+  "autom.sys.fix.links": "Set public address",
 };
 
 export const hi: Partial<typeof en> = {
@@ -57,6 +64,13 @@ export const hi: Partial<typeof en> = {
   "autom.sys.job.late": "देर से",
   "autom.sys.job.failed": "विफल",
   "autom.sys.job.last_run": "पिछली बार {when}",
+  "sched.title.link_expired": "इंटरव्यू लिंक की अवधि खत्म",
+  "sched.link_expired": "{name} को भेजा गया लिंक जवाब से पहले {time} को खत्म हो गया।",
+  "sched.link_opened": "लिंक {time} पर खोला गया",
+  "sched.link_not_opened": "लिंक अभी खोला नहीं गया",
+  "sched.resend_link": "लिंक फिर भेजें",
+  "autom.sys.item.links": "ईमेल के लिंक",
+  "autom.sys.fix.links": "सार्वजनिक पता सेट करें",
 };
 
 export const ta: Partial<typeof en> = {
@@ -87,4 +101,11 @@ export const ta: Partial<typeof en> = {
   "autom.sys.job.late": "தாமதம்",
   "autom.sys.job.failed": "தோல்வி",
   "autom.sys.job.last_run": "கடைசியாக {when}",
+  "sched.title.link_expired": "நேர்காணல் இணைப்பு காலாவதியானது",
+  "sched.link_expired": "{name}-க்கு அனுப்பிய இணைப்பு பதிலுக்கு முன் {time} அன்று காலாவதியானது.",
+  "sched.link_opened": "இணைப்பு {time} அன்று திறக்கப்பட்டது",
+  "sched.link_not_opened": "இணைப்பு இன்னும் திறக்கப்படவில்லை",
+  "sched.resend_link": "இணைப்பை மீண்டும் அனுப்பு",
+  "autom.sys.item.links": "மின்னஞ்சல் இணைப்புகள்",
+  "autom.sys.fix.links": "பொது முகவரியை அமை",
 };

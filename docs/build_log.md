@@ -2615,3 +2615,15 @@ NEXT: continue PART 19 -- signed-in screenshots still pending a login; then RESU
   - Signed-in page check (empty states) is for the owner -- this session can't sign in.
 
 NEXT: owner tests the full flow from "create a job"; then RESUME order -> PART16 16.3 settings reorganised.
+
+## Fix -- interview link not recognized (2026-10-04)
+- **Cause:** the clicked email belonged to a candidate kg@ctdtechs.com permanently deleted at 16:27:35 (related_rows negotiation_tokens 1) and re-uploaded at 16:27:54. Deleting removed the token, and the page said "not recognized" for every unknown link. The token, URL, encoding and base URL were all correct; the new link works and the owner completed a booking at 16:31:50.
+- **Fix:**
+  - Separate pages: picked (with time), cancelled (incl. deleted, via retired_links hashes), replaced, declined, expired (re-arranged automatically, new email), not recognized.
+  - The token records invalidated_reason + opened_at (migration c20a1b2c3d4e).
+  - The profile shows link opened / not opened, link expired + [Resend link].
+  - Links are built from the company setting org.public_base_url (fallback APP_BASE_URL); Health shows amber while links point to localhost.
+- **Proof:** FIXES_19.md "Interview link…": the full mailpit flow, every page state, and screenshots link-1..11. The 2 test candidates were deleted afterwards.
+- **Owner action:** set the public address for links (localhost links only open on this computer).
+
+NEXT: owner continues testing from "create a job"; then RESUME order -> PART16 16.3 settings reorganised.

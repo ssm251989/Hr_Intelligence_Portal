@@ -51,7 +51,9 @@ def logo_url(db: Session, tenant) -> str:
     logo = db.query(TenantMedia).filter(TenantMedia.tenant_id == tenant.tenant_id, TenantMedia.media_key == "brand.logo").first()
     if logo is None or logo.updated_at is None:
         return ""
-    return f"{app_settings.APP_BASE_URL.rstrip('/')}/api/v1/public/media/brand.logo?v={int(logo.updated_at.timestamp())}"
+    from app.platform.links import public_base_url
+
+    return f"{public_base_url()}/api/v1/public/media/brand.logo?v={int(logo.updated_at.timestamp())}"
 
 
 def wrap_email_html(db: Session, tenant, body_html: str) -> str:

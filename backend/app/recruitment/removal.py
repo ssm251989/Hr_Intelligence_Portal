@@ -157,6 +157,7 @@ def _cancel_pending(db: Session, tenant, candidate: Candidate, app_ids: list) ->
         for t in db.query(NegotiationToken).filter(NegotiationToken.application_id.in_(app_ids), NegotiationToken.invalidated_at.is_(None)):
             if getattr(t, "used_at", None) is None:
                 t.invalidated_at = now
+                t.invalidated_reason = "cancelled"  # the page says "This interview was cancelled"
                 done["negotiation_links"] += 1
         for t in db.query(InterviewConfirmationToken).filter(InterviewConfirmationToken.application_id.in_(app_ids),
                                                              InterviewConfirmationToken.used_at.is_(None), InterviewConfirmationToken.invalidated_at.is_(None)):
@@ -242,6 +243,24 @@ def _remove_files(db: Session, candidate: Candidate, app_ids: list) -> int:
     return removed
 
 
+def _retire_links(db: Session, tenant, app_ids: list) -> int:
+    """Before the token rows go: keep only a hash of each interview link, so the page can still say
+    "This interview was cancelled". No personal data is kept."""
+    from app.models.interview_confirmation_token import InterviewConfirmationToken
+    from app.models.negotiation_token import NegotiationToken
+    from app.models.retired_link import RetiredLink, token_hash
+
+    if not app_ids:
+        return 0
+    n = 0
+    for kind, model in (("interview_negotiation", NegotiationToken), ("interview_confirmation", InterviewConfirmationToken)):
+        for (tok,) in db.query(model.token).filter(model.application_id.in_(app_ids)).all():
+            db.add(RetiredLink(tenant_id=tenant.tenant_id, token_hash=token_hash(tok), kind=kind, reason="cancelled"))
+            n += 1
+    db.flush()
+    return n
+
+
 def delete_permanently(db: Session, tenant, candidate: Candidate, *, reason: str, actor: str, confirm: str) -> dict:
     from app.models.comms import OutboundMessage
 
@@ -286,6 +305,7 @@ def delete_permanently(db: Session, tenant, candidate: Candidate, *, reason: str
     from app.models.privacy import ConsentRecord
 
     db.query(ConsentRecord).filter(ConsentRecord.tenant_id == tenant.tenant_id, ConsentRecord.subject_id == candidate.id).delete(synchronize_session=False)
+    _retire_links(db, tenant, app_ids)  # fix 2026-10-04: their email links say "cancelled", not "not recognized"
     for table, pk, rows in deps:
         db.execute(table.delete().where(pk.in_(rows)))
     db.execute(Application.__table__.delete().where(Application.id.in_(app_ids or [None])))

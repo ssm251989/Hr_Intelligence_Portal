@@ -22,7 +22,7 @@ import ScheduleInterviewDialog from "../ScheduleInterviewDialog";
 const EMOJI: Record<SchedulingStatus["state"], string> = {
   not_started: "calendar", waiting_interviewer: "hourglass", waiting_candidate: "hourglass", needs_manual: "warning",
   scheduled: "calendar", done: "check", cancelled: "pause",
-  waiting_undo: "hourglass", not_scheduled: "warning", mailbox_retry: "mail", manual_mode: "writing_hand",
+  waiting_undo: "hourglass", not_scheduled: "warning", mailbox_retry: "mail", manual_mode: "writing_hand", link_expired: "hourglass",
 };
 
 function when(iso: string | null): string {
@@ -88,7 +88,11 @@ export default function SchedulingStatusCard({ applicationId, candidateName, can
     not_scheduled: t("sched.not_scheduled_line", { name: candidateName || t("sched.the_candidate"), reason: st.message || "" }),
     mailbox_retry: t("sched.mailbox_retry", { time: when(st.next_try_at ?? null) }),
     manual_mode: t("sched.manual_mode"),
+    link_expired: t("sched.link_expired", { name: st.interviewer_name || name, time: when(st.expires_at) }),
   }[st.state];
+  const linkLine = (st.state.startsWith("waiting_") || st.state === "link_expired")
+    ? (st.opened_at ? t("sched.link_opened", { time: when(st.opened_at) }) : t("sched.link_not_opened"))
+    : "";
   const booked = st.state === "scheduled" && (st.invite_sent_to?.length ?? 0) === 2 ? t("sched.sent_to_both") : "";
   const picked = people.find((p) => p.email === pick);
 
@@ -100,6 +104,7 @@ export default function SchedulingStatusCard({ applicationId, candidateName, can
           <Typography sx={{ fontWeight: 800, fontSize: 14 }}>{t(`sched.title.${st.state}`)}</Typography>
           <Typography sx={{ fontSize: 13.5, color: f.muted, mt: 0.25 }}>{line}</Typography>
           {booked && <Typography sx={{ fontSize: 13, color: f.muted, mt: 0.25 }}>{booked}</Typography>}
+          {linkLine && <Typography sx={{ fontSize: 12.5, color: f.muted, mt: 0.25 }}>{linkLine}</Typography>}
           {st.meeting_link && (st.state === "scheduled") && (
             <Typography sx={{ fontSize: 13, mt: 0.5 }}>
               {t("sched.meeting_link")}: <a href={st.meeting_link} target="_blank" rel="noreferrer">{st.meeting_link}</a>
@@ -131,7 +136,7 @@ export default function SchedulingStatusCard({ applicationId, candidateName, can
           ))}
           {st.can_resend && st.state !== "scheduled" && (
             <Button size="small" variant="outlined" disabled={Boolean(busy)} onClick={() => run("resend", () => interviewSchedulingApi.resend(applicationId), t("sched.resent"))}>
-              {busy === "resend" ? t("sched.working") : t("sched.resend")}
+              {busy === "resend" ? t("sched.working") : (st.state === "link_expired" ? t("sched.resend_link") : t("sched.resend"))}
             </Button>
           )}
           {st.can_change && <Button size="small" variant="outlined" disabled={Boolean(busy)} onClick={openChange}>{t("sched.change")}</Button>}

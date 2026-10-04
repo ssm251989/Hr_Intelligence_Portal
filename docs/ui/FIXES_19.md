@@ -380,3 +380,82 @@ mailbox down    start -> retrying (WinError 10061 refused), next try +5 min ; pr
 **Important -- real data:** Jagadeeswara Reddy is now really booked in the app (Mon 5 Oct 10:00 with Kishore), but the emails went only to the dev mailpit. Neither the candidate nor kg@ctdtechs.com got real emails. On the candidate's page, use [Resend to candidate] and [Resend to interviewer] to send the real invites through the HR mailbox, or cancel and rebook.
 
 **Checks:** compileall OK; tsc clean; i18n 4021 keys, 0 missing; `npm run build` OK.
+
+---
+
+# Interview link "not recognized" (bug 2026-10-04, after the data reset)
+
+## 1. The real records (ctd-techs)
+```
+16:25-16:27  a candidate (Gunda Kishore, gkishore1433@gmail.com) was uploaded and shortlisted, and interview scheduling started:
+             a negotiation token was created and its email (picker link) was sent through the HR mailbox.
+16:27:35     kg@ctdtechs.com DELETED that candidate permanently (Candidates > Remove > Delete permanently):
+             audit candidate_deleted {"related_rows": {"applications": 1, "negotiation_tokens": 1}, "audit_entries_removed": 12, ...}
+16:27:54     the same person was uploaded again -> new candidate + application c7291dc9… (auto-shortlisted 16:28:04)
+link in the earlier email -> its token row no longer existed -> "This link isn't recognized. Please use the exact link from your email..."
+```
+**The current link was fine.**
+- Token `V3NWj5_h56BoFxG6nmzzO**********************`: 43 URL-safe characters, tenant ctd-techs, application c7291dc9…, created 16:30:29, expires 9 Oct, not used.
+- `GET http://localhost:8000/interview-negotiation/<token>` -> 200 "Please pick exactly 2 of the 3 times…".
+- The rendered email's text link and both HTML hrefs equal the built URL exactly.
+
+You then completed it yourself:
+- 16:31:11 the interviewer picked times.
+- 16:31:41 the candidate picked.
+- 16:31:50 confirmed: Mon 5 Oct 15:00 IST with a Jitsi link.
+
+## 2. Comparison: URL token vs page vs DB
+**What was ruled out:**
+- The token is stored raw (not hashed) and compared exactly.
+- No URL-encoding needed (only A-Z a-z 0-9 - _).
+- No trailing characters and no line break in the email.
+- Base URL = APP_BASE_URL http://localhost:8000; the page is served by that backend.
+- The tenant resolves (single mode -> ctd-techs).
+- Not a rolled-back transaction: the token commits before the email is sent.
+- Not expired (5 days), and no timezone issue (expires_at stored in UTC).
+
+**Cause:** the email's link belonged to a candidate that had been deleted. Deleting removes the token, and the page couldn't tell "deleted / cancelled" from "never existed", so it showed the same "not recognized" message for everything.
+
+**Second, real risk found:** links are built from `http://localhost:8000`. They only open on this computer, so a candidate on another device couldn't open them at all.
+
+## 3. Fixes
+- **A clear page for every case** (negotiation._lookup_row + negotiation_router):
+  - already picked -> "You've already picked a time: 05 Oct 2026, 10:00 AM IST…"
+  - cancelled (recycle bin, Cancel, or the candidate deleted permanently) -> "This interview was cancelled…"
+  - replaced by a newer email (retry / change interviewer / re-arranged) -> "There's a newer email…"
+  - declined -> "noted"
+  - expired -> **automatically re-arranged**: fresh times, new email. "This link has expired - we've sent you a new one" (interviewer), or "…we're arranging new times and will email you shortly" (candidate). At most once per 10 minutes, and only for the latest link of a shortlisted candidate with no interview.
+  - otherwise "Link not recognized - please use the newest email from us".
+- **Deleted candidates:** before the token rows go, a hash of each interview link is kept in `retired_links` (no personal data), so the page says "cancelled".
+- **Why a link stopped working** is recorded on the token (`invalidated_reason`: cancelled / replaced / send_failed / expired).
+- **Recruiter:** the profile card shows the link status: "Link opened 4:38 PM" / "Link not opened yet". A new state "Interview link expired" offers [Resend link], which arranges fresh times and sends new emails.
+- **Public address:** links (interview pickers, confirmations, logo) are built from the company setting **Public address for links in emails** (`org.public_base_url`, Settings > Company > Profile), falling back to the server's APP_BASE_URL. Never hardcoded.
+- **Health:** new "Email links" check, amber while the address is localhost ("they only open on this computer"), with a [Set public address] button.
+- **Migration** c20a1b2c3d4e: negotiation_tokens.invalidated_reason + opened_at; table retired_links (RLS).
+
+## 4. End-to-end proof
+Setup: dev mailpit + a proof server on :8010 with DEV_MAIL_CAPTURE, so nothing reached a real mailbox. Two test candidates were used on the published "Junior AI Developer" job and deleted afterwards.
+
+```
+setup 16:37:35   "Proof - Link Test" + "Proof - Link Expiry" shortlisted -> scheduling started -> 2 interviewer emails (kg@ctdtechs.com) in mailpit
+Link Test        interviewer link -> picked 2 -> candidate email (proof.test@example.com, link host 127.0.0.1:8010) -> picked 2
+                 -> "Interview Confirmed … Kishore, 05 Oct 2026, 10:00 AM IST"
+16:38:05         "Interview confirmed: Junior AI Developer" to BOTH proof.test@example.com and kg@ctdtechs.com, each with interview.ics
+profile          state scheduled, Kishore, 2026-10-05 10:00 IST, meeting_link https://meet.jit.si/Interview-48t2UKyyDsyA, invite_sent_to [interviewer, candidate]
+reopen cand.     "Already done - You've already picked a time: 05 Oct 2026, 10:00 AM IST. The calendar invite and meeting link are in your email."
+made-up token    "Link not recognized - We can't find this link. Please use the newest email from us…"
+Link Expiry      link opened 16:38:28 (opened_at recorded) -> expiry simulated -> profile state link_expired, opened_at set, [Resend link]
+open it          "Link expired - new one sent" -> 16:38:49 new email with new times (6 Oct) ; the old link now "There's a newer email"
+delete both      permanently (reference removed-6c201a86 / removed-7306cbaf) -> 4 retired link hashes
+new link         "Interview cancelled - This interview was cancelled, so this link no longer works."   <- the reported case, now explained
+```
+
+**Screenshots:**
+- `screens/link-1-interviewer-form.png`, `link-2-interviewer-done.png`, `link-3-candidate-form.png`, `link-4-candidate-confirmed.png`
+- `screens/link-5-candidate-already-picked.png`, `link-6-not-recognized.png`, `link-7-expired-new-one-sent.png`, `link-8-cancelled-after-delete.png`, `link-9-old-expired-link-after-delete.png`
+- `screens/link-10-confirmed-candidate-email.png`, `link-11-confirmed-interviewer-email.png` (mailpit)
+- Signed-in profile card: pending login proof.
+
+**Checks:** compileall; alembic upgrade (c20a1b2c3d4e); tsc; i18n 4026 keys, 0 missing; npm run build OK.
+
+**Owner action:** set **Settings > Company > Profile > Public address for links in emails** to an address candidates can reach (e.g. your server's public URL). Until then every emailed link points to http://localhost:8000 and only works on this computer.

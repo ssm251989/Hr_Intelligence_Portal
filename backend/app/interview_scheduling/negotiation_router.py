@@ -269,9 +269,14 @@ def _render_form(state: NegotiationPageState) -> str:
 
 
 _OUTCOME_COPY = {
-    "invalid": ("error", "Interview Scheduling", "This link isn't recognized. Please use the exact link from your email, or contact the recruiter if you believe this is a mistake."),
-    "expired": ("warning", "Link Expired", "This link has expired. Please contact the recruiter to arrange a time."),
-    "already_handled": ("warning", "Already Handled", "This negotiation has already been resolved -- if you didn't do this yourself, please contact the recruiter."),
+    "invalid": ("error", "Link not recognized", "We can't find this link. Please use the newest email from us, or contact the recruiter."),
+    "expired": ("warning", "Link expired", "This link has expired. Please contact the recruiter to arrange a new time."),
+    "expired_resent": ("warning", "Link expired - new one sent", "This link has expired - we've sent you a new one. Please use the newest email from us."),
+    "expired_rearranging": ("warning", "Link expired - new times coming", "This link has expired. We're arranging new times and will email you shortly - please use that newest email."),
+    "picked": ("success", "Already done", "You've already picked your times. We'll email you once the interview is confirmed."),
+    "cancelled": ("warning", "Interview cancelled", "This interview was cancelled, so this link no longer works. If you think this is a mistake, please contact the recruiter."),
+    "replaced": ("warning", "There's a newer email", "This link was replaced by a newer email from us. Please use the newest one."),
+    "already_handled": ("warning", "Already handled", "This has already been handled. If you didn't do this yourself, please contact the recruiter."),
     "declined": ("warning", "Thanks -- Noted", "We've recorded that none of these times work. We'll follow up with another option."),
     "interviewer_submitted": ("success", "Thanks!", "We'll now ask the candidate for their availability and follow up once a time is confirmed."),
     "candidate_reprompted": ("success", "Thanks!", "We need to double-check one more thing -- you'll receive a follow-up email shortly with a couple of different options."),
@@ -286,6 +291,8 @@ def _render_outcome(state: NegotiationPageState) -> str:
 
     details_html = ""
     row = state.row
+    if state.status == "picked" and state.scheduled_at:  # fix 2026-10-04: "You've already picked a time: <time>"
+        message = f"You've already picked a time: {format_ist_datetime(state.scheduled_at)}. The calendar invite and meeting link are in your email."
     if state.status == "confirmed" and row is not None and state.scheduled_at:
         details_html = f"""
         <div class="details">

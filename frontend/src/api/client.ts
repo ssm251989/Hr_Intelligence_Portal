@@ -681,12 +681,13 @@ export const interviewSchedulingApi = {
 
 export interface SchedulingStatus {
   state: "not_started" | "waiting_interviewer" | "waiting_candidate" | "needs_manual" | "scheduled" | "done" | "cancelled"
-    | "waiting_undo" | "not_scheduled" | "mailbox_retry" | "manual_mode"; // fix 2026-10-04
+    | "waiting_undo" | "not_scheduled" | "mailbox_retry" | "manual_mode" | "link_expired"; // fix 2026-10-04
   message: string | null; interviewer_name: string | null; interviewer_email: string | null; sent_at: string | null;
   expires_at: string | null; round_day: string | null; interview_id: string | null; scheduled_at: string | null;
   can_resend: boolean; can_change: boolean; can_cancel: boolean; can_book: boolean;
   undo_until?: string | null; next_try_at?: string | null; meeting_link?: string | null; can_send_now?: boolean;
   invite_sent_to?: ("candidate" | "interviewer")[] | null;
+  opened_at?: string | null; // when the person first opened the link in the email
 }
 
 export interface SchedulingProblem {

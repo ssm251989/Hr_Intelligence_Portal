@@ -114,6 +114,8 @@ def register_all() -> None:
     register(SettingDef("recruitment.salary.approvers", "json", [], module="recruitment", group="Salary"))
     # Part 18.8: closing a job -- also email its candidates (template recruitment.job_closed_candidate)
     register(SettingDef("recruitment.jobs.close_email_candidates", "bool", False, module="recruitment", group="Jobs"))
+    # fix 2026-10-04: the address links in emails use (interview pickers, confirmations, logo); empty = the server's APP_BASE_URL
+    register(SettingDef("org.public_base_url", "str", "", module="platform", group="Company"))
     # fix 2026-10-04: after a shortlist, arrange the interview automatically or leave it to HR (per job: shortlisting_json.scheduling_mode)
     register(SettingDef("recruitment.interviews.scheduling_mode", "str", "auto", module="recruitment", group="Interviews",
                         json_schema={"type": "string", "enum": ["auto", "manual"]}))

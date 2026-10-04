@@ -138,13 +138,24 @@ def _jobs(db: Session, tenant) -> dict:
     return _item("jobs", "green", "Background jobs run on the worker (Celery).")
 
 
+def _links(db: Session) -> dict:
+    """fix 2026-10-04: links in emails must open for the people who get them."""
+    from app.platform.links import is_local, public_base_url
+
+    base = public_base_url(db)
+    if is_local(base):
+        return _item("links", "amber", f"Links in emails point to {base} - they only open on this computer, so candidates and interviewers "
+                     "elsewhere can't open them. Set the public address in Settings > Company > Profile (Public address for links in emails).", base=base)
+    return _item("links", "green", f"Links in emails use {base}.", base=base)
+
+
 def check(db: Session, tenant, *, fresh: bool = False) -> dict:
     key = str(tenant.tenant_id)
     hit = _CACHE.get(key)
     if hit and not fresh and time.time() - hit[0] < CACHE_SECONDS:
         return hit[1]
     items = []
-    for fn in (lambda: _database(db), lambda: _mailbox(db, tenant), lambda: _ai(db, tenant), _storage, lambda: _jobs(db, tenant)):
+    for fn in (lambda: _database(db), lambda: _mailbox(db, tenant), lambda: _ai(db, tenant), _storage, lambda: _jobs(db, tenant), lambda: _links(db)):
         try:
             items.append(fn())
         except Exception as exc:  # noqa: BLE001 -- one broken check never hides the others

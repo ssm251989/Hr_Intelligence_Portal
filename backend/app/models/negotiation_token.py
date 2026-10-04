@@ -79,3 +79,6 @@ class NegotiationToken(Base, TenantOwned):
     expires_at = Column(DateTime(timezone=True), nullable=False)
     responded_at = Column(DateTime(timezone=True), nullable=True)
     invalidated_at = Column(DateTime(timezone=True), nullable=True)
+    # fix 2026-10-04: why a link stopped working (cancelled | replaced | send_failed) and when it was first opened
+    invalidated_reason = Column(Text, nullable=True)
+    opened_at = Column(DateTime(timezone=True), nullable=True)
