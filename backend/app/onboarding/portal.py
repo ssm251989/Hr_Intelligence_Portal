@@ -288,9 +288,13 @@ class PreboardingPortal:
                 .filter(OnboardingTask.tenant_id == self.tenant.tenant_id, OnboardingTask.plan_id == plan.id, OnboardingTask.due_offset_days <= 0)
                 .all()
             )
+        from app.onboarding.welcome_steps import builtin_progress  # fix 2026-10-04: offer, joining details, documents, day one
+
+        b_done, b_total = builtin_progress(self.db, self.tenant, case)
         items = (
             [f in submitted for f in forms_req] + [d in verified_docs for d in docs_req]
             + [p in acked for p in policies_req] + [t.status in ("done", "skipped") for t in pre_doj_tasks]
+            + [True] * b_done + [False] * (b_total - b_done)
         )
         percent = 100 if not items else round(100 * sum(items) / len(items))
         return {
@@ -299,6 +303,7 @@ class PreboardingPortal:
             "documents": {"required": docs_req, "verified": sorted(verified_docs & set(docs_req))},
             "policies": {"required": policies_req, "acknowledged": sorted(acked & set(policies_req))},
             "pre_joining_tasks": {"total": len(pre_doj_tasks), "done": sum(t.status in ("done", "skipped") for t in pre_doj_tasks)},
+            "welcome_steps": {"total": b_total, "done": b_done},
         }
 
     def _refresh_ready(self, case: PreboardingCase) -> None:

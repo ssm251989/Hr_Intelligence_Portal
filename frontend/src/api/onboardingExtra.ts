@@ -153,8 +153,20 @@ export interface PortalField {
   placeholder: string | null;
 }
 
+export interface JoiningField { key: string; label: string; required: boolean; kind: string; sensitive: boolean }
+export interface JoiningDoc { code: string; label: string; required: boolean; status: "missing" | "uploaded" | "verified" | "rejected" | "received_earlier"; rejection_reason: string | null; types?: string[] | null; max_mb?: number | null }
+export interface DayOneInfo {
+  date: string; start_time: string | null; address: string | null; map_url: string | null; meet: string | null;
+  what_to_bring: string[]; agenda: { time: string | null; title: string; emoji: string | null }[]; acknowledged_at: string | null;
+}
+export interface PortalContact { name: string; role: string | null; email: string | null; phone: string | null }
+
+// fix 2026-10-04: built-in steps (offer / joining details / documents / day one) -- "locked_reason" until the offer is signed
 export type PortalStep =
-  | { kind: "offer"; code: string; label: null; done: boolean }
+  | { kind: "offer"; code: string; label: null; done: boolean; counted?: boolean; locked_reason?: string | null; signed_at?: string | null; sign_url?: string | null; pdf_url?: string | null }
+  | { kind: "joining_details"; code: string; label: null; done: boolean; counted?: boolean; locked_reason: string | null; fields?: JoiningField[]; saved?: Record<string, string>; status?: string }
+  | { kind: "joining_documents"; code: string; label: null; done: boolean; counted?: boolean; locked_reason: string | null; documents: JoiningDoc[] }
+  | { kind: "day_one"; code: string; label: null; done: boolean; counted?: boolean; locked_reason: string | null; info: DayOneInfo | null }
   | { kind: "form"; code: string; label: string; done: boolean; fields: PortalField[]; saved: Record<string, unknown> }
   | { kind: "document"; code: string; label: string; done: boolean; status: "missing" | "pending" | "verified" | "rejected"; rejection_reason: string | null }
   | { kind: "policy"; code: string; label: string; done: boolean };
@@ -170,6 +182,7 @@ export interface PortalSummary {
   total: number;
   welcome: WelcomeContent;
   welcome_media: { content_type: string; title: string | null } | null;
+  contacts?: PortalContact[];
 }
 
 async function publicRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -199,6 +212,16 @@ export const welcomePortalApi = {
     publicRequest<unknown>(`/api/v1/public/onboarding/portal/${enc(token)}/forms/${enc(formKey)}`, { method: "POST", body: JSON.stringify({ data }) }),
   acknowledgePolicy: (token: string, policyCode: string) =>
     publicRequest<unknown>(`/api/v1/public/onboarding/portal/${enc(token)}/policies/${enc(policyCode)}/acknowledge`, { method: "POST" }),
+  saveJoiningDetails: (token: string, data: Record<string, string>, submit: boolean) =>
+    publicRequest<{ saved: Record<string, string>; status: string; errors: Record<string, string> }>(`/api/v1/public/ui/onboarding/portal/${enc(token)}/joining-details`,
+      { method: "PUT", body: JSON.stringify({ data, submit }) }),
+  uploadJoiningDocument: (token: string, code: string, file: Blob, filename: string) => {
+    const form = new FormData();
+    form.append("code", code);
+    form.append("file", file, filename);
+    return publicRequest<{ code: string; status: string }>(`/api/v1/public/ui/onboarding/portal/${enc(token)}/joining-documents`, { method: "POST", body: form });
+  },
+  acknowledgeDayOne: (token: string) => publicRequest<{ ok: boolean }>(`/api/v1/public/ui/onboarding/portal/${enc(token)}/day-one`, { method: "POST" }),
   uploadDocument: (token: string, documentType: string, file: Blob, filename: string) => {
     const form = new FormData();
     form.append("document_type", documentType);

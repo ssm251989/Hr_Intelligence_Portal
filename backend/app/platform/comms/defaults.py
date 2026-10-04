@@ -55,17 +55,18 @@ DEFAULTS: dict[str, tuple[str, str, list[str]]] = {
         ["candidate_first_name", "job_title", "dates", "choose_link"],
     ),
     "recruitment.offer_letter_auto": (
-        "{{ job_title }}: your offer letter",
-        "Hi {{ candidate_first_name }},\n\nHere is your offer letter:\n\n{{ letter }}\n\nPlease reply to this email to accept by "
-        "{{ expiry_date }}.\n\nBest regards,\n{{ company_name }} HR",
-        ["candidate_first_name", "job_title", "letter"],
+        "{{ job_title }}: your offer letter - please review and sign",
+        "Hi {{ candidate_first_name }},\n\nCongratulations! Your offer letter for {{ job_title }} at {{ company_name }} is ready.\n\n"
+        "Review & sign it here: {{ sign_link }}\n\nThe page shows your letter (you can download it as a PDF). To sign, type your full "
+        "name and tick \"I accept\". Please sign by {{ expiry_date }}.\n\nYour letter:\n\n{{ letter }}\n\nBest regards,\n{{ company_name }} HR",
+        ["candidate_first_name", "job_title", "letter", "sign_link"],
     ),
     "recruitment.welcome_selected": (
-        "Congratulations on your selection, {{ candidate_first_name }}!",
-        "Hi {{ candidate_first_name }},\n\nCongratulations - you have been selected for {{ job_title }}! We are delighted to have you "
-        "join {{ company_name }} on {{ joining_date }}.\n\nYour next steps:\n{{ steps }}\n\nPeople you can reach out to:\n{{ contacts }}\n\n"
-        "Welcome aboard - we can't wait to work with you.\n\n{{ company_name }} HR",
-        ["candidate_first_name", "job_title", "joining_date", "steps", "contacts"],
+        "Welcome to {{ company_name }}, {{ candidate_first_name }}!",
+        "Hi {{ candidate_first_name }},\n\nThank you for signing your offer - welcome to the team! You join {{ company_name }} as "
+        "{{ job_title }} on {{ joining_date }}.\n\nYour next steps:\n{{ steps }}\n\n{{ contacts }}\n\n"
+        "We can't wait to work with you.\n\n{{ company_name }} HR",
+        ["candidate_first_name", "job_title", "joining_date", "steps"],
     ),
     "platform.user_invite": (
         "You're invited to {{ company_name }} hiring",
@@ -94,11 +95,32 @@ def _html(text: str) -> str:
     return "".join(f"<p>{p}</p>" for p in paras)
 
 
+# fix 2026-10-04: wording that was replaced -- a company template still word-for-word this old default
+# (never edited) is moved to the new default; an edited template is never touched.
+RETIRED: dict[str, tuple[str, ...]] = {
+    "recruitment.offer_letter_auto": (
+        "Hi {{ candidate_first_name }},\n\nHere is your offer letter:\n\n{{ letter }}\n\nPlease reply to this email to accept by "
+        "{{ expiry_date }}.\n\nBest regards,\n{{ company_name }} HR",),
+    "recruitment.welcome_selected": (
+        "Hi {{ candidate_first_name }},\n\nCongratulations - you have been selected for {{ job_title }}! We are delighted to have you "
+        "join {{ company_name }} on {{ joining_date }}.\n\nYour next steps:\n{{ steps }}\n\nPeople you can reach out to:\n{{ contacts }}\n\n"
+        "Welcome aboard - we can't wait to work with you.\n\n{{ company_name }} HR",),
+}
+
+
 def ensure_template(db: Session, tenant, key: str, *, locale: str = "en") -> bool:
     """Creates the default published template for `key` if the company has none. True if it exists afterwards."""
     from app.models.comms import MessageTemplate
 
-    if db.query(MessageTemplate.id).filter(MessageTemplate.tenant_id == tenant.tenant_id, MessageTemplate.key == key).first():
+    existing = db.query(MessageTemplate).filter(MessageTemplate.tenant_id == tenant.tenant_id, MessageTemplate.key == key).all()
+    if existing:
+        for t in existing:
+            if key in RETIRED and (t.text_tpl or "") in RETIRED[key]:
+                subject, body, required = DEFAULTS[key]
+                t.subject_tpl, t.text_tpl, t.html_tpl = subject, body, _html(body)
+                t.variables_schema_json = {"required": required}
+                t.published_by, t.published_at = "system (updated default wording)", datetime.now(timezone.utc)
+        db.commit()
         return True
     if key not in DEFAULTS:
         return False

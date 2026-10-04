@@ -26,7 +26,9 @@ FROM_BGV = {"pan": "pan", "aadhaar": "aadhaar", "degree": "education", "experien
 def _names(db, application):
     cand = db.get(Candidate, application.candidate_id)
     job = db.get(JobRole, application.job_role_id)
-    first = (cand.full_name or "").replace("Demo - ", "").split(" ")[0] if cand else ""
+    from app.recruitment.offer_welcome import greeting_name
+
+    first = greeting_name(db, cand) if cand else ""  # fix 2026-10-04: never the first word only (it can be the surname)
     return cand, job, first
 
 

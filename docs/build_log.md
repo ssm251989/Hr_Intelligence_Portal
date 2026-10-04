@@ -2627,3 +2627,25 @@ NEXT: owner tests the full flow from "create a job"; then RESUME order -> PART16
 - **Owner action:** set the public address for links (localhost links only open on this computer).
 
 NEXT: owner continues testing from "create a job"; then RESUME order -> PART16 16.3 settings reorganised.
+
+## Fix -- offer signing and welcome portal (2026-10-04)
+- **Cause (Kishore Gunda):**
+  - `after_joining_date_chosen` sent the offer and the welcome 4 seconds apart (16:39:13 / 16:39:17), before any signature.
+  - DocuSign's token request fails (400), and the fallback told the candidate to "reply to the offer email".
+  - The portal's only step ("Offer signed") was read-only, because no checklist was configured and there were no built-in joining steps.
+  - The greeting took the first word of "Gunda Kishore".
+  - Contacts setting empty; links built from localhost.
+- **Fix:**
+  - Offer email with Review & sign: DocuSign, else an in-app page that records name/time/IP and stamps a PDF.
+  - On signing: confetti, recruiter told, then welcome + portal.
+  - Setting `offers.welcome_with_offer` (default off).
+  - Built-in portal steps: offer, joining details (autosave, format checks, encrypted + masked), documents (camera), day one (map). Locked steps say "Unlocks after you sign your offer".
+  - Contacts card; greeting by preferred/first name.
+  - Links from `org.public_base_url` / new `org.public_app_url`, with a Health warning while localhost.
+  - Migration d20b2c3d4e5f.
+- **Decisions:**
+  - Greeting falls back to the full name (not the first word) until the joiner gives a first/preferred name. Reason: we can't tell which word is the given name.
+  - Removal stays blocked for signed offers. The proof record was deleted by id.
+- **Proof:** FIXES_19.md "Offer -> welcome flow" (mailpit, end to end, 12 screenshots).
+
+NEXT: owner sets the public addresses + Hiring contacts and asks Kishore to sign from his portal; then RESUME order -> PART16 16.3 settings reorganised.

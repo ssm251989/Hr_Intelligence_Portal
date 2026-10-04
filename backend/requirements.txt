@@ -25,3 +25,4 @@ celery
 json-logic-qubit
 jinja2
 pyotp
+fpdf2==2.8.9

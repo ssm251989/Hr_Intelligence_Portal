@@ -31,13 +31,15 @@ from pathlib import Path
 from typing import Any, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.audit.service import log_action
 from app.core.database import get_db
+from app.models.application import Application
+from app.models.candidate import Candidate
 from app.models.onboarding import OnboardingPlan, OnboardingTask, PreboardingCase, PreboardingDocument
 from app.models.user import User
 from app.onboarding import plans
@@ -147,9 +149,9 @@ def _case_or_404(db: Session, case_id: UUID) -> PreboardingCase:
 
 def _readiness_counts(readiness: dict) -> dict:
     done = (len(readiness["forms"]["submitted"]) + len(readiness["documents"]["verified"]) + len(readiness["policies"]["acknowledged"])
-            + readiness["pre_joining_tasks"]["done"])
+            + readiness["pre_joining_tasks"]["done"] + readiness.get("welcome_steps", {}).get("done", 0))
     total = (len(readiness["forms"]["required"]) + len(readiness["documents"]["required"]) + len(readiness["policies"]["required"])
-             + readiness["pre_joining_tasks"]["total"])
+             + readiness["pre_joining_tasks"]["total"] + readiness.get("welcome_steps", {}).get("total", 0))
     return {"done": done, "total": total}
 
 
@@ -396,9 +398,10 @@ def portal_summary(token: str, lang: str = "en", db: Session = Depends(get_db)):
     submitted = set((case.form_submissions_json or {}).keys())
     acked = set((case.policy_acks_json or {}).keys())
 
-    steps = []
-    if person["offer_signed"] is not None:
-        steps.append({"kind": "offer", "code": "offer", "label": None, "done": bool(person["offer_signed"])})
+    # fix 2026-10-04: the built-in steps (offer, joining details, documents, day one) come first
+    from app.onboarding import welcome_steps
+
+    steps = welcome_steps.builtin_steps(db, tenant, case)
     for key in readiness["forms"]["required"]:
         form = forms.get(key)
         schema = (form.schema_json or {}) if form else {}
@@ -416,22 +419,93 @@ def portal_summary(token: str, lang: str = "en", db: Session = Depends(get_db)):
                 "placeholder": _text(hint.get("ui:placeholder")) or _text(spec.get("examples", [None])[0] if isinstance(spec.get("examples"), list) and spec.get("examples") else None) or None,
             })
         saved = ((case.form_submissions_json or {}).get(key) or {}).get("data") or {}
-        steps.append({"kind": "form", "code": key, "label": form.name if form else _humanise(key), "done": key in submitted,
+        steps.append({"kind": "form", "code": key, "label": form.name if form else _humanise(key), "done": key in submitted, "counted": True,
                       "fields": fields, "saved": saved if isinstance(saved, dict) else {}})
     for key in readiness["documents"]["required"]:
         d = latest.get(key)
         status = d.verification_status if d else "missing"
-        steps.append({"kind": "document", "code": key, "label": doc_labels.get(key) or _humanise(key),
+        steps.append({"kind": "document", "code": key, "label": doc_labels.get(key) or _humanise(key), "counted": True,
                       "done": status in ("pending", "verified"), "status": status, "rejection_reason": d.rejection_reason if d and status == "rejected" else None})
     policies = list(dict.fromkeys(readiness["policies"]["required"]))
     for key in policies:
-        steps.append({"kind": "policy", "code": key, "label": _humanise(key), "done": key in acked})
+        steps.append({"kind": "policy", "code": key, "label": _humanise(key), "done": key in acked, "counted": True})
 
     media = db.query(TenantMedia).filter(TenantMedia.tenant_id == tenant.tenant_id, TenantMedia.media_key == "welcome.video").first()
+    from app.models.job_role import JobRole as _Job
+    from app.recruitment.offer_welcome import contact_people, greeting_name
+
+    application = db.get(Application, case.application_id) if case.application_id else None
+    job = db.get(_Job, application.job_role_id) if application is not None else None
+    cand = db.get(Candidate, case.candidate_id) if case.candidate_id else None
+    counted = [s for s in steps if s.get("counted", True)]
+    db.commit()  # keeps a sign link created for an older offer
     return {
-        "first_name": person["first_name"], "role": person["role"], "joining_date": case.joining_date.isoformat(),
+        "first_name": greeting_name(db, cand, case) if cand is not None else person["first_name"], "role": person["role"],
+        "joining_date": case.joining_date.isoformat(),
         "days_to_join": (case.joining_date - datetime.now(timezone.utc).date()).days, "status": case.status,
-        "steps": steps, "done": sum(1 for s in steps if s["done"]), "total": len(steps),
+        "steps": steps, "done": sum(1 for s in counted if s["done"]), "total": len(counted),
+        "contacts": contact_people(db, tenant, job),
         "welcome": _welcome(case),
         "welcome_media": {"content_type": media.content_type, "title": media.title} if media is not None else None,
     }
+
+
+
+# ---- fix 2026-10-04: the built-in welcome steps (public, by portal link) ----
+
+
+class JoiningDetailsIn(BaseModel):
+    data: dict = Field(default_factory=dict)
+    submit: bool = False
+
+
+def _portal_case(db: Session, token: str):
+    portal = PreboardingPortal(db, require_current_tenant())
+    try:
+        return portal.authenticate(token)
+    except PortalAuthError as exc:
+        raise HTTPException(status_code=401, detail="This link is no longer valid. Please contact HR for a new one.") from exc
+
+
+def _unlocked(db: Session, case) -> None:
+    from app.models.offer import Offer
+
+    offer = db.get(Offer, case.offer_id) if case.offer_id else None
+    if offer is not None and not offer.signed:
+        raise HTTPException(status_code=409, detail="This unlocks after you sign your offer.")
+
+
+@public_router.put("/portal/{token}/joining-details")
+def portal_joining_details(token: str, body: JoiningDetailsIn, db: Session = Depends(get_db)):
+    """Autosave (submit=false) or submit (submit=true: everything checked)."""
+    from app.onboarding import welcome_steps
+
+    case = _portal_case(db, token)
+    _unlocked(db, case)
+    out = welcome_steps.save_joining_details(db, require_current_tenant(), case, body.data, submit=body.submit)
+    if body.submit and out["errors"]:
+        raise HTTPException(status_code=400, detail={"message": "Please check the highlighted fields.", "errors": out["errors"]})
+    return out
+
+
+@public_router.post("/portal/{token}/joining-documents", status_code=201)
+async def portal_joining_document(token: str, code: str = Form(...), file: UploadFile = File(...), db: Session = Depends(get_db)):
+    from app.onboarding import welcome_steps
+
+    case = _portal_case(db, token)
+    _unlocked(db, case)
+    data = await file.read()
+    try:
+        return welcome_steps.upload_document(db, require_current_tenant(), case, code, data, file.filename or "file")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@public_router.post("/portal/{token}/day-one")
+def portal_day_one(token: str, db: Session = Depends(get_db)):
+    from app.onboarding import welcome_steps
+
+    case = _portal_case(db, token)
+    _unlocked(db, case)
+    welcome_steps.acknowledge_day_one(db, case)
+    return {"ok": True}

@@ -39,10 +39,10 @@ def _save(db, application, data):
     db.commit()
 
 
-def link(token: str) -> str:
-    from app.core.config import settings as app_settings
+def link(token: str, db: Optional[Session] = None) -> str:
+    from app.platform.links import public_app_url  # fix 2026-10-04: the public address setting, not FRONTEND_URL
 
-    return f"{app_settings.FRONTEND_URL.rstrip('/')}/joining/{token}"
+    return f"{public_app_url(db)}/joining/{token}"
 
 
 def after_bgv_passed(db: Session, tenant, application: Application, actor: str = "system") -> None:
@@ -66,6 +66,7 @@ def propose(db: Session, tenant, application: Application, dates: list[str], *, 
     from app.models.iam import ActionToken
     from app.platform.comms.defaults import send_default
     from app.platform.iam.action_tokens import create_action_token
+    from app.recruitment.offer_welcome import greeting_name
 
     if application.status != "bgv_cleared":
         raise ValueError("Joining dates are proposed once BGV has passed.")
@@ -97,13 +98,13 @@ def propose(db: Session, tenant, application: Application, dates: list[str], *, 
         pretty = "\n".join(f"- {d.strftime('%A, %d %B %Y')}" for d in parsed)
         try:
             msg = send_default(db, tenant, "recruitment.joining_dates", to=[cand.email], related_entity_type="application", related_entity_id=application.id,
-                               ctx={"candidate_first_name": (cand.full_name or "").replace("Demo - ", "").split(" ")[0], "job_title": job.title if job else "",
-                                    "dates": pretty, "choose_link": link(row.token), "note": note or ""})
+                               ctx={"candidate_first_name": greeting_name(db, cand), "job_title": job.title if job else "",
+                                    "dates": pretty, "choose_link": link(row.token, db), "note": note or ""})
             sent = msg.status in ("sent", "queued")
         except Exception:  # noqa: BLE001
             sent = False
     log_action(db, "application", application.id, "joining_dates_proposed", actor[:50], {"dates": data["proposed"], "sent": sent})
-    return {"proposed": data["proposed"], "sent": sent, "link": None if sent else link(row.token)}
+    return {"proposed": data["proposed"], "sent": sent, "link": None if sent else link(row.token, db)}
 
 
 def choose(db: Session, tenant, token_row, application: Application, chosen: str) -> dict:
@@ -128,6 +129,7 @@ def choose(db: Session, tenant, token_row, application: Application, chosen: str
 def remind_due(db: Session, tenant) -> int:
     from app.models.iam import ActionToken
     from app.platform.comms.defaults import send_default
+    from app.recruitment.offer_welcome import greeting_name
 
     hours = sorted(int(h) for h in (_setting(db, tenant, "recruitment.joining.reminder_hours") or [48]) if int(h) > 0)
     if not hours:
@@ -147,8 +149,8 @@ def remind_due(db: Session, tenant) -> int:
         pretty = "\n".join(f"- {date.fromisoformat(d).strftime('%A, %d %B %Y')}" for d in info(app).get("proposed", []))
         try:
             send_default(db, tenant, "recruitment.joining_dates", to=[cand.email], related_entity_type="application", related_entity_id=app.id,
-                         ctx={"candidate_first_name": (cand.full_name or "").split(" ")[0], "job_title": job.title if job else "", "dates": pretty,
-                              "choose_link": link(row.token), "note": "Reminder: please choose your joining date."})
+                         ctx={"candidate_first_name": greeting_name(db, cand), "job_title": job.title if job else "", "dates": pretty,
+                              "choose_link": link(row.token, db), "note": "Reminder: please choose your joining date."})
         except Exception:  # noqa: BLE001
             pass
         row.payload_json = {**(row.payload_json or {}), "reminders": sent + 1}

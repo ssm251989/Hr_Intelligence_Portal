@@ -116,6 +116,16 @@ def register_all() -> None:
     register(SettingDef("recruitment.jobs.close_email_candidates", "bool", False, module="recruitment", group="Jobs"))
     # fix 2026-10-04: the address links in emails use (interview pickers, confirmations, logo); empty = the server's APP_BASE_URL
     register(SettingDef("org.public_base_url", "str", "", module="platform", group="Company"))
+    # fix 2026-10-04: the web app's public address (welcome portal, candidate forms); empty = the server's FRONTEND_URL
+    register(SettingDef("org.public_app_url", "str", "", module="platform", group="Company"))
+    # fix 2026-10-04: offer -> welcome. Off = the welcome email + portal go out only after the offer is signed
+    register(SettingDef("offers.welcome_with_offer", "bool", False, module="recruitment", group="Offers"))
+    # fix 2026-10-04: day-one info on the welcome portal
+    register(SettingDef("onboarding.day_one.start_time", "str", "09:30", module="onboarding", group="Day one"))
+    register(SettingDef("onboarding.day_one.what_to_bring", "json",
+                        ["Original ID proof (PAN or Aadhaar)", "Two passport-size photos", "Your laptop charger if you have your own laptop"],
+                        module="onboarding", group="Day one"))
+    register(SettingDef("onboarding.day_one.meet", "str", "", module="onboarding", group="Day one"))  # who to ask for at reception
     # fix 2026-10-04: after a shortlist, arrange the interview automatically or leave it to HR (per job: shortlisting_json.scheduling_mode)
     register(SettingDef("recruitment.interviews.scheduling_mode", "str", "auto", module="recruitment", group="Interviews",
                         json_schema={"type": "string", "enum": ["auto", "manual"]}))

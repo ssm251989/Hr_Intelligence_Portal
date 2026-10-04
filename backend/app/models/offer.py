@@ -32,3 +32,13 @@ class Offer(Base, TenantOwned):
     expiry_date = Column(Date)
     # [{"amount": float, "notes": str, "recorded_at": iso str}], oldest first.
     counter_offer_json = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    # fix 2026-10-04: sign in the app when DocuSign isn't connected (app/offers/esign.py)
+    sign_token = Column(Text, unique=True)  # the candidate's "Review & sign" link
+    sent_at = Column(DateTime(timezone=True))
+    viewed_at = Column(DateTime(timezone=True))
+    signed_at = Column(DateTime(timezone=True))
+    signed_name = Column(Text)  # the full name typed to sign
+    signed_ip = Column(String(64))
+    signed_user_agent = Column(Text)
+    signed_pdf_path = Column(Text)  # the letter stamped with the signature
+    sign_method = Column(String(20))  # in_app | docusign | manual

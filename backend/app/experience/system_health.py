@@ -140,13 +140,14 @@ def _jobs(db: Session, tenant) -> dict:
 
 def _links(db: Session) -> dict:
     """fix 2026-10-04: links in emails must open for the people who get them."""
-    from app.platform.links import is_local, public_base_url
+    from app.platform.links import is_local, public_app_url, public_base_url
 
-    base = public_base_url(db)
-    if is_local(base):
-        return _item("links", "amber", f"Links in emails point to {base} - they only open on this computer, so candidates and interviewers "
-                     "elsewhere can't open them. Set the public address in Settings > Company > Profile (Public address for links in emails).", base=base)
-    return _item("links", "green", f"Links in emails use {base}.", base=base)
+    base, app_url = public_base_url(db), public_app_url(db)
+    local = [u for u in (base, app_url) if is_local(u)]
+    if local:
+        return _item("links", "amber", f"Links in emails point to {' and '.join(local)} - they only open on this computer, so candidates and interviewers "
+                     "elsewhere can't open them. Set both public addresses in Settings > Company > Profile.", base=base, app=app_url)
+    return _item("links", "green", f"Links in emails use {base} (server) and {app_url} (web app).", base=base, app=app_url)
 
 
 def check(db: Session, tenant, *, fresh: bool = False) -> dict:

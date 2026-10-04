@@ -206,6 +206,13 @@ def mark_offer_signed(
                 "new_status": "onboarding_started",
             },
         )
+        try:  # fix 2026-10-04: after any signature -> recruiter told, then the welcome email + portal
+            from app.offers.esign import on_offer_signed
+            from app.platform.tenancy.context import require_current_tenant as _rct
+
+            on_offer_signed(db, _rct(), offer, method="docusign", actor="system")
+        except Exception:  # noqa: BLE001
+            pass
         return offer
 
     # Manual fallback path (no real DocuSign envelope) -- HR pastes the envelope ID from
@@ -233,6 +240,14 @@ def mark_offer_signed(
             "new_status": "onboarding_started",
         },
     )
+    try:  # fix 2026-10-04: HR marked it signed -> recruiter told, then the welcome email + portal
+        from app.offers.esign import on_offer_signed
+        from app.platform.tenancy.context import require_current_tenant as _rct
+
+        offer.sign_method = offer.sign_method or "manual"
+        on_offer_signed(db, _rct(), offer, method="manual", actor=current_user.email)
+    except Exception:  # noqa: BLE001
+        pass
     return offer
 
 

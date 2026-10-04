@@ -198,6 +198,9 @@ app.include_router(settings_home_router)
 from app.experience.ui_people_router import router as ui_people_router  # noqa: E402
 
 app.include_router(ui_people_router)
+from app.offers.esign import router as offer_esign_router  # noqa: E402 -- fix 2026-10-04: in-app offer signing (public page)
+
+app.include_router(offer_esign_router)
 from app.experience.modules_router import router as modules_router  # noqa: E402 -- Part 19.1/19.2
 
 app.include_router(modules_router)

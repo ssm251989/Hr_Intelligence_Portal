@@ -32,5 +32,31 @@ def public_base_url(db=None) -> str:
     return (value or settings.APP_BASE_URL).rstrip("/")
 
 
+def public_app_url(db=None) -> str:
+    """Where the web app is reached (pages like the welcome portal /welcome/<token>): company setting
+    `org.public_app_url` ("Public address of the web app"), else the server's FRONTEND_URL."""
+    from app.core.config import settings
+    from app.platform.tenancy.context import get_current_tenant
+
+    value = ""
+    tenant = get_current_tenant()
+    if tenant is not None:
+        own = db is None
+        if own:
+            from app.core.database import SessionLocal
+
+            db = SessionLocal()
+        try:
+            from app.platform.settings.resolver import SettingContext, SettingsService
+
+            value = (SettingsService(db).get("org.public_app_url", SettingContext(tenant=tenant)) or "").strip()
+        except Exception:  # noqa: BLE001
+            value = ""
+        finally:
+            if own:
+                db.close()
+    return (value or settings.FRONTEND_URL).rstrip("/")
+
+
 def is_local(url: str) -> bool:
     return (urlparse(url).hostname or "").lower() in LOCAL_HOSTS

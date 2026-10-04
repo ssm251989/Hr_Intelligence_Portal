@@ -23,6 +23,7 @@ import { welcomePortalApi, type PortalField, type PortalStep, type PortalSummary
 import { useBootstrap } from "../../bootstrap/BootstrapContext";
 import { BrandMark, LanguagePicker } from "../../components/careers/PublicAuthLayout";
 import DocumentCapture from "../../components/onboarding/DocumentCapture";
+import { BuiltinStepBody, ContactsCard, isBuiltin, useBuiltinCard } from "../../components/onboarding/WelcomeBuiltinSteps";
 import { useDateText } from "../../components/onboarding/shared";
 import { useI18n } from "../../i18n";
 import { Emoji, FriendlyError, Illustration, UserAvatar, useReducedMotion } from "../../ui-kit";
@@ -232,6 +233,8 @@ export default function WelcomePortalPage() {
         )}
       </Card>
 
+      <ContactsCard contacts={data.contacts ?? []} />
+
       {(data.welcome.agenda.length > 0 || data.welcome.buddy) && (
         <Box sx={{ display: "grid", gap: 2.25, gridTemplateColumns: { xs: "1fr", md: data.welcome.agenda.length && data.welcome.buddy ? "1.4fr 1fr" : "1fr" } }}>
           {data.welcome.agenda.length > 0 && (
@@ -267,7 +270,10 @@ export default function WelcomePortalPage() {
         </Box>
       )}
 
-      <StepDialog step={open} token={token} fullScreen={phone} onClose={() => setOpen(null)} onDone={() => { setOpen(null); load(); }} />
+      <StepDialog
+        step={open && data.steps.find((s) => s.kind === open.kind && s.code === open.code) || open}
+        token={token} fullScreen={phone} onClose={() => setOpen(null)} onDone={() => { setOpen(null); load(); }} onChanged={load}
+      />
     </Stack>,
   );
 }
@@ -275,33 +281,38 @@ export default function WelcomePortalPage() {
 function StepCard({ step, onOpen }: { step: PortalStep; onOpen: () => void }) {
   const f = useTheme().palette.fresh;
   const { t } = useI18n();
-  const label = step.kind === "offer" ? t("welcome.step.offer") : step.label;
+  const builtinCard = useBuiltinCard();
+  let label = step.label ?? "";
   let note: string;
-  let tone: "done" | "todo" | "warn" = step.done ? "done" : "todo";
-  if (step.kind === "document") {
+  let tone: "done" | "todo" | "warn" | "locked" = step.done ? "done" : "todo";
+  let emoji = stepEmoji(step);
+  if (isBuiltin(step)) {
+    ({ label, note, tone, emoji } = builtinCard(step));
+  } else if (step.kind === "document") {
     if (step.status === "verified") note = t("welcome.step.doc_verified");
     else if (step.status === "pending") note = t("welcome.step.doc_uploaded");
     else if (step.status === "rejected") { note = t("welcome.step.doc_again"); tone = "warn"; }
     else note = t("welcome.step.doc_todo");
   } else if (step.kind === "form") note = step.done ? t("welcome.step.form_done") : t("welcome.step.form_todo", { count: step.fields.length });
   else if (step.kind === "policy") note = step.done ? t("welcome.step.policy_done") : t("welcome.step.policy_todo");
-  else note = step.done ? t("welcome.step.offer_done") : t("welcome.step.offer_todo");
+  else note = t("welcome.step.policy_todo");
 
-  const clickable = step.kind !== "offer" && !(step.kind === "document" && step.status === "verified") && !(step.kind === "policy" && step.done);
+  // fix 2026-10-04: every step opens (a locked one explains why); only finished uploads/policies are read-only
+  const clickable = !(step.kind === "document" && step.status === "verified") && !(step.kind === "policy" && step.done);
   return (
     <Box
       component={clickable ? "button" : "div"} type={clickable ? "button" : undefined} onClick={clickable ? onOpen : undefined}
       aria-label={`${label}: ${note}`}
       sx={{
         textAlign: "left", font: "inherit", color: "inherit", cursor: clickable ? "pointer" : "default", width: "100%",
-        border: `1px solid ${tone === "done" ? "transparent" : tone === "warn" ? f.coral : f.line}`, borderRadius: "16px", p: 1.75,
-        display: "flex", flexDirection: "column", gap: 0.75, minHeight: 112,
+        border: `1px ${tone === "locked" ? "dashed" : "solid"} ${tone === "done" ? "transparent" : tone === "warn" ? f.coral : f.line}`, borderRadius: "16px", p: 1.75,
+        display: "flex", flexDirection: "column", gap: 0.75, minHeight: 112, opacity: tone === "locked" ? 0.8 : 1,
         bgcolor: tone === "done" ? f.okSoft : tone === "warn" ? f.coralSoft : f.surface2,
         "&:hover": clickable ? { boxShadow: f.shadow } : undefined,
         "&:focus-visible": { outline: `2px solid ${f.brand}`, outlineOffset: 2 },
       }}
     >
-      <Emoji name={stepEmoji(step)} size={28} />
+      <Emoji name={tone === "locked" ? "lock" : emoji} size={28} />
       <Typography component="span" sx={{ fontWeight: 700 }}>{label}</Typography>
       <Typography component="span" sx={{ fontSize: 13, color: tone === "warn" ? f.coral : f.muted, fontWeight: tone === "warn" ? 700 : 400 }}>
         {note}{step.done ? " ✓" : ""}
@@ -310,9 +321,10 @@ function StepCard({ step, onOpen }: { step: PortalStep; onOpen: () => void }) {
   );
 }
 
-function StepDialog({ step, token, fullScreen, onClose, onDone }: { step: PortalStep | null; token: string; fullScreen: boolean; onClose: () => void; onDone: () => void }) {
+function StepDialog({ step, token, fullScreen, onClose, onDone, onChanged }: { step: PortalStep | null; token: string; fullScreen: boolean; onClose: () => void; onDone: () => void; onChanged: () => void }) {
   const f = useTheme().palette.fresh;
   const { t } = useI18n();
+  const builtinCard = useBuiltinCard();
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -328,7 +340,8 @@ function StepDialog({ step, token, fullScreen, onClose, onDone }: { step: Portal
   );
 
   if (!step) return null;
-  const title = step.kind === "offer" ? t("welcome.step.offer") : step.label;
+  const head = isBuiltin(step) ? builtinCard(step) : null;
+  const title = head ? head.label : step.label ?? "";
 
   const explain = (e: unknown) =>
     e instanceof ApiError && e.status === 401 ? t("welcome.link_broken_fix")
@@ -393,8 +406,9 @@ function StepDialog({ step, token, fullScreen, onClose, onDone }: { step: Portal
 
   return (
     <Dialog open onClose={onClose} fullScreen={fullScreen} fullWidth maxWidth="sm">
-      <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}><Emoji name={stepEmoji(step)} size={24} /> {title}</DialogTitle>
+      <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}><Emoji name={head ? head.emoji : stepEmoji(step)} size={24} /> {title}</DialogTitle>
       <DialogContent>
+        {isBuiltin(step) && <BuiltinStepBody step={step} token={token} onChanged={onChanged} onClose={onClose} />}
         {step.kind === "document" && (
           <Stack spacing={1.5}>
             {step.status === "rejected" && step.rejection_reason && (

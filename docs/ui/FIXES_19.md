@@ -459,3 +459,118 @@ new link         "Interview cancelled - This interview was cancelled, so this li
 **Checks:** compileall; alembic upgrade (c20a1b2c3d4e); tsc; i18n 4026 keys, 0 missing; npm run build OK.
 
 **Owner action:** set **Settings > Company > Profile > Public address for links in emails** to an address candidates can reach (e.g. your server's public URL). Until then every emailed link points to http://localhost:8000 and only works on this computer.
+
+# Offer -> welcome flow broken (bug 2026-10-04, candidate "Kishore Gunda", Junior AI Developer, joining Wed 14 Oct 2026)
+
+## 1. The real records (ctd-techs)
+- Candidate `Gunda Kishore` (gkishore1433@gmail.com). Application c7291dc9…, job "Junior AI Developer" ea576a6f (department AI, **no hiring manager set**).
+- Offer 6c5feb90: `docusign_envelope_id null`, `signed false`, joining_date 2026-10-14, expiry 2026-10-11. There were no sent/viewed columns, so nothing could record them.
+- Joining date: it **was** picked from HR's 3 dates.
+  - Audit 16:38:57 `joining_dates_proposed ["2026-10-12","2026-10-14","2026-10-15"]`
+  - Audit 16:39:12 `joining_date_chosen 2026-10-14` (actor: candidate)
+- 16:39:13 `docusign_envelope_creation_failed`: "DocuSign token request failed: Client error '400 Bad Request' for url 'https://account-d.docusign.com/oauth/token'". DocuSign is not really connected; its login is rejected.
+- 16:39:21 `offer_and_welcome_sent {"esign": false, "offer_emailed": true, "onboarding_case": "738b43dc…", "welcome_emailed": true}`.
+- Emails sent:
+  - 16:39:13 "Junior AI Developer: your offer letter"
+  - 16:39:17 "Congratulations on your selection, Gunda!"
+  - That is 4 seconds apart, both before any signature.
+- Onboarding case 738b43dc: status `invited`, attributes `{}`.
+- Configured onboarding forms, documents and policies: **none**. So the portal's only step was the built-in "Offer signed".
+- Settings: `recruitment.contacts = {"default": []}`, `org.public_base_url` empty.
+- **Rule that sent the welcome:** `app/recruitment/offer_welcome.after_joining_date_chosen` (Part 18.20). It ran right after the date was chosen and sent the offer and the welcome together, by design. There was no "wait for signature" step.
+
+## 2. What was wrong
+1. Offer and welcome were sent in one go when the joining date was chosen. Signing was never waited for.
+2. When DocuSign failed, the offer email fell back to "Sign your offer letter (reply to the offer email)". There was no in-app signing page at all.
+3. The portal's "Offer signed" card was not clickable; the code marked it read-only. With no checklist configured, it was the only step.
+4. The email promised "fill in your joining details", but no such built-in step existed. It only appeared if HR had built a custom form.
+5. Greeting used `full_name.split(" ")[0]`. For "Gunda Kishore" that is the surname.
+6. The contacts block came from an empty setting, so only "reply to this email" was left. The job has no hiring manager.
+7. The portal link was built from the server's FRONTEND_URL, which is localhost.
+
+## 3. Fixes
+- **Flow:**
+  - The joining date is confirmed, then the **offer email** goes out with a **Review & sign** link (or a DocuSign envelope when DocuSign works).
+  - The candidate signs.
+  - Then the confetti page, the recruiter is told (in-app + email), and **then** the welcome email + welcome portal.
+  - New setting `offers.welcome_with_offer` (default **off**) brings back the old "send both together" if wanted.
+  - Signing by DocuSign or by HR marking it signed goes through the same follow-up, `esign.on_offer_signed` (once only).
+- **In-app signing** (`app/offers/esign.py`, public `/offer/sign/{token}`):
+  - The page shows the letter and a PDF download.
+  - To sign: type full name + tick "I accept". This records name, time, IP and browser, saves a PDF stamped with the signature, and logs audit `offer_signed`.
+  - Expired offers say so in plain words.
+  - Migration d20b2c3d4e5f: offers.sign_token, sent_at, viewed_at, signed_at, signed_name, signed_ip, signed_user_agent, signed_pdf_path, sign_method.
+  - The PDF is made after the signature is saved, so a PDF problem can never lose a signature. The browser proof caught exactly that (fpdf2 line-position bug, fixed).
+- **Welcome portal** (`app/onboarding/welcome_steps.py` + `WelcomeBuiltinSteps.tsx`). The real built-in steps come first, then any configured forms, documents and policies:
+  - **Offer signed:** "Review & sign" until signed; then a done tick and **View signed offer** (PDF).
+  - **Joining details:**
+    - Covers personal details, address, emergency contact, and bank/ID.
+    - **Autosaved** as you type; "Send to HR" checks everything.
+    - Checks the formats of PAN, IFSC, account number, PIN, phone and email; Aadhaar gets the Verhoeff check; date of birth must give an age of 16–80.
+    - Account number, PAN and Aadhaar are stored **encrypted** and shown masked (XXXXXXXX9012).
+    - On send, the pre-hire employee record gets the confirmed names and contact details.
+  - **Documents:** the configured list (onboarding setting, else the hiring "required documents" list). Each item can be uploaded with the phone camera or as a file. Status shows uploaded / verified / please upload again / already received during hiring.
+  - **Your first day:** date and start time, office address with an "Open in maps" link, who to meet, what to bring, and the agenda, then "Got it".
+    - New settings: `onboarding.day_one.start_time`, `.meet`, `.what_to_bring`.
+  - **People you can reach out to:** a card with name, role, email and phone. Empty lines are hidden.
+  - Steps that need the signature say **"Unlocks after you sign your offer"**, and the server refuses them (409) until then.
+  - Progress "x of N done" counts only real steps.
+  - The HR Onboarding board readiness counts the same steps (`welcome_steps` in readiness).
+- **Emails:**
+  - Greeting: preferred name, else the first name the joiner typed, else the full name. Never the first word only. The same fix applies to the BGV and joining-date emails.
+  - "People you can reach out to" lists the department's and the company's HR contacts (Settings > Hiring > Contacts) plus the job's hiring manager. Each person shows name, role, email and phone; a line is hidden if not set; nobody appears without an email or phone.
+  - No "reply to sign" anywhere. Default wording is updated only where the company never edited it.
+  - A missing salary now reads "as agreed with HR", never a blank amount.
+- **Links:**
+  - Sign links use `org.public_base_url` (else APP_BASE_URL).
+  - Portal and joining-date links use the new `org.public_app_url` ("Public address of the web app", else FRONTEND_URL).
+  - The Health "Email links" check is amber while either one is localhost.
+
+## 4. End-to-end proof
+Setup:
+- Mailpit, a proof API on :8010 (DEV_MAIL_CAPTURE) and the web app on :5174. Nothing reached a real mailbox.
+- Test candidate "Asha Verma" (proof.offer@example.com) on "Junior AI Developer", at BGV cleared.
+- Test contacts were added to the setting for this run, then restored to `{"default": []}`.
+
+```
+20:21:46  HR proposes 14 / 16 / 17 Oct -> "background verification successful - choose your joining date"
+20:22:05  candidate picks 16 Oct (joining_date_chosen)
+20:22:09  docusign_envelope_creation_failed (same 400 as Kishore) -> in-app signing
+20:22:09  "Junior AI Developer: your offer letter - please review and sign"   <- only email; welcome emails before signing: 0
+          email text: "Review & sign it here: http://127.0.0.1:8010/offer/sign/..."  (no "reply")
+20:25:43  sign page opened -> offers.viewed_at recorded
+20:28:00  typed "Asha Verma" + ticked -> signed_at, signed_ip 127.0.0.1, sign_method in_app, stamped PDF (200 application/pdf)
+          page: "Welcome aboard!" + confetti + [Open your welcome portal] + signed PDF link
+20:28:01  recruiter told: in-app "Asha Verma signed the offer for Junior AI Developer - joining 16 Oct 2026" + email to kg@ctdtechs.com
+20:28:02  "Welcome to CTD Techs, Asha Verma!" (after_signing: true); portal link http://127.0.0.1:5174/welcome/... (not localhost)
+          People you can reach out to:
+          - Arun Kumar (Head of AI) - arun.ai@example.com                 <- department contact, no phone -> phone hidden
+          - Priya Raman (HR partner) - priya.hr@example.com - +91 98400 11111
+          ("No Way", a contact with no email/phone, is not shown)
+portal    1 of 4 done; the 4 steps are clickable
+details   PAN "ABC123" -> highlighted at once by autosave; fixed -> "Saved" -> Send to HR -> 2 of 4
+          reopened: account XXXXXXXX9012, PAN XXXXXX234F, Aadhaar XXXX XXXX 0124; DB stores "enc:..."
+          greeting now "Welcome to the team, Asha!" (preferred name)
+day one   Got it -> 3 of 4
+documents Experience letters (required) + PAN card uploaded from file -> 4 of 4 done
+HR board  readiness percent 100, welcome_steps {total 4, done 4}; case in_progress; application onboarding_started
+```
+
+**Screenshots:**
+- `screens/fix-offer-email.png`, `fix-offer-sign-page.png`, `fix-offer-signed-confetti.png`
+- `screens/fix-welcome-email.png`, `fix-welcome-portal-start.png`, `fix-welcome-details-check.png`, `fix-welcome-details-masked.png`
+- `screens/fix-welcome-documents.png`, `fix-welcome-documents-uploaded.png`, `fix-welcome-day-one.png`, `fix-welcome-portal-after.png`, `fix-welcome-portal-phone.png`
+- Signed-in HR Onboarding page: pending login proof. Readiness was checked in-process; numbers are above.
+
+**Clean-up:**
+- Normal removal correctly refuses a candidate with a signed offer.
+- The test record's own rows were deleted directly by id in one transaction: candidate, application, offer, case, pre-hire employee, 2 uploads, 7 audit, 4 message and 1 token rows. Its files were deleted too.
+
+**Checks:** compileall; alembic upgrade head (d20b2c3d4e5f); tsc; i18n 4089 keys, 0 missing; npm run build OK.
+
+**Owner actions:**
+1. Kishore's existing offer is still unsigned. His portal now shows "Sign your offer" with a working Review & sign page.
+2. Set **Public address for links in emails** and **Public address of the web app** (Settings > Company). Until then links point to localhost.
+3. DocuSign's login is rejected (400 from the token endpoint), so in-app signing is used. Reconnect DocuSign in Integrations if you want envelopes.
+4. Add HR, department and manager contacts in **Settings > Hiring > Contacts**, and a hiring manager on the job. The email and portal list them automatically.
+5. Optional: set the first-day start time, who to meet and what to bring in the onboarding settings.
