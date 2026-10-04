@@ -63,6 +63,17 @@ export default function SystemHealthPage() {
             <StatusChip tone={TONE[item.status] ?? "muted"} label={t(`autom.sys.light.${item.status}`)} />
           </Stack>
           <Typography sx={{ fontSize: 14 }}>{item.message}</Typography>
+          {Array.isArray(item.detail?.jobs) && (item.detail.jobs as { job: string; label: string; last_run: string; state: string; error: string | null }[]).length > 0 && (
+            <Box component="ul" sx={{ m: 0, mt: 1, pl: 2.25, "& li": { fontSize: 13, lineHeight: 1.7 } }}>
+              {(item.detail.jobs as { job: string; label: string; last_run: string; state: string; error: string | null }[]).map((j) => (
+                <li key={j.job}>
+                  <Box component="span" sx={{ color: j.state === "ok" ? f.ok : f.coral, fontWeight: 700 }}>{t(`autom.sys.job.${j.state}`)}</Box>
+                  {" "}{j.label} - {t("autom.sys.job.last_run", { when: when(j.last_run) })}
+                  {j.error && <Box component="span" sx={{ color: f.muted }}> ({j.error})</Box>}
+                </li>
+              ))}
+            </Box>
+          )}
           <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" sx={{ mt: 1.25 }} flexWrap="wrap" useFlexGap>
             <Typography variant="caption" sx={{ color: f.muted }}>{t("autom.sys.last_checked", { when: when(item.checked_at) })}</Typography>
             {fix && (

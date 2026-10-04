@@ -28,6 +28,8 @@ class Settings:
     # or multi (kept in the code, not deployed -- section B). A deployment-shape choice,
     # not tenant data, per section A's own carve-out.
     TENANCY_MODE: str = os.getenv("TENANCY_MODE", "single")
+    # development | staging | production -- destructive tools (hrctl data reset) refuse to run in production
+    ENV: str = os.getenv("ENV", "development")
     # platform/secrets/store.py's backend selector; MASTER_KEY wraps DbEncryptedSecretStore's
     # per-tenant data-encryption key (envelope encryption), never used to encrypt secrets
     # directly. This pair is deployment/infra config (per-installation, MODE 1), not tenant
@@ -103,7 +105,11 @@ class Settings:
     # Development only: "127.0.0.1:1025" sends EVERY email (HR mailbox, connections) to a local
     # capture such as mailpit instead of the real mail server. Empty in production.
     DEV_MAIL_CAPTURE: str = os.getenv("DEV_MAIL_CAPTURE", "")
-    INTERVIEW_JOBS_IN_APP: bool = os.getenv("INTERVIEW_JOBS_IN_APP", "true" if not os.getenv("REDIS_URL") else "false").lower() == "true"
+    # Background work inside the backend (owner 2026-10-04): every Celery-beat job (reminders, 24 h salary-form
+    # reminder, document / joining reminders, timers, report schedules ...) runs in-process when there is no
+    # Celery worker. Default: on when REDIS_URL isn't set. Never run both (the worker's beat would double them).
+    JOBS_IN_APP: bool = os.getenv("JOBS_IN_APP", "true" if not os.getenv("REDIS_URL") else "false").lower() == "true"
+    INTERVIEW_JOBS_IN_APP: bool = os.getenv("INTERVIEW_JOBS_IN_APP", str(JOBS_IN_APP)).lower() == "true"
 
 
 settings = Settings()

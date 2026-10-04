@@ -83,18 +83,50 @@ def _storage() -> dict:
         return _item("storage", "red", f"Files can't be saved: {exc}"[:200])
 
 
-def _jobs(db: Session, tenant) -> dict:
-    from app.core.config import settings
-    from app.models.audit_log import AuditLog
+JOB_LABELS = {
+    "interview_automation": "Interview times after shortlist (undo window, email retries)",
+    "activation_sweep": "Activation emails (retries, escalation)",
+    "salary_form_reminders": "Salary form reminders (24 h)", "reminders": "Reminders", "documents_reminders": "Document reminders",
+    "joining_reminders": "Joining reminders", "workflow_timers": "Approval timers", "report_schedules": "Scheduled reports",
+    "onboarding_chase": "Onboarding document chase", "recycle_bin_purge": "Recycle bin clean-up", "document_expiry": "Document expiry",
+    "privacy_overdue": "Privacy requests due", "ticket_escalations": "Helpdesk escalations", "review_reminders": "Review reminders",
+}
 
-    last = (db.query(func.max(AuditLog.created_at)).filter(AuditLog.tenant_id == tenant.tenant_id, AuditLog.actor == "system",
-                                                          AuditLog.action.in_(("reminder_sent", "auto_shortlist_released", "salary_form_reminder", "score_recalculated"))).scalar())
-    if settings.CELERY_ALWAYS_EAGER or not settings.REDIS_URL:
-        # fix 2026-10-04: red, not amber -- reminders and other scheduled work silently never ran
-        return _item("jobs", "red", "The background worker isn't running, so scheduled work (reminders, salary and document forms, joining "
-                     "reminders, report schedules) doesn't happen. Start it: celery -A app.platform.jobs.celery_app:celery_app worker -B (see docs/RESUME.txt). "
-                     "Interview scheduling after a shortlist runs inside the app and is checked separately below.",
-                     last_automatic_action=last.isoformat() if last else None, start_command="celery -A app.platform.jobs.celery_app:celery_app worker -B -l info")
+
+def _jobs(db: Session, tenant) -> dict:
+    """Owner 2026-10-04: green / red with the last run of every background job. Locally the backend
+    runs them itself (JOBS_IN_APP); with a Celery worker, the worker does."""
+    from app.core.config import settings
+
+    if settings.JOBS_IN_APP:
+        from app.platform.jobs.inapp import status
+
+        now = datetime.now(timezone.utc)
+        rows, late = [], []
+        for name, st in sorted(status().items()):
+            age = (now - datetime.fromisoformat(st["last_run"])).total_seconds()
+            on_time = age <= 2 * float(st.get("every_seconds") or 60) + 600
+            ok = bool(st.get("ok")) and on_time
+            rows.append({"job": name, "label": JOB_LABELS.get(name, name), "last_run": st["last_run"], "ok": ok, "error": st.get("error"),
+                         "state": "ok" if ok else ("failed" if not st.get("ok") else "late")})
+            if not ok:
+                late.append(JOB_LABELS.get(name, name))
+        expected = set(JOB_LABELS) - {"ticket_escalations", "review_reminders"}  # helpdesk / performance modules may be off
+        never = sorted(JOB_LABELS[j] for j in expected - {r["job"] for r in rows})
+        if not rows:
+            return _item("jobs", "red", "Background jobs haven't run yet. Restart the backend; they start a minute after it starts.", jobs=[])
+        if late or never:
+            parts = []
+            if late:
+                parts.append("not on time or failing: " + ", ".join(late))
+            if never:
+                parts.append("not run yet: " + ", ".join(never))
+            return _item("jobs", "red", "Some background jobs need attention - " + "; ".join(parts) + ".", jobs=rows, runner="backend (in-app)")
+        last = max(r["last_run"] for r in rows)
+        return _item("jobs", "green", f"All {len(rows)} background jobs are running inside the backend (last run {last[11:16]} UTC).", jobs=rows, runner="backend (in-app)")
+    if not settings.REDIS_URL:
+        return _item("jobs", "red", "No background worker: JOBS_IN_APP is off and there is no REDIS_URL, so reminders and scheduled emails don't run. "
+                     "Turn JOBS_IN_APP on (default) or start the worker (see docs/RESUME.txt).")
     try:
         import redis
     except ImportError:
@@ -103,29 +135,7 @@ def _jobs(db: Session, tenant) -> dict:
         redis.from_url(settings.REDIS_URL, socket_timeout=2).ping()
     except Exception as exc:  # noqa: BLE001
         return _item("jobs", "red", "The background job queue can't be reached.", error=str(exc)[:200])
-    return _item("jobs", "green", "Background jobs are running.", last_automatic_action=last.isoformat() if last else None)
-
-
-def _interview_jobs() -> dict:
-    """fix 2026-10-04: the interview automation (undo-window release, mailbox retries) must have run in the last few minutes."""
-    from app.interview_scheduling.automation import HEARTBEAT_KEY
-    from app.platform.tenancy.database_cp import ControlPlaneSessionLocal
-    from app.platform.tenancy.models_cp import PlatformConfig
-
-    cp = ControlPlaneSessionLocal()
-    try:
-        row = cp.get(PlatformConfig, HEARTBEAT_KEY)
-        beat = dict(row.value_json) if row is not None else None
-    finally:
-        cp.close()
-    if not beat:
-        return _item("interview_jobs", "red", "Interview scheduling after a shortlist has never run on this server, so shortlisted candidates don't get interview times.")
-    at = datetime.fromisoformat(beat["at"])
-    age = (datetime.now(timezone.utc) - at).total_seconds()
-    if age > 10 * 60:
-        return _item("interview_jobs", "red", f"Interview scheduling last ran {int(age // 60)} minutes ago - it should run every minute. Restart the app (or the worker).",
-                     last_run=beat["at"], runner=beat.get("runner"))
-    return _item("interview_jobs", "green", "Interview scheduling after a shortlist is running.", last_run=beat["at"], runner=beat.get("runner"))
+    return _item("jobs", "green", "Background jobs run on the worker (Celery).")
 
 
 def check(db: Session, tenant, *, fresh: bool = False) -> dict:
@@ -134,7 +144,7 @@ def check(db: Session, tenant, *, fresh: bool = False) -> dict:
     if hit and not fresh and time.time() - hit[0] < CACHE_SECONDS:
         return hit[1]
     items = []
-    for fn in (lambda: _database(db), lambda: _mailbox(db, tenant), lambda: _ai(db, tenant), _storage, lambda: _jobs(db, tenant), _interview_jobs):
+    for fn in (lambda: _database(db), lambda: _mailbox(db, tenant), lambda: _ai(db, tenant), _storage, lambda: _jobs(db, tenant)):
         try:
             items.append(fn())
         except Exception as exc:  # noqa: BLE001 -- one broken check never hides the others

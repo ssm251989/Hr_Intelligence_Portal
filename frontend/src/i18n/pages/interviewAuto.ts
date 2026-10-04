@@ -23,6 +23,10 @@ export const en = {
   "home.alert.action.schedule_manually": "Schedule manually",
   "home.alert.action.fix_mailbox": "Fix mailbox",
   "settingsHome.page.hiring.interviews_auto": "After a shortlist",
+  "autom.sys.job.ok": "OK",
+  "autom.sys.job.late": "Late",
+  "autom.sys.job.failed": "Failed",
+  "autom.sys.job.last_run": "last run {when}",
 };
 
 export const hi: Partial<typeof en> = {
@@ -49,6 +53,10 @@ export const hi: Partial<typeof en> = {
   "home.alert.action.schedule_manually": "ख़ुद शेड्यूल करें",
   "home.alert.action.fix_mailbox": "मेलबॉक्स ठीक करें",
   "settingsHome.page.hiring.interviews_auto": "शॉर्टलिस्ट के बाद",
+  "autom.sys.job.ok": "ठीक",
+  "autom.sys.job.late": "देर से",
+  "autom.sys.job.failed": "विफल",
+  "autom.sys.job.last_run": "पिछली बार {when}",
 };
 
 export const ta: Partial<typeof en> = {
@@ -75,4 +83,8 @@ export const ta: Partial<typeof en> = {
   "home.alert.action.schedule_manually": "கைமுறையாகத் திட்டமிடு",
   "home.alert.action.fix_mailbox": "மின்னஞ்சல் பெட்டியைச் சரிசெய்",
   "settingsHome.page.hiring.interviews_auto": "குறுகிய பட்டியலுக்குப் பிறகு",
+  "autom.sys.job.ok": "சரி",
+  "autom.sys.job.late": "தாமதம்",
+  "autom.sys.job.failed": "தோல்வி",
+  "autom.sys.job.last_run": "கடைசியாக {when}",
 };

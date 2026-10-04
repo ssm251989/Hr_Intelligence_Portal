@@ -91,22 +91,34 @@ def _run_interview_automation() -> None:
     try:
         from app.interview_scheduling.automation import run_all_tenants
 
+        from app.platform.jobs.inapp import record
+
         result = run_all_tenants("in_app")
+        record("interview_automation", 60, ok=True, result=result)
         if any(isinstance(v, dict) and (v.get("released") or v.get("retried")) for v in result.values()):
             logger.info("interview automation: %s", result)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
         logger.exception("interview automation failed")
+        from app.platform.jobs.inapp import record
+
+        record("interview_automation", 60, ok=False, error=str(exc))
 
 
 def _run_activation_sweep() -> None:
     try:
         from app.platform.activation import sweep
 
+        from app.platform.jobs.inapp import record
+
         result = sweep()
+        record("activation_sweep", 60, ok=True, result=result)
         if any(v for k, v in result.items() if k != "skipped"):
             logger.info("activation sweep: %s", result)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
         logger.exception("activation sweep failed")
+        from app.platform.jobs.inapp import record
+
+        record("activation_sweep", 60, ok=False, error=str(exc))
 
 
 def start_scheduler() -> BackgroundScheduler:
@@ -125,6 +137,10 @@ def start_scheduler() -> BackgroundScheduler:
     # Here (not only in Celery beat) because no Celery worker runs in dev / single installs.
     if settings.INTERVIEW_JOBS_IN_APP:
         scheduler.add_job(_run_interview_automation, trigger=IntervalTrigger(minutes=1), id="interview_automation")
+    if settings.JOBS_IN_APP:  # every other scheduled job (reminders, salary-form reminder, timers ...) -- see platform/jobs/inapp.py
+        from app.platform.jobs.inapp import schedule_all
+
+        logger.info("background jobs running inside the backend: %s", ", ".join(schedule_all(scheduler)))
     scheduler.start()
     _scheduler = scheduler
     return scheduler

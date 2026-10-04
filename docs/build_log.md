@@ -2591,3 +2591,27 @@ NEXT: continue RESUME order -> PART16 16.3 settings reorganised (check against t
 - **Owner action:** the real emails for that booking weren't sent (mailpit) -> Resend to candidate / interviewer from the profile, or cancel.
 
 NEXT: continue PART 19 -- signed-in screenshots still pending a login; then RESUME order -> PART16 16.3 settings reorganised.
+
+## Data reset + background jobs in the backend (2026-10-04, owner request)
+- **Backup first:**
+  - backups/before_clear_20261004_160546.dump (796,266 B), before_clear_control_plane_… (43,482 B), files_before_clear_….zip (15,959,453 B, 501 files). pg_restore --list OK.
+  - The reset took its own second backup at 16:13:16. backups/ is git-ignored.
+- **Dry run shown, owner typed CLEAR CONFIRMED** (+ also the two employee records "Kishore G" / "Kishore Gunda"; no user logins touched).
+- **Reset** = `hrctl data reset --keep-setup --confirm --also-employee "Kishore G" --also-employee "Kishore Gunda"`, one transaction:
+  - CTD Techs test data: jobs, candidates, applications, interviews, tokens, offers, pre-joiners, messages, inbox, AI usage, per-job scoring rules, demo / test employees + their records, and 213 audit entries.
+  - Demo companies demo-a / demo-b removed completely.
+  - All 15 activation requests + 37 events; ACT numbers restart at 00001.
+  - 500 files deleted (uploads/media kept).
+- **After:** every cleared table 0. Kept unchanged: 21 users / 16 roles / 21 assignments, 27 settings, 11 modules, 4 connections + secrets, HR mailbox, templates, pipelines, interviewers. scoring_rule_sets 8 -> 4 (per-job rules), employees 12 -> 0, pool kept and unlinked. kg@ctdtechs.com admin, active.
+- **`hrctl data reset`:** dry-run default, automatic backup, refuses when ENV=production (new setting ENV, default development). The rows to delete are found from the foreign keys, kept tables get links emptied, never drops tables.
+- **Background jobs:** with no Redis there was no worker, so reminders, the salary-form reminder etc. never ran. Now JOBS_IN_APP (default without REDIS_URL) runs all 12 beat jobs inside the backend on the beat intervals (advisory lock per job, module guard), plus interview automation + activation sweep every minute.
+  - Status per job in platform_config jobs.status; Health > Background jobs shows green/red with each job's last run.
+  - All 14 ran OK at 10:47-10:49 UTC.
+  - start-dev.ps1 + RESUME §6 updated (no separate worker locally; Celery optional with Redis + JOBS_IN_APP=false).
+- **HR mailbox test:** a real email from hradmin65@gmail.com (smtp.gmail.com:587) to kg@ctdtechs.com -> sent OK.
+- **Checks:**
+  - Health: database / mailbox / AI / jobs green, storage amber (local disk).
+  - Endpoints 401 without sign-in (no 500s); frontend build OK.
+  - Signed-in page check (empty states) is for the owner -- this session can't sign in.
+
+NEXT: owner tests the full flow from "create a job"; then RESUME order -> PART16 16.3 settings reorganised.
