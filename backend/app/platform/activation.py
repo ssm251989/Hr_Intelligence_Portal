@@ -292,6 +292,12 @@ def _open_request(cp_db, tenant_id):
             .order_by(ActivationRequest.created_at.desc()).first())
 
 
+def _int_setting(key: str) -> int:
+    """A number setting where 0 is a real value (e.g. no cooldown); missing -> the default."""
+    value = platform_mail.get_setting(key)
+    return int(value) if value is not None and str(value).strip() != "" else int(platform_mail.DEFAULTS[key])
+
+
 def _support() -> dict:
     s = platform_mail.all_settings()
     return {"phone": s["support.phone"] or None, "email": s["support.email"] or None, "hours": s["support.hours"] or None}
@@ -392,8 +398,8 @@ def request_info(req) -> Optional[dict]:
         return None
     now = _now()
     status = "expired" if req.status == "pending" and req.expires_at < now else req.status
-    cooldown = int(platform_mail.get_setting("activation.resend_cooldown_minutes") or 15)
-    per_day = int(platform_mail.get_setting("activation.resend_max_per_day") or 5)
+    cooldown = _int_setting("activation.resend_cooldown_minutes")
+    per_day = _int_setting("activation.resend_max_per_day")
     today = now.date()
     used_today = req.resends_today if req.resend_day == today else 0
     next_at = req.last_resend_at + timedelta(minutes=cooldown) if req.last_resend_at else None
@@ -484,8 +490,8 @@ def resend_request(db, tenant, user) -> dict:
     from app.audit.service import log_action
 
     actor = getattr(user, "email", "system")
-    cooldown = int(platform_mail.get_setting("activation.resend_cooldown_minutes") or 15)
-    per_day = int(platform_mail.get_setting("activation.resend_max_per_day") or 5)
+    cooldown = _int_setting("activation.resend_cooldown_minutes")
+    per_day = _int_setting("activation.resend_max_per_day")
     cp_db = _cp()
     try:
         req = _open_request(cp_db, tenant.tenant_id)
@@ -637,7 +643,7 @@ def sweep() -> dict:
             return {"skipped": "another process is sweeping"}
         now = _now()
         pending = cp_db.query(ActivationRequest).filter(ActivationRequest.status == "pending", ActivationRequest.expires_at > now).all()
-        escalate_after = timedelta(minutes=int(platform_mail.get_setting("activation.escalation_minutes") or 1440))
+        escalate_after = timedelta(minutes=_int_setting("activation.escalation_minutes"))
         send_all = bool(platform_mail.get_setting("activation.send_all"))
         for req in pending:
             if req.delivery in ("retrying", "sending") and req.next_retry_at and req.next_retry_at <= now:

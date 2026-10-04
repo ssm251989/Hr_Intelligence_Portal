@@ -318,7 +318,10 @@ function MailboxCard({ token, health, busy, run }: { token: string; health: Cons
       {health.last && <Alert severity={health.last.ok ? "success" : "error"} sx={{ mb: 1.5 }}>
         {health.last.ok ? t("act.mb.last_ok", { at: new Date(health.last.at).toLocaleString() }) : t("act.mb.last_failed", { at: new Date(health.last.at).toLocaleString(), reason: health.last.reason ?? "" })}
       </Alert>}
-      <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", md: "2fr 1fr 2fr" } }}>
+      {m.source === "hr_admin" && (
+        <Alert severity="info" sx={{ mb: 1.5 }}>{t("act.mb.hr_admin", { connection: m.connection ?? "", from: m.from_address ?? "" })}</Alert>
+      )}
+      {m.source !== "hr_admin" && <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", md: "2fr 1fr 2fr" } }}>
         <TextField label={t("act.mb.host")} value={form.host} onChange={(e) => setForm({ ...form, host: e.target.value })} placeholder="smtp.office365.com" />
         <TextField label={t("act.mb.port")} type="number" value={form.port} onChange={(e) => setForm({ ...form, port: Number(e.target.value) })} />
         <TextField label={t("act.mb.user")} value={form.user} onChange={(e) => setForm({ ...form, user: e.target.value })} />
@@ -326,11 +329,11 @@ function MailboxCard({ token, health, busy, run }: { token: string; health: Cons
         <TextField label={t("act.mb.from_address")} value={form.from_address} onChange={(e) => setForm({ ...form, from_address: e.target.value })} placeholder="hrms@ctdtechs.com" />
         <TextField label={t("act.mb.password")} type="password" autoComplete="new-password" value={form.password ?? ""} onChange={(e) => setForm({ ...form, password: e.target.value || null })}
           helperText={m.password_set ? t("act.mb.password_kept") : t("act.mb.password_none")} />
-      </Box>
-      <FormControlLabel sx={{ mt: 1 }} control={<Switch checked={form.starttls} onChange={(e) => setForm({ ...form, starttls: e.target.checked })} />} label={t("act.mb.starttls")} />
+      </Box>}
+      {m.source !== "hr_admin" && <FormControlLabel sx={{ mt: 1 }} control={<Switch checked={form.starttls} onChange={(e) => setForm({ ...form, starttls: e.target.checked })} />} label={t("act.mb.starttls")} />}
       <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} sx={{ mt: 1.5 }} alignItems={{ sm: "center" }}>
-        <Button variant="contained" disabled={busy || !form.host || !form.from_address}
-          onClick={() => void run(async () => { await superAdminApi.mailboxSet(token, form); setForm({ ...form, password: null }); return { tone: "success", text: t("act.mb.saved") }; })}>{t("act.save")}</Button>
+        {m.source !== "hr_admin" && <Button variant="contained" disabled={busy || !form.host || !form.from_address}
+          onClick={() => void run(async () => { await superAdminApi.mailboxSet(token, form); setForm({ ...form, password: null }); return { tone: "success", text: t("act.mb.saved") }; })}>{t("act.save")}</Button>}
         <TextField size="small" label={t("act.mb.test_to")} value={to} onChange={(e) => setTo(e.target.value)} />
         <Button variant="outlined" disabled={busy || !to}
           onClick={() => void run(async () => {

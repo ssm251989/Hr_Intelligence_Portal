@@ -98,7 +98,7 @@ export interface ApproverRow { priority: number; name: string | null; email: str
 export interface MailboxHealth {
   ok: boolean;
   reason: string | null;
-  mailbox: { host: string; port?: number; user?: string; starttls?: boolean; from_name?: string; from_address?: string; source: "console" | "env" | "none"; password_set: boolean };
+  mailbox: { host: string; port?: number; user?: string; starttls?: boolean; from_name?: string; from_address?: string; source: "hr_admin" | "console" | "env" | "none"; password_set: boolean; connection?: string; problem?: string };
   last: { ok: boolean; reason: string | null; at: string } | null;
 }
 

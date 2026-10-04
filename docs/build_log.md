@@ -2538,3 +2538,19 @@ NEXT: part-19.2b approvers by priority + escalation + resend, part-19.2c friendl
 - **Checks:** compileall, cp alembic d19b2c3e4f5a, tsc, i18n 4006/0 missing, npm run build OK.
 
 NEXT: part-19.3 proof (approvers + escalation with a 2-min escalation time, resend + cooldown + 6th refused, console resend to P2, demo A/B, broken mailbox password -> friendly message -> retries -> fixed -> delivered, Show code audit; mailpit emails + screenshots) in FIXES_19.md.
+
+## Part 19.2c -- activation emails through the HR admin mailbox only (owner, 2026-10-03 22:4x)
+- **Owner instruction:** "for sending use HR admin mail only". Activation emails now go out through CTD Techs' OWN HR admin mailbox: the installation owner's (tenant #1, ctd-techs) "HR Mailbox (SMTP)" connection, hradmin65@gmail.com via smtp.gmail.com, route email.outbound.default.
+- **Never the requesting company's own mailbox:** demo-a/demo-b requests are also sent through CTD Techs' HR mailbox. Approvers stay @ctdtechs.com only.
+- **Override of the spec:** this replaces 19.2c-A's separate "platform mailbox with a @ctdtechs.com from address".
+  - Platform setting `mailbox.mode` = hr_admin (default).
+  - The separate SMTP mode (dev mailpit) is only for development: `hrctl platform settings set mailbox.mode smtp`.
+  - The console mailbox card shows the HR admin mailbox + Send test email; the SMTP form appears only in smtp mode.
+- **Fix:** register_all() connector providers before sending (hrctl/scheduler don't import the connectors API) -- first real test failed with KeyError 'Unknown provider: smtp'.
+- **Real test:** `hrctl platform mailbox test --to kg@ctdtechs.com` -> {"ok": true} through hradmin65@gmail.com.
+- **Owner's live request ACT-2026-00013** (22:38:08; Jobs, Candidates, Screening, Shortlisting, Interviews, Candidate emails) had only reached dev mailpit.
+  - A console resend at 23:08 failed: "Can't reach the mail server ([Errno 11001] getaddrinfo failed)" (no DNS / network at that moment).
+  - The automatic retry delivered it to kg@ctdtechs.com through the HR admin mailbox (2026-10-04 14:58:06).
+- **Proof side effect, noted:** the owner's ACT-2026-00007 escalated to the test P2/P3 addresses during the 2-minute escalation proof window (mailpit only, no real mail). The owner cancelled it. Test approvers are removed; escalation is back to 24 h.
+
+NEXT: part-19.3 FIXES_19.md (proof write-up + mailpit screenshots), then RESUME order -> PART16 16.3.

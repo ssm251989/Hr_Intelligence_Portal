@@ -1,9 +1,12 @@
 """Part 19.2c: the PLATFORM system mailbox and CTD Techs-only platform settings.
 
-The mailbox CTD Techs sends activation emails through -- never a company's own mail connection.
-Set in Super-admin console > Platform mailbox or `hrctl platform mailbox set` (control plane
-`platform_config["platform.mailbox"]`; the password only in the control-plane SecretStore).
-PLATFORM_SMTP_* env values are the fallback (e.g. a dev mailpit).
+Owner decision 2026-10-03 ("for sending use HR admin mail only"): activation emails go out through
+CTD Techs' OWN HR admin mailbox -- the company mailbox of the installation owner (CTD Techs,
+tenant #1), route email.outbound.default -- never through the requesting company's mailbox.
+That is mode "hr_admin" (the default). Mode "smtp" (a separate SMTP server set with
+`hrctl platform mailbox set`, password in the control-plane SecretStore, or PLATFORM_SMTP_* env)
+is kept only for development (e.g. mailpit) and is switched with `hrctl platform settings set
+mailbox.mode smtp`.
 
 A failed send raises MailError with a plain reason (not set up / sign-in failed / can't reach
 the server / secure connection failed / timed out / address refused) -- recorded in the request
@@ -30,6 +33,7 @@ PASSWORD_REF = "platform-mailbox-password"
 OWNER_DOMAIN = "ctdtechs.com"
 
 DEFAULTS: dict = {
+    "mailbox.mode": "hr_admin",  # hr_admin (CTD Techs' HR admin mailbox) | smtp (development only)
     "activation.escalation_minutes": 24 * 60,
     "activation.send_all": False,
     "activation.resend_cooldown_minutes": 15,
@@ -117,8 +121,51 @@ def _password() -> str:
         cp_db.close()
 
 
+def _owner_tenant():
+    """CTD Techs' own company (installation owner = tenant #1)."""
+    from app.platform.tenancy.context import TENANT_1_ID
+    from app.platform.tenancy.models_cp import Tenant
+
+    cp_db = _cp()
+    try:
+        return cp_db.get(Tenant, TENANT_1_ID)
+    finally:
+        cp_db.close()
+
+
+def _hr_admin_connection(fn):
+    """Runs fn(db, ctx, connection) with CTD Techs' HR admin mailbox (outbound) connection."""
+    from app.platform.connectors.router import ConnectorRouter, NoConnectionForPurposeError
+    from app.platform.tenancy.context import get_current_tenant, tenant_context
+    from app.platform.tenancy.provisioning import tenant_session
+
+    owner = _owner_tenant()
+    if owner is None:
+        raise MailError("CTD Techs' own company isn't set up on this installation.")
+    with tenant_context(owner.id, owner.slug, owner.isolation):
+        db = tenant_session(owner)
+        try:
+            try:
+                resolved = ConnectorRouter(db).resolve("email.outbound.default")
+            except NoConnectionForPurposeError as exc:
+                raise MailError("CTD Techs' HR admin mailbox isn't connected (Settings > Communication > Mailboxes).") from exc
+            return fn(db, get_current_tenant(), resolved.connection)
+        finally:
+            db.close()
+
+
 def mailbox() -> dict:
-    """The effective mailbox (console/hrctl first, env fallback). `password_set`, never the password."""
+    """The effective sending mailbox. `password_set`, never the password."""
+    if (get_setting("mailbox.mode") or "hr_admin") == "hr_admin":
+        try:
+            def describe(db, ctx, conn):
+                cfg = conn.config_json or {}
+                return {"host": cfg.get("host", ""), "port": cfg.get("port"), "user": cfg.get("username"),
+                        "from_address": cfg.get("from_address") or cfg.get("username"), "from_name": "CTD Techs HR",
+                        "connection": conn.name, "source": "hr_admin", "password_set": bool(conn.secret_ref)}
+            return _hr_admin_connection(describe)
+        except MailError as exc:
+            return {"host": "", "source": "none", "password_set": False, "problem": exc.reason}
     stored = _stored()
     if stored and stored.get("host"):
         return {**stored, "source": "console", "password_set": bool(_password())}
@@ -176,7 +223,37 @@ def _creds() -> tuple[dict, str]:
     raise MailError("The platform mailbox isn't set up yet (no mail server).")
 
 
+def _classify(error: str) -> MailError:
+    low = error.lower()
+    if "535" in low or "534" in low or "authentication" in low or "username and password" in low:
+        return MailError(f"Signing in to the HR admin mailbox failed ({error[:160]}).")
+    if "recipient" in low or "550" in low or "553" in low:
+        return MailError(f"The mail server refused the address ({error[:160]}).", recipient_refused=True)
+    if "timed out" in low or "timeout" in low:
+        return MailError("The mail server didn't answer in time (timeout).")
+    if "ssl" in low or "tls" in low:
+        return MailError(f"The secure (TLS) connection to the mail server failed ({error[:160]}).")
+    if "getaddrinfo" in low or "refused" in low or "unreachable" in low or "10061" in low:
+        return MailError(f"Can't reach the mail server ({error[:160]}).")
+    return MailError(f"The HR admin mailbox couldn't send ({error[:160]}).")
+
+
 def send(to: list[str], subject: str, body: str) -> None:
+    if (get_setting("mailbox.mode") or "hr_admin") == "hr_admin":
+        from app.platform.comms.service import _get_adapter_and_secrets
+        from app.platform.connectors.capabilities import OutboundEmail
+        from app.platform.connectors.providers import register_all
+
+        register_all()  # idempotent; hrctl / the scheduler don't import the connectors API
+
+        def go(db, ctx, conn):
+            adapter = _get_adapter_and_secrets(db, ctx, conn)
+            return adapter.send(OutboundEmail(to=list(to), subject=subject, body_text=body))
+
+        result = _hr_admin_connection(go)
+        if not result.success:
+            raise _classify(result.error or "send failed")
+        return
     m, password = _creds()
     msg = EmailMessage()
     msg["From"] = f"{m.get('from_name') or 'CTD Techs HRMS'} <{m.get('from_address')}>"
@@ -255,6 +332,8 @@ def health() -> dict:
     from app.platform.tenancy.models_cp import PlatformConfig
 
     m = mailbox()
+    if m["source"] == "none":
+        return {"ok": False, "reason": m.get("problem") or "the HR admin mailbox isn't connected", "mailbox": m, "last": None}
     cp_db = _cp()
     try:
         row = cp_db.get(PlatformConfig, "platform.mailbox_status")
