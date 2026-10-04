@@ -90,8 +90,11 @@ def _jobs(db: Session, tenant) -> dict:
     last = (db.query(func.max(AuditLog.created_at)).filter(AuditLog.tenant_id == tenant.tenant_id, AuditLog.actor == "system",
                                                           AuditLog.action.in_(("reminder_sent", "auto_shortlist_released", "salary_form_reminder", "score_recalculated"))).scalar())
     if settings.CELERY_ALWAYS_EAGER or not settings.REDIS_URL:
-        return _item("jobs", "amber", "Scheduled jobs (reminders, auto-shortlist release) need the background worker; it isn't configured on this server.",
-                     last_automatic_action=last.isoformat() if last else None)
+        # fix 2026-10-04: red, not amber -- reminders and other scheduled work silently never ran
+        return _item("jobs", "red", "The background worker isn't running, so scheduled work (reminders, salary and document forms, joining "
+                     "reminders, report schedules) doesn't happen. Start it: celery -A app.platform.jobs.celery_app:celery_app worker -B (see docs/RESUME.txt). "
+                     "Interview scheduling after a shortlist runs inside the app and is checked separately below.",
+                     last_automatic_action=last.isoformat() if last else None, start_command="celery -A app.platform.jobs.celery_app:celery_app worker -B -l info")
     try:
         import redis
     except ImportError:
@@ -103,13 +106,35 @@ def _jobs(db: Session, tenant) -> dict:
     return _item("jobs", "green", "Background jobs are running.", last_automatic_action=last.isoformat() if last else None)
 
 
+def _interview_jobs() -> dict:
+    """fix 2026-10-04: the interview automation (undo-window release, mailbox retries) must have run in the last few minutes."""
+    from app.interview_scheduling.automation import HEARTBEAT_KEY
+    from app.platform.tenancy.database_cp import ControlPlaneSessionLocal
+    from app.platform.tenancy.models_cp import PlatformConfig
+
+    cp = ControlPlaneSessionLocal()
+    try:
+        row = cp.get(PlatformConfig, HEARTBEAT_KEY)
+        beat = dict(row.value_json) if row is not None else None
+    finally:
+        cp.close()
+    if not beat:
+        return _item("interview_jobs", "red", "Interview scheduling after a shortlist has never run on this server, so shortlisted candidates don't get interview times.")
+    at = datetime.fromisoformat(beat["at"])
+    age = (datetime.now(timezone.utc) - at).total_seconds()
+    if age > 10 * 60:
+        return _item("interview_jobs", "red", f"Interview scheduling last ran {int(age // 60)} minutes ago - it should run every minute. Restart the app (or the worker).",
+                     last_run=beat["at"], runner=beat.get("runner"))
+    return _item("interview_jobs", "green", "Interview scheduling after a shortlist is running.", last_run=beat["at"], runner=beat.get("runner"))
+
+
 def check(db: Session, tenant, *, fresh: bool = False) -> dict:
     key = str(tenant.tenant_id)
     hit = _CACHE.get(key)
     if hit and not fresh and time.time() - hit[0] < CACHE_SECONDS:
         return hit[1]
     items = []
-    for fn in (lambda: _database(db), lambda: _mailbox(db, tenant), lambda: _ai(db, tenant), _storage, lambda: _jobs(db, tenant)):
+    for fn in (lambda: _database(db), lambda: _mailbox(db, tenant), lambda: _ai(db, tenant), _storage, lambda: _jobs(db, tenant), _interview_jobs):
         try:
             items.append(fn())
         except Exception as exc:  # noqa: BLE001 -- one broken check never hides the others

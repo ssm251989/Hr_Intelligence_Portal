@@ -121,7 +121,7 @@ export const CATEGORIES: SettingsCategory[] = [
         render: () => (<><ScoringRulesEditor /><ShortlistingRulesForm /></>) },
       { id: "screening", emoji: "magnifier", module: "screening", keywords: "ai negotiation tracker blind", prefixes: ["recruitment."], visible: ADMIN,
         render: scoped(["recruitment."], "settingsHome.page.hiring.screening") },
-      { id: "interviews", emoji: "calendar", module: "interviews", keywords: "interview scheduling availability interviewer pools negotiation slots", prefixes: ["recruitment.negotiation."], visible: EVERYONE, render: () => <InterviewsSettingsPage /> },
+      { id: "interviews", emoji: "calendar", module: "interviews", keywords: "interview scheduling availability interviewer pools negotiation slots", prefixes: ["recruitment.negotiation.", "recruitment.interviews."], visible: EVERYONE, render: () => (<><InterviewsSettingsPage />{scoped(["recruitment.interviews."], "settingsHome.page.hiring.interviews_auto")()}</>) },
       { id: "availability", emoji: "hourglass", module: "interviews", keywords: "interviewer availability ctc salary components", visible: ADMIN,
         render: () => <RecruitmentPanel only="Availability & CTC" /> },
       { id: "offers", emoji: "envelope", module: "offers", keywords: "salary bands ctc offer expiry", prefixes: ["compensation.", "offers."], visible: ADMIN,

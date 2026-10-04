@@ -20,7 +20,7 @@ from app.candidates.router import (
     row_to_item,
 )
 from app.core.database import get_db
-from app.interview_scheduling.negotiation import attempt_auto_negotiate_interview_slots, clear_manual_scheduling_flag
+from app.interview_scheduling.negotiation import clear_manual_scheduling_flag
 from app.models.application import Application
 from app.models.candidate import Candidate
 from app.models.job_role import JobRole
@@ -40,6 +40,15 @@ from app.shortlisting.service import (
     shortlisting_scope_condition,
     update_shortlist_status,
 )
+
+def _start_scheduling(db, application, user) -> None:
+    """Fix 2026-10-04: a manual shortlist starts scheduling exactly like an automatic one
+    (scheduling mode, problems shown + recruiter told, mailbox failures retried)."""
+    from app.interview_scheduling import automation
+    from app.platform.tenancy.context import require_current_tenant
+
+    automation.start(db, require_current_tenant(), application, user, trigger="manual_shortlist")
+
 
 router = APIRouter(tags=["shortlisting"])
 
@@ -95,7 +104,7 @@ def make_shortlist_decision(
     )
     if new_status == "hr_selected":
         clear_manual_scheduling_flag(db, application, current_user.email)
-        attempt_auto_negotiate_interview_slots(db, application, current_user)
+        _start_scheduling(db, application, current_user)
         from app.shortlisting.service import _salary_after_shortlist
 
         _salary_after_shortlist(db, application, current_user.email)
@@ -256,7 +265,7 @@ def update_shortlist_status_endpoint(
     )
     if payload.target_status == SHORTLISTED:
         clear_manual_scheduling_flag(db, updated, current_user.email)
-        attempt_auto_negotiate_interview_slots(db, updated, current_user)
+        _start_scheduling(db, updated, current_user)
     return updated
 
 
@@ -292,7 +301,7 @@ def bulk_shortlist_decision(
             continue
         if payload.target_status == SHORTLISTED:
             clear_manual_scheduling_flag(db, updated, current_user.email)
-            attempt_auto_negotiate_interview_slots(db, updated, current_user)
+            _start_scheduling(db, updated, current_user)
         succeeded.append(application_id)
     return ShortlistBulkDecisionResult(succeeded=succeeded, skipped=skipped)
 

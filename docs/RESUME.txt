@@ -37,3 +37,14 @@ RESUME AFTER A RESTART - read this whole file, then act.
 
 5. First reply: branch, last commit, and the "NEXT:" line you are resuming
    from. Then continue without waiting.
+
+6. Starting the app (fix 2026-10-04 -- the background worker must run too):
+   - Windows: powershell -ExecutionPolicy Bypass -File scripts\start-dev.ps1
+     (backend: .venv\Scripts\python.exe -m uvicorn app.main:app --reload ; frontend: npm run dev)
+   - Background worker (reminders, salary/document forms, report schedules): needs Redis and
+     REDIS_URL in backend/.env, then in backend/:
+       .venv\Scripts\celery.exe -A app.platform.jobs.celery_app:celery_app worker -B --pool=solo -l info
+     (docker-compose: the worker + beat services start it.)
+   - Interview scheduling after a shortlist (undo-window release + mailbox retries) runs inside the
+     backend when there is no worker (INTERVIEW_JOBS_IN_APP). Settings > Data > Health shows red if the
+     worker or the interview automation isn't running.

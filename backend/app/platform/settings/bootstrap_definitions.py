@@ -114,6 +114,13 @@ def register_all() -> None:
     register(SettingDef("recruitment.salary.approvers", "json", [], module="recruitment", group="Salary"))
     # Part 18.8: closing a job -- also email its candidates (template recruitment.job_closed_candidate)
     register(SettingDef("recruitment.jobs.close_email_candidates", "bool", False, module="recruitment", group="Jobs"))
+    # fix 2026-10-04: after a shortlist, arrange the interview automatically or leave it to HR (per job: shortlisting_json.scheduling_mode)
+    register(SettingDef("recruitment.interviews.scheduling_mode", "str", "auto", module="recruitment", group="Interviews",
+                        json_schema={"type": "string", "enum": ["auto", "manual"]}))
+    # fix 2026-10-04: every booked interview gets a meeting link -- the company's own room if set, else a new Jitsi room
+    register(SettingDef("recruitment.interviews.meeting_link", "str", "", module="recruitment", group="Interviews"))
+    register(SettingDef("recruitment.interviews.meeting_provider", "str", "jitsi", module="recruitment", group="Interviews",
+                        json_schema={"type": "string", "enum": ["jitsi", "fixed", "none"]}))
     # Part 17.15: removed candidates stay in the Recycle bin this many days, then are deleted permanently
     register(SettingDef("recruitment.candidates.recycle_days", "int", 30, module="recruitment", group="Candidates",
                         json_schema={"type": "integer", "minimum": 1, "maximum": 365}))

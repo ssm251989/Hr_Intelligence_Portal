@@ -509,7 +509,11 @@ def _flag_for_manual_scheduling(db: Session, application: Application, tracker_p
     )
 
 
+SEND_FAILED_ACTION = "interview_negotiation_send_failed"  # fix 2026-10-04: the automation retries these
+
+
 def _flag_send_failed(db: Session, application: Application, tracker_path: str, candidate: Candidate, job: JobRole) -> None:
+    log_action(db, "application", application.id, SEND_FAILED_ACTION, "system", {"job_title": job.title})
     """The Interview Log's only visible record that this application's negotiation email
     failed to send -- distinct from _flag_for_manual_scheduling's "Manual Scheduling
     Required" (a clean pool exhaustion, nobody available) so a recruiter scanning the
@@ -723,7 +727,9 @@ def attempt_auto_negotiate_interview_slots(db: Session, application: Application
         return "started", None
 
     _flag_for_manual_scheduling(db, application, tracker_path, candidate, job, actor_user.email)
-    return None, f"No interviewer was free for {job.title} on the days we tried. Add an interviewer (with an email and availability) or book the interview yourself."
+    if not eligible_interviewers_for_job(Path(tracker_path), job.title, job=job):  # fix 2026-10-04: say which it is
+        return None, f"No interviewer is set up for {job.title}. Add one (with an email and the days and hours they can interview) in Interviews > Interviewers."
+    return None, f"No interviewer was free for {job.title} on the days we tried. Add availability for an interviewer or book the interview yourself."
 
 
 def _live_tokens(db: Session, application: Application, now: Optional[datetime] = None) -> list[NegotiationToken]:
@@ -1057,6 +1063,9 @@ def _finalize(db: Session, application: Application, candidate_row: NegotiationT
         scheduled_at=chosen_time,
         scheduling_method="auto",
     )
+    from app.interview_scheduling.automation import meeting_link_for
+
+    interview.meeting_link = meeting_link_for(db, require_current_tenant())  # fix 2026-10-04: a link for both
     db.add(interview)
     db.commit()
     db.refresh(interview)
@@ -1078,8 +1087,8 @@ def _finalize(db: Session, application: Application, candidate_row: NegotiationT
             summary=f"Interview: {candidate_name or 'Candidate'} — {job_title}",
             organizer_email=hr_integration.from_address or hr_integration.smtp_username,
             attendee_emails=[interviewer_email, candidate.email],
-            description=f"Interview confirmed for application {application.id}.",
-            prodid_org=org_display_name or "HR Automation",
+            description=f"Interview confirmed for application {application.id}." + (f"\nJoin: {interview.meeting_link}" if interview.meeting_link else ""),
+            prodid_org=org_display_name or "HR Automation", location=interview.meeting_link or "",
         )
         try:
             # The interview is ALREADY committed/scheduled by this point -- unlike every
@@ -1092,6 +1101,8 @@ def _finalize(db: Session, application: Application, candidate_row: NegotiationT
                 job_title=job_title, interviewer_name=candidate_row.interviewer_name or "the interviewer",
                 scheduled_at=_format_slot(chosen_time), duration_minutes=duration_minutes,
             )
+            if interview.meeting_link:
+                body = f"{body}\n\nMeeting link: {interview.meeting_link}\n"
             interviewer_sent = _send_confirmation_email(hr_integration, to=interviewer_email, subject=subject, body=body, ics_bytes=ics_bytes)
             candidate_sent = _send_confirmation_email(hr_integration, to=candidate.email, subject=subject, body=body, ics_bytes=ics_bytes)
         except NegotiationEmailRenderError as exc:

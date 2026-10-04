@@ -293,3 +293,90 @@ The dev mailpit screenshots have the codes blurred to `****-****`:
 - `screens/mailpit-request-email.png`: demo B's request email to kg@ctdtechs.com (number, company, requester, modules, expiry).
 
 **Signed-in screens -- pending login proof:** the picker, the waiting banner with Resend/Cancel, code entry, the final menu, and the console. This session cannot sign in: creating tokens and impersonating users are refused. Take them as shown in "How to try it" in the hand-over message.
+
+---
+
+# Interview automation (bug 2026-10-04: "Jagadeeswara Reddy shortlisted, no interview email")
+
+## 1. Trace (real rows, ctd-techs, 2026-10-04)
+```
+candidate    Jagadeeswara Reddy  <gkishore1433@gmail.com>  uploaded 15:24:50 (manual), parsed
+application  5894fd75…  job "Junior AI Developer" 0a040f96… (published, created 15:20:07)  status hr_selected, score 96
+audit        15:24:50 candidate_uploaded · 15:24:56 ai_resume_parser_scored · 15:25:13 application_created
+             15:25:19 ai_screening_scored · 15:25:19 ai_auto_shortlisted (system, score 96) · 15:25:19 salary_checked
+undo window  recruitment.shortlisting.undo_hours = 4 (business hours) -> undo_until 2026-10-05T07:30Z = Mon 5 Oct 13:00 IST
+messages     15:25:19 in_app to kg@ctdtechs.com "…shortlisted automatically… You can undo this for a few hours." (sent)
+negotiation_tokens / interview_confirmation_tokens / interviews for this application: none
+interviewer pools: ONE pool "AI interviewers" [kg@ctdtechs.com] -- attached to the OLD closed job 3ebd6e26… ("Junior AI Developer", 27 Sep);
+                   none for the new published job 0a040f96…
+availability: kg@ctdtechs.com Mon-Sun 10:00-18:00; si@, jr@, zzverify@ every day off
+company modules: all hiring modules active (owner entered the code at 15:17-15:18)
+HR mailbox (hr_integrations): smtp.gmail.com / hradmin65@gmail.com configured; last interview emails went out fine on 29 Sep
+background jobs: auto_shortlist_released in audit_log = 0 (ever, for both auto-shortlists); processes = 2 x uvicorn, NO celery worker/beat; no REDIS_URL
+```
+
+## 2. Where the chain stopped
+`shortlist event OK (auto, 15:25:19) -> undo window OK (until Mon 13:00) -> scheduling job queued: NEVER`
+
+**Causes:**
+- **Never released:** after an AUTOMATIC shortlist, scheduling only starts when the background job `auto_shortlist_release` runs after the undo window. That job runs only on the Celery worker/beat, which has never run on this machine, so no auto-shortlist was ever released ("0 ever").
+- **No interviewer for the new job:** even once released, the next step would have failed. The interviewer pool belongs to the earlier, closed job with the same title, so the new job had no interviewer. The candidate would have been flagged "manual scheduling" silently: no to-do and no email to anyone.
+- **No meeting link:** a booked interview got a calendar invite but no meeting link (`interviews.meeting_link` was never set on this path).
+
+**The other checks:**
+- A manual shortlist DID start scheduling straight away (shortlisting/router.py), but through a different call with no problem reporting.
+- The mailbox was fine; this was not the activation-email problem.
+
+## 3. Fixes (`backend/app/interview_scheduling/automation.py` + callers)
+- **One start for both:** manual shortlist, auto-shortlist release and **[Send interview times now]** all call `automation.start()`.
+  - It respects the scheduling mode: company setting `recruitment.interviews.scheduling_mode` = auto|manual, per job `shortlisting_json.scheduling_mode`.
+- **Background run without a worker:**
+  - The release + retries run every minute inside the app (APScheduler, `INTERVIEW_JOBS_IN_APP`, on when there is no REDIS_URL), and as Celery beat task `hrms.interview_automation` with a worker.
+  - An advisory lock keeps it to one process; a heartbeat feeds the Health page.
+- **Pool:** a job re-created with the same title uses the earlier job's pool (roster.pool_members_for_job).
+- **Never silent:**
+  - No interviewer / no free day -> red to-do "Interview not scheduled for <name> - <plain reason>" with [Add availability] [Schedule manually]. It shows on Home (heads-up), on the job (Job details) and on the profile (status card), and the recruiter is emailed once per reason.
+  - The no-pool reason now says so: "No interviewer is set up for <job>. Add one … in Interviews > Interviewers."
+- **Mailbox failure:** retried with backoff (5, 15, 60 min, then hourly for 24 h). The profile shows "Interview email not sent - mailbox problem. We'll try again at <time>" with [Fix mailbox], and Home shows the same with [Fix mailbox] [Schedule manually].
+- **Profile in plain words:**
+  - "Waiting: the undo window ends at Mon 5 Oct, 1:00 PM"
+  - "Waiting for Kishore to pick interview times - email sent 3:47 PM"
+  - "Waiting for <candidate> to pick a time"
+  - "Booked: 5 Oct, 10:00 AM with Kishore - calendar invite and meeting link sent to both"
+- **Profile buttons:** [Send interview times now], [Resend to candidate] / [Resend to interviewer] (the picker email while waiting; the invite + meeting link once booked).
+- **Meeting link** for every booking: the company's own room (`recruitment.interviews.meeting_link`) if set, else a new Jitsi room. It goes in the invite's location, both emails and the interview record.
+- **Worker health:** Settings > Data > Health is red when no worker runs (with the start command), plus a separate check that the interview automation ran in the last 10 minutes. The start command is in docs/RESUME.txt §6 and `scripts/start-dev.ps1`.
+- **Dev only:** `DEV_MAIL_CAPTURE=127.0.0.1:1025` sends every email to mailpit.
+
+## 4. Verification on Jagadeeswara Reddy
+
+Setup: dev mailpit + a proof server on :8010 with DEV_MAIL_CAPTURE, so no real email left the machine.
+
+```
+before           profile: waiting_undo, undo_until 2026-10-05T07:30Z ; pool for the job now: [Kishore kg@ctdtechs.com] ; mode auto
+send now 15:47   outcome started -> "Waiting for Kishore to pick interview times" ; mailpit: kg@ctdtechs.com "Interview scheduling for Junior AI Developer"
+interviewer      picked 10:00 + 15:00 (Mon 5 Oct) -> "Thanks! We'll now ask the candidate…"
+15:48:26         mailpit: gkishore1433@gmail.com "Interview scheduling for Junior AI Developer"
+candidate        picked 10:00 + 15:00 -> "Interview Confirmed … Interviewer: Kishore, Time: 05 Oct 2026, 10:00 AM IST"
+15:49:30         mailpit: "Interview confirmed: Junior AI Developer" to BOTH gkishore1433@gmail.com and kg@ctdtechs.com, each with interview.ics
+                 body "Meeting link: https://meet.jit.si/Interview-HUo2m2M5HUu" ; ics LOCATION = same link, DTSTART 20261005T043000Z
+profile          state scheduled, "Booked: 5 Oct 10:00 AM with Kishore", meeting_link set, invite_sent_to [interviewer, candidate]
+resend to cand.  15:50:29 mailpit: "Interview confirmed…" to gkishore1433@gmail.com again (with invite)
+send now again   "This candidate isn't at the Shortlisted step." (already booked)
+```
+
+**Failure paths** (proved on ctd-techs inside one transaction that was rolled back; 0 proof rows left):
+```
+no interviewer  start -> problem: "No interviewer is set up for Proof - Data Engineer …. Add one … in Interviews > Interviewers."
+                profile not_scheduled ; Home problems [kind not_scheduled] ; recruiter email "Interview not scheduled for Proof Candidate … - action needed" (mailpit)
+mailbox down    start -> retrying (WinError 10061 refused), next try +5 min ; profile mailbox_retry ; Home [kind mailbox] ; recruiter email attempt logged with its error
+```
+
+**Screenshots:**
+- `screens/interview-interviewer-pick.png`, `interview-interviewer-done.png`, `interview-candidate-pick.png`, `interview-candidate-done.png`
+- `screens/interview-mailpit-inbox.png`, `interview-confirmed-candidate-email.png`, `interview-confirmed-interviewer-email.png`, `interview-not-scheduled-recruiter-email.png`
+- Signed-in screens (profile card, Home row, job banner): pending login proof.
+
+**Important -- real data:** Jagadeeswara Reddy is now really booked in the app (Mon 5 Oct 10:00 with Kishore), but the emails went only to the dev mailpit. Neither the candidate nor kg@ctdtechs.com got real emails. On the candidate's page, use [Resend to candidate] and [Resend to interviewer] to send the real invites through the HR mailbox, or cancel and rebook.
+
+**Checks:** compileall OK; tsc clean; i18n 4021 keys, 0 missing; `npm run build` OK.

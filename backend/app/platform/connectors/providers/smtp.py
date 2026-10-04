@@ -32,6 +32,11 @@ class SmtpAdapter:
         self.password = secrets.get("password", "")
 
     def _client(self) -> smtplib.SMTP:
+        from app.core.config import settings
+
+        if settings.DEV_MAIL_CAPTURE:  # development only: the local capture (mailpit), never out
+            host, _, port = settings.DEV_MAIL_CAPTURE.partition(":")
+            return smtplib.SMTP(host, int(port or 1025), timeout=SMTP_TIMEOUT_SECONDS)
         client = smtplib.SMTP(self.config["host"], self.config.get("port", 587), timeout=SMTP_TIMEOUT_SECONDS)
         if self.config.get("use_tls", True):
             client.starttls()

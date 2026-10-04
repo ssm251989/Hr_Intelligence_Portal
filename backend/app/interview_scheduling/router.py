@@ -1,5 +1,6 @@
 import uuid
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -209,3 +210,37 @@ def scheduling_change_endpoint(application_id: uuid.UUID, payload: ChangeIntervi
     from app.interview_scheduling.live_status import change_interviewer
 
     return _run(change_interviewer, db, _app_or_404(db, application_id), payload.email, current_user)
+
+
+
+# ---- fix 2026-10-04: interview automation ----
+
+
+class ResendToIn(BaseModel):
+    target: str  # candidate | interviewer
+
+
+@router.post("/applications/{application_id}/resend-to")
+def scheduling_resend_to_endpoint(application_id: uuid.UUID, payload: ResendToIn, db: Session = Depends(get_db),
+                                  current_user: User = Depends(require_roles("recruiter", "hiring_manager", "admin"))):
+    from app.interview_scheduling.live_status import resend_to
+
+    return _run(resend_to, db, _app_or_404(db, application_id), payload.target, current_user)
+
+
+@router.post("/applications/{application_id}/send-now")
+def scheduling_send_now_endpoint(application_id: uuid.UUID, db: Session = Depends(get_db),
+                                 current_user: User = Depends(require_roles("recruiter", "hiring_manager", "admin"))):
+    from app.interview_scheduling.live_status import send_now
+
+    return _run(send_now, db, _app_or_404(db, application_id), current_user)
+
+
+@router.get("/problems")
+def scheduling_problems_endpoint(job_id: Optional[uuid.UUID] = None, db: Session = Depends(get_db),
+                                 current_user: User = Depends(require_roles("recruiter", "hiring_manager", "admin"))):
+    """Shortlisted candidates whose interview isn't being arranged (Home, the job, the profile)."""
+    from app.interview_scheduling.automation import problems
+    from app.platform.tenancy.context import require_current_tenant
+
+    return problems(db, require_current_tenant(), job_id)

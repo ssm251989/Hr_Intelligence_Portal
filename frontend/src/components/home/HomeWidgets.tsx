@@ -163,13 +163,40 @@ export function AlertsWidget({ editing }: { editing?: boolean }) {
         <EmptyState compact illustration="done" title={t("home.alert.none")} />
       ) : (
         <Stack spacing={1}>
-          {data.alerts.map((a) => (
+          {data.alerts.map((a) => a.key === "interview_not_scheduled" ? (
+            <SchedulingProblemRow key={`${a.key}:${a.path}`} alert={a} />
+          ) : (
             <Row key={a.key} emoji={a.emoji} title={t(`home.alert.${a.key}`, { count: a.count })} to={a.path}
               right={<StatusChip tone={a.tone} emoji={a.tone === "coral" ? "fire" : "alarm_clock"} label={t("home.alert.open")} />} />
           ))}
         </Stack>
       )}
     </WidgetCard>
+  );
+}
+
+// fix 2026-10-04: "Interview not scheduled for <name> - <reason>. [Add availability] [Schedule manually]"
+function SchedulingProblemRow({ alert }: { alert: HomeAlert }) {
+  const t = useT();
+  const f = useTheme().palette.fresh;
+  const title = alert.kind === "mailbox"
+    ? t("home.alert.interview_email_not_sent", { name: alert.name ?? "" })
+    : t("home.alert.interview_not_scheduled", { name: alert.name ?? "", reason: alert.reason ?? "" });
+  return (
+    <Box sx={{ p: 1.25, borderRadius: "12px", bgcolor: f.coralSoft, border: `1px solid ${f.coral}` }}>
+      <Stack direction="row" spacing={1} alignItems="flex-start">
+        <Emoji name="calendar" size={20} />
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography component={RouterLink} to={alert.path} sx={{ fontWeight: 700, fontSize: 13.5, color: f.ink, textDecoration: "none" }}>{title}</Typography>
+          {alert.job && <Typography sx={{ fontSize: 12, color: f.muted }}>{alert.job}</Typography>}
+          <Stack direction="row" spacing={1} sx={{ mt: 0.75, flexWrap: "wrap", rowGap: 0.75 }}>
+            {(alert.actions ?? []).map((act) => (
+              <Button key={act.key} size="small" variant="outlined" component={RouterLink} to={act.path}>{t(`home.alert.action.${act.key}`)}</Button>
+            ))}
+          </Stack>
+        </Box>
+      </Stack>
+    </Box>
   );
 }
 

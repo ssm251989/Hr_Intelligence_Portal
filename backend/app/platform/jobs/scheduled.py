@@ -192,8 +192,17 @@ def activation_sweep() -> dict:
     return sweep()
 
 
+@celery_app.task(name="hrms.interview_automation", queue="default")
+def interview_automation() -> dict:
+    """fix 2026-10-04: undo-window release + mailbox retries for every company (heartbeat for Health)."""
+    from app.interview_scheduling.automation import run_all_tenants
+
+    return run_all_tenants("celery")
+
+
 celery_app.conf.beat_schedule = {
     "activation-sweep": {"task": "hrms.activation_sweep", "schedule": 60.0},
+    "interview-automation": {"task": "hrms.interview_automation", "schedule": 60.0},
     "workflow-timers": {"task": "hrms.fan_out", "schedule": 300.0, "args": ("workflow_timers",)},
     "ticket-escalations": {"task": "hrms.fan_out", "schedule": 300.0, "args": ("ticket_escalations",)},
     "report-schedules": {"task": "hrms.fan_out", "schedule": 600.0, "args": ("report_schedules",)},
@@ -201,7 +210,6 @@ celery_app.conf.beat_schedule = {
     "document-expiry": {"task": "hrms.fan_out", "schedule": 86400.0, "args": ("document_expiry",)},
     "privacy-overdue": {"task": "hrms.fan_out", "schedule": 21600.0, "args": ("privacy_overdue",)},
     "onboarding-chase": {"task": "hrms.fan_out", "schedule": 86400.0, "args": ("onboarding_chase",)},
-    "auto-shortlist-release": {"task": "hrms.fan_out", "schedule": 300.0, "args": ("auto_shortlist_release",)},
     "salary-form-reminders": {"task": "hrms.fan_out", "schedule": 3600.0, "args": ("salary_form_reminders",)},
     "reminders": {"task": "hrms.fan_out", "schedule": 3600.0, "args": ("reminders",)},
     "joining-reminders": {"task": "hrms.fan_out", "schedule": 3600.0, "args": ("joining_reminders",)},

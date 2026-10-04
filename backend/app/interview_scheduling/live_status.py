@@ -54,7 +54,10 @@ def status(db: Session, application: Application) -> dict:
     now = datetime.now(timezone.utc)
     out = {"state": "not_started", "message": None, "interviewer_name": None, "interviewer_email": None, "sent_at": None,
            "expires_at": None, "round_day": None, "interview_id": None, "scheduled_at": None,
-           "can_resend": False, "can_change": False, "can_cancel": False, "can_book": False}
+           "can_resend": False, "can_change": False, "can_cancel": False, "can_book": False,
+           # fix 2026-10-04: why nothing happened yet, in plain words, and "send now"
+           "undo_until": None, "next_try_at": None, "meeting_link": None, "can_send_now": False,
+           "invite_sent_to": None}
     interview = (db.query(Interview).filter(Interview.application_id == application.id)
                  .order_by(Interview.created_at.desc()).first())
     if interview is not None:
@@ -63,8 +66,12 @@ def status(db: Session, application: Application) -> dict:
             u = db.get(User, interview.interviewer_id)
             who = u.full_name if u else None
         done = interview.decision in ("selected", "rejected")
+        confirmed = _last(db, application, ("interview_negotiation_confirmed",))
+        d = (confirmed.details or {}) if confirmed else {}
+        sent_to = [w for w, ok in (("interviewer", d.get("interviewer_confirmation_sent")), ("candidate", d.get("candidate_confirmation_sent"))) if ok]
         out.update(state="done" if done else "scheduled", interview_id=str(interview.id), interviewer_name=who,
-                   scheduled_at=interview.scheduled_at.isoformat() if interview.scheduled_at else None)
+                   interviewer_email=interview.interviewer_email, meeting_link=interview.meeting_link, invite_sent_to=sent_to,
+                   scheduled_at=interview.scheduled_at.isoformat() if interview.scheduled_at else None, can_resend=not done)
         return out
     shortlisted = application.status == "hr_selected"
     live = _live(db, application, now)
@@ -76,6 +83,24 @@ def status(db: Session, application: Application) -> dict:
                    can_resend=True, can_change=True, can_cancel=True, can_book=True)
         return out
     out["can_book"] = shortlisted
+    out["can_send_now"] = shortlisted
+    from app.interview_scheduling import automation
+
+    undo = automation.undo_window(db, application) if shortlisted else None
+    if undo is not None:
+        out.update(state="waiting_undo", undo_until=undo.isoformat())
+        return out
+    last = automation._last(db, application.id, (automation.PROBLEM_ACTION, automation.STARTED_ACTION, automation.RETRY_ACTION,
+                                                 automation.MANUAL_MODE_ACTION, "interview_negotiation_confirmed", CANCELLED_ACTION))
+    if shortlisted and last is not None and last.action == automation.RETRY_ACTION:
+        out.update(state="mailbox_retry", message=(last.details or {}).get("reason"), next_try_at=(last.details or {}).get("next_at"))
+        return out
+    if shortlisted and last is not None and last.action == automation.PROBLEM_ACTION:
+        out.update(state="not_scheduled", message=(last.details or {}).get("reason"), can_change=True)
+        return out
+    if shortlisted and last is not None and last.action == automation.MANUAL_MODE_ACTION:
+        out.update(state="manual_mode", can_change=True)
+        return out
     cancelled = _last(db, application, (CANCELLED_ACTION, neg._RETRY_TRIGGERED_ACTION, neg._BATCH_STARTED_ACTION))
     if cancelled is not None and cancelled.action == CANCELLED_ACTION:
         out.update(state="cancelled", sent_at=cancelled.created_at.isoformat(), can_change=shortlisted)
@@ -187,3 +212,64 @@ def change_interviewer(db: Session, application: Application, email: str, actor:
     return status(db, application)
 
 
+
+
+def resend_to(db: Session, application: Application, target: str, actor: User) -> dict:
+    """[Resend to candidate / interviewer]. Waiting -> the same picker email again; booked -> the
+    calendar invite + meeting link again to the chosen person."""
+    from app.integrations.hr_email import SmtpError
+    from app.interview_scheduling import negotiation as neg
+
+    if target not in ("candidate", "interviewer"):
+        raise SchedulingActionError("Choose the candidate or the interviewer.")
+    interview = (db.query(Interview).filter(Interview.application_id == application.id)
+                 .order_by(Interview.created_at.desc()).first())
+    if interview is None:
+        live = _live(db, application, datetime.now(timezone.utc))
+        if not live or (("candidate" if live[0].role == "candidate" else "interviewer") != target):
+            who = "the candidate" if target == "candidate" else "the interviewer"
+            raise SchedulingActionError(f"We aren't waiting for {who} right now, so there is nothing to resend to them.")
+        return resend(db, application, actor)
+    candidate, job, hr = _context(db, application)
+    to = (candidate.email if candidate else None) if target == "candidate" else interview.interviewer_email
+    if not to:
+        raise SchedulingActionError("We don't have an email address for them.")
+    from app.integrations.ics import build_interview_ics
+    from app.platform.settings.resolver import SettingContext, SettingsService
+    from app.platform.tenancy.context import require_current_tenant
+
+    org = SettingsService(db).get("org.display_name", SettingContext(tenant=require_current_tenant()))
+    ics = build_interview_ics(
+        start=interview.scheduled_at, duration_minutes=neg.DEFAULT_INTERVIEW_DURATION_MINUTES,
+        summary=f"Interview: {(candidate.full_name if candidate else None) or 'Candidate'} — {job.title if job else ''}",
+        organizer_email=hr.from_address or hr.smtp_username, attendee_emails=[e for e in (interview.interviewer_email, candidate.email if candidate else None) if e],
+        description="Interview invite (sent again)." + (f"\nJoin: {interview.meeting_link}" if interview.meeting_link else ""),
+        prodid_org=org or "HR Automation", location=interview.meeting_link or "")
+    subject, body, _html = neg._render_negotiation_email(
+        db, "recruitment.interview.confirmation", candidate_name=(candidate.full_name if candidate else None) or "the candidate",
+        job_title=job.title if job else "", interviewer_name=interview.interviewer_name or "the interviewer",
+        scheduled_at=neg._format_slot(interview.scheduled_at), duration_minutes=neg.DEFAULT_INTERVIEW_DURATION_MINUTES)
+    if interview.meeting_link:
+        body = f"{body}\n\nMeeting link: {interview.meeting_link}\n"
+    if not neg._send_confirmation_email(hr, to=to, subject=subject, body=body, ics_bytes=ics):
+        raise SchedulingActionError("We couldn't send the email - the HR mailbox had a problem. Check Settings > Communication > Mailboxes and try again.")
+    log_action(db, "application", application.id, RESENT_ACTION, actor.email, {"to": to, "role": target, "what": "invite"})
+    db.commit()
+    return status(db, application)
+
+
+def send_now(db: Session, application: Application, actor: User) -> dict:
+    """[Send interview times now]: ends the undo window early (if any) and starts arranging."""
+    from app.interview_scheduling import automation
+    from app.platform.tenancy.context import require_current_tenant
+    from app.recruitment.scoring.autoshortlist import RELEASED
+
+    if application.status != "hr_selected":
+        raise SchedulingActionError("This candidate isn't at the Shortlisted step.")
+    if _live(db, application, datetime.now(timezone.utc)) or db.query(Interview).filter(Interview.application_id == application.id).first():
+        raise SchedulingActionError("The interview is already being arranged or booked.")
+    if automation.undo_window(db, application) is not None:
+        log_action(db, "application", application.id, RELEASED, actor.email[:50], {"trigger": "send now (undo window ended early)"})
+        db.commit()
+    result = automation.start(db, require_current_tenant(), application, actor, trigger="send_now", force=True)
+    return {**status(db, application), "result": result}

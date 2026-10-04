@@ -16,6 +16,7 @@ scheduler.
 import logging
 
 from apscheduler.schedulers.background import BackgroundScheduler
+from app.core.config import settings
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app.core.database import SessionLocal
@@ -86,6 +87,17 @@ def _current_interval_minutes() -> int:
             db.close()
 
 
+def _run_interview_automation() -> None:
+    try:
+        from app.interview_scheduling.automation import run_all_tenants
+
+        result = run_all_tenants("in_app")
+        if any(isinstance(v, dict) and (v.get("released") or v.get("retried")) for v in result.values()):
+            logger.info("interview automation: %s", result)
+    except Exception:  # noqa: BLE001
+        logger.exception("interview automation failed")
+
+
 def _run_activation_sweep() -> None:
     try:
         from app.platform.activation import sweep
@@ -109,6 +121,10 @@ def start_scheduler() -> BackgroundScheduler:
     )
     # Part 19.2b/c: activation emails -- retries with backoff + escalation by priority (one process at a time)
     scheduler.add_job(_run_activation_sweep, trigger=IntervalTrigger(minutes=1), id="activation_sweep")
+    # fix 2026-10-04: interview scheduling after the auto-shortlist undo window + mailbox retries.
+    # Here (not only in Celery beat) because no Celery worker runs in dev / single installs.
+    if settings.INTERVIEW_JOBS_IN_APP:
+        scheduler.add_job(_run_interview_automation, trigger=IntervalTrigger(minutes=1), id="interview_automation")
     scheduler.start()
     _scheduler = scheduler
     return scheduler

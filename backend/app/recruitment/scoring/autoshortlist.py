@@ -123,7 +123,7 @@ def maybe_auto_shortlist(db: Session, tenant, application: Application, *, job: 
 def release_due(db: Session, tenant) -> int:
     """Start interview scheduling for auto-shortlisted candidates whose undo window has
     closed (and who weren't undone). Safe to call often -- each is released once."""
-    from app.interview_scheduling.negotiation import attempt_auto_negotiate_interview_slots
+    from app.interview_scheduling import automation
 
     now = datetime.now(timezone.utc)
     released = 0
@@ -144,12 +144,9 @@ def release_due(db: Session, tenant) -> int:
         actor = db.get(User, job.created_by) if job and job.created_by else None
         if actor is None:
             actor = db.query(User).filter(User.tenant_id == tenant.tenant_id, User.role == "admin").order_by(User.created_at).first()
-        outcome, reason = (None, "no user to act as")
-        if actor is not None:
-            try:
-                outcome, reason = attempt_auto_negotiate_interview_slots(db, app, actor)
-            except Exception as exc:  # noqa: BLE001 -- scheduling problems never undo the shortlist
-                outcome, reason = None, f"{type(exc).__name__}: {exc}"[:300]
-        log_action(db, "application", app.id, RELEASED, "system", {"scheduling": outcome, "reason": reason})
+        # logged first, so a slow send can't make a second sweep release it again
+        log_action(db, "application", app.id, RELEASED, "system", {"trigger": "undo window closed"})
+        result = automation.start(db, tenant, app, actor, trigger="auto_release")  # never raises
+        log_action(db, "application", app.id, "auto_shortlist_release_result", "system", result)
         released += 1
     return released

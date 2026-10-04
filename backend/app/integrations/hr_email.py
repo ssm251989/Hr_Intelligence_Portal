@@ -111,7 +111,14 @@ def send_hr_email(
             filename=attachment.filename,
         )
 
+    from app.core.config import settings as _settings
+
     try:
+        if _settings.DEV_MAIL_CAPTURE:  # development only: every email goes to the local capture (mailpit), never out
+            host, _, port = _settings.DEV_MAIL_CAPTURE.partition(":")
+            with smtplib.SMTP(host, int(port or 1025), timeout=SMTP_TIMEOUT_SECONDS) as server:
+                server.send_message(message, to_addrs=recipients)
+            return
         with smtplib.SMTP(hr_integration.smtp_host, hr_integration.smtp_port, timeout=SMTP_TIMEOUT_SECONDS) as server:
             if hr_integration.use_tls:
                 server.starttls()

@@ -669,16 +669,29 @@ export const interviewSchedulingApi = {
   // Part 18.28: live scheduling status + Resend / Change interviewer / Cancel
   status: (applicationId: UUID) => get<SchedulingStatus>(`/interview-scheduling/applications/${applicationId}/status`),
   resend: (applicationId: UUID) => post<SchedulingStatus>(`/interview-scheduling/applications/${applicationId}/resend`),
+  // fix 2026-10-04: resend to a chosen person (the invite + meeting link once booked), send times now, problems list
+  resendTo: (applicationId: UUID, target: "candidate" | "interviewer") =>
+    post<SchedulingStatus>(`/interview-scheduling/applications/${applicationId}/resend-to`, { target }),
+  sendNow: (applicationId: UUID) => post<SchedulingStatus>(`/interview-scheduling/applications/${applicationId}/send-now`),
+  problems: (jobId?: UUID) => get<SchedulingProblem[]>(`/interview-scheduling/problems${jobId ? `?job_id=${jobId}` : ""}`),
   cancel: (applicationId: UUID) => post<SchedulingStatus>(`/interview-scheduling/applications/${applicationId}/cancel`),
   changeInterviewer: (applicationId: UUID, email: string) =>
     post<SchedulingStatus>(`/interview-scheduling/applications/${applicationId}/change-interviewer`, { email }),
 };
 
 export interface SchedulingStatus {
-  state: "not_started" | "waiting_interviewer" | "waiting_candidate" | "needs_manual" | "scheduled" | "done" | "cancelled";
+  state: "not_started" | "waiting_interviewer" | "waiting_candidate" | "needs_manual" | "scheduled" | "done" | "cancelled"
+    | "waiting_undo" | "not_scheduled" | "mailbox_retry" | "manual_mode"; // fix 2026-10-04
   message: string | null; interviewer_name: string | null; interviewer_email: string | null; sent_at: string | null;
   expires_at: string | null; round_day: string | null; interview_id: string | null; scheduled_at: string | null;
   can_resend: boolean; can_change: boolean; can_cancel: boolean; can_book: boolean;
+  undo_until?: string | null; next_try_at?: string | null; meeting_link?: string | null; can_send_now?: boolean;
+  invite_sent_to?: ("candidate" | "interviewer")[] | null;
+}
+
+export interface SchedulingProblem {
+  application_id: string; name: string; job: string | null; kind: "mailbox" | "not_scheduled"; reason: string | null;
+  next_try_at: string | null; at: string | null;
 }
 
 // ---- shortlisting (redesign) ----

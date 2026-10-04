@@ -2569,3 +2569,25 @@ NEXT: part-19.3 FIXES_19.md (proof write-up + mailpit screenshots), then RESUME 
 - **Cleanup:** test approvers removed (P1 kg only), escalation 24 h, cooldown 15, demo requests cancelled.
 
 NEXT: continue RESUME order -> PART16 16.3 settings reorganised (check against the catalog's categories + search), then 16.4 bulk resumes.
+
+## Fix -- interview scheduling after shortlist (2026-10-04)
+- **Cause:**
+  - Auto-shortlists are released to scheduling only by the Celery job auto_shortlist_release. No worker/beat ever ran here, so 0 releases ever.
+  - The new "Junior AI Developer" job had no interviewer pool: the pool sits on the old closed job with the same title, so scheduling would have failed silently.
+  - Booked interviews had no meeting link.
+- **Fix:** automation.start for manual / auto / send-now (+ scheduling mode). The release + mailbox retries now run in-app every minute when there's no worker (+ Celery beat task) with a heartbeat. Also:
+  - same-title pool fallback;
+  - red problem rows (Home / job / profile) + a recruiter email;
+  - backoff retries on mailbox failure;
+  - plain-words profile status; Send now / Resend to candidate / interviewer;
+  - a meeting link (fixed room or Jitsi) in the invite + emails;
+  - Health shows red without a worker; start-dev.ps1 + RESUME §6.
+- **Decisions:**
+  - Only the interview jobs run in-app. Other scheduled jobs (reminders, forms, recycle-bin purge = permanent deletes) are NOT switched on silently; Health shows red until a worker runs.
+  - The flow stays interviewer-first (existing design): the interviewer picks 2 of 3, the candidate picks 2 of 3, the earliest overlap is booked.
+  - Jitsi when no meeting service is connected.
+  - DEV_MAIL_CAPTURE is for dev proofs only.
+- **Proof:** FIXES_19.md "Interview automation" -- Jagadeeswara booked Mon 5 Oct 10:00 with Kishore; invites + Jitsi link to both (mailpit); failure paths proved rolled back.
+- **Owner action:** the real emails for that booking weren't sent (mailpit) -> Resend to candidate / interviewer from the profile, or cancel.
+
+NEXT: continue PART 19 -- signed-in screenshots still pending a login; then RESUME order -> PART16 16.3 settings reorganised.

@@ -22,6 +22,7 @@ def build_interview_ics(
     attendee_emails: list[str],
     description: str = "",
     prodid_org: str = "HR Automation",
+    location: str = "",
 ) -> bytes:
     """Returns one complete VCALENDAR payload (bytes, RFC 5545's required CRLF line
     endings -- pass through unchanged, never re-encoded via a str content manager, which
@@ -38,6 +39,10 @@ def build_interview_ics(
     event.add("uid", f"{uuid.uuid4()}@{organizer_domain}")
     event.add("summary", summary)
     event.add("description", description)
+    if location:  # fix 2026-10-04: the meeting link, so calendars show a "Join" link
+        event.add("location", location)
+        if location.startswith("http"):
+            event.add("url", location)
     event.add("dtstart", start_utc)
     event.add("dtend", end_utc)
     event.add("dtstamp", datetime.now(timezone.utc))

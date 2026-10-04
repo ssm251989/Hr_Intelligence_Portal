@@ -98,6 +98,12 @@ class Settings:
     PLATFORM_SMTP_PASSWORD: str = os.getenv("PLATFORM_SMTP_PASSWORD", "")
     PLATFORM_SMTP_STARTTLS: bool = os.getenv("PLATFORM_SMTP_STARTTLS", "true").lower() == "true"
     PLATFORM_MAIL_FROM: str = os.getenv("PLATFORM_MAIL_FROM", "HR Platform <no-reply@ctdtechs.com>")
+    # fix 2026-10-04: run interview scheduling's background work (undo-window release, mailbox
+    # retries) inside the web app. Default: on when there is no Celery worker (no REDIS_URL).
+    # Development only: "127.0.0.1:1025" sends EVERY email (HR mailbox, connections) to a local
+    # capture such as mailpit instead of the real mail server. Empty in production.
+    DEV_MAIL_CAPTURE: str = os.getenv("DEV_MAIL_CAPTURE", "")
+    INTERVIEW_JOBS_IN_APP: bool = os.getenv("INTERVIEW_JOBS_IN_APP", "true" if not os.getenv("REDIS_URL") else "false").lower() == "true"
 
 
 settings = Settings()

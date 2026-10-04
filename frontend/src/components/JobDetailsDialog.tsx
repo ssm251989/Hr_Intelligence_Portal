@@ -18,6 +18,7 @@ import { formatExperienceRange } from "../utils/experience";
 import { categorizeSkills } from "../utils/skills";
 import AutoCloseNote from "./jobs/AutoCloseNote";
 import JdPreview from "./jobs/JdPreview";
+import JobSchedulingProblems from "./jobs/JobSchedulingProblems";
 import TalentPoolPanel from "./jobs/TalentPoolPanel";
 import { STAGE_STYLE } from "./jobs/jobStages";
 import JobTypeChip from "./JobTypeChip";
@@ -60,6 +61,7 @@ export default function JobDetailsDialog({
       <DialogContent>
         {job && (
           <Stack spacing={2} mt={0.5}>
+            <JobSchedulingProblems jobId={job.id} />
             <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1} flexWrap="wrap" useFlexGap>
               <Box>
                 <Typography variant="h5" component="h3">{job.title}</Typography>

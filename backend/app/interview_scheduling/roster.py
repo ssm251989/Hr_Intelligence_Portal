@@ -36,6 +36,12 @@ def pool_members_for_job(db, tenant, job) -> list[tuple[str, str]]:
     pools = db.query(InterviewerPool).filter(InterviewerPool.tenant_id == tenant.tenant_id, InterviewerPool.active.is_(True)).all()
     job_words = _words(job.title) | set().union(*(_words(s) for s in (job.technical_skills_must_have or []) + (job.technical_skills_good_to_have or [])))
     exact = [p for p in pools if p.job_role_id == job.id]
+    if not exact:  # fix 2026-10-04: a job re-created with the same title uses the earlier job's pool
+        from app.models.job_role import JobRole
+
+        same_title = {j.id for j in db.query(JobRole.id).filter(JobRole.tenant_id == tenant.tenant_id,
+                                                                JobRole.title.ilike((job.title or "").strip())).all()}
+        exact = [p for p in pools if p.job_role_id in same_title]
     by_skill = sorted((p for p in pools if p.job_role_id is None and any(_words(s) & job_words for s in (p.skills_json or []))),
                       key=lambda p: -len(set().union(*(_words(s) for s in p.skills_json or [])) & job_words))
     general = [p for p in pools if p.job_role_id is None and not p.skills_json]

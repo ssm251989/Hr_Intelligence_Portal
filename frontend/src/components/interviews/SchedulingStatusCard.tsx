@@ -22,6 +22,7 @@ import ScheduleInterviewDialog from "../ScheduleInterviewDialog";
 const EMOJI: Record<SchedulingStatus["state"], string> = {
   not_started: "calendar", waiting_interviewer: "hourglass", waiting_candidate: "hourglass", needs_manual: "warning",
   scheduled: "calendar", done: "check", cancelled: "pause",
+  waiting_undo: "hourglass", not_scheduled: "warning", mailbox_retry: "mail", manual_mode: "writing_hand",
 };
 
 function when(iso: string | null): string {
@@ -43,7 +44,8 @@ export default function SchedulingStatusCard({ applicationId, candidateName, can
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [changeOpen, setChangeOpen] = useState(false);
-  const [bookOpen, setBookOpen] = useState(false);
+  // ?book=1 (from Home's "Schedule manually") opens the booking dialog straight away
+  const [bookOpen, setBookOpen] = useState(() => new URLSearchParams(window.location.search).get("book") === "1");
   const [people, setPeople] = useState<Availability[]>([]);
   const [pick, setPick] = useState("");
 
@@ -82,7 +84,12 @@ export default function SchedulingStatusCard({ applicationId, candidateName, can
     scheduled: t("sched.scheduled", { name, time: when(st.scheduled_at) }),
     done: t("sched.done", { name }),
     cancelled: t("sched.cancelled", { time: when(st.sent_at) }),
+    waiting_undo: t("sched.waiting_undo", { time: when(st.undo_until ?? null) }),
+    not_scheduled: t("sched.not_scheduled_line", { name: candidateName || t("sched.the_candidate"), reason: st.message || "" }),
+    mailbox_retry: t("sched.mailbox_retry", { time: when(st.next_try_at ?? null) }),
+    manual_mode: t("sched.manual_mode"),
   }[st.state];
+  const booked = st.state === "scheduled" && (st.invite_sent_to?.length ?? 0) === 2 ? t("sched.sent_to_both") : "";
   const picked = people.find((p) => p.email === pick);
 
   return (
@@ -92,6 +99,13 @@ export default function SchedulingStatusCard({ applicationId, candidateName, can
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography sx={{ fontWeight: 800, fontSize: 14 }}>{t(`sched.title.${st.state}`)}</Typography>
           <Typography sx={{ fontSize: 13.5, color: f.muted, mt: 0.25 }}>{line}</Typography>
+          {booked && <Typography sx={{ fontSize: 13, color: f.muted, mt: 0.25 }}>{booked}</Typography>}
+          {st.meeting_link && (st.state === "scheduled") && (
+            <Typography sx={{ fontSize: 13, mt: 0.5 }}>
+              {t("sched.meeting_link")}: <a href={st.meeting_link} target="_blank" rel="noreferrer">{st.meeting_link}</a>
+            </Typography>
+          )}
+          {st.state === "mailbox_retry" && st.message && <Typography sx={{ fontSize: 12, color: f.muted, mt: 0.25 }}>{st.message}</Typography>}
           {st.state.startsWith("waiting") && st.expires_at && (
             <Typography sx={{ fontSize: 12, color: f.muted, mt: 0.25 }}>{t("sched.link_until", { time: when(st.expires_at) })}</Typography>
           )}
@@ -99,9 +113,23 @@ export default function SchedulingStatusCard({ applicationId, candidateName, can
       </Stack>
       {error && <Alert severity="warning" sx={{ mt: 1.25 }}>{error}</Alert>}
       {notice && <Alert severity="success" sx={{ mt: 1.25 }} onClose={() => setNotice(null)}>{notice}</Alert>}
-      {canWrite && (st.can_resend || st.can_change || st.can_book || st.can_cancel) && (
+      {canWrite && (st.can_resend || st.can_change || st.can_book || st.can_cancel || st.can_send_now) && (
         <Stack direction="row" spacing={1} sx={{ mt: 1.5, flexWrap: "wrap", rowGap: 1 }}>
-          {st.can_resend && (
+          {st.can_send_now && (
+            <Button size="small" variant="contained" disabled={Boolean(busy)} onClick={() => run("now", () => interviewSchedulingApi.sendNow(applicationId), t("sched.sent_now"))}>
+              {busy === "now" ? t("sched.working") : t("sched.send_now")}
+            </Button>
+          )}
+          {st.state === "mailbox_retry" && (
+            <Button size="small" variant="outlined" component={RouterLink} to="/settings/communication/mailboxes">{t("sched.fix_mailbox")}</Button>
+          )}
+          {st.can_resend && (st.state === "scheduled") && (["candidate", "interviewer"] as const).map((who) => (
+            <Button key={who} size="small" variant="outlined" disabled={Boolean(busy)}
+              onClick={() => run(`to-${who}`, () => interviewSchedulingApi.resendTo(applicationId, who), t(`sched.resent_to_${who}`))}>
+              {busy === `to-${who}` ? t("sched.working") : t(`sched.resend_to_${who}`)}
+            </Button>
+          ))}
+          {st.can_resend && st.state !== "scheduled" && (
             <Button size="small" variant="outlined" disabled={Boolean(busy)} onClick={() => run("resend", () => interviewSchedulingApi.resend(applicationId), t("sched.resent"))}>
               {busy === "resend" ? t("sched.working") : t("sched.resend")}
             </Button>

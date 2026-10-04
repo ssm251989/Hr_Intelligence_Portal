@@ -343,6 +343,16 @@ def home_alerts(db: Session = Depends(get_db), current_user: User = Depends(get_
         overdue = q.scalar() or 0
         if overdue:
             alerts.append({"key": "feedback_overdue", "tone": "sun", "emoji": "alarm_clock", "count": overdue, "path": "/interviews/list"})
+        # fix 2026-10-04: a shortlisted candidate whose interview isn't being arranged -- never silent
+        from app.interview_scheduling.automation import problems as _scheduling_problems
+
+        for p in _scheduling_problems(db, tenant)[:10]:
+            mailbox = p["kind"] == "mailbox"
+            alerts.append({"key": "interview_not_scheduled", "tone": "coral", "emoji": "calendar", "count": 1, "path": f"/candidates/{p['application_id']}",
+                           "name": p["name"], "job": p["job"], "reason": p["reason"], "kind": p["kind"],
+                           "actions": ([{"key": "fix_mailbox", "path": "/settings/communication/mailboxes"}] if mailbox else
+                                       [{"key": "add_availability", "path": "/interviews/interviewers"}])
+                           + [{"key": "schedule_manually", "path": f"/candidates/{p['application_id']}?book=1"}]})
     else:
         from app.models.interview import Interview
 

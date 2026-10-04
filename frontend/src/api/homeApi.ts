@@ -34,7 +34,11 @@ export interface FunnelStage {
 }
 export interface HiringFunnelData { period: FunnelPeriod; since: string; job_id: string | null; total: number; stages: FunnelStage[] }
 
-export interface HomeAlert { key: string; tone: "coral" | "sun" | "sky" | "ok"; emoji: string; count: number; path: string }
+export interface HomeAlert {
+  key: string; tone: "coral" | "sun" | "sky" | "ok"; emoji: string; count: number; path: string;
+  // fix 2026-10-04: one red row per candidate whose interview isn't being arranged
+  name?: string; job?: string | null; reason?: string | null; kind?: "mailbox" | "not_scheduled"; actions?: { key: string; path: string }[];
+}
 export interface Office { id: string; name: string; lat: number | null; lng: number | null; count: number }
 export interface TeamMember { id: string; name: string; status: string; designation: string | null }
 export interface FeedbackDue { id: string; application_id: string | null; candidate: string | null; scheduled_at: string; meeting_link: string | null; past: boolean }
