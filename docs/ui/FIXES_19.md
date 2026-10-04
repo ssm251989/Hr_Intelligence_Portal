@@ -160,3 +160,136 @@ The picker, waiting banner, code entry and final menus are signed-in screens. Th
 - **Demo companies:** demo-a and demo-b (control plane + rows on the shared database) and their activation requests. Remove them with `python -m hrctl.tenant delete --slug demo-a --confirm demo-a` (same for demo-b). That deletes data, so it is the owner's call.
 - **Platform mailbox:** not configured on this machine (`PLATFORM_SMTP_HOST` empty). Until it is set, a request is saved but its email isn't sent. The page says so, and the console's Resend sends it once the mailbox works.
 - **Old passcode table:** `module_access` (Part 18.4) is no longer used and is empty for ctd-techs. Dropping it is a later contract migration.
+
+---
+
+# Part 19.2b / 19.2c - approvers by priority, escalation, resend, failed email (owner change 2026-10-03)
+
+**Commits:**
+- `fa18fe4` docs: PART19 at the top of RESUME
+- `adcfd5f` 19.2c-A platform mailbox
+- `706d7a6` 19.2b+c
+- `7771a93` HR admin mailbox only
+
+The 19.2b and 19.2c logic share one file (activation.py), so they are one commit.
+
+## 19.2c-A - why the activation email to CTD Techs failed (real cause)
+
+**What the owner saw:** "Your request is saved, but the email to CTD Techs couldn't be sent yet…"
+
+**The saved request** (ctd-techs, 2026-10-03 22:06:28, by kg@ctdtechs.com, modules [jobs], now ACT-2026-00006). Its stored send error, verbatim:
+```
+The platform mailbox isn't set up (PLATFORM_SMTP_HOST).
+```
+
+**Cause:**
+- No sending mailbox had been configured for activation emails: `PLATFORM_SMTP_HOST` was empty in `.env`.
+- The dev mailpit can't run here (no Docker).
+- The request itself was saved correctly; only the email never left.
+
+**Fix:**
+1. Added a sending mailbox with plain failure reasons. These go to the request history and the backend log, never to the company.
+2. Dev: mailpit (Windows binary, SMTP with login, UI http://127.0.0.1:8025).
+3. Owner instruction **"for sending use HR admin mail only"**: activation emails now go through **CTD Techs' own HR admin mailbox**. That is the ctd-techs "HR Mailbox (SMTP)" connection, hradmin65@gmail.com via smtp.gmail.com, which is CTD Techs' own mailbox. A requesting company's mailbox is never used.
+
+**Test email:**
+```
+hrctl platform mailbox test --to kg@ctdtechs.com   (HR admin mailbox)  -> {"ok": true}
+(first attempt from hrctl: KeyError 'Unknown provider: smtp' -- providers weren't registered outside the web app; fixed)
+```
+
+**Your live request ACT-2026-00013** (2026-10-04 delivery):
+```
+22:38:08 request  sent   [kg@ctdtechs.com]  client kg@ctdtechs.com          (went to dev mailpit -- mode was smtp then)
+23:08:00 resend   failed [kg@ctdtechs.com]  ctd (HR admin mailbox)  Can't reach the mail server ([Errno 11001] getaddrinfo failed).   <- no network/DNS at that moment
+14:58:06 retry    sent   [kg@ctdtechs.com]  system                          <- automatic retry, delivered through the HR admin mailbox
+```
+The modules (Jobs, Candidates, Screening, Shortlisting, Interviews, Candidate emails) are waiting for that code.
+
+## 19.2b - approvers with priority 1/2/3
+
+```
+P1 KG kg@ctdtechs.com (seeded)       P2 / P3 empty until the owner provides them
+set P2 someone@gmail.com             -> 400 APPROVER_NOT_ALLOWED "someone@gmail.com is not a ctdtechs.com address. Activation codes only go to ctdtechs.com."
+set P2 p2@ctdtechs.com.evil.io       -> 400 APPROVER_NOT_ALLOWED
+set P2 p2.test@ctdtechs.com, P3 p3.test@ctdtechs.com -> ok (audit: activation_approver_set, old -> new)
+```
+
+**Escalation** (escalation time set to 2 minutes for the proof), request ACT-2026-00008 from demo-a:
+```
+22:25:53 request    sent  to=kg@ctdtechs.com      by=client admin@demo-a.localhost
+22:27:57 escalation sent  to=p2.test@ctdtechs.com by=system   first line: "Escalation: not actioned by kg@ctdtechs.com since 03 Oct 2026, 22:25 IST."
+22:30:57 escalation sent  to=p3.test@ctdtechs.com by=system   first line: "Escalation: not actioned by p2.test@ctdtechs.com since 03 Oct 2026, 22:27 IST."
+distinct codes in the 3 emails: 1   (the SAME code -- any approver can share it)
+then: wrong code -> "This code is not correct. 4 tries left." ; right code -> Jobs active ; again -> "This code has already been used."
+menu: /, /approvals, /jobs, /genai-usage, /setup, /settings
+```
+After the proof, the test approvers were removed and escalation went back to 24 h (P1 only, as the owner asked).
+
+## Resend
+
+**Company side** (demo-a, ACT-2026-00011):
+```
+resend                     -> sent (resent 1 time)
+resend straight away       -> 429 "You can resend in 15 min."
+cooldown 0 for the test    -> resends 2, 3, 4, 5 ok (… 0 left today)
+6th resend in a day        -> 429 "You can resend at most 5 times a day. Please call CTD Techs and quote ACT-2026-00011."
+company view               -> "request sent to CTD Techs on 3 Oct, 22:32 - resent 5 times"
+```
+The test found a bug: a setting of 0 was ignored because `int(value or 15)` treats 0 as unset. Fixed; the cooldown went back to 15 after the test.
+
+**Console** (ACT-2026-00010):
+```
+Resend to priority 2 -> sent to p2.test@ctdtechs.com
+Show code            -> ****-**** (shown once)
+superadmin_audit     -> "activation_code_shown {request: ACT-2026-00010}", "activation_resent {priority: 2, sent: true}"
+request history      -> request (client) / resend (client) / resend to p2 (ctd) / code_shown (ctd)
+```
+
+## 19.2c - email can't be sent: friendly message, retries, recovery
+
+The proof broke the dev mailbox password, then made a request from demo-b (ACT-2026-00012).
+
+**The company sees:**
+- `number ACT-2026-00012`, `delivery not_sent`, Copy request number, Try sending again;
+- the text "Your request is saved, but the email to CTD Techs couldn't be sent yet. We'll keep trying automatically. … Quote request number ACT-2026-00012 …".
+- No SMTP reason and no code.
+
+**Backend log:**
+```
+WARNING app.platform.activation [demo-b] activation email ACT-2026-00012 (request) to ['kg@ctdtechs.com'] failed:
+        Signing in to the mail server failed (535 5.7.8 Authentication credentials invalid).
+```
+
+**Request history:**
+```
+22:32:35 request  failed  to=kg@ctdtechs.com  by=client admin@demo-b.localhost | Signing in to the mail server failed (535 5.7.8 Authentication credentials invalid).
+22:34:13 retry    failed  to=kg@ctdtechs.com  by=system                        | (same)          <- automatic, +1 min
+(mailbox password fixed at 22:34:38)
+22:40:13 retry    sent    to=kg@ctdtechs.com  by=system                                         <- automatic, +5 min
+company view -> delivery "sent", sent_at 22:40:13 (the page refreshes every 30 s while not sent)
+```
+
+**Retry and failure rules:**
+- Backoff is 1, 5, 15, 60 min, then hourly up to 24 h. After that the console shows red "Email not delivered", and CTD can Resend or Show code.
+- A refused address moves on to the next priority.
+- An empty approver list or an unset mailbox gets a plain reason: the console health banner "Activation emails can't be sent - <reason>. [Fix platform mailbox]".
+- Support phone / email / hours are platform settings and are empty until CTD Techs fills them. The company message then says "You can also contact CTD Techs."
+
+## Expired code
+```
+demo-b ACT-2026-00014 (expires_at moved 1 min into the past) -> 400 "This code has expired - request a new one." ; company view status "expired" -> [Request a new code]
+```
+
+## Checks
+- Backend: compileall OK; control-plane alembic `d19b2c3e4f5a` OK.
+- Frontend: tsc clean; i18n 4007 keys, 0 missing (en/hi/ta); `npm run build` OK.
+
+## Screenshots
+
+The dev mailpit screenshots have the codes blurred to `****-****`:
+- `screens/mailpit-inbox.png`: the request emails, numbered ACT-…, and the escalation to p3.test.
+- `screens/mailpit-escalation-p2.png`: "Escalation: not actioned by kg@ctdtechs.com since 03 Oct 2026, 22:25 IST."
+- `screens/mailpit-request-email.png`: demo B's request email to kg@ctdtechs.com (number, company, requester, modules, expiry).
+
+**Signed-in screens -- pending login proof:** the picker, the waiting banner with Resend/Cancel, code entry, the final menu, and the console. This session cannot sign in: creating tokens and impersonating users are refused. Take them as shown in "How to try it" in the hand-over message.

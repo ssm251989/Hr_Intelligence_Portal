@@ -2554,3 +2554,18 @@ NEXT: part-19.3 proof (approvers + escalation with a 2-min escalation time, rese
 - **Proof side effect, noted:** the owner's ACT-2026-00007 escalated to the test P2/P3 addresses during the 2-minute escalation proof window (mailpit only, no real mail). The owner cancelled it. Test approvers are removed; escalation is back to 24 h.
 
 NEXT: part-19.3 FIXES_19.md (proof write-up + mailpit screenshots), then RESUME order -> PART16 16.3.
+
+## Part 19.3 -- proof (2026-10-04)
+- **FIXES_19.md covers:**
+  - approvers (gmail / look-alike refused),
+  - escalation P1 -> P2 -> P3 with the same code,
+  - demo A (Jobs only) and demo B (Candidates + Screening, needs asked),
+  - wrong / used / expired code,
+  - resend + 15 min cooldown + 6th refused,
+  - console resend to P2 + Show code (audited),
+  - broken mailbox -> friendly message + logged reason -> automatic retries -> fixed -> delivered,
+  - the real cause of the owner's failed email, and the HR admin mailbox test.
+- **Screenshots:** 3 mailpit screenshots (codes blurred). Signed-in screenshots are pending a login.
+- **Cleanup:** test approvers removed (P1 kg only), escalation 24 h, cooldown 15, demo requests cancelled.
+
+NEXT: continue RESUME order -> PART16 16.3 settings reorganised (check against the catalog's categories + search), then 16.4 bulk resumes.
