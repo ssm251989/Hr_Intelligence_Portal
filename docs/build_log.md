@@ -2649,3 +2649,21 @@ NEXT: owner continues testing from "create a job"; then RESUME order -> PART16 1
 - **Proof:** FIXES_19.md "Offer -> welcome flow" (mailpit, end to end, 12 screenshots).
 
 NEXT: owner sets the public addresses + Hiring contacts and asks Kishore to sign from his portal; then RESUME order -> PART16 16.3 settings reorganised.
+
+## Fix -- welcome portal steps + resend / revised offer (2026-10-05)
+- **Cause (Kishore Gunda):**
+  - Version skew: the 10-04 backend sent new step kinds with `label: null`; a portal page loaded before that change treated each as the offer step ("Waiting for your signature", no title) and had no form for it (empty dialog).
+  - A locked step could be done: documents received during hiring made "Upload documents" `done` while locked -> "1 of 4 done" unsigned.
+  - Greeting = whole full name; the pre-hire record split "Gunda Kishore" as first "Gunda" (the resume itself starts "Gunda Kishore"; the parser did not swap it).
+- **Fix:**
+  - Per-step state (locked / not_started / in_progress / done; locked never done), server-side English label / description / status, every card opens a working page, unknown kinds -> plain message + admin error, `portal_schema` reload for old open pages.
+  - Names: candidates.first_name / last_name / preferred_name (HR pencil on the profile, synced to the pre-hire record) + parser given_name / family_name; otherwise the full name, never a guess. 8 more emails use the same rule.
+  - Resend for signature (15 min cooldown, "sent n times") and revised offers v2, v3 ... (`app/offers/revisions.py`, table `offer_versions`): reason required, band / budget re-check with approval, old version Replaced + envelope voided + old link "replaced by a newer version", "Revised offer" email with what changed, joining date applied everywhere once signed, offer history with PDFs on the profile and the Offers page.
+  - Migration e21a3b4c5d6f. New tests test_offer_revisions.py; two onboarding tests that already failed on HEAD updated.
+- **Decisions:**
+  - `offers` stays the latest version (no reader changed); history lives in `offer_versions`.
+  - Above-band revisions always need an approver's click, even when HR is an admin (auditable).
+  - A revision of a signed offer puts the application back to Offer sent and re-locks the portal's later steps until the new version is signed (data kept).
+- **Proof:** FIXES_19.md "Welcome portal steps + resend / revised offer" (mailpit end to end, 29 screenshots). Test records deleted.
+
+NEXT: owner fixes Kishore's names (profile pencil -> Swap -> Save) and sets the public addresses; then RESUME order -> PART16 16.3 settings reorganised.

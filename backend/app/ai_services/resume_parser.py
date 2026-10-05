@@ -20,7 +20,10 @@ SYSTEM_PROMPT = (
     "remote-work preference. current_ctc / expected_ctc are ANNUAL amounts in rupees only if "
     "the resume states them (e.g. '12 LPA' -> 1200000); notice_period_days only if a notice "
     "period is stated (e.g. '2 months' -> 60, 'immediate joiner' -> 0); languages are spoken "
-    "languages the resume lists, not programming languages."
+    "languages the resume lists, not programming languages. given_name / family_name split full_name "
+    "into the person's given (first) name and family name (surname), using naming customs: many Indian "
+    "names put the family name first (e.g. 'Gunda Kishore' -> given 'Kishore', family 'Gunda'); a leading "
+    "initial is usually the family name ('G. Kishore' -> given 'Kishore'). Use null if you are not sure."
 )
 
 _client: Anthropic | None = None
@@ -84,6 +87,8 @@ class WorkHistoryItem(BaseModel):
 
 class ResumeParserOutput(BaseModel):
     full_name: Optional[str] = None
+    given_name: Optional[str] = None  # fix 2026-10-05: the first name to greet them by (app/candidates/names.py)
+    family_name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
     location: Optional[str] = None

@@ -28,6 +28,7 @@ from app.models.user import User
 from app.platform.iam.authz import has_permission
 from app.platform.tenancy.context import require_current_tenant
 from app.recruitment import salary_auto
+from app.candidates.names import given_name as _given  # fix 2026-10-05: first / preferred name, never the surname
 
 router = APIRouter(prefix="/api/v1/ui/salary", tags=["ui-salary"])
 public_router = APIRouter(prefix="/api/v1/public/salary-details", tags=["salary-form-public"])
@@ -171,7 +172,7 @@ def form_view(token: str, db: Session = Depends(get_db)):
     tenant, _row, app = _resolve(db, token)
     cand = db.get(Candidate, app.candidate_id)
     job = db.get(JobRole, app.job_role_id)
-    return {"candidate_first_name": (cand.full_name or "").split(" ")[0] if cand else "", "job_title": job.title if job else "",
+    return {"candidate_first_name": _given(cand), "job_title": job.title if job else "",
             "current_ctc": float(cand.current_ctc) if cand and cand.current_ctc is not None else None,
             "expected_ctc": float(cand.expected_ctc) if cand and cand.expected_ctc is not None else None,
             "notice_period_days": cand.notice_period_days if cand else None,

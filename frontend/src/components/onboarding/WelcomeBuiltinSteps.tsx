@@ -9,7 +9,7 @@ import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
 
 import { ApiError } from "../../api/client";
-import { welcomePortalApi, type JoiningDoc, type JoiningField, type PortalContact, type PortalStep } from "../../api/onboardingExtra";
+import { welcomePortalApi, type JoiningDoc, type JoiningField, type PortalContact, type PortalStep, type StepState } from "../../api/onboardingExtra";
 import { useI18n } from "../../i18n";
 import { Emoji, UserAvatar } from "../../ui-kit";
 import DocumentCapture from "./DocumentCapture";
@@ -24,27 +24,39 @@ export function isBuiltin(step: PortalStep): step is Builtin {
   return step.kind === "offer" || step.kind === "joining_details" || step.kind === "joining_documents" || step.kind === "day_one";
 }
 
+export type CardTone = "done" | "todo" | "warn" | "locked" | "progress";
+export interface CardView { label: string; description: string; note: string; tone: CardTone; emoji: string }
+
+// fix 2026-10-05: every card shows its OWN state (never the offer's); literal keys for the i18n check
+const STATE_KEY: Record<StepState, { labelKey: string }> = {
+  locked: { labelKey: "wsteps.locked" }, not_started: { labelKey: "wsteps.state.not_started" },
+  in_progress: { labelKey: "wsteps.state.in_progress" }, done: { labelKey: "wsteps.state.done" },
+};
+const TEXT_KEYS: Record<Builtin["kind"], { titleKey: string; hintKey: string; emoji: string }> = {
+  offer: { titleKey: "wsteps.offer.sign_title", hintKey: "wsteps.offer.desc", emoji: "writing_hand" },
+  joining_details: { titleKey: "wsteps.details.title", hintKey: "wsteps.details.desc", emoji: "memo" },
+  joining_documents: { titleKey: "wsteps.docs.title", hintKey: "wsteps.docs.desc", emoji: "page" },
+  day_one: { titleKey: "wsteps.day1.title", hintKey: "wsteps.day1.desc", emoji: "calendar" },
+};
+
+export function useStateText() {
+  const { t } = useI18n();
+  return (state: StepState) => t(STATE_KEY[state].labelKey);
+}
+
 export function useBuiltinCard() {
   const { t } = useI18n();
-  return (step: Builtin): { label: string; note: string; tone: "done" | "todo" | "warn" | "locked"; emoji: string } => {
-    if (step.kind === "offer") {
-      return step.done
-        ? { label: t("welcome.step.offer"), note: t("wsteps.offer.done_note"), tone: "done", emoji: "writing_hand" }
-        : { label: t("wsteps.offer.sign_title"), note: t("wsteps.offer.todo_note"), tone: "warn", emoji: "writing_hand" };
+  const stateText = useStateText();
+  return (step: Builtin): CardView => {
+    const k = TEXT_KEYS[step.kind];
+    const tone: CardTone = step.state === "locked" ? "locked" : step.state === "done" ? "done" : step.state === "in_progress" ? "progress" : "todo";
+    let note = stateText(step.state);
+    if (step.kind === "joining_documents" && step.state !== "locked" && step.documents.length) {
+      const have = step.documents.filter((x) => x.status !== "missing" && x.status !== "rejected").length;
+      if (step.documents.some((x) => x.status === "rejected")) return { label: t(k.titleKey), description: t(k.hintKey), note: t("welcome.step.doc_again"), tone: "warn", emoji: k.emoji };
+      if (step.state !== "done") note = `${note} · ${t("wsteps.docs.count", { done: have, total: step.documents.length })}`;
     }
-    const label = step.kind === "joining_details" ? t("wsteps.details.title") : step.kind === "joining_documents" ? t("wsteps.docs.title") : t("wsteps.day1.title");
-    const emoji = step.kind === "joining_details" ? "memo" : step.kind === "joining_documents" ? "page" : "calendar";
-    if (step.locked_reason) return { label, note: t("wsteps.locked"), tone: "locked", emoji };
-    if (step.kind === "joining_details") {
-      return { label, note: step.done ? t("wsteps.details.done_note") : step.status === "draft" ? t("wsteps.details.draft_note") : t("wsteps.details.todo_note"), tone: step.done ? "done" : "todo", emoji };
-    }
-    if (step.kind === "joining_documents") {
-      const docs = step.documents;
-      const rejected = docs.some((x) => x.status === "rejected");
-      const have = docs.filter((x) => x.status !== "missing" && x.status !== "rejected").length;
-      return { label, note: rejected ? t("welcome.step.doc_again") : t("wsteps.docs.count", { done: have, total: docs.length }), tone: rejected ? "warn" : step.done ? "done" : "todo", emoji };
-    }
-    return { label, note: step.done ? t("wsteps.day1.done_note") : t("wsteps.day1.todo_note"), tone: step.done ? "done" : "todo", emoji };
+    return { label: t(k.titleKey), description: t(k.hintKey), note, tone, emoji: k.emoji };
   };
 }
 
@@ -77,24 +89,39 @@ export function BuiltinStepBody({ step, token, onChanged, onClose }: { step: Bui
   const { t } = useI18n();
   const d = useDateText();
 
-  if (step.locked_reason) {
-    return <Alert severity="info" icon={<Emoji name="lock" />}>{t("wsteps.locked_long")}</Alert>;
+  if (step.state === "locked") {
+    return (
+      <Stack spacing={1.5}>
+        <Typography sx={{ color: f.muted }}>{t(TEXT_KEYS[step.kind].hintKey)}</Typography>
+        <Alert severity="info" icon={<Emoji name="lock" />}>{t("wsteps.locked_long")}</Alert>
+      </Stack>
+    );
   }
 
   if (step.kind === "offer") {
+    const pdf = step.pdf_url && (
+      <Button variant={step.done ? "contained" : "outlined"} size="large" href={step.pdf_url} target="_blank" rel="noopener" startIcon={<Emoji name="page" size={18} />}>
+        {step.done ? t("wsteps.offer.view_signed") : t("wsteps.offer.view_pdf")}
+      </Button>
+    );
     return step.done ? (
       <Stack spacing={1.5}>
         <Alert severity="success">{step.signed_at ? t("wsteps.offer.signed_on", { when: d.long(step.signed_at) }) : t("wsteps.offer.done_note")}</Alert>
-        {step.pdf_url && <Button variant="contained" size="large" href={step.pdf_url} target="_blank" rel="noopener">{t("wsteps.offer.view_signed")}</Button>}
+        {step.version_no > 1 && <Typography sx={{ color: f.muted, fontSize: 13 }}>{t("wsteps.offer.version", { n: step.version_no })}</Typography>}
+        {pdf}
       </Stack>
     ) : (
       <Stack spacing={1.5}>
-        <Typography>{t("wsteps.offer.intro")}</Typography>
-        {step.sign_url ? (
-          <Button variant="contained" size="large" href={step.sign_url}>{t("wsteps.offer.review_sign")}</Button>
-        ) : (
-          <Alert severity="info">{t("wsteps.offer.no_link")}</Alert>
-        )}
+        {step.version_no > 1 && <Alert severity="info">{t("wsteps.offer.revised", { n: step.version_no })}</Alert>}
+        <Typography>{step.method === "docusign" ? t("wsteps.offer.intro_docusign") : t("wsteps.offer.intro")}</Typography>
+        {step.expiry_date && <Typography sx={{ fontSize: 14 }}>{t("wsteps.offer.sign_by", { when: d.long(step.expiry_date) })}</Typography>}
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25}>
+          {pdf}
+          {step.sign_url ? (
+            <Button variant="contained" size="large" href={step.sign_url} startIcon={<Emoji name="writing_hand" size={18} />}>{t("wsteps.offer.review_sign")}</Button>
+          ) : null}
+        </Stack>
+        {!step.sign_url && <Alert severity="info">{t("wsteps.offer.no_link")}</Alert>}
         <Typography sx={{ color: f.muted, fontSize: 13 }}>{t("wsteps.offer.after")}</Typography>
       </Stack>
     );

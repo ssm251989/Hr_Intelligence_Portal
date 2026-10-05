@@ -129,3 +129,18 @@ def get_envelope_status(refresh_token: str, envelope_id: str) -> str:
     if not status:
         raise DocuSignError("DocuSign did not return an envelope status.")
     return status
+
+
+def void_envelope(refresh_token: str, envelope_id: str, reason: str) -> None:
+    """fix 2026-10-05: a revised offer replaces this envelope -- void it so the old one can't be signed."""
+    access_token = _get_access_token(refresh_token)
+    try:
+        response = httpx.put(
+            f"{settings.DOCUSIGN_API_BASE_URL}/restapi/v2.1/accounts/{settings.DOCUSIGN_ACCOUNT_ID}/envelopes/{envelope_id}",
+            json={"status": "voided", "voidedReason": reason[:200]},
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=15,
+        )
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise DocuSignError(f"Failed to void DocuSign envelope: {exc}") from exc

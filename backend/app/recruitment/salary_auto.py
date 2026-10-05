@@ -25,6 +25,7 @@ from app.models.application import Application
 from app.models.candidate import Candidate
 from app.models.job_role import JobRole
 from app.models.user import User
+from app.candidates.names import given_name as _given  # fix 2026-10-05: first / preferred name, never the surname
 
 FORM_ACTION = "salary_details_form"
 SALARY_STAGE = "interview_selected"
@@ -239,7 +240,7 @@ def send_form(db: Session, tenant, application: Application, *, actor: str = "sy
 
         msg = send_default(db, tenant, "recruitment.salary_details_request", to=[candidate.email], related_entity_type="application",
                            related_entity_id=application.id,
-                   ctx={"candidate_name": candidate.full_name or "", "candidate_first_name": (candidate.full_name or "").split(" ")[0],
+                   ctx={"candidate_name": candidate.full_name or "", "candidate_first_name": _given(candidate),
                         "job_title": job.title if job else "", "form_link": link, "reminder": reminder},
                    purpose="email.outbound.recruitment")
         sent = msg.status in ("sent", "queued")
@@ -368,7 +369,7 @@ def decide(db: Session, tenant, application: Application, *, decision: str, acto
 
                 send_default(db, tenant, "recruitment.salary_counter_offer", to=[candidate.email], related_entity_type="application",
                              related_entity_id=application.id,
-                             ctx={"candidate_first_name": (candidate.full_name or "").split(" ")[0], "job_title": job.title if job else "",
+                             ctx={"candidate_first_name": _given(candidate), "job_title": job.title if job else "",
                                   "amount": f"{amount:,.0f}", "note": reason or ""})
             except Exception:  # noqa: BLE001 -- recorded either way; HR can call the candidate
                 pass

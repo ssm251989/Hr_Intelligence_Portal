@@ -27,6 +27,7 @@ from app.models.audit_log import AuditLog
 from app.models.candidate import Candidate
 from app.models.job_role import JobRole
 from app.models.user import User
+from app.candidates.names import given_name as _given  # fix 2026-10-05: first / preferred name, never the surname
 
 STALE_DAYS = 90
 
@@ -300,5 +301,5 @@ def status_view(db: Session, tenant, application: Application) -> dict:
     for i, key in enumerate(_STEPS):
         state = "done" if i < current else ("closed" if closed else "current") if i == current else "todo"
         steps.append({"key": key, "state": state})
-    return {"first_name": ((cand.full_name if cand else "") or "").split(" ")[0], "job_title": job.title if job else "",
+    return {"first_name": _given(cand), "job_title": job.title if job else "",
             "steps": steps, "closed": closed, "applied_on": application.created_at.date().isoformat() if application.created_at else None}

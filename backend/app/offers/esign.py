@@ -113,7 +113,9 @@ def on_offer_signed(db: Session, tenant, offer: Offer, *, method: str, actor: st
     application = db.get(Application, offer.application_id)
     if application is None:
         return {"skipped": "no application"}
-    if db.query(AuditLog).filter(AuditLog.entity_id == application.id, AuditLog.action == "offer_signed_followup").first() is not None:
+    version = offer.version_no or 1
+    done = [r.details or {} for r in db.query(AuditLog).filter(AuditLog.entity_id == application.id, AuditLog.action == "offer_signed_followup").all()]
+    if any(int(d.get("version") or 1) == version for d in done):  # fix 2026-10-05: once per offer VERSION
         return {"skipped": "already done"}
     offer.signed = True
     offer.onboarding_status = "in_progress"
@@ -130,10 +132,17 @@ def on_offer_signed(db: Session, tenant, offer: Offer, *, method: str, actor: st
     except Exception:  # noqa: BLE001
         pass
     told = _tell_recruiter(db, tenant, application, offer)
+    from app.offers.revisions import apply_signed_version
     from app.recruitment.offer_welcome import send_welcome
 
+    try:  # fix 2026-10-05: the signed version's joining date -> hiring record, onboarding case, portal, emails
+        applied = apply_signed_version(db, tenant, offer, actor=actor)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("applying signed version failed for offer %s", offer.id)
+        applied = {"error": str(exc)[:200]}
     welcome = send_welcome(db, tenant, application, offer)
-    result = {"method": method, "previous_status": previous, "new_status": application.status, "recruiter_told": told, **welcome}
+    result = {"method": method, "version": version, "previous_status": previous, "new_status": application.status, "recruiter_told": told,
+              "applied": applied, **welcome}
     log_action(db, "application", application.id, "offer_signed_followup", actor[:50], result)
     return result
 
@@ -185,13 +194,19 @@ x.fillRect(q.x+Math.sin(q.s)*8,q.y,q.r,q.r*1.6)});if(t-t0<4500)requestAnimationF
 
 
 def _page(db: Session, tenant, offer: Optional[Offer], *, error: Optional[str] = None, notice: Optional[str] = None,
-          just_signed: bool = False) -> str:
+          just_signed: bool = False, replaced: Optional[Offer] = None) -> str:
     from app.platform.comms.theme import get_theme_and_org_context
 
     ctx = get_theme_and_org_context(db, tenant)
     theme, org = ctx["theme"], ctx["org"]["display_name"] or ""
     brand = escape(theme.get("primary_color") or "#0E7C66")
-    if offer is None:
+    if replaced is not None:  # fix 2026-10-05: an older version's link
+        latest = sign_url(db, replaced) if not replaced.signed else _portal_link(db, replaced) or f"/offer/sign/{replaced.sign_token}"
+        db.commit()
+        body = ("<div style='font-size:40px'>&#128260;</div><h1>This offer was replaced by a newer version</h1>"
+                f"<p>{escape(org)} sent you a revised offer (version {replaced.version_no}). This older version can no longer be signed.</p>"
+                f'<p><a class="btn" href="{escape(latest)}">See your latest offer</a></p>')
+    elif offer is None:
         body = f"<h1>Link not recognized</h1><p>We can't find this offer. Please use the newest email from {escape(org)}, or contact HR.</p>"
     else:
         cand = db.get(Candidate, db.get(Application, offer.application_id).candidate_id)
@@ -209,7 +224,7 @@ def _page(db: Session, tenant, offer: Optional[Offer], *, error: Optional[str] =
         elif offer.expiry_date and offer.expiry_date < date.today():
             body = f"<h1>This offer has expired</h1><p>It was valid until {offer.expiry_date.strftime('%d %B %Y')}. Please contact HR at {escape(org)}.</p>"
         else:
-            body = (f"<h1>Your offer letter</h1><p>Please read your offer below"
+            body = (f"<h1>Your offer letter{' (revised - version ' + str(offer.version_no) + ')' if (offer.version_no or 1) > 1 else ''}</h1><p>Please read your offer below"
                     + (f" and sign by <strong>{offer.expiry_date.strftime('%d %B %Y')}</strong>" if offer.expiry_date else "") + ".</p>"
                     f'<p><a href="/offer/sign/{token}/letter.pdf">Download as PDF</a></p>'
                     f'<div class="letter">{letter}</div>'
@@ -241,14 +256,39 @@ def _offer_by_token(db: Session, token: str) -> Optional[Offer]:
     return db.query(Offer).filter(Offer.sign_token == token).first() if token else None
 
 
+def _replacement(db: Session, token: str) -> Optional[Offer]:
+    """An older version's token -> the offer (now its latest version). fix 2026-10-05"""
+    from app.offers.revisions import replaced_by_token
+
+    hit = replaced_by_token(db, token)
+    return hit[1] if hit else None
+
+
+def _replaced_pdf(db: Session, token: str) -> Optional[Response]:
+    """An older version's PDF stays downloadable (marked in the file name)."""
+    from app.offers.revisions import replaced_by_token, version_pdf
+    from app.platform.tenancy.context import require_current_tenant
+
+    hit = replaced_by_token(db, token)
+    if not hit:
+        return None
+    row, offer = hit
+    data = version_pdf(db, require_current_tenant(), offer, row.version_no)
+    return Response(content=data, media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="offer-letter-v{row.version_no}-replaced.pdf"'}) if data else None
+
+
 @router.get("/offer/sign/{token}", response_class=HTMLResponse)
 def offer_page(token: str, db: Session = Depends(get_db)):
     from app.platform.tenancy.context import require_current_tenant
 
     offer = _offer_by_token(db, token)
-    if offer is not None and offer.viewed_at is None:
+    if offer is None:
+        return HTMLResponse(_page(db, require_current_tenant(), None, replaced=_replacement(db, token)))
+    if offer.viewed_at is None:
         offer.viewed_at = datetime.now(timezone.utc)
         db.commit()
+        log_action(db, "application", offer.application_id, "offer_viewed", "candidate", {"version": offer.version_no or 1})
     return HTMLResponse(_page(db, require_current_tenant(), offer))
 
 
@@ -258,7 +298,9 @@ def offer_sign(token: str, request: Request, full_name: str = Form(""), accept: 
 
     tenant = require_current_tenant()
     offer = _offer_by_token(db, token)
-    if offer is None or offer.signed:
+    if offer is None:
+        return HTMLResponse(_page(db, tenant, None, replaced=_replacement(db, token)))
+    if offer.signed:
         return HTMLResponse(_page(db, tenant, offer))
     if offer.expiry_date and offer.expiry_date < date.today():
         return HTMLResponse(_page(db, tenant, offer))
@@ -275,7 +317,7 @@ def offer_sign(token: str, request: Request, full_name: str = Form(""), accept: 
     db.commit()  # the signature is saved first; the stamped PDF must never block it
     try:
         PDF_DIR.mkdir(parents=True, exist_ok=True)
-        path = PDF_DIR / f"{offer.id}-signed.pdf"
+        path = PDF_DIR / f"{offer.id}-v{offer.version_no or 1}-signed.pdf"
         path.write_bytes(build_pdf(offer, _company(db, tenant)))
         offer.signed_pdf_path = str(path)
         db.commit()
@@ -283,7 +325,7 @@ def offer_sign(token: str, request: Request, full_name: str = Form(""), accept: 
         db.rollback()
         log.exception("signed PDF failed for offer %s", offer.id)
     log_action(db, "application", offer.application_id, "offer_signed", "candidate",
-               {"method": "in_app", "signed_name": name, "signed_at": now.isoformat(), "ip": offer.signed_ip})
+               {"method": "in_app", "version": offer.version_no or 1, "signed_name": name, "signed_at": now.isoformat(), "ip": offer.signed_ip})
     try:
         on_offer_signed(db, tenant, offer, method="in_app", actor="candidate")
     except Exception:  # noqa: BLE001 -- the signature is recorded either way
@@ -297,7 +339,8 @@ def offer_pdf(token: str, db: Session = Depends(get_db)):
 
     offer = _offer_by_token(db, token)
     if offer is None:
-        return Response(status_code=404)
+        old = _replaced_pdf(db, token)
+        return old if old is not None else Response(status_code=404)
     if offer.signed and offer.signed_pdf_path and Path(offer.signed_pdf_path).exists():
         data = Path(offer.signed_pdf_path).read_bytes()
     else:

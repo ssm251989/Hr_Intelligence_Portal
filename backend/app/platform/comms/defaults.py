@@ -61,6 +61,28 @@ DEFAULTS: dict[str, tuple[str, str, list[str]]] = {
         "name and tick \"I accept\". Please sign by {{ expiry_date }}.\n\nYour letter:\n\n{{ letter }}\n\nBest regards,\n{{ company_name }} HR",
         ["candidate_first_name", "job_title", "letter", "sign_link"],
     ),
+    # fix 2026-10-05: resend for signature / revised offer (app/offers/revisions.py)
+    "recruitment.offer_resend": (
+        "Reminder: your offer for {{ job_title }} is waiting for your signature",
+        "Hi {{ candidate_first_name }},\n\nJust a reminder - your offer letter for {{ job_title }} at {{ company_name }}{{ version_note }} "
+        "is ready for you to sign.\n\nReview & sign it here: {{ sign_link }}\n\nPlease sign by {{ expiry_date }}. If you have any "
+        "questions, just reply to this email.\n\nBest regards,\n{{ company_name }} HR",
+        ["candidate_first_name", "job_title", "sign_link"],
+    ),
+    "recruitment.offer_revised": (
+        "Revised offer from {{ company_name }}",
+        "Hi {{ candidate_first_name }},\n\nWe have revised your offer for {{ job_title }} at {{ company_name }} (version {{ version_no }}).\n\n"
+        "What changed:\n{{ what_changed }}\n\nReview & sign it here: {{ sign_link }}{{ docusign_note }}\n\nYour earlier offer link no longer "
+        "works - please sign this new version by {{ expiry_date }}.\n\nYour revised letter:\n\n{{ letter }}\n\nBest regards,\n{{ company_name }} HR",
+        ["candidate_first_name", "job_title", "what_changed", "sign_link"],
+    ),
+    "recruitment.offer_revised_signed": (
+        "Thank you for signing your revised offer, {{ candidate_first_name }}",
+        "Hi {{ candidate_first_name }},\n\nThank you for signing your revised offer (version {{ version_no }}) for {{ job_title }} at "
+        "{{ company_name }}.\n\nYour joining date is {{ joining_date }}. Your welcome portal shows the same date and your next steps.\n\n"
+        "See you soon!\n{{ company_name }} HR",
+        ["candidate_first_name", "job_title", "joining_date"],
+    ),
     "recruitment.welcome_selected": (
         "Welcome to {{ company_name }}, {{ candidate_first_name }}!",
         "Hi {{ candidate_first_name }},\n\nThank you for signing your offer - welcome to the team! You join {{ company_name }} as "
@@ -98,6 +120,10 @@ def _html(text: str) -> str:
 # fix 2026-10-04: wording that was replaced -- a company template still word-for-word this old default
 # (never edited) is moved to the new default; an edited template is never touched.
 RETIRED: dict[str, tuple[str, ...]] = {
+    "recruitment.offer_revised": (  # fix 2026-10-05: first wording ("&" / "->" came out escaped in the text part)
+        "Hi {{ candidate_first_name }},\n\nWe have revised your offer for {{ job_title }} at {{ company_name }} (version {{ version_no }}).\n\n"
+        "What changed:\n{{ what_changed }}\n\n{{ sign_line }}\n\nYour earlier offer link no longer works - please sign this new "
+        "version by {{ expiry_date }}.\n\nYour revised letter:\n\n{{ letter }}\n\nBest regards,\n{{ company_name }} HR",),
     "recruitment.offer_letter_auto": (
         "Hi {{ candidate_first_name }},\n\nHere is your offer letter:\n\n{{ letter }}\n\nPlease reply to this email to accept by "
         "{{ expiry_date }}.\n\nBest regards,\n{{ company_name }} HR",),

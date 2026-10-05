@@ -31,6 +31,7 @@ from app.models.user import User
 from app.platform.iam.authz import has_permission
 from app.platform.tenancy.context import require_current_tenant
 from app.recruitment import joining_docs as jd
+from app.candidates.names import given_name as _given  # fix 2026-10-05: first / preferred name, never the surname
 
 router = APIRouter(prefix="/api/v1/ui/documents", tags=["ui-documents"])
 public_router = APIRouter(prefix="/api/v1/public/documents", tags=["documents-public"])
@@ -63,7 +64,7 @@ def form_view(token: str, db: Session = Depends(get_db)):
     job = db.get(JobRole, app.job_role_id)
     st = jd.status(db, tenant, app)
     items = [{k: i[k] for k in ("code", "label", "required", "types", "max_mb", "received", "reupload_note")} | {"files": len(i["files"])} for i in st["items"]]
-    return {"candidate_first_name": (cand.full_name or "").replace("Demo - ", "").split(" ")[0] if cand else "", "job_title": job.title if job else "",
+    return {"candidate_first_name": _given(cand), "job_title": job.title if job else "",
             "items": items, "missing": st["missing"], "submitted": row.responded_at is not None}
 
 
@@ -254,7 +255,7 @@ def joining_public_view(token: str, db: Session = Depends(get_db)):
     cand = db.get(Candidate, app.candidate_id)
     job = db.get(JobRole, app.job_role_id)
     data = info(app)
-    return {"candidate_first_name": (cand.full_name or "").replace("Demo - ", "").split(" ")[0] if cand else "", "job_title": job.title if job else "",
+    return {"candidate_first_name": _given(cand), "job_title": job.title if job else "",
             "dates": data.get("proposed", []), "chosen": data.get("chosen"), "note": data.get("note")}
 
 

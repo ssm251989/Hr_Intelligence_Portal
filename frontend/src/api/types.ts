@@ -180,10 +180,18 @@ export function candidateSourceLabel(source: string): string {
 // there's no real extracted photo. null means "no confident guess", not "unspecified".
 export type InferredGender = "male" | "female" | null;
 
+/** source: hr = set on the profile, resume = from the resume parser, none = not known (greetings use the full name) */
+export interface CandidateNameParts { first_name: string; last_name: string; preferred_name: string; source: "hr" | "resume" | "none" }
+
 export interface CandidateRead {
   id: UUID;
   tags?: string[]; // Part 18.10
   full_name?: string | null;
+  // fix 2026-10-05: names HR can correct; name_parts = those, else the guess the emails use
+  first_name?: string | null;
+  last_name?: string | null;
+  preferred_name?: string | null;
+  name_parts?: CandidateNameParts | null;
   email?: string | null;
   phone?: string | null;
   location?: string | null;
@@ -201,6 +209,9 @@ export interface CandidateUpdate {
   full_name?: string | null;
   email?: string | null;
   phone?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  preferred_name?: string | null;
 }
 
 // shape of app.ai_services.resume_parser.ResumeParserOutput, stored as candidates.parsed_fields

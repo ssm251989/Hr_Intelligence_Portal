@@ -112,7 +112,9 @@ def test_submit_form_enforces_required_fields(db_session):
         portal.submit_form(case, "pb_personal", {})
     case = portal.submit_form(case, "pb_personal", {"father_name": "K"})
     assert "pb_personal" in case.form_submissions_json
-    assert case.status == "ready"  # the only requirement is now met
+    # fix 2026-10-04/05: the built-in welcome steps (joining details, documents, day one) count too, so
+    # finishing the one configured form isn't "ready" yet
+    assert case.status == "in_progress"
 
 
 def test_upload_requires_active_document_type(db_session):
@@ -127,9 +129,13 @@ def test_document_verification_drives_readiness(db_session):
     portal = _portal(db_session)
     case = _case(db_session, attributes={"required_documents": ["pb_pan"]})
     doc = portal.upload_document(case, "pb_pan", b"%PDF", "pdf")
-    assert portal.readiness(case)["percent"] == 0
+    before = portal.readiness(case)
+    assert before["documents"]["verified"] == []
     portal.verify_document(doc, actor="hr", approve=True)
-    assert portal.readiness(case)["percent"] == 100
+    after = portal.readiness(case)
+    assert after["documents"]["verified"] == ["pb_pan"]
+    # fix 2026-10-04/05: the built-in welcome steps count too, so one verified document moves it up, not to 100
+    assert after["percent"] > before["percent"]
 
 
 def test_extract_document_degrades_gracefully_without_ai_connection(db_session, monkeypatch):

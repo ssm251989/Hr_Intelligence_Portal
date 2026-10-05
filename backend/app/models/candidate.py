@@ -62,4 +62,8 @@ class Candidate(Base, TenantOwned):
     deleted_by = Column(String(200))
     delete_reason = Column(String(30))
     delete_note = Column(Text)
+    # fix 2026-10-05: names HR can correct on the profile (resumes give one line; app/candidates/names.py)
+    first_name = Column(String(120))
+    last_name = Column(String(120))
+    preferred_name = Column(String(120))
     created_at = Column(DateTime(timezone=True), server_default=text("now()"))

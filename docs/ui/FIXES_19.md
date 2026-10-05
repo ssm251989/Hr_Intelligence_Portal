@@ -574,3 +574,117 @@ HR board  readiness percent 100, welcome_steps {total 4, done 4}; case in_progre
 3. DocuSign's login is rejected (400 from the token endpoint), so in-app signing is used. Reconnect DocuSign in Integrations if you want envelopes.
 4. Add HR, department and manager contacts in **Settings > Hiring > Contacts**, and a hiring manager on the job. The email and portal list them automatically.
 5. Optional: set the first-day start time, who to meet and what to bring in the onboarding settings.
+
+# Welcome portal steps + resend / revised offer (bug + feature 2026-10-05, candidate "Kishore Gunda")
+
+## 1. The real records (ctd-techs, before the fix)
+- Candidate `Gunda Kishore`, offer 6c5feb90 (`signed false`, `sent_at null`), case 738b43dc (`invited`, created 2026-10-04 16:39, **before** the 21:20 fix commit).
+- What the portal API returned for his link (`GET /api/v1/public/ui/onboarding/portal/<token>`):
+```
+first_name 'Gunda Kishore'   done 1   total 4
+{'kind': 'offer',             'label': None, 'done': False, 'locked_reason': None}
+{'kind': 'joining_details',   'label': None, 'done': False, 'locked_reason': 'Unlocks after you sign your offer.'}
+{'kind': 'joining_documents', 'label': None, 'done': True,  'locked_reason': 'Unlocks after you sign your offer.'}   <- locked AND done
+{'kind': 'day_one',           'label': None, 'done': False, 'locked_reason': 'Unlocks after you sign your offer.'}
+```
+- The page code before the fix (`WelcomePortalPage.tsx` at 87e701e~1), given that payload:
+  - `const label = step.kind === "offer" ? t("welcome.step.offer") : step.label;` -> `null` -> **3 cards with no title**
+  - `else note = step.done ? t("welcome.step.offer_done") : t("welcome.step.offer_todo");` -> every unknown kind gets the OFFER's text -> **"Waiting for your signature" x3, "Done" x1**
+  - `StepDialog` had no branch for these kinds -> **empty dialog (icon + Close)**
+- The current page code (dev server started 12:20 today) renders the same payload with titles. So the screen you saw came from a page loaded **before** the 2026-10-04 change, talking to the **updated** backend (uvicorn --reload).
+- Name: the resume's first line is "Gunda Kishore" (the parser did **not** swap it). `onboarding/portal.py:99` split it into first_name "Gunda" / last_name "Kishore" on the pre-hire record. `greeting_name()` then fell back to the whole full name.
+- Note: at 12:53:40 today kg@ctdtechs.com marked Kishore's offer signed by hand (`sign_method manual`), and at 12:53:57 completed onboarding. His welcome email went out then.
+
+## 2. Causes
+1. **Old page + new server (version skew).** The backend started sending new step kinds with `label: null` and left the titles to the page. A page that didn't know those kinds treated every one as "the offer step" and had no form for it. Nothing protected an older open page, and nothing caught an unknown step type.
+2. **A locked step counted as done.** Kishore's documents were already received during hiring, so "Upload documents" was `done: true` while still locked. Result: "1 of 4 done" with the offer unsigned.
+3. **Greeting** used the whole full name (the 10-04 rule), and the pre-hire record took the first word as the first name (it is his surname).
+
+## 3. Fixes
+- **Every step has its own state** (`app/onboarding/welcome_steps.py`): `locked | not_started | in_progress | done`.
+  - A locked step is **never** done.
+  - Offer = done only when the latest version is signed (DocuSign: after the envelope is completed).
+  - The server also sends an English `label`, `description` and `status_text`, so no page can show an empty card again.
+- **Cards** (`WelcomePortalPage.tsx`, `WelcomeBuiltinSteps.tsx`): title + one-line description + own status (Not started / In progress / Done / "Unlocks after you sign your offer"). Every card opens a working page:
+  1. Sign your offer -> View offer (PDF) + Review & sign (DocuSign note when an envelope exists; "revised offer, version N" when N > 1)
+  2. Your joining details -> the autosaved form
+  3. Upload documents -> the configured list with camera upload
+  4. Your first day -> time, address + map, who to meet, what to bring
+- **Unknown step type:** a plain message for the joiner, and `POST /portal/<token>/problem` -> ERROR log + audit `portal_step_unrenderable` (once per joiner, step and day).
+- **Old open page:** the portal answer carries `portal_schema` (2). A page built for an older schema reloads itself once.
+- **Names** (`app/candidates/names.py`): first / last / preferred name on the candidate (migration e21a3b4c5d6f).
+  - Order of trust: the joiner's own joining details, then what HR set on the profile, then the resume parser's new `given_name` / `family_name` (the prompt explains family-name-first names).
+  - Without one of these, greetings use the full name. **Never a guess:** `gkishore@` and `rkumar@` look alike but mean opposite things. An email-based guess was tried during this fix and removed (see 4.).
+  - The profile shows "We call them ..." with a pencil (first, last, preferred, Swap). Saving updates the pre-hire employee record too.
+  - Eight more emails that used "first word of the full name" now use the same rule.
+- **i18n:** new portal and HR keys in en / hi / ta; `i18n:check` 4188 keys, 0 missing.
+
+### Resend / revised offer (new, `app/offers/revisions.py`)
+- `offers` stays the LATEST version, so every existing reader keeps working.
+- New table `offer_versions` keeps each version: who sent it, reason, note, what changed, approval, and (once replaced) its own sign link, view / signature, PDF and DocuSign envelope.
+- **[Resend for signature]:** same offer, reminder email with the sign link; "Last sent <time>, sent <n> times"; 15-minute cooldown (HTTP 429 `RESEND_COOLDOWN`).
+- **[Send revised offer]:** opens with the current values (CTC, breakup lines when configured, joining date, designation, location, terms). It needs a reason: salary / joining date / designation / other + note.
+  - CTC is re-checked against the job's band and the department budget.
+  - Above the limit -> "Needs approval". Approvers get an in-app notice; an admin or salary approver approves (it is sent then) or declines. A blocked budget refuses outright.
+  - The old version -> "Replaced". Its DocuSign envelope is voided (new `void_envelope`). Its link shows "This offer was replaced by a newer version" + [See your latest offer] and can't be signed. Its PDF stays downloadable.
+  - New letter + new link, unsigned. A signed v1 still needs v2 signed; the application goes back to Offer sent.
+  - Email "Revised offer from CTD Techs" with a "What changed" list.
+  - The welcome portal's step 1 always shows the latest version.
+  - When the revised version is signed, its joining date goes to the hiring record, the onboarding case (+ plan), the portal and later emails. A "Thank you for signing your revised offer" email confirms the date.
+- **Offer history** on the profile (new Offer section) and on each Offers-page card: version, date, sent by, reason, what changed, status (Sent / Viewed / Signed / Replaced / Declined / Needs approval / Not approved), PDF per version.
+- **Audit:** `offer_resent`, `offer_revised`, `offer_revision_needs_approval`, `offer_revision_approved` / `_rejected`, `offer_viewed`, `offer_signed` (with version), `offer_signed_followup` (once per version), `candidate_contact_info_updated` (old -> new names).
+
+## 4. End-to-end proof (mailpit)
+Setup:
+- mailpit (127.0.0.1:1025 / :8025, fresh mailbox), a proof API on :8010 (`DEV_MAIL_CAPTURE`, in-app jobs off) and the web app on :5174. Your :8000 / :5173 were not touched.
+- Test candidate "Ravi Teja Proof" (proof.revised2@example.com) on Junior AI Developer (band 2.0-4.0 LPA) at BGV cleared, 3.0 LPA approved.
+- A temporary admin "proof.hr@example.com" for the HR screens.
+```
+13:28:20  HR proposes 20 / 22 / 23 Oct -> candidate picks 20 Oct
+13:28:24  "Junior AI Developer: your offer letter - please review and sign"  (v1, in-app link; DocuSign 400 as before)
+          greeting "Hi Ravi Teja Proof" (no first name known yet -> full name, never a guess)
+          HR sets first "Ravi Teja" / last "Proof" (profile pencil); HR starts onboarding
+portal    "Welcome to the team, Ravi Teja!"  0 of 4 done
+          Sign your offer: Not started | Joining details / Upload documents / Your first day: Unlocks after you sign your offer
+          each card opens: offer -> View offer (PDF) + Review & sign + "sign by 12 Oct"; the 3 locked -> description + "unlocks after ..."
+          same in Hindi and Tamil
+14:12:31  HR [Resend for signature] -> "Reminder: your offer ... is waiting for your signature" (same link) -> "sent 2 times"
+          second resend at once -> 429 "It was sent less than 15 minutes ago. You can resend in 15 min."
+14:12:38  HR [Send revised offer]: CTC 300000 -> 350000, joining 20 -> 22 Oct, reason Salary changed + note
+          -> "Revised offer from CTD Techs":  What changed: - CTC: 3.0 LPA → 3.5 LPA  - Joining date: 20 Oct 2026 → 22 Oct 2026
+          v1 link -> "This offer was replaced by a newer version" + [See your latest offer] (= the v2 link); POST sign on v1 refused
+          portal step 1 -> "This is your revised offer (version 2)", its Review & sign = the v2 link
+14:13:52  HR tries 4.5 LPA -> v3 "Needs approval: 12.5% above the band maximum (₹4,00,000)"; no candidate email; approvers told in-app
+14:13:55  approver [Don't approve] -> v3 "Not approved"; v2 stays current
+14:14:23  candidate signs v2 (typed name + tick, IP 127.0.0.1) -> "Welcome aboard!"
+          case joining 2026-10-20 -> 2026-10-22, application joining chosen -> 2026-10-22, approved salary 350000
+          emails: "Thank you for signing your revised offer, Ravi Teja" (joining Thursday, 22 October 2026) + "Welcome to CTD Techs, Ravi Teja!"
+          recruiter: "Ravi Teja Proof signed the offer ... joining 22 Oct 2026" (captured in mailpit)
+portal    1 of 4 done | Sign your offer: Done ✓ | the other three: Not started, each opens its form (details / 7 documents / day one 09:30 + map)
+history   v3 Not approved | v2 Signed (PDF stamped "Signed electronically ...", CTC 3,50,000) | v1 Replaced (PDF, CTC 3,00,000)
+```
+Found by this proof and fixed:
+- An email-based name guess (first try) greeted the first test candidate "Hi Teja Proof". Removed; names come only from trusted sources (above).
+  - That interim rule was live on your :8000 when you marked Kishore signed at 12:53, so his real welcome email ("Welcome to CTD Techs, Kishore!") came from it. It happened to be right for him; with the final rule his greeting stays "Gunda Kishore" until his names are set (owner action 1).
+- The revised email's text part showed `-&gt;` and `Review &amp; sign`, because the template renderer HTML-escapes variables. Arrows are now "→", and the fixed wording is template text. The first wording is retired, so stored copies update.
+- "Work location: Chennai" was appended after the sign-off even when unchanged. It is now added only when HR changes it, and before the sign-off.
+- Two onboarding tests already failed on HEAD (the 10-04 built-in steps count toward readiness). Their assertions now match that.
+- The run was redone on a fresh candidate after these fixes; the timeline above is that second run.
+
+**Screenshots** (`screens/`):
+- HR: fix20-profile-offer-v1, fix20-names-dialog, fix20-names-saved, fix20-hr-resent, fix20-revise-prefilled, fix20-revise-filled, fix20-revise-sent, fix20-revise-over-band, fix20-revision-pending-approval, fix20-profile-history-final
+- Portal: fix20-portal-before-sign, fix20-portal-step-offer, fix20-portal-step-locked, fix20-portal-hi, fix20-portal-ta, fix20-portal-phone, fix20-portal-step-offer-v2, fix20-portal-after-sign, fix20-portal-details-form, fix20-portal-documents, fix20-portal-day-one
+- Signing: fix20-old-link-replaced, fix20-sign-v2-page, fix20-sign-v2-done
+- Mailpit: fix20-mail-offer-v1, fix20-mail-reminder, fix20-mail-revised, fix20-mail-thanks-revised, fix20-mail-welcome
+
+**Clean-up:**
+- Both test candidates deleted by id in one transaction: 2 candidates, 2 applications, 2 offers, 5 offer versions, 2 cases, 2 pre-hire employees, 2 budget rows, 2 link tokens, 25 audit rows, 13 messages (incl. the test in-app notices to kg@ctdtechs.com), the temporary admin + its role.
+- The signed PDF file was removed.
+- Kishore's records were not changed.
+
+**Checks:** alembic upgrade head (e21a3b4c5d6f); compileall; pytest test_offers + test_onboarding + new test_offer_revisions: 78 passed; tsc; i18n 4188 keys, 0 missing; npm run build OK.
+
+**Owner actions:**
+1. Kishore: open his profile -> "We call them" pencil -> **Swap first and last** -> Save (first "Kishore", last "Gunda"). His portal and emails then say "Kishore". His resume was read before the parser returned given / family names.
+2. Anyone with a welcome page left open from before 2026-10-04 needs one reload. Newer pages reload themselves when the server is newer.
+3. Above-band revised offers notify the salary approvers (Settings > Hiring > Salary approvers). Today that falls back to the admins, i.e. kg@ctdtechs.com.

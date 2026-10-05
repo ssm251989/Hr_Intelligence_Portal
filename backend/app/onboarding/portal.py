@@ -96,9 +96,11 @@ class PreboardingPortal:
         doj = joining_date or offer.joining_date
         if doj is None:
             raise PortalValidationError("joining_date is required (offer has none)")
-        name = (candidate.full_name or candidate.email).split(" ", 1)
+        from app.candidates.names import split_for_record  # fix 2026-10-05: never "first word = first name" (often the surname)
+
+        first, last = split_for_record(candidate)
         return self.create_case(
-            email=candidate.email, joining_date=doj, first_name=name[0], last_name=name[1] if len(name) > 1 else None,
+            email=candidate.email, joining_date=doj, first_name=first, last_name=last,
             candidate_id=candidate.id, application_id=application.id, offer_id=offer.id, attributes=attributes, created_by=created_by,
         )
 

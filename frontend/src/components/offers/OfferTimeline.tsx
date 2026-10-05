@@ -14,7 +14,7 @@ import { useWhen } from "./shared";
 // audit trail. L-B7: the expiry date is always spelled out (default 7 days after sending).
 // K-H4: any approval steps attached to this offer. K-H5: how the signature is collected.
 
-const EMOJI: Record<string, string> = { sent: "envelope", viewed: "eyes", signed: "writing_hand", joined: "party", esign_failed: "warning" };
+const EMOJI: Record<string, string> = { sent: "envelope", viewed: "eyes", signed: "writing_hand", joined: "party", esign_failed: "warning", resent: "envelope", revised: "memo" };
 
 function daysUntil(iso: string): number {
   const end = new Date(`${iso}T23:59:59`);

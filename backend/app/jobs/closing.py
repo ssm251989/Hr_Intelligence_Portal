@@ -21,6 +21,7 @@ from app.models.application import TERMINAL_APPLICATION_STATUSES, Application
 from app.models.candidate import Candidate
 from app.models.job_role import JobRole
 from app.models.user import User
+from app.candidates.names import given_name as _given  # fix 2026-10-05: first / preferred name, never the surname
 
 CLOSE_REASONS = ("filled", "cancelled", "business_hold", "other")
 JOB_CLOSED = "job_closed"
@@ -106,7 +107,7 @@ def close_job(db: Session, tenant, job: JobRole, *, reason: str, note: Optional[
             if cand and cand.email:
                 try:
                     send_default(db, tenant, "recruitment.job_closed_candidate", to=[cand.email],
-                                 ctx={"candidate_name": cand.full_name or "", "candidate_first_name": (cand.full_name or "").split(" ")[0], "job_title": job.title},
+                                 ctx={"candidate_name": cand.full_name or "", "candidate_first_name": _given(cand), "job_title": job.title},
                                  related_entity_type="application", related_entity_id=app.id)
                     emailed += 1
                 except Exception:  # noqa: BLE001 -- a mail problem never blocks closing the job

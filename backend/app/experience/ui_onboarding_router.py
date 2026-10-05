@@ -437,12 +437,18 @@ def portal_summary(token: str, lang: str = "en", db: Session = Depends(get_db)):
     application = db.get(Application, case.application_id) if case.application_id else None
     job = db.get(_Job, application.job_role_id) if application is not None else None
     cand = db.get(Candidate, case.candidate_id) if case.candidate_id else None
+    for st in steps:  # fix 2026-10-05: configured steps get the same per-step state as the built-in ones
+        if "state" not in st:
+            st["state"] = "done" if st["done"] else ("in_progress" if st.get("status") == "pending" else "not_started")
+            st["status_text"] = welcome_steps.STATE_TEXT[st["state"]]
+            st.setdefault("description", None)
     counted = [s for s in steps if s.get("counted", True)]
     db.commit()  # keeps a sign link created for an older offer
     return {
         "first_name": greeting_name(db, cand, case) if cand is not None else person["first_name"], "role": person["role"],
         "joining_date": case.joining_date.isoformat(),
         "days_to_join": (case.joining_date - datetime.now(timezone.utc).date()).days, "status": case.status,
+        "portal_schema": welcome_steps.PORTAL_SCHEMA,
         "steps": steps, "done": sum(1 for s in counted if s["done"]), "total": len(counted),
         "contacts": contact_people(db, tenant, job),
         "welcome": _welcome(case),
@@ -508,4 +514,29 @@ def portal_day_one(token: str, db: Session = Depends(get_db)):
     case = _portal_case(db, token)
     _unlocked(db, case)
     welcome_steps.acknowledge_day_one(db, case)
+    return {"ok": True}
+
+
+class PortalProblemIn(BaseModel):
+    kind: str = Field(max_length=60)
+    code: str = Field("", max_length=120)
+    portal_schema: Optional[int] = None
+
+
+@public_router.post("/portal/{token}/problem", status_code=202)
+def portal_problem(token: str, body: PortalProblemIn, db: Session = Depends(get_db)):
+    """fix 2026-10-05: the welcome page met a step it can't show (it showed the joiner a plain message instead).
+    Logged as an error and in the audit log for admins -- once per joiner, step and day."""
+    import logging
+
+    from app.models.audit_log import AuditLog
+
+    case = _portal_case(db, token)
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    seen = (db.query(AuditLog).filter(AuditLog.entity_id == case.id, AuditLog.action == "portal_step_unrenderable", AuditLog.created_at >= today)
+            .all())
+    if not any((r.details or {}).get("kind") == body.kind and (r.details or {}).get("code") == body.code for r in seen):
+        logging.getLogger(__name__).error("welcome portal can't show step kind=%s code=%s (case %s, page schema %s)", body.kind, body.code, case.id, body.portal_schema)
+        log_action(db, "preboarding_case", case.id, "portal_step_unrenderable", "system",
+                   {"kind": body.kind, "code": body.code, "page_schema": body.portal_schema})
     return {"ok": True}

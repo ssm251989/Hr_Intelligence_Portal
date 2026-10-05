@@ -110,6 +110,9 @@ def get_candidate_application_detail(
         .all()
     )
 
+    from app.candidates.names import names_of  # fix 2026-10-05: names HR can correct (else the guess)
+
+    candidate.name_parts = names_of(candidate)
     return CandidateApplicationDetail(
         application=application,
         job_title=job.title if job else "Unknown role",

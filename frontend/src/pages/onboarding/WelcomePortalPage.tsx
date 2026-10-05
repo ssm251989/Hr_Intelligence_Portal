@@ -19,11 +19,11 @@ import { useTheme } from "@mui/material/styles";
 import { useParams, useSearchParams } from "react-router-dom";
 
 import { ApiError, mediaApi } from "../../api/client";
-import { welcomePortalApi, type PortalField, type PortalStep, type PortalSummary } from "../../api/onboardingExtra";
+import { PORTAL_SCHEMA, welcomePortalApi, type PortalField, type PortalStep, type PortalSummary } from "../../api/onboardingExtra";
 import { useBootstrap } from "../../bootstrap/BootstrapContext";
 import { BrandMark, LanguagePicker } from "../../components/careers/PublicAuthLayout";
 import DocumentCapture from "../../components/onboarding/DocumentCapture";
-import { BuiltinStepBody, ContactsCard, isBuiltin, useBuiltinCard } from "../../components/onboarding/WelcomeBuiltinSteps";
+import { BuiltinStepBody, ContactsCard, isBuiltin, useBuiltinCard, useStateText, type CardTone } from "../../components/onboarding/WelcomeBuiltinSteps";
 import { useDateText } from "../../components/onboarding/shared";
 import { useI18n } from "../../i18n";
 import { Emoji, FriendlyError, Illustration, UserAvatar, useReducedMotion } from "../../ui-kit";
@@ -44,6 +44,24 @@ function stepEmoji(step: PortalStep): string {
   if (/address/.test(c)) return "house";
   if (/emergency|family|contact/.test(c)) return "people";
   return step.kind === "form" ? "memo" : "page";
+}
+
+// fix 2026-10-05: the step types this page can show; anything else gets a plain message (and admins are told)
+const KNOWN_KINDS = new Set(["offer", "joining_details", "joining_documents", "day_one", "form", "document", "policy"]);
+const isKnown = (step: PortalStep) => KNOWN_KINDS.has(step.kind);
+
+/** The server's step list is newer than this page (an old tab kept open over an update): reload once. */
+function reloadIfOutdated(data: PortalSummary): boolean {
+  if (!data.portal_schema || data.portal_schema <= PORTAL_SCHEMA) return false;
+  const key = `welcome.reloaded.${data.portal_schema}`;
+  try {
+    if (window.sessionStorage.getItem(key)) return false;
+    window.sessionStorage.setItem(key, "1");
+  } catch {
+    return false; // no storage: never risk a reload loop
+  }
+  window.location.reload();
+  return true;
 }
 
 function exampleFor(field: PortalField): string {
@@ -81,7 +99,7 @@ export default function WelcomePortalPage() {
   const load = useCallback(() => {
     if (!token) return;
     setError(null);
-    welcomePortalApi.summary(token, locale).then(setData).catch(setError);
+    welcomePortalApi.summary(token, locale).then((d) => { if (!reloadIfOutdated(d)) setData(d); }).catch(setError);
   }, [token, locale]);
 
   useEffect(load, [load]);
@@ -282,12 +300,14 @@ function StepCard({ step, onOpen }: { step: PortalStep; onOpen: () => void }) {
   const f = useTheme().palette.fresh;
   const { t } = useI18n();
   const builtinCard = useBuiltinCard();
-  let label = step.label ?? "";
-  let note: string;
-  let tone: "done" | "todo" | "warn" | "locked" = step.done ? "done" : "todo";
+  const stateText = useStateText();
+  let label = step.label || t("wsteps.unknown.title");
+  let description = step.description ?? "";
+  let note = step.state ? stateText(step.state) : step.status_text;
+  let tone: CardTone = step.done ? "done" : step.state === "in_progress" ? "progress" : "todo";
   let emoji = stepEmoji(step);
   if (isBuiltin(step)) {
-    ({ label, note, tone, emoji } = builtinCard(step));
+    ({ label, description, note, tone, emoji } = builtinCard(step));
   } else if (step.kind === "document") {
     if (step.status === "verified") note = t("welcome.step.doc_verified");
     else if (step.status === "pending") note = t("welcome.step.doc_uploaded");
@@ -295,18 +315,19 @@ function StepCard({ step, onOpen }: { step: PortalStep; onOpen: () => void }) {
     else note = t("welcome.step.doc_todo");
   } else if (step.kind === "form") note = step.done ? t("welcome.step.form_done") : t("welcome.step.form_todo", { count: step.fields.length });
   else if (step.kind === "policy") note = step.done ? t("welcome.step.policy_done") : t("welcome.step.policy_todo");
-  else note = t("welcome.step.policy_todo");
+  else if (!isKnown(step)) note = (step as { status_text?: string }).status_text || stateText("not_started");
 
   // fix 2026-10-04: every step opens (a locked one explains why); only finished uploads/policies are read-only
   const clickable = !(step.kind === "document" && step.status === "verified") && !(step.kind === "policy" && step.done);
+  const border = tone === "done" ? "transparent" : tone === "warn" ? f.coral : tone === "progress" ? f.brand : f.line;
   return (
     <Box
       component={clickable ? "button" : "div"} type={clickable ? "button" : undefined} onClick={clickable ? onOpen : undefined}
       aria-label={`${label}: ${note}`}
       sx={{
         textAlign: "left", font: "inherit", color: "inherit", cursor: clickable ? "pointer" : "default", width: "100%",
-        border: `1px ${tone === "locked" ? "dashed" : "solid"} ${tone === "done" ? "transparent" : tone === "warn" ? f.coral : f.line}`, borderRadius: "16px", p: 1.75,
-        display: "flex", flexDirection: "column", gap: 0.75, minHeight: 112, opacity: tone === "locked" ? 0.8 : 1,
+        border: `1px ${tone === "locked" ? "dashed" : "solid"} ${border}`, borderRadius: "16px", p: 1.75,
+        display: "flex", flexDirection: "column", gap: 0.5, minHeight: 128, opacity: tone === "locked" ? 0.85 : 1,
         bgcolor: tone === "done" ? f.okSoft : tone === "warn" ? f.coralSoft : f.surface2,
         "&:hover": clickable ? { boxShadow: f.shadow } : undefined,
         "&:focus-visible": { outline: `2px solid ${f.brand}`, outlineOffset: 2 },
@@ -314,7 +335,11 @@ function StepCard({ step, onOpen }: { step: PortalStep; onOpen: () => void }) {
     >
       <Emoji name={tone === "locked" ? "lock" : emoji} size={28} />
       <Typography component="span" sx={{ fontWeight: 700 }}>{label}</Typography>
-      <Typography component="span" sx={{ fontSize: 13, color: tone === "warn" ? f.coral : f.muted, fontWeight: tone === "warn" ? 700 : 400 }}>
+      {description && <Typography component="span" sx={{ fontSize: 13, color: f.muted, lineHeight: 1.35 }}>{description}</Typography>}
+      <Typography
+        component="span"
+        sx={{ fontSize: 13, mt: "auto", pt: 0.5, fontWeight: 700, color: tone === "warn" ? f.coral : tone === "done" ? f.ok : tone === "progress" ? f.brand : f.muted }}
+      >
         {note}{step.done ? " ✓" : ""}
       </Typography>
     </Box>
@@ -341,7 +366,7 @@ function StepDialog({ step, token, fullScreen, onClose, onDone, onChanged }: { s
 
   if (!step) return null;
   const head = isBuiltin(step) ? builtinCard(step) : null;
-  const title = head ? head.label : step.label ?? "";
+  const title = head ? head.label : step.label || t("wsteps.unknown.title");
 
   const explain = (e: unknown) =>
     e instanceof ApiError && e.status === 401 ? t("welcome.link_broken_fix")
@@ -409,6 +434,7 @@ function StepDialog({ step, token, fullScreen, onClose, onDone, onChanged }: { s
       <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}><Emoji name={head ? head.emoji : stepEmoji(step)} size={24} /> {title}</DialogTitle>
       <DialogContent>
         {isBuiltin(step) && <BuiltinStepBody step={step} token={token} onChanged={onChanged} onClose={onClose} />}
+        {!isKnown(step) && <UnknownStep step={step} token={token} />}
         {step.kind === "document" && (
           <Stack spacing={1.5}>
             {step.status === "rejected" && step.rejection_reason && (
@@ -446,5 +472,19 @@ function StepDialog({ step, token, fullScreen, onClose, onDone, onChanged }: { s
         )}
       </DialogActions>
     </Dialog>
+  );
+}
+
+/** A step type this page can't show: a plain message for the joiner, an error report for admins (fix 2026-10-05). */
+function UnknownStep({ step, token }: { step: PortalStep; token: string }) {
+  const { t } = useI18n();
+  useEffect(() => {
+    welcomePortalApi.reportProblem(token, step.kind, step.code).catch(() => undefined);
+  }, [token, step.kind, step.code]);
+  return (
+    <Stack spacing={1.5} sx={{ pt: 1 }}>
+      {step.description && <Typography>{step.description}</Typography>}
+      <Alert severity="info">{t("wsteps.unknown.body")}</Alert>
+    </Stack>
   );
 }

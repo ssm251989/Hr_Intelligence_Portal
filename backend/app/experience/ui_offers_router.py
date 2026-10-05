@@ -9,6 +9,12 @@ how any stage moves forward.
 - GET  /api/v1/ui/offers/template                         latest offer letter template (B6)
 - POST /api/v1/ui/offers/template/preview                 live preview of unsaved text (B6)
 - POST /api/v1/ui/offers/template                         save (+ publish) the offer template
+fix 2026-10-05 (app/offers/revisions.py):
+- GET  /api/v1/ui/offers/applications/{id}/offer-versions  status, sent n times, history, pending revision
+- POST /api/v1/ui/offers/applications/{id}/offer/resend    same offer, reminder email (15 min cooldown)
+- POST /api/v1/ui/offers/applications/{id}/offer/revise    revised offer (v2, v3...), approval when above the limit
+- POST /api/v1/ui/offers/applications/{id}/offer/revisions/{version_id}/decide   approve / reject a waiting revision
+- GET  /api/v1/ui/offers/applications/{id}/offer/versions/{n}/pdf               any version's PDF
 
 Templates are the Part 7 `letter_templates` rows with key "offer", rendered through the same
 sandboxed Jinja renderer (`platform.comms.renderer.render_string`) every letter/email uses.
@@ -103,13 +109,13 @@ def ui_context(db: Session = Depends(get_db), current_user: User = Depends(get_c
 # ---- offers: timeline, expiry, approval steps ----
 
 _OFFER_ACTIONS = (
-    "ai_offer_letter_generated", "offer_sent", "offer_viewed", "docusign_envelope_viewed",
-    "docusign_envelope_creation_failed", "offer_signed", "onboarding_completed",
+    "ai_offer_letter_generated", "offer_sent", "offer_sent_for_signing", "offer_viewed", "docusign_envelope_viewed",
+    "docusign_envelope_creation_failed", "offer_signed", "onboarding_completed", "offer_resent", "offer_revised",
 )
 _KIND = {
-    "ai_offer_letter_generated": "sent", "offer_sent": "sent", "offer_viewed": "viewed",
+    "ai_offer_letter_generated": "sent", "offer_sent": "sent", "offer_sent_for_signing": "sent", "offer_viewed": "viewed",
     "docusign_envelope_viewed": "viewed", "docusign_envelope_creation_failed": "esign_failed",
-    "offer_signed": "signed", "onboarding_completed": "joined",
+    "offer_signed": "signed", "onboarding_completed": "joined", "offer_resent": "resent", "offer_revised": "revised",
 }
 
 
@@ -278,3 +284,104 @@ def save_offer_template(payload: TemplateSave, db: Session = Depends(get_db), cu
             raise HTTPException(status_code=400, detail=f"Saved as a draft, but it can't be used yet: {exc}")
     log_action(db, "letter_template", template.id, "offer_template_saved", current_user.email, {"version": template.version, "status": template.status})
     return {"id": str(template.id), "version": template.version, "status": template.status}
+
+
+# ---- fix 2026-10-05: resend for signature + revised offer ----
+
+
+def _offer_or_404(db: Session, application_id: UUID):
+    from app.models.offer import Offer
+
+    _application_or_404(db, application_id)
+    offer = db.query(Offer).filter(Offer.application_id == application_id).one_or_none()
+    if offer is None:
+        raise HTTPException(status_code=404, detail="No offer for this candidate yet.")
+    return offer
+
+
+@router.get("/applications/{application_id}/offer-versions")
+def offer_versions(application_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from app.offers import revisions
+
+    return revisions.summary(db, require_current_tenant(), _offer_or_404(db, application_id), current_user)
+
+
+@router.post("/applications/{application_id}/offer/resend")
+def offer_resend(application_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(require_roles("recruiter", "admin"))):
+    from app.offers import revisions
+
+    offer = _offer_or_404(db, application_id)
+    try:
+        out = revisions.resend(db, require_current_tenant(), offer, actor=current_user.email)
+    except revisions.CooldownError as exc:
+        raise HTTPException(status_code=429, detail={"code": "RESEND_COOLDOWN", "message": str(exc), "wait_minutes": exc.wait_minutes}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {**out, "summary": revisions.summary(db, require_current_tenant(), offer, current_user)}
+
+
+class OfferComponentIn(BaseModel):
+    code: Optional[str] = None
+    name: Optional[str] = None
+    amount: float
+
+
+class OfferReviseIn(BaseModel):
+    ctc_total: Optional[float] = None
+    components: Optional[list[OfferComponentIn]] = None
+    joining_date: Optional[str] = None
+    designation: Optional[str] = None
+    work_location: Optional[str] = None
+    terms: Optional[str] = None
+    reason_code: str
+    reason_note: Optional[str] = None
+
+
+@router.post("/applications/{application_id}/offer/revise")
+def offer_revise(application_id: UUID, payload: OfferReviseIn, db: Session = Depends(get_db),
+                 current_user: User = Depends(require_roles("recruiter", "admin"))):
+    from app.offers import revisions
+
+    offer = _offer_or_404(db, application_id)
+    data = payload.model_dump()
+    if payload.components is not None:
+        data["components"] = [c.model_dump() for c in payload.components]
+    try:
+        out = revisions.revise(db, require_current_tenant(), offer, data, actor=current_user.email, user=current_user)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {**out, "summary": revisions.summary(db, require_current_tenant(), offer, current_user)}
+
+
+class RevisionDecisionIn(BaseModel):
+    approve: bool
+    note: Optional[str] = None
+
+
+@router.post("/applications/{application_id}/offer/revisions/{version_id}/decide")
+def offer_revision_decide(application_id: UUID, version_id: UUID, payload: RevisionDecisionIn, db: Session = Depends(get_db),
+                          current_user: User = Depends(get_current_user)):
+    from app.offers import revisions
+
+    offer = _offer_or_404(db, application_id)
+    try:
+        out = revisions.decide(db, require_current_tenant(), offer, version_id, approve=payload.approve, user=current_user, note=payload.note)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {**out, "summary": revisions.summary(db, require_current_tenant(), offer, current_user)}
+
+
+@router.get("/applications/{application_id}/offer/versions/{version_no}/pdf")
+def offer_version_pdf(application_id: UUID, version_no: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from fastapi.responses import Response
+
+    from app.offers import revisions
+
+    offer = _offer_or_404(db, application_id)
+    data = revisions.version_pdf(db, require_current_tenant(), offer, version_no)
+    if data is None:
+        raise HTTPException(status_code=404, detail="No such version.")
+    return Response(content=data, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="offer-letter-v{version_no}.pdf"'})

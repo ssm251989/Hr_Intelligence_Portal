@@ -61,7 +61,10 @@ def _money(v) -> str:
     return f"{head},{tail}"
 
 
-def render_offer(db: Session, tenant, application: Application, joining: date) -> str:
+def render_offer(db: Session, tenant, application: Application, joining: date, *, salary=None, designation: Optional[str] = None,
+                 location: Optional[str] = None, terms: Optional[str] = None, expiry: Optional[date] = None) -> str:
+    """The company's offer template filled in. The keyword overrides are a revised offer's values
+    (fix 2026-10-05); a template that has no {{ work_location }} / {{ terms }} gets them added at the end."""
     from app.experience.ui_offers_router import DEFAULT_TEMPLATE, OFFER_TEMPLATE_KEY
     from app.models.core_hr import LetterTemplate
     from app.platform.comms.renderer import render_string
@@ -72,14 +75,27 @@ def render_offer(db: Session, tenant, application: Application, joining: date) -
     tpl = (db.query(LetterTemplate).filter(LetterTemplate.tenant_id == tenant.tenant_id, LetterTemplate.key == OFFER_TEMPLATE_KEY)
            .order_by(LetterTemplate.version.desc()).first())
     manager = db.get(User, job.hiring_manager_id) if job and job.hiring_manager_id else None
-    salary = application.approved_salary or (application.salary_check or {}).get("suggestion") or application.expected_salary
+    if salary is None:
+        salary = application.approved_salary or (application.salary_check or {}).get("suggestion") or application.expected_salary
     days = _expiry_days(db)
     # fix 2026-10-04: never a blank salary amount in the letter
-    ctx = {**get_theme_and_org_context(db, tenant), "candidate_name": cand.full_name if cand else "", "job_title": job.title if job else "",
+    ctx = {**get_theme_and_org_context(db, tenant), "candidate_name": cand.full_name if cand else "",
+           "job_title": designation or (job.title if job else ""),
            "salary": _money(salary) if salary is not None else "as agreed with HR", "start_date": joining.strftime("%d %B %Y"),
            "reporting_manager": (manager.full_name or manager.email) if manager else "your manager",
-           "expiry_date": (date.today() + timedelta(days=days)).strftime("%d %B %Y")}
-    return render_string(tpl.html_tpl if tpl else DEFAULT_TEMPLATE, ctx)
+           "work_location": location or (job.location if job else "") or "", "terms": terms or "",
+           "expiry_date": (expiry or (date.today() + timedelta(days=days))).strftime("%d %B %Y")}
+    source = tpl.html_tpl if tpl else DEFAULT_TEMPLATE
+    out = render_string(source, ctx)
+    extra = ""
+    if location and "work_location" not in source:
+        extra += f"<p>Your work location will be <strong>{_html.escape(location)}</strong>.</p>"
+    if terms and "terms" not in source:
+        extra += "<p><strong>Additional terms</strong><br>" + "<br>".join(_html.escape(x) for x in terms.splitlines()) + "</p>"
+    if extra:  # before the sign-off (the template's last paragraph), else at the end
+        cut = out.rfind("<p")
+        out = (out[:cut] + extra + out[cut:]) if cut > 0 else out + extra
+    return out
 
 
 def _text(html_text: str) -> str:
@@ -96,14 +112,17 @@ def _docusign_sender(db, tenant, job) -> Optional[User]:
 
 
 def greeting_name(db: Session, cand: Optional[Candidate], case=None) -> str:
-    """Preferred name, else the first name they gave in the joining details, else the full name."""
+    """Preferred name, else first name: what the joiner typed in their joining details, else what HR set on the
+    profile, else a careful guess (app/candidates/names.py -- "Gunda Kishore" + gkishore@... -> "Kishore").
+    Never the whole full name, never the surname."""
     if case is not None:
         jd = ((case.form_submissions_json or {}).get("joining_details") or {}).get("data") or {}
         for key in ("preferred_name", "first_name"):
             if str(jd.get(key) or "").strip():
                 return str(jd[key]).strip()
-    full = ((cand.full_name if cand else "") or "").replace("Demo - ", "").strip()
-    return full or "there"
+    from app.candidates.names import given_name
+
+    return given_name(cand) or "there"
 
 
 def contact_people(db: Session, tenant, job: Optional[JobRole]) -> list[dict]:

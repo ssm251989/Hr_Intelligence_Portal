@@ -130,7 +130,7 @@ from app.models.job_role import JobRole
 from app.models.local_import_settings import LocalImportSettings
 from app.models.metadata import CustomFieldDef, FormLayout, FxRate, I18nOverride, MasterType, MasterValue, MetaForm, Sequence
 from app.models.negotiation_token import NegotiationToken
-from app.models.offer import Offer
+from app.models.offer import Offer, OfferVersion
 from app.models.offer_component import OfferComponent
 from app.models.pipeline import PipelineStage, PipelineTemplate
 from app.models.prompt import PromptTemplate
@@ -296,6 +296,7 @@ __all__ = [
     "PreboardingCase",
     "PreboardingDocument",
     "Offer",
+    "OfferVersion",
     "OfferComponent",
     "PipelineStage",
     "PipelineTemplate",

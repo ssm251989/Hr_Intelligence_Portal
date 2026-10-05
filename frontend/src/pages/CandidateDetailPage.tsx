@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import Alert from "@mui/material/Alert";
@@ -34,6 +35,8 @@ import SourceChip from "../components/SourceChip";
 import ActivityTimeline from "../components/candidates/ActivityTimeline";
 import ResumePreview from "../components/candidates/ResumePreview";
 import ScoreCard from "../components/candidates/ScoreCard";
+import NameEditDialog from "../components/candidates/NameEditDialog";
+import OfferPanel from "../components/offers/OfferPanel";
 import WhyThisScore from "../components/scoring/WhyThisScore";
 import { STEPPER_STAGES, stepperIndex, useFresh } from "../components/candidates/stages";
 import { useAuth } from "../auth/AuthContext";
@@ -108,6 +111,7 @@ export default function CandidateDetailPage() {
   // Part 17.15: "Remove candidate" (Recycle bin) + the possible-duplicate banner
   const canRemove = useMeBootstrap().can("recruitment.candidate.delete");
   const [removeOpen, setRemoveOpen] = useState(false);
+  const [namesOpen, setNamesOpen] = useState(false); // fix 2026-10-05
   const t = useT();
   const f = useFresh();
 
@@ -409,6 +413,17 @@ export default function CandidateDetailPage() {
         <SchedulingStatusCard key={schedKey} applicationId={application.id} candidateName={candidate.full_name ?? null} canWrite={canWrite} onChanged={load} />
       )}
 
+      {/* fix 2026-10-05: the Offer section -- resend for signature, revised offer, offer history */}
+      {["offer_sent", "onboarding_started", "onboarding_completed"].includes(application.status) && (
+        <Card sx={{ p: 2.25, mb: 2.25 }}>
+          <SectionTitle>{t("candidates.detail.offer")}</SectionTitle>
+          <OfferPanel applicationId={application.id} canWrite={canWrite} onChanged={load} />
+        </Card>
+      )}
+      {namesOpen && (
+        <NameEditDialog candidate={candidate} onClose={() => setNamesOpen(false)} onSaved={() => { setNamesOpen(false); load(); }} />
+      )}
+
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "340px minmax(0, 1fr)" }, gap: 2.25, alignItems: "start" }}>
         {/* ---------------- left: who they are ---------------- */}
         <Stack spacing={2.25} sx={{ minWidth: 0 }}>
@@ -426,6 +441,19 @@ export default function CandidateDetailPage() {
               {score != null && <StatusChip tone="brand" emoji="star" label={t("candidates.score_short", { score: Math.round(score) })} />}
             </Stack>
             <Box component="dl" sx={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "6px 12px", m: 0, mt: 1.75, fontSize: 13 }}>
+              <Fact label={t("candidates.fact.called")} info={t("candidates.fact.called_info")}>
+                <Stack direction="row" spacing={0.5} alignItems="center" component="span">
+                  <span>
+                    {candidate.name_parts?.preferred_name || candidate.name_parts?.first_name || candidate.full_name || "—"}
+                    {candidate.name_parts?.first_name && candidate.name_parts.last_name ? <Box component="span" sx={{ color: f.muted, fontWeight: 400 }}> · {t("candidates.fact.surname", { name: candidate.name_parts.last_name })}</Box> : null}
+                    {candidate.name_parts?.source === "resume" ? <Box component="span" sx={{ color: f.muted, fontWeight: 400 }}> ({t("candidates.fact.name_from_resume")})</Box> : null}
+                    {candidate.name_parts?.source === "none" ? <Box component="span" sx={{ color: f.muted, fontWeight: 400 }}> ({t("candidates.fact.name_unknown")})</Box> : null}
+                  </span>
+                  {canWrite && (
+                    <IconButton size="small" aria-label={t("candidates.names.edit")} onClick={() => setNamesOpen(true)}><EditOutlinedIcon fontSize="inherit" /></IconButton>
+                  )}
+                </Stack>
+              </Fact>
               <Fact label={t("candidates.fact.email")}>{candidate.email || "—"}</Fact>
               <Fact label={t("candidates.fact.phone")}>{candidate.phone || "—"}</Fact>
               <Fact label={t("candidates.fact.location")}>{candidate.location || "—"}</Fact>

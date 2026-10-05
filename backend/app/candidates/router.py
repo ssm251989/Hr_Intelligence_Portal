@@ -102,6 +102,9 @@ def _with_inferred_gender(candidate: Candidate) -> Candidate:
     # app/jobs/router.py _attach_table_stats). CandidateRead.from_attributes reads it like
     # any other field.
     candidate.inferred_gender = infer_gender(candidate.full_name)
+    from app.candidates.names import names_of  # fix 2026-10-05
+
+    candidate.name_parts = names_of(candidate)
     return candidate
 
 
@@ -538,6 +541,20 @@ def get_candidate(
     return _with_inferred_gender(_get_candidate_or_404(db, candidate_id))
 
 
+def _sync_prehire_names(db: Session, candidate: Candidate) -> None:
+    """fix 2026-10-05: HR corrected the names -> the pre-hire employee record and onboarding case follow."""
+    from app.candidates.names import names_of
+    from app.models.core_hr import Employee
+    from app.models.onboarding import PreboardingCase
+
+    n = names_of(candidate)
+    for case in db.query(PreboardingCase).filter(PreboardingCase.candidate_id == candidate.id).all():
+        emp = db.get(Employee, case.employee_id) if case.employee_id else None
+        if emp is not None and n["first_name"]:
+            emp.first_name, emp.last_name = n["first_name"], n["last_name"] or emp.last_name
+            emp.preferred_name = n["preferred_name"] or None
+
+
 @router.patch("/{candidate_id}", response_model=CandidateRead)
 def update_candidate(
     candidate_id: uuid.UUID,
@@ -547,11 +564,17 @@ def update_candidate(
 ):
     candidate = _get_candidate_or_404(db, candidate_id)
     updates = payload.model_dump(exclude_unset=True)
+    before = {k: getattr(candidate, k) for k in updates}
     for field, value in updates.items():
+        if field in ("first_name", "last_name", "preferred_name"):
+            value = " ".join((value or "").split()) or None
         setattr(candidate, field, value)
+    if {"first_name", "last_name", "preferred_name"} & set(updates):
+        _sync_prehire_names(db, candidate)
     db.commit()
     db.refresh(candidate)
-    log_action(db, "candidate", candidate.id, "candidate_contact_info_updated", current_user.email, updates)
+    log_action(db, "candidate", candidate.id, "candidate_contact_info_updated", current_user.email,
+               {"old": {k: v for k, v in before.items()}, "new": updates})
     return _with_inferred_gender(candidate)
 
 

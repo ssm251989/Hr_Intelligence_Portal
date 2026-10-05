@@ -24,6 +24,7 @@ from app.models.application import Application
 from app.models.candidate import Candidate
 from app.models.candidate_document import CandidateDocument
 from app.models.job_role import JobRole
+from app.candidates.names import given_name as _given  # fix 2026-10-05: first / preferred name, never the surname
 
 FORM_ACTION = "joining_documents_form"
 FORM_TTL_DAYS = 21
@@ -104,7 +105,7 @@ def send_form(db: Session, tenant, application: Application, *, actor: str = "sy
     listing = "\n".join(f"- {i['label']}{'' if i.get('required', True) else ' (optional)'}{(': ' + i['note']) if i.get('note') else ''}" for i in items)
     try:
         msg = send_default(db, tenant, key, to=[cand.email], related_entity_type="application", related_entity_id=application.id,
-                           ctx={"candidate_first_name": (cand.full_name or "").split(" ")[0], "job_title": job.title if job else "",
+                           ctx={"candidate_first_name": _given(cand), "job_title": job.title if job else "",
                                 "form_link": link, "documents": listing, "note": note or "", "reminder": reminder})
         sent = msg.status in ("sent", "queued")
     except Exception:  # noqa: BLE001 -- HR can share the link instead

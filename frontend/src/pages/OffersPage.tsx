@@ -22,6 +22,7 @@ import { useAuth } from "../auth/AuthContext";
 import { ROLE_MATRIX } from "../auth/roles";
 import ConfirmDialog from "../components/ConfirmDialog";
 import OfferTemplateEditor from "../components/offers/OfferTemplateEditor";
+import OfferPanel from "../components/offers/OfferPanel";
 import OfferTimeline from "../components/offers/OfferTimeline";
 import RefreshButton from "../components/RefreshButton";
 import { Inset, JobPickerCard, PersonHeader, useOffersContext, useWhen } from "../components/offers/shared";
@@ -510,6 +511,10 @@ export default function OffersPage() {
 
                   {offer && (
                     <Inset title={<><Emoji name="compass" size={16} /> {t("offers.tl.title")}</>}>
+                      {/* fix 2026-10-05: resend for signature, revised offer, offer history */}
+                      <Box sx={{ mb: 2 }}>
+                        <OfferPanel applicationId={app.id} canWrite={canWrite} onChanged={() => void loadJobData(selectedJobId)} />
+                      </Box>
                       <OfferTimeline
                         applicationId={app.id}
                         status={app.status}

@@ -294,28 +294,60 @@ def _offer(db: Session, case: PreboardingCase):
     return db.get(Offer, case.offer_id) if case.offer_id else None
 
 
+# fix 2026-10-05: every step has its OWN state; English text is sent too, so a page that doesn't know a step
+# type still shows a title (the portal's own i18n keys win when it knows the type).
+STATE_TEXT = {"locked": "Unlocks after you sign your offer", "not_started": "Not started", "in_progress": "In progress", "done": "Done"}
+TEXT = {
+    "offer": ("Sign your offer", "Read your offer letter and sign it online"),
+    "joining_details": ("Your joining details", "Personal details, address, emergency contact and bank"),
+    "joining_documents": ("Upload documents", "ID, education and other documents - phone camera works"),
+    "day_one": ("Your first day", "Time, address, who to meet and what to bring"),
+}
+PORTAL_SCHEMA = 2  # bump when the step payload changes; an older open page reloads itself
+
+
+def _step(kind: str, code: str, state: str, **extra) -> dict:
+    label, description = TEXT[kind]
+    if state == "locked":
+        extra["locked_reason"] = LOCKED
+    return {"kind": kind, "code": code, "label": label, "description": description, "state": state, "status_text": STATE_TEXT[state],
+            "done": state == "done", "counted": extra.pop("counted", True), **{"locked_reason": None, **extra}}
+
+
 def builtin_steps(db: Session, tenant, case: PreboardingCase) -> list[dict]:
+    """Offer is done only when the LATEST version is signed (DocuSign: once its envelope is completed). The other
+    three are locked until then -- and a locked step is never done, whatever was collected earlier."""
     from app.offers import esign
 
     offer = _offer(db, case)
     signed = bool(offer.signed) if offer is not None else True  # no offer record (HR started onboarding by hand): nothing to sign
     steps = []
     if offer is not None:
-        steps.append({"kind": "offer", "code": "offer", "label": None, "done": signed, "counted": True,
-                      "signed_at": offer.signed_at.isoformat() if offer.signed_at else None,
-                      "sign_url": None if signed else esign.sign_url(db, offer),
-                      "pdf_url": esign.pdf_url(db, offer) if signed else None})
-    lock = None if signed else LOCKED
-    steps.append({"kind": "joining_details", "code": KEY, "label": None, "done": joining_details_done(case), "counted": True,
-                  "locked_reason": lock, **({} if lock else joining_details_view(case))})
+        st = "done" if signed else ("in_progress" if offer.viewed_at else "not_started")
+        steps.append(_step("offer", "offer", st, version_no=offer.version_no or 1,
+                           signed_at=offer.signed_at.isoformat() if offer.signed_at else None,
+                           sign_url=None if signed else esign.sign_url(db, offer), pdf_url=esign.pdf_url(db, offer),
+                           expiry_date=offer.expiry_date.isoformat() if offer.expiry_date else None,
+                           method="docusign" if (offer.docusign_envelope_id and offer.docusign_sender_id and not signed) else "in_app"))
+    locked = not signed
+    if locked:
+        steps.append(_step("joining_details", KEY, "locked"))
+    else:
+        view = joining_details_view(case)
+        st = "done" if joining_details_done(case) else ("in_progress" if view["status"] == "draft" and any(view["saved"].values()) else "not_started")
+        steps.append(_step("joining_details", KEY, st, **view))
     docs = documents_view(db, tenant, case)
-    steps.append({"kind": "joining_documents", "code": "documents", "label": None, "done": documents_done(db, tenant, case) if docs else True,
-                  "counted": bool(docs), "locked_reason": lock, "documents": docs if not lock else []})
+    if locked:
+        steps.append(_step("joining_documents", "documents", "locked", counted=bool(docs), documents=[]))
+    else:
+        have = [d for d in docs if d["status"] in ("uploaded", "verified", "received_earlier")]
+        st = "done" if (documents_done(db, tenant, case) if docs else True) else ("in_progress" if have else "not_started")
+        steps.append(_step("joining_documents", "documents", st, counted=bool(docs), documents=docs))
     info = day_one_info(db, tenant, case)
-    steps.append({"kind": "day_one", "code": "day_one", "label": None, "done": bool(info["acknowledged_at"]), "counted": True,
-                  "locked_reason": lock, "info": info if not lock else None})
-    for s in steps:
-        s.setdefault("locked_reason", None)
+    if locked:
+        steps.append(_step("day_one", "day_one", "locked", info=None))
+    else:
+        steps.append(_step("day_one", "day_one", "done" if info["acknowledged_at"] else "not_started", info=info))
     db.flush()  # a new sign link token is saved by the caller's commit (the portal page commits)
     return steps
 

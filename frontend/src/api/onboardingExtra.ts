@@ -162,16 +162,24 @@ export interface DayOneInfo {
 export interface PortalContact { name: string; role: string | null; email: string | null; phone: string | null }
 
 // fix 2026-10-04: built-in steps (offer / joining details / documents / day one) -- "locked_reason" until the offer is signed
+// fix 2026-10-05: every step has its own state + English label / description / status text from the server,
+// so a step type this page doesn't know still has a title (the page's own i18n wins for types it knows).
+export type StepState = "locked" | "not_started" | "in_progress" | "done";
+interface StepBase { code: string; done: boolean; counted?: boolean; state: StepState; status_text: string; description?: string | null; locked_reason?: string | null }
 export type PortalStep =
-  | { kind: "offer"; code: string; label: null; done: boolean; counted?: boolean; locked_reason?: string | null; signed_at?: string | null; sign_url?: string | null; pdf_url?: string | null }
-  | { kind: "joining_details"; code: string; label: null; done: boolean; counted?: boolean; locked_reason: string | null; fields?: JoiningField[]; saved?: Record<string, string>; status?: string }
-  | { kind: "joining_documents"; code: string; label: null; done: boolean; counted?: boolean; locked_reason: string | null; documents: JoiningDoc[] }
-  | { kind: "day_one"; code: string; label: null; done: boolean; counted?: boolean; locked_reason: string | null; info: DayOneInfo | null }
-  | { kind: "form"; code: string; label: string; done: boolean; fields: PortalField[]; saved: Record<string, unknown> }
-  | { kind: "document"; code: string; label: string; done: boolean; status: "missing" | "pending" | "verified" | "rejected"; rejection_reason: string | null }
-  | { kind: "policy"; code: string; label: string; done: boolean };
+  | (StepBase & { kind: "offer"; label: string; version_no: number; signed_at?: string | null; sign_url?: string | null; pdf_url?: string | null; expiry_date?: string | null; method: "docusign" | "in_app" })
+  | (StepBase & { kind: "joining_details"; label: string; fields?: JoiningField[]; saved?: Record<string, string>; status?: string })
+  | (StepBase & { kind: "joining_documents"; label: string; documents: JoiningDoc[] })
+  | (StepBase & { kind: "day_one"; label: string; info: DayOneInfo | null })
+  | (StepBase & { kind: "form"; label: string; fields: PortalField[]; saved: Record<string, unknown> })
+  | (StepBase & { kind: "document"; label: string; status: "missing" | "pending" | "verified" | "rejected"; rejection_reason: string | null })
+  | (StepBase & { kind: "policy"; label: string });
+
+/** Bump together with backend welcome_steps.PORTAL_SCHEMA. */
+export const PORTAL_SCHEMA = 2;
 
 export interface PortalSummary {
+  portal_schema?: number;
   first_name: string;
   role: string | null;
   joining_date: string;
@@ -221,6 +229,8 @@ export const welcomePortalApi = {
     form.append("file", file, filename);
     return publicRequest<{ code: string; status: string }>(`/api/v1/public/ui/onboarding/portal/${enc(token)}/joining-documents`, { method: "POST", body: form });
   },
+  reportProblem: (token: string, kind: string, code: string) =>
+    publicRequest<{ ok: boolean }>(`/api/v1/public/ui/onboarding/portal/${enc(token)}/problem`, { method: "POST", body: JSON.stringify({ kind, code, portal_schema: PORTAL_SCHEMA }) }),
   acknowledgeDayOne: (token: string) => publicRequest<{ ok: boolean }>(`/api/v1/public/ui/onboarding/portal/${enc(token)}/day-one`, { method: "POST" }),
   uploadDocument: (token: string, documentType: string, file: Blob, filename: string) => {
     const form = new FormData();
