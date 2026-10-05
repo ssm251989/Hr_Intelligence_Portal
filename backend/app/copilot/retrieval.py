@@ -67,11 +67,20 @@ def ingest(db: Session, tenant: TenantContext, *, title: str, body: str, languag
                                  audience_role_names=audience_role_names or [], uploaded_by=uploaded_by)
     db.add(document)
     db.flush()
-    for i, (heading, text_value) in enumerate(chunk_text(body)):
-        db.add(KnowledgeChunk(tenant_id=tenant.tenant_id, document_id=document.id, ordinal=i, heading=heading, body=text_value))
+    write_chunks(db, tenant, document, body)
     db.commit()
     db.refresh(document)
     return document
+
+
+def write_chunks(db: Session, tenant: TenantContext, document: KnowledgeDocument, body: str) -> int:
+    """(Re)writes a document's searchable passages; returns how many. The caller commits."""
+    db.query(KnowledgeChunk).filter(KnowledgeChunk.document_id == document.id).delete(synchronize_session=False)
+    pieces = chunk_text(body)
+    for i, (heading, text_value) in enumerate(pieces):
+        db.add(KnowledgeChunk(tenant_id=tenant.tenant_id, document_id=document.id, ordinal=i, heading=heading, body=text_value))
+    db.flush()
+    return len(pieces)
 
 
 def reindex_kb_article(db: Session, tenant: TenantContext, article) -> Optional[KnowledgeDocument]:

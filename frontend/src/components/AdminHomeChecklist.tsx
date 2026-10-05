@@ -9,6 +9,7 @@ import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import ListItemText from "@mui/material/ListItemText";
 import Stack from "@mui/material/Stack";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 
 import { experienceApi, type HealthIssue, type SetupProgress } from "../api/client";
@@ -38,6 +39,15 @@ export default function AdminHomeChecklist() {
       /* keep the last list */
     } finally {
       setRechecking(false);
+    }
+  };
+
+  // fix 2026-10-05: "Ignore this" -- hide a check the company doesn't need (undo: Settings > Data > System health)
+  const ignore = async (key: string) => {
+    try {
+      setIssues((await experienceApi.configHealthIgnore(key, true)).issues);
+    } catch {
+      /* keep the list */
     }
   };
 
@@ -81,7 +91,16 @@ export default function AdminHomeChecklist() {
             </Stack>
             {issues.slice(0, 6).map((issue, i) => (
               <Alert key={`${issue.code}-${i}`} severity={issue.severity} sx={{ mb: 1 }}
-                action={issue.fix_path ? <Button size="small" component={RouterLink} to={issue.fix_path} variant="contained">{issue.action_label ?? "Fix it"}</Button> : undefined}>
+                action={(
+                  <Stack direction="row" spacing={0.5} alignItems="center">
+                    {issue.fix_path && <Button size="small" component={RouterLink} to={issue.fix_path} variant="contained">{issue.action_label ?? "Fix it"}</Button>}
+                    {issue.key && (
+                      <Tooltip title={t("health.ignore.hint")}>
+                        <Button size="small" color="inherit" onClick={() => ignore(issue.key as string)}>{t("health.ignore")}</Button>
+                      </Tooltip>
+                    )}
+                  </Stack>
+                )}>
                 <strong>{issue.message}</strong> {issue.fix}
               </Alert>
             ))}

@@ -94,6 +94,7 @@ HELP: dict[str, tuple[str, str]] = {
     # ---- platform / UX (Part 14) ----
     "platform.modules.enabled": ("Modules switched on for your organisation (within your licence).", "Menus, pages and APIs people can reach"),
     "platform.setup.skipped": ("Setup Wizard steps an admin chose to skip.", "Setup checklist on the admin home"),
+    "platform.health.ignored": ("Configuration health checks an admin chose to ignore because the company doesn't need them.", "Configuration health on the admin home"),
     "platform.setup.config_pack": ("Which configuration pack was applied during setup.", "Setup checklist"),
     "ux.reduce_motion": ("Turn off animations and celebrations.", "All motion in the app for this user"),
     "ux.page_size": ("Rows per page in lists.", "Every list"),

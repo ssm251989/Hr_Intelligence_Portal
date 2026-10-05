@@ -1638,6 +1638,8 @@ export interface HealthIssue {
   fix_path: string;
   /** Part 16.2: the one-click fix button, e.g. "Connect mailbox". */
   action_label?: string;
+  /** fix 2026-10-05: stable id used by "Ignore this" */
+  key?: string;
 }
 
 export interface InboxItem {
@@ -1666,8 +1668,10 @@ export const experienceApi = {
   applyConfigPack: (pack: unknown, dryRun: boolean) => post<Record<string, unknown>>("/api/v1/setup/config-pack", { pack, dry_run: dryRun }),
   inviteAdmin: (email: string, fullName?: string) => post<{ email_sent: boolean; link: string | null }>("/api/v1/setup/invite-admin", { email, full_name: fullName }),
   skipStep: (step: string, undo = false) => post<SetupProgress>(`/api/v1/setup/steps/${step}/skip`, { undo }),
-  configHealth: () => get<{ healthy: boolean; issues: HealthIssue[]; counts: Record<string, number> }>("/api/v1/setup/config-health"),
+  configHealth: () => get<{ healthy: boolean; issues: HealthIssue[]; ignored?: HealthIssue[]; counts: Record<string, number> }>("/api/v1/setup/config-health"),
   // Part 18.3: test every connection now, then return the fresh list
+  configHealthIgnore: (key: string, ignore = true) =>
+    post<{ healthy: boolean; issues: HealthIssue[]; ignored: HealthIssue[]; counts: Record<string, number> }>("/api/v1/setup/config-health/ignore", { key, ignore }),
   configHealthRecheck: () =>
     post<{ healthy: boolean; issues: HealthIssue[]; counts: Record<string, number>; checked_at: string; tested: { connection: string; provider: string; ok: boolean; error: string | null }[] }>(
       "/api/v1/setup/config-health/recheck", {}),

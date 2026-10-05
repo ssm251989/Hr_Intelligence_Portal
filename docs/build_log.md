@@ -2685,3 +2685,21 @@ NEXT: owner fixes Kishore's names (profile pencil -> Swap -> Save) and sets the 
 - **Proof:** FIXES_19.md "Post-joining exits and absconding" (4 scenarios + mailpit notices, 25 screenshots). Test records deleted.
 
 NEXT: owner confirms Kishore's "declined" was intended and reviews the notice wording; then RESUME order -> PART16 16.3 settings reorganised.
+
+## Fix -- configuration health links + policies upload (2026-10-05)
+- **Cause:** the "Upload policies" health item linked to `/settings/integrations/ai` (AI provider & keys). No policy upload page existed: the backend took pasted text only, and the Helpdesk knowledge base is hidden for ctd-techs. Settings also silently redirected links to hidden pages to the first page of the category.
+- **Fix:**
+  - New Settings > Company > Policies & handbook (`app/copilot/policies.py`, `/api/v1/ui/policies`, `PoliciesPage.tsx`):
+    - multi-file PDF/DOCX upload with title, category, version and effective date, plus a sample handbook
+    - status Processing / Ready / Failed + reason, read in the background
+    - new version (swaps in when Ready), preview, edit, retry, delete
+    - files stored via the storage connection, else on disk, per company
+  - The health item links there, shows only when the HR assistant is on, and clears on 1 Ready. "Ignore this" on every health item (`platform.health.ignored`; undo in System health > Ignored checks). Hidden-page links now explain themselves.
+  - Link audit: 2 links went to the bare `/settings/integrations` and now open Connections; System health storage now opens Connections.
+- **Also fixed:**
+  - `gateway.complete` never sent `max_tokens`, so every HR-assistant answer, agent, triage and summary call failed with TypeError.
+  - The assistant's round button covered the panel's Send button.
+- Migration a23c5d6e7f8b. Tests test_policies_health.py (6) + gateway max_tokens test.
+- **Proof:** FIXES_19.md "Configuration health links + Policies & handbook" (link table, 28 screenshots fix22-*). The owner uploaded the sample handbook live; my proof copy and temporary admin were deleted.
+
+NEXT: owner replaces the sample handbook with the real one (Policies & handbook > New version); then RESUME order -> PART16 16.3 settings reorganised.

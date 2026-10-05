@@ -121,4 +121,4 @@ PURPOSE_HEALTH: dict[str, tuple[str, str, str]] = {
 
 
 def purpose_health(purpose: str) -> tuple[str, str, str]:
-    return PURPOSE_HEALTH.get(purpose, ("A service this feature needs isn't connected yet.", "Open connections", "/settings/integrations"))
+    return PURPOSE_HEALTH.get(purpose, ("A service this feature needs isn't connected yet.", "Open connections", "/settings/integrations/connections"))

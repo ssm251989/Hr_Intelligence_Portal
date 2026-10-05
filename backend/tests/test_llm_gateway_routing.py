@@ -109,3 +109,17 @@ def test_usage_is_returned_for_metering(db_session, monkeypatch):
 
     assert result["usage"]["input_tokens"] == 10
     assert result["usage"]["output_tokens"] == 5
+
+
+def test_complete_always_sends_max_tokens(db_session, monkeypatch):
+    """Fix 2026-10-05: governed calls (HR assistant, agents, triage) never passed max_tokens, which
+    the provider requires -- every HR-assistant answer failed with TypeError."""
+    import app.platform.connectors.providers.anthropic_provider as anthropic_module
+
+    monkeypatch.setattr(anthropic_module, "Anthropic", _FakeAnthropicClient)
+    _FakeMessages.calls.clear()
+    _make_anthropic_connection(db_session)
+    gateway.complete(db_session, _tenant_ctx(), purpose=TEST_LLM_PURPOSE, system="sys", messages=[{"role": "user", "content": "hi"}], _record=False)
+    assert _FakeMessages.calls[-1]["max_tokens"] == 4096
+    gateway.complete(db_session, _tenant_ctx(), purpose=TEST_LLM_PURPOSE, system="sys", messages=[{"role": "user", "content": "hi"}], max_tokens=300, _record=False)
+    assert _FakeMessages.calls[-1]["max_tokens"] == 300

@@ -18,6 +18,7 @@ import BudgetsSettingsPage from "../components/salary/BudgetsSettingsPage";
 import RequiredDocumentsPage from "../components/documents/RequiredDocumentsPage";
 import ContactsSettingsPage from "../components/offers/ContactsSettingsPage";
 import OfficesPage from "../components/people/OfficesPage";
+import PoliciesPage from "../components/policies/PoliciesPage";
 import UsersPage from "../components/people/UsersPage";
 import GenAISettingsPage from "../components/genai/GenAISettingsPage";
 import PrivacyPanel from "../components/PrivacyPanel";
@@ -29,6 +30,7 @@ import ShortlistingRulesForm from "../components/scoring/ShortlistingRulesForm";
 import BrandingGuideCard from "../components/settings/BrandingGuideCard";
 import IntegrationCard from "../components/settings/IntegrationCard";
 import SystemHealthPage from "../components/settings/SystemHealthPage";
+import IgnoredChecksCard from "../components/settings/IgnoredChecksCard";
 import { t } from "../i18n";
 import { AuditLogPage, BillingPage, ImportsPage, InterviewsSettingsPage, LanguagesPage, SamplesPage, StoragePage, TwoStepPage } from "./pages";
 
@@ -82,6 +84,7 @@ export const LEGACY: Record<string, string> = {
   helpdesk: "helpdesk/main", assets: "helpdesk/main", exits: "helpdesk/main", "service-desk": "helpdesk/main",
   all: "advanced/all", modules: "company/modules", "module-lock": "company/modules", "advanced/modules": "company/modules", platform: "advanced/all", "all-settings": "advanced/all",
   health: "data/health", "system-health": "data/health",
+  policies: "company/policies", handbook: "company/policies", knowledge: "company/policies",
 };
 
 export const CATEGORIES: SettingsCategory[] = [
@@ -95,6 +98,9 @@ export const CATEGORIES: SettingsCategory[] = [
         render: () => (<><OfficesPage /><CoreHrPanel only="Org" /></>) },
       { id: "languages", emoji: "globe", keywords: "hindi tamil rename labels translation", visible: ADMIN, render: () => <LanguagesPage /> },
       { id: "media", emoji: "clapper", keywords: "welcome video tours show me how gif", visible: ADMIN, render: () => <MediaSettingsPanel /> },
+      // fix 2026-10-05: what the HR assistant answers from -- here, not under Helpdesk, so it works when Helpdesk is off
+      { id: "policies", emoji: "page", keywords: "policies handbook policy documents hr assistant copilot knowledge upload leave conduct benefits", visible: ADMIN,
+        render: () => <PoliciesPage /> },
       // Part 19.1: "Choose what you use" + activation code; the other (non-hiring) modules underneath
       { id: "modules", emoji: "puzzle", keywords: "modules choose what you use activation code activate switch on off", visible: ADMIN,
         render: () => (<><ModulePicker /><ModulesOnOffCard /></>) },
@@ -210,7 +216,7 @@ export const CATEGORIES: SettingsCategory[] = [
       { id: "privacy", emoji: "lock", keywords: "retention consent dpdp privacy requests", visible: ADMIN, render: () => <PrivacyPanel /> },
       { id: "audit", emoji: "eyes", keywords: "audit log history who changed", visible: ADMIN, render: () => <AuditLogPage /> },
       // Part 17.13: is everything the app depends on working? (the ui-kit has no stethoscope emoji)
-      { id: "health", emoji: "check", keywords: "health status database mailbox ai storage jobs", visible: ADMIN, render: () => <SystemHealthPage /> },
+      { id: "health", emoji: "check", keywords: "health status database mailbox ai storage jobs", visible: ADMIN, render: () => (<><SystemHealthPage /><IgnoredChecksCard /></>) },
     ],
   },
   {

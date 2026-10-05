@@ -22,7 +22,7 @@ const FIX: Record<string, string> = {
   links: "/settings/company/profile",
   mailbox: "/settings/communication/mailboxes",
   ai: "/settings/integrations/ai",
-  storage: "/settings/integrations/storage",
+  storage: "/settings/integrations/connections", // fix 2026-10-05: connect / repair the storage connection (the File storage page only shows usage)
 };
 const TONE: Record<HealthLight, Tone> = { green: "ok", amber: "sun", red: "coral" };
 const KNOWN = new Set(["database", "mailbox", "ai", "storage", "jobs", "links"]);

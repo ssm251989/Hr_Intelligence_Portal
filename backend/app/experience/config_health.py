@@ -98,7 +98,7 @@ def check(db: Session, tenant: TenantContext) -> dict:
         connection = db.get(Connection, token_row.connection_id)
         if connection is not None and not token_row.refresh_secret_ref:
             issues.append(_issue("warning", "OAUTH_EXPIRING", f"The connection to {connection.name} stops working on {token_row.expires_at:%d %b %Y}.",
-                                 "Reconnect it before then so emails and calendars keep working.", "/settings/integrations", "Reconnect",
+                                 "Reconnect it before then so emails and calendars keep working.", "/settings/integrations/connections", "Reconnect",
                                  connection_id=str(connection.id)))
 
     for connection in db.query(Connection).filter(Connection.tenant_id == tenant.tenant_id, Connection.status.in_(("active", "error"))).all():
@@ -112,17 +112,42 @@ def check(db: Session, tenant: TenantContext) -> dict:
                                  "Press \"Re-check now\" (or Test on the connection) to make sure it works.", "/settings/integrations/connections",
                                  "Test it", connection_id=str(connection.id)))
 
+    # Fix 2026-10-05: only when the HR assistant is switched on; clears once one policy is Ready
     if "copilot" in modules and feature_enabled(db, tenant, "copilot.chat"):
-        from app.models.intelligence import KnowledgeDocument
+        from app.copilot.policies import ready_count
 
-        if db.query(KnowledgeDocument).filter(KnowledgeDocument.tenant_id == tenant.tenant_id, KnowledgeDocument.status == "active").count() == 0:
+        if ready_count(db, tenant) == 0:
             issues.append(_issue("info", "COPILOT_NO_KNOWLEDGE", "The HR assistant has no policy documents yet, so it sends every policy question to the helpdesk.",
-                                 "Upload your handbook and policies so it can answer.", "/settings/integrations/ai", "Upload policies"))
+                                 "Upload your handbook and policies so it can answer.", "/settings/company/policies", "Upload policies"))
 
+    for issue in issues:
+        issue["key"] = issue_key(issue)
+    ignored_keys = set(SettingsService(db).get("platform.health.ignored", SettingContext(tenant=tenant)) or [])
+    ignored = [i for i in issues if i["key"] in ignored_keys]
+    issues = [i for i in issues if i["key"] not in ignored_keys]
     order = {"error": 0, "warning": 1, "info": 2}
     issues.sort(key=lambda i: order[i["severity"]])
-    return {"healthy": not any(i["severity"] == "error" for i in issues), "issues": issues,
+    return {"healthy": not any(i["severity"] == "error" for i in issues), "issues": issues, "ignored": ignored,
             "counts": {s: sum(1 for i in issues if i["severity"] == s) for s in order}}
+
+
+def issue_key(issue: dict) -> str:
+    """Stable id of one health item (the code + what it is about), used by "Ignore this"."""
+    about = next((str(issue[k]) for k in ("purpose", "rule_id", "workflow_key", "connection_id") if issue.get(k)), "")
+    return f"{issue['code']}:{about}" if about else issue["code"]
+
+
+def set_ignored(db: Session, tenant: TenantContext, key: str, *, ignore: bool, actor: str) -> dict:
+    """Fix 2026-10-05: "Ignore this" on a health item (admin only); undone in Settings > Data > System health."""
+    from app.audit.service import log_action
+    from app.platform.settings.resolver import SettingContext, SettingsService
+
+    settings = SettingsService(db)
+    current = set(settings.get("platform.health.ignored", SettingContext(tenant=tenant)) or [])
+    current = current | {key} if ignore else current - {key}
+    settings.set("platform.health.ignored", sorted(current), scope_type="tenant", scope_id=None, actor=actor, tenant=tenant)
+    log_action(db, "config_health", None, "health.ignored" if ignore else "health.unignored", actor[:50], {"key": key})
+    return check(db, tenant)
 
 
 def esign_connected(db: Session, tenant: TenantContext) -> bool:

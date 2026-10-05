@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
@@ -13,7 +14,7 @@ import { Link as RouterLink, Navigate, NavLink, useNavigate, useParams } from "r
 
 import { useT } from "../../i18n";
 import { visibleCategories } from "../../settings/catalog";
-import { EmptyState, Emoji, PageHeader } from "../../ui-kit";
+import { EmptyState, Emoji, humanise, PageHeader } from "../../ui-kit";
 import { useSettingsPerms } from "./SettingsHomePage";
 
 // Part 16.3: one Settings category = a left sub-menu of its pages (rare ones under "Advanced")
@@ -27,7 +28,11 @@ export default function SettingsCategoryPage() {
   const perms = useSettingsPerms();
   const cats = useMemo(() => visibleCategories(perms), [perms.admin, perms.mailbox, perms.modules?.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
   const cat = cats.find((c) => c.id === category);
-  const current = cat?.pages.find((p) => p.id === page);
+  const found = cat?.pages.find((p) => p.id === page);
+  // fix 2026-10-05: a link to a page that is hidden (module off / no access) used to jump silently
+  // to the first page of the category -- "the button opens an unrelated page". Now it says so.
+  const hiddenPage = Boolean(cat && page && !found);
+  const current = found ?? (hiddenPage ? cat?.pages[0] : undefined);
   const [advancedOpen, setAdvancedOpen] = useState(Boolean(current?.advanced));
 
   if (!cat) {
@@ -72,6 +77,11 @@ export default function SettingsCategoryPage() {
           </Stack>
         </Card>
         <Box sx={{ minWidth: 0 }}>
+          {hiddenPage && (
+            <Alert severity="warning" sx={{ mb: 2 }} data-testid="settings-page-hidden">
+              <strong>{t("settingsHome.page_hidden", { page: humanise(page ?? "") })}</strong> {t("settingsHome.page_hidden.body")}
+            </Alert>
+          )}
           <Typography component="h2" sx={{ fontWeight: 800, fontSize: 20, mb: 1.5 }}>{t(`settingsHome.page.${cat.id}.${current.id}`)}</Typography>
           <Stack key={`${cat.id}/${current.id}`} spacing={2.5}>{current.render(go)}</Stack>
         </Box>

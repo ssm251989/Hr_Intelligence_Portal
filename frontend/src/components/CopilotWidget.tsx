@@ -110,12 +110,15 @@ export default function CopilotWidget() {
 
   return (
     <>
-      <Tooltip title={t("assistant.open")} placement="left">
-        <Fab color="primary" aria-label={t("assistant.open")} onClick={() => setOpen(true)}
-          sx={{ position: "fixed", bottom: 24, right: 24, zIndex: (th) => th.zIndex.drawer + 1, boxShadow: f.shadowHover }}>
-          <Emoji name="robot" size={28} />
-        </Fab>
-      </Tooltip>
+      {/* fix 2026-10-05: hidden while the panel is open -- it sat on top of the panel's Send button */}
+      {!open && (
+        <Tooltip title={t("assistant.open")} placement="left">
+          <Fab color="primary" aria-label={t("assistant.open")} onClick={() => setOpen(true)}
+            sx={{ position: "fixed", bottom: 24, right: 24, zIndex: (th) => th.zIndex.drawer + 1, boxShadow: f.shadowHover }}>
+            <Emoji name="robot" size={28} />
+          </Fab>
+        </Tooltip>
+      )}
       <Drawer anchor="right" open={open} onClose={() => setOpen(false)}
         slotProps={{ paper: { sx: { width: { xs: "100%", sm: 440 }, display: "flex", flexDirection: "column", bgcolor: f.ground } } }}>
         <Stack direction="row" alignItems="center" spacing={1.5} sx={{ px: 2, py: 1.75, bgcolor: f.surface, borderBottom: `1px solid ${f.line}` }}>

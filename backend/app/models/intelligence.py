@@ -111,9 +111,23 @@ class KnowledgeDocument(Base, TenantOwned):
     source_ref = Column(Text)
     language = Column(String(10), nullable=False, server_default=text("'en'"))
     audience_role_names = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))  # [] = everyone
+    # processing -> active ("Ready for HR assistant") | failed (+ error); retired = replaced by a
+    # newer version (kept for answers that cited it); deleted = removed by HR (chunks + file gone)
     status = Column(String(20), nullable=False, server_default=text("'active'"))
     uploaded_by = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=text("now()"))
+    # Fix 2026-10-05: Settings > Company > Policies & handbook (app/copilot/policies.py)
+    category = Column(String(30))  # leave | conduct | benefits | it | other
+    version = Column(String(30))
+    effective_date = Column(Date)
+    file_path = Column(Text)  # "storage:<key>" in the storage connection, else uploads/policies/<tenant>/...
+    file_name = Column(Text)
+    content_type = Column(String(120))
+    size_bytes = Column(Integer)
+    error = Column(Text)
+    processed_at = Column(DateTime(timezone=True))
+    replaces_id = Column(UUID(as_uuid=True))  # the older version this one replaces once Ready
+    updated_at = Column(DateTime(timezone=True))
 
 
 class KnowledgeChunk(Base, TenantOwned):

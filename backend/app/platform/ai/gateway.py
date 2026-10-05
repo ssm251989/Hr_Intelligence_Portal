@@ -61,6 +61,10 @@ def complete(
     if model is None:
         setting_key = _PURPOSE_MODEL_SETTING.get(purpose, "ai.models.candidate_ranking")
         model = SettingsService(db).get(setting_key, SettingContext(tenant=tenant))
+    # fix 2026-10-05: the provider requires max_tokens and governed calls never passed it, so every
+    # HR-assistant answer failed with TypeError. Same cap as the direct path (app/platform/ai/tracked.py).
+    cap = int(SettingsService(db).get("ai.max_tokens_per_request", SettingContext(tenant=tenant)) or 4096)
+    kwargs["max_tokens"] = min(int(kwargs.get("max_tokens") or cap), cap)
 
     # Part 18.24/18.25: calls that don't come through governed_complete are counted + limited here
     record = kwargs.pop("_record", True)

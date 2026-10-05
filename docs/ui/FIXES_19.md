@@ -808,3 +808,92 @@ Report: offer dropouts 2, no-shows 1, early leavers 1, absconding 2; by job A 3 
 1. Kishore is now "declined" (your 16:00 action). If that was a test click, tell me and I'll restore him to "signed, joining 14 Oct". If it was real, send him a note yourself: "declined" sends no email by design.
 2. Check the notice wording in Settings > Message templates (onboarding.not_reporting_*) with your HR/legal practice.
 3. Add salary / HR contacts (Settings > Hiring > Contacts) so the notices name a person, not "your HR team".
+
+
+# Configuration health links + Policies & handbook (bug 2026-10-05: "Upload policies" opened an unrelated page)
+
+## 1. What the button did (ctd-techs, before the fix)
+- Home > Configuration health showed `COPILOT_NO_KNOWLEDGE`: "The HR assistant has no policy documents yet…", button **Upload policies**.
+- `backend/app/experience/config_health.py` gave it `fix_path = "/settings/integrations/ai"`. That is Settings > Integrations > **AI provider & HR assistant**: provider, API key, models, prices. It has no upload control.
+- The intended page never existed:
+  - The backend had `POST /api/v1/intelligence/copilot/knowledge`, which only took pasted text (title + body). Nothing in the frontend called it, and there was no file upload.
+  - The Helpdesk knowledge base (where KB articles also feed the assistant) is hidden: the `helpdesk` module is off for ctd-techs. The enabled modules are analytics, assets, copilot, home, onboarding, recruitment, separation and settings.
+- A second cause made any wrong link look "unrelated": `SettingsCategoryPage` silently redirected a link to a hidden or unknown page to the **first page of that category**, with no message.
+
+## 2. Fix
+- **One page: Settings > Company > Policies & handbook** (`/settings/company/policies`; aliases `/settings#policies`, `#handbook`, `#knowledge`).
+  - Upload: drag & drop or choose several PDF/.docx files (20 MB each), with a **Download a sample handbook** link. Each file gets a title, category (Leave, Code of conduct, Benefits, IT, Other), version and effective date before upload.
+  - List: status **Processing**, **Ready for HR assistant**, or **Failed** + a plain reason ("No readable text was found. It may be a scanned copy…", "password-protected", "couldn't be opened"). Each row also shows file, version, effective date and who uploaded it.
+  - Row actions:
+    - **Preview**: the PDF itself, plus the exact text the assistant reads, by heading.
+    - **Download**.
+    - **New version**: the old version keeps answering until the new one is Ready, then it becomes history.
+    - **Edit details**.
+    - **Try again** (for Failed rows).
+    - **Delete**, with a confirm: removes the file and its searchable text. The row is kept so earlier answers still name their source.
+  - Works with Helpdesk off. The API is `/api/v1/ui/policies` (not under the copilot prefix, which switches off with the assistant). When the assistant is off, the page says so and still stores files.
+  - Files go to the storage connection (`storage.documents`) under `policies/<company id>/`. With no storage connection they go to the server disk under `uploads/policies/<company id>/`.
+  - Reading happens in the background after the upload response. Rows stuck in Processing after a restart are picked up again.
+  - Audit: policy.uploaded / new_version / ready / failed / details_changed / deleted.
+- The health button now opens exactly this page. The warning is shown **only when the HR assistant is on** (copilot module + `copilot.chat` AI feature), and it clears once **one** policy is Ready.
+- **"Ignore this"** on every health item (admin only):
+  - The key is stored in `platform.health.ignored`.
+  - Ignored items are listed under Settings > Data & privacy > System health > "Ignored checks" with **Show again**.
+  - Audited as health.ignored / health.unignored.
+- A settings link to a hidden page now shows: "*X* isn't available right now. It belongs to a part of the app that is switched off for your company, or you don't have access to it."
+- **Found while proving it:**
+  1. **The HR assistant could not answer anyone.** `gateway.complete` never sent `max_tokens`, which the AI provider requires, so every governed AI call failed with `TypeError` (`ai_decision_log` status error). The owner's own question at 22:28:05 failed this way. The same path also serves agents, HR-inbox triage, review summaries and exit summaries. Fixed with the same cap the direct path uses (`ai.max_tokens_per_request`, default 4096). Regression test added.
+  2. The assistant's round button stayed on top of its open panel and covered the **Send** button. It is now hidden while the panel is open.
+  3. System health "storage" linked to Integrations > File storage. That page only shows usage, and its data endpoint `GET /api/v1/settings/storage` doesn't exist (405). The link now opens Integrations > Connections, where a storage connection is added or repaired. The usage page itself is still unbuilt (not part of this fix).
+
+## 3. Every health / setup item: where its button goes
+| Item (code) | Button goes to | Page exists & visible? | Fixes the item? | Fixed |
+|---|---|---|---|---|
+| HR assistant has no policies (COPILOT_NO_KNOWLEDGE) | was `/settings/integrations/ai` (AI provider page) | yes | **no**: no upload there | **now `/settings/company/policies`**; only when assistant on; clears on 1 Ready |
+| Emails can't be sent / replies not read (UNROUTED_PURPOSE email.*) | `/settings/communication/mailboxes` | yes (admin or HR-mailbox right) | yes | correct |
+| AI not connected (UNROUTED_PURPOSE llm.*) | `/settings/integrations/ai` | yes | yes (provider + key) | correct |
+| Offer letters can't be e-signed (UNROUTED_PURPOSE esign.*) | `/settings/integrations/esign` | yes | yes | correct |
+| Any other unconnected service (UNROUTED_PURPOSE fallback) | was `/settings/integrations` (redirected to first page) | yes | partly | **now `/settings/integrations/connections`** |
+| Email not ready, notification can't send (UNPUBLISHED_TEMPLATE) | `/settings/communication/templates` | yes | yes | correct |
+| Approval step with nobody to approve (WORKFLOW_NO_APPROVERS) | `/settings/automation/approvals` | yes | yes | correct |
+| Admins / people without 2-step (ADMIN_WITHOUT_2FA, USERS_WITHOUT_2FA) | `/settings/people/two-step` | only when 2-step is switched on, and the item only appears then too | yes | correct (now shows "isn't available" instead of jumping if ever reached while off) |
+| Connection token expiring (OAUTH_EXPIRING) | was `/settings/integrations` (redirected) | yes | partly | **now `/settings/integrations/connections`** |
+| Connection failing / not tested (CONNECTION_FAILING, CONNECTION_NOT_TESTED) | `/settings/integrations/connections` | yes | yes | correct |
+| Setup: Company details | `/setup?step=company` | yes | yes | correct |
+| Setup: Company & offices | `/setup?step=entities_locations` | yes | yes | correct |
+| Setup: Logo & colours | `/setup?step=branding` | yes | yes | correct |
+| Setup: Connect your mailbox | `/setup?step=mailbox` | yes | yes | correct |
+| Setup: Import employees | `/setup?step=import_employees` | step exists only when People (core_hr) is on, and so does the item | yes | correct (off for ctd-techs, so neither shows) |
+| Setup: Choose what you use | `/setup?step=modules` | yes | yes | correct |
+| System health: company links | `/settings/company/profile` | yes | yes | correct |
+| System health: mailbox | `/settings/communication/mailboxes` | yes | yes | correct |
+| System health: AI | `/settings/integrations/ai` | yes | yes | correct |
+| System health: storage | was `/settings/integrations/storage` (usage page, data endpoint missing) | yes | **no** | **now `/settings/integrations/connections`** |
+
+Each link was opened by Playwright as an admin on the live app (`fix22-link-01..18`); the landed URL and page title were recorded. A made-up link (`/settings/integrations/old-ai-page`) shows the new "isn't available" notice (`fix22-link-18`).
+
+## 4. Proof (live app :5173 / :8000, temporary admin, removed afterwards)
+- `fix22-01-home-health`: the item with **Upload policies** and **Ignore this**.
+- `fix22-02-upload-policies-opens`: the button lands on Settings > Company > **Policies & handbook**.
+- While I worked, **kg@ctdtechs.com uploaded the sample handbook themselves** (22:27:55, Ready at 22:27:56, 6 passages, audit policy.uploaded / policy.ready). That cleared the warning for real. Their question to the assistant at 22:28:05 failed with the max_tokens bug above.
+- My run:
+  - `fix22-05` empty page
+  - `fix22-06` queue: title "Employee handbook", version 2026.1, effective 1 Oct
+  - `fix22-07` **Ready for HR assistant**
+  - `fix22-08` preview of what the assistant reads
+  - `fix22-09` home: the Configuration health card is gone
+- `fix22-10`: asked "How many days of annual leave do I get, and can I carry them forward?". The answer was "You get 18 days of annual leave per calendar year, credited at 1.5 days per month [1][2]. You may carry forward up to 6 unused annual leave days…". **Sources:** [1] Sample employee handbook · Leave policy, [2] Employee handbook · Leave policy.
+- `fix22-11/12`: Delete with confirm, then my copy is gone and the owner's handbook stays.
+- "Ignore this" / "Show again" are covered by `test_ignore_health_item_and_undo`. I did not create a fake problem in the live company to click it once the owner's upload had cleared the only item.
+- **Clean-up:** the temporary admin and its role, its 2 assistant conversations, 4 AI log rows (including one probe call) and their usage rows, my proof policy (row, file, audit rows). Nothing ignored was left behind.
+
+**Checks:**
+- alembic upgrade head (a23c5d6e7f8b).
+- New tests: `tests/test_policies_health.py` (6) and `test_llm_gateway_routing::test_complete_always_sends_max_tokens`, all passing.
+- test_experience / test_intelligence: 5 failures, identical on HEAD (not touched).
+- i18n 4331 keys, 0 missing; `npm run build` OK.
+- vitest: 3 failures (theme mock, UploadCandidateDialog), identical on HEAD.
+
+**Owner actions:**
+1. The handbook you uploaded is the **sample**: 18 days leave, Rs 5,00,000 insurance, and so on. The assistant now answers from it. Replace it with your real handbook (**New version** on its row), or delete it.
+2. Optional: connect a storage service (Integrations > Connections) so policy files live there instead of on the server disk.

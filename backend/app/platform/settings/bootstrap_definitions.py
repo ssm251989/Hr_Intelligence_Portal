@@ -272,6 +272,8 @@ def register_all() -> None:
     register(SettingDef("platform.modules.offered", "json", ["onboarding", "assets", "separation", "analytics", "copilot"],
                         module="platform", group="Modules"))
     register(SettingDef("platform.setup.skipped", "json", [], module="platform", group="Setup"))
+    # fix 2026-10-05: configuration-health checks an admin chose to ignore (item keys; undo in Settings > Data > System health)
+    register(SettingDef("platform.health.ignored", "json", [], module="platform", group="Setup"))
     register(SettingDef("platform.setup.config_pack", "json", {}, module="platform", group="Setup"))  # which pack was applied (Setup Wizard)
     register(SettingDef("ux.reduce_motion", "bool", False, module="ux", group="Accessibility", scopes_allowed=("user", "tenant")))
     register(SettingDef("ux.page_size", "int", 25, module="ux", group="Lists", scopes_allowed=("user", "tenant")))

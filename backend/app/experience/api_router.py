@@ -182,6 +182,17 @@ def setup_config_health_recheck(db: Session = Depends(get_db), current_user: Use
     return config_health.recheck(db, require_current_tenant())
 
 
+class HealthIgnore(BaseModel):
+    key: str
+    ignore: bool = True
+
+
+@router.post("/setup/config-health/ignore")
+def setup_config_health_ignore(payload: HealthIgnore, db: Session = Depends(get_db), current_user: User = Depends(require("platform.settings.configure"))):
+    """Fix 2026-10-05: "Ignore this" on a health item (or undo it)."""
+    return config_health.set_ignored(db, require_current_tenant(), payload.key[:200], ignore=payload.ignore, actor=current_user.email)
+
+
 # ---- search + inbox ----
 
 
