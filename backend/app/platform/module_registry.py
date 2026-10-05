@@ -130,7 +130,7 @@ TEMPLATE_PREFIX_MODULE: dict[str, str] = {"onboarding.": "onboarding"}
 
 # background jobs (platform/jobs/scheduled.py JOBS) that belong to a module
 JOB_MODULE: dict[str, str] = {
-    "onboarding_chase": "onboarding", "auto_shortlist_release": "shortlisting", "salary_form_reminders": "salary",
+    "onboarding_chase": "onboarding", "joiner_exits": "onboarding", "auto_shortlist_release": "shortlisting", "salary_form_reminders": "salary",
     "documents_reminders": "bgv", "joining_reminders": "offers",
 }
 

@@ -2667,3 +2667,21 @@ NEXT: owner sets the public addresses + Hiring contacts and asks Kishore to sign
 - **Proof:** FIXES_19.md "Welcome portal steps + resend / revised offer" (mailpit end to end, 29 screenshots). Test records deleted.
 
 NEXT: owner fixes Kishore's names (profile pencil -> Swap -> Save) and sets the public addresses; then RESUME order -> PART16 16.3 settings reorganised.
+
+## Fix -- post-joining exits and absconding (2026-10-05)
+- **Cause (Kishore Gunda):** two separate "joined" markers.
+  - The Offers page "Complete onboarding" set the application to Joined before the joining date, with no employee conversion.
+  - The Onboarding board checked only the case, and showed Withdraw / Didn't join to everyone.
+  - Result: case withdrawn, application Joined, offer completed, employee inactive, budget committed, no email, no audit entry.
+- **Fix:**
+  - `app/onboarding/joiner_stage.py`: stages and allowed actions; every endpoint refuses invalid ones (409 with a plain message).
+  - `joiner_actions.py`:
+    - Before joining: withdraw (email), declined. Joining day on: mark joined (the only way, also used by Complete onboarding), no-show.
+    - After joining: not reporting (2/5/10-day notices via the hourly `joiner_exits` job) -> absconded; resigned; terminated. These become Exit cases with clearance + asset recovery, rehire flag, access off, manager/HR told.
+    - After any of them: application status, job re-open + "Position open again - N match" to-do, budget released, pending emails/links cancelled, audit on case + application.
+  - Report "Dropouts & early exits".
+  - Migration f22b4c5d6e7a. Tests test_joiner_exits.py.
+- **Repair:** Kishore was restored to signed / waiting to join (audit record_repaired). The owner then recorded "Candidate declined" at 16:00.
+- **Proof:** FIXES_19.md "Post-joining exits and absconding" (4 scenarios + mailpit notices, 25 screenshots). Test records deleted.
+
+NEXT: owner confirms Kishore's "declined" was intended and reviews the notice wording; then RESUME order -> PART16 16.3 settings reorganised.

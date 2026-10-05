@@ -126,6 +126,11 @@ def register_all() -> None:
                         ["Original ID proof (PAN or Aadhaar)", "Two passport-size photos", "Your laptop charger if you have your own laptop"],
                         module="onboarding", group="Day one"))
     register(SettingDef("onboarding.day_one.meet", "str", "", module="onboarding", group="Day one"))  # who to ask for at reception
+    # fix 2026-10-05: a new joiner stops coming -> "Not reporting" emails (days counted from the last day they came in)
+    register(SettingDef("onboarding.not_reporting.enabled", "bool", True, module="onboarding", group="Leaving soon after joining"))
+    register(SettingDef("onboarding.not_reporting.reminder_days", "int", 2, module="onboarding", group="Leaving soon after joining"))
+    register(SettingDef("onboarding.not_reporting.show_cause_days", "int", 5, module="onboarding", group="Leaving soon after joining"))
+    register(SettingDef("onboarding.not_reporting.final_days", "int", 10, module="onboarding", group="Leaving soon after joining"))
     # fix 2026-10-04: after a shortlist, arrange the interview automatically or leave it to HR (per job: shortlisting_json.scheduling_mode)
     register(SettingDef("recruitment.interviews.scheduling_mode", "str", "auto", module="recruitment", group="Interviews",
                         json_schema={"type": "string", "enum": ["auto", "manual"]}))

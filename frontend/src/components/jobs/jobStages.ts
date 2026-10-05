@@ -12,4 +12,5 @@ export const STAGE_STYLE: Record<JobStage, { emoji: string; tone: Tone }> = {
   hired: { emoji: "party", tone: "ok" },
   not_selected: { emoji: "cross", tone: "muted" },
   paused: { emoji: "pause", tone: "muted" },
+  dropped: { emoji: "door", tone: "muted" }, // fix 2026-10-05: withdrawn / declined / didn't join / left soon after
 };

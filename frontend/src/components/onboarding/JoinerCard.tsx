@@ -15,7 +15,7 @@ import { useT } from "../../i18n";
 import { Emoji, ProgressRing, StatusChip, UserAvatar } from "../../ui-kit";
 import { JoinerStatusChip, useDateText } from "./shared";
 
-export type JoinerAction = "open" | "joined" | "date" | "link" | "no_show" | "revoke";
+export type JoinerAction = "open" | "joined" | "date" | "link" | "no_show" | "revoke" | "declined";
 
 // One joiner: who, what role, when, how ready (ring), and what needs doing. A joiner who
 // starts within 3 days and is not fully ready gets the coral "not ready" styling.
@@ -96,7 +96,7 @@ export default function JoinerCard({
         <Button variant="outlined" size="small" onClick={() => onAction("open", card)}>{t("onboarding.card.open")}</Button>
         {canApprove && (
           <Button
-            variant="contained" size="small" disabled={!card.can_mark_joined || busy} onClick={() => onAction("joined", card)}
+            variant="contained" size="small" disabled={!card.allowed_actions.includes("mark_joined") || busy} onClick={() => onAction("joined", card)}
             title={card.can_mark_joined ? undefined : t("onboarding.card.joined_later")}
           >
             <Emoji name="party" size={16} />&nbsp;{t("onboarding.card.mark_joined")}
@@ -111,8 +111,16 @@ export default function JoinerCard({
             <Menu anchorEl={menu} open={Boolean(menu)} onClose={() => setMenu(null)}>
               <MenuItem onClick={() => pick("date")}><Emoji name="calendar" size={16} />&nbsp; {t("onboarding.action.change_date")}</MenuItem>
               <MenuItem onClick={() => pick("link")}><Emoji name="link" size={16} />&nbsp; {t("onboarding.action.new_link")}</MenuItem>
-              <MenuItem onClick={() => pick("no_show")}><Emoji name="pause" size={16} />&nbsp; {t("onboarding.action.no_show")}</MenuItem>
-              <MenuItem onClick={() => pick("revoke")} sx={{ color: f.coral }}><Emoji name="cross" size={16} />&nbsp; {t("onboarding.action.revoke")}</MenuItem>
+              {/* fix 2026-10-05: only what the server accepts for this stage (withdraw is never offered after joining) */}
+              {card.allowed_actions.includes("no_show") && (
+                <MenuItem onClick={() => pick("no_show")}><Emoji name="pause" size={16} />&nbsp; {t("onboarding.action.no_show")}</MenuItem>
+              )}
+              {card.allowed_actions.includes("candidate_declined") && (
+                <MenuItem onClick={() => pick("declined")}><Emoji name="speech" size={16} />&nbsp; {t("joinerx.action.declined")}</MenuItem>
+              )}
+              {card.allowed_actions.includes("withdraw_offer") && (
+                <MenuItem onClick={() => pick("revoke")} sx={{ color: f.coral }}><Emoji name="cross" size={16} />&nbsp; {t("onboarding.action.revoke")}</MenuItem>
+              )}
             </Menu>
           </>
         )}

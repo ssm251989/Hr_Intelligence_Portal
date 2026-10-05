@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useSearchParams } from "react-router-dom";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
@@ -315,6 +316,13 @@ export default function JobsPage() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [editingJob, setEditingJob] = useState<JobRoleRead | null>(null);
   const [viewingJob, setViewingJob] = useState<JobRoleRead | null>(null);
+  // fix 2026-10-05: /jobs?view=<id> opens a job's details (incl. its talent pool) -- the "Position open again" to-do links here
+  const [viewParams, setViewParams] = useSearchParams();
+  useEffect(() => {
+    const id = viewParams.get("view");
+    const job = id ? jobs.find((j) => j.id === id) : undefined;
+    if (job) { setViewingJob(job); setViewParams((p) => { p.delete("view"); return p; }, { replace: true }); }
+  }, [jobs, viewParams, setViewParams]);
   const [reopeningJob, setReopeningJob] = useState<JobRoleRead | null>(null);
 
   // Same colour-by-rank the "Jobs by department" donut uses, so a department's icon colour

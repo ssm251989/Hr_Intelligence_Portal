@@ -261,6 +261,7 @@ export const APPLICATION_STATUSES = [
 // "active" vs "inactive" reading of a pipeline stage.
 export const TERMINAL_APPLICATION_STATUSES = [
   "hr_rejected", "interview_rejected", "salary_rejected", "bgv_rejected", "onboarding_completed",
+  "offer_withdrawn", "offer_declined", "no_show", "left_after_joining", // fix 2026-10-05
 ] as const;
 
 export function isTerminalApplicationStatus(status: string): boolean {

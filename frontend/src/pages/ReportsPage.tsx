@@ -1,3 +1,4 @@
+import DropoutReportView from "../components/reports/DropoutReportView";
 import { useEffect, useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -439,6 +440,7 @@ export default function ReportsPage() {
     { emoji: "briefcase", label: t("reports.tab.summary") },
     { emoji: "clipboard", label: t("reports.tab.audit") },
     { emoji: "hourglass", label: t("reports.tab.timeline") },
+    { emoji: "door", label: t("joinerx.report.tab") }, // fix 2026-10-05
   ];
 
   return (
@@ -483,6 +485,7 @@ export default function ReportsPage() {
             {tab === 1 && <JobSummaryView key={resetKey} jobs={jobs} />}
             {tab === 2 && <AuditTrailView key={resetKey} />}
             {tab === 3 && <TimelineView key={resetKey} />}
+            {tab === 4 && <DropoutReportView key={resetKey} />}
           </Box>
         </Card>
         <SavedReportsCard reloadKey={resetKey + savedTick} />

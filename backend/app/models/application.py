@@ -11,6 +11,8 @@ APPLICATION_STATUSES = (
     "bgv_requested", "bgv_pending", "bgv_cleared", "bgv_rejected",
     "offer_sent", "onboarding_started", "onboarding_completed",
     "on_hold",
+    # fix 2026-10-05: how an offer / a new joiner ended (app/onboarding/joiner_actions.py)
+    "offer_withdrawn", "offer_declined", "no_show", "left_after_joining",
 )
 
 # No further transition endpoint exists in the codebase for any of these -- confirmed by
@@ -20,6 +22,7 @@ APPLICATION_STATUSES = (
 # the next-actions lookup (see app/candidates/pipeline_actions.py).
 TERMINAL_APPLICATION_STATUSES = (
     "hr_rejected", "interview_rejected", "salary_rejected", "bgv_rejected", "onboarding_completed",
+    "offer_withdrawn", "offer_declined", "no_show", "left_after_joining",
 )
 
 

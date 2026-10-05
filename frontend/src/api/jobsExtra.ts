@@ -2,7 +2,7 @@ import { http } from "./client";
 
 // Part 15.4 Jobs screen helpers (backend/app/experience/ui_jobs_router.py).
 
-export type JobStage = "new" | "screening" | "shortlisted" | "interview" | "offer" | "hired" | "not_selected" | "paused";
+export type JobStage = "new" | "screening" | "shortlisted" | "interview" | "offer" | "hired" | "not_selected" | "paused" | "dropped";
 
 export const PIPELINE_STAGES: JobStage[] = ["new", "screening", "shortlisted", "interview", "offer", "hired"];
 

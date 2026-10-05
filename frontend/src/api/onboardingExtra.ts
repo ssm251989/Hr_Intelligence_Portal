@@ -29,6 +29,48 @@ export interface JoinerCard {
   link_expires_at: string | null;
   link_expired: boolean;
   can_mark_joined: boolean;
+  // fix 2026-10-05: the stage and exactly the actions the server accepts (backend joiner_stage.py)
+  stage: JoinerStage;
+  allowed_actions: JoinerActionKey[];
+}
+
+export type JoinerStage = "before_joining" | "joining_due" | "joined" | "closed";
+export type JoinerActionKey = "withdraw_offer" | "candidate_declined" | "mark_joined" | "no_show" | "not_reporting" | "stop_not_reporting"
+  | "absconded" | "resigned" | "terminated";
+export type ExitKind = "absconded" | "resigned" | "terminated";
+
+export interface RecentJoiner {
+  case_id: UUID;
+  name: string;
+  email: string;
+  role: string | null;
+  department: string | null;
+  candidate_id: UUID | null;
+  joining_date: string;
+  days_since_joining: number;
+  status: string;
+  stage: JoinerStage;
+  allowed_actions: JoinerActionKey[];
+  not_reporting: { status: string; last_seen: string; notices: string[] } | null;
+}
+
+export interface JoinerReasons {
+  declined: Record<string, string>;
+  no_show: Record<string, string>;
+  exit: Record<ExitKind, Record<string, string>>;
+}
+
+export interface DropoutRow { key: string; offer_dropout: number; no_show: number; early_leaver: number; absconding: number; total: number }
+export interface DropoutReport {
+  since: string | null;
+  early_days: number;
+  totals: { offer_dropout: number; no_show: number; early_leaver: number; absconding: number };
+  by_job: DropoutRow[];
+  by_department: DropoutRow[];
+  by_recruiter: DropoutRow[];
+  by_reason: DropoutRow[];
+  rows: { category: string; kind: string; job: string; department: string; recruiter: string; reason: string; date: string | null; name: string;
+          application_id: string | null; days_after_joining: number | null }[];
 }
 
 export interface WaitingDocument {
@@ -63,6 +105,7 @@ export interface ReadyOffer {
 export interface OnboardingBoard {
   today: string;
   cards: JoinerCard[];
+  recent_joiners: RecentJoiner[];
   documents_waiting: WaitingDocument[];
   overdue_tasks: OverdueTaskRow[];
   digest: { enabled: boolean; last_found_at: string | null; reminders_waiting: number };
@@ -124,8 +167,17 @@ export const onboardingExtraApi = {
     http.post<{ id: UUID; portal_token: string }>("/api/v1/onboarding/cases", payload),
   changeJoiningDate: (caseId: UUID, joiningDate: string, reason?: string) =>
     http.post<{ id: UUID }>(`/api/v1/onboarding/cases/${caseId}/joining-date`, { joining_date: joiningDate, reason }),
-  noShow: (caseId: UUID, reason?: string) => http.post<{ id: UUID }>(`/api/v1/onboarding/cases/${caseId}/no-show`, { reason }),
-  revoke: (caseId: UUID, reason?: string) => http.post<{ id: UUID }>(`/api/v1/onboarding/cases/${caseId}/revoke`, { reason }),
+  noShow: (caseId: UUID, body: { reason_code: string; notes?: string; contacted_on?: string | null }) =>
+    http.post<{ id: UUID }>(`/api/v1/onboarding/cases/${caseId}/no-show`, body),
+  revoke: (caseId: UUID, body: { reason: string; notes?: string }) => http.post<{ id: UUID }>(`/api/v1/onboarding/cases/${caseId}/revoke`, body),
+  // fix 2026-10-05: the rest of the joiner actions
+  declined: (caseId: UUID, body: { reason_code: string; notes?: string }) => http.post<{ id: UUID }>(`/api/v1/onboarding/cases/${caseId}/declined`, body),
+  notReporting: (caseId: UUID, body: { last_seen: string; notes?: string }) => http.post<unknown>(`/api/v1/onboarding/cases/${caseId}/not-reporting`, body),
+  stopNotReporting: (caseId: UUID, note: string) => http.post<unknown>(`/api/v1/onboarding/cases/${caseId}/not-reporting/stop`, { note }),
+  recordExit: (caseId: UUID, body: { kind: ExitKind; last_working_day: string; reason_code: string; notes: string; rehire_eligible: boolean; confirm: true }) =>
+    http.post<{ separation_id: string; clearance: { title: string; kind: string }[] }>(`/api/v1/onboarding/cases/${caseId}/exit`, body),
+  joinerReasons: () => http.get<JoinerReasons>(`/api/v1/onboarding/joiner-reasons`),
+  dropoutReport: (since?: string) => http.get<DropoutReport>(`/api/v1/onboarding/dropout-report${since ? `?since=${since}` : ""}`),
   rotateLink: (caseId: UUID) => http.post<{ portal_token: string; expires_at: string }>(`/api/v1/onboarding/cases/${caseId}/rotate-token`),
   convert: (caseId: UUID) => http.post<{ employee_code: string; already_converted: boolean }>(`/api/v1/onboarding/cases/${caseId}/convert`, { confirm_joined: true }),
   verifyDocument: (documentId: UUID, approve: boolean, reason?: string) =>

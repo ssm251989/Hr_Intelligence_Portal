@@ -123,7 +123,15 @@ def _recycle_bin_purge(db, tenant):
     return purge_expired(db, tenant)
 
 
+def _joiner_exits(db, tenant):
+    """fix 2026-10-05: "Not reporting" notices (reminder / show-cause / final) + logins of leavers off after their LWD."""
+    from app.onboarding.joiner_actions import deactivate_after_lwd, run_not_reporting_notices
+
+    return {"notices": run_not_reporting_notices(db, tenant), "logins_off": deactivate_after_lwd(db, tenant)}
+
+
 JOBS = {
+    "joiner_exits": _joiner_exits,
     "workflow_timers": _workflow_timers,
     "ticket_escalations": _ticket_escalations,
     "report_schedules": _report_schedules,
@@ -215,5 +223,6 @@ celery_app.conf.beat_schedule = {
     "joining-reminders": {"task": "hrms.fan_out", "schedule": 3600.0, "args": ("joining_reminders",)},
     "documents-reminders": {"task": "hrms.fan_out", "schedule": 3600.0, "args": ("documents_reminders",)},
     "recycle-bin-purge": {"task": "hrms.fan_out", "schedule": 86400.0, "args": ("recycle_bin_purge",)},
+    "joiner-exits": {"task": "hrms.fan_out", "schedule": 3600.0, "args": ("joiner_exits",)},
 }
 celery_app.conf.timezone = "UTC"

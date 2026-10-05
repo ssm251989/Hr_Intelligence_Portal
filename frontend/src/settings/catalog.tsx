@@ -144,6 +144,8 @@ export const CATEGORIES: SettingsCategory[] = [
       { id: "plans", emoji: "clipboard", module: "onboarding", keywords: "onboarding checklist tasks", visible: ADMIN, render: () => <OnboardingPanel /> },
       { id: "documents", emoji: "page", module: "onboarding", keywords: "documents letters portal forms policies", prefixes: ["onboarding.", "core_hr."], visible: ADMIN,
         render: scoped(["onboarding.documents", "onboarding.portal", "onboarding.conversion", "core_hr."], "settingsHome.page.onboarding.documents") },
+      { id: "leavers", emoji: "door", module: "onboarding", keywords: "absconding not reporting no show early leaver notices", prefixes: ["onboarding.not_reporting"], visible: ADMIN,
+        render: scoped(["onboarding.not_reporting"], "settingsHome.page.onboarding.leavers") },
       { id: "fields", emoji: "label", keywords: "employee fields custom", visible: ADMIN, render: () => <MetadataPanel only="Custom Fields" /> },
       { id: "org", emoji: "building", keywords: "org structure departments positions", visible: ADMIN, render: () => <CoreHrPanel only="Org" /> },
       { id: "employees", emoji: "people", advanced: true, visible: ADMIN, render: () => <CoreHrPanel only="Employees" /> },

@@ -13,7 +13,9 @@ import { onboardingExtraApi, type JoinerCard as JoinerCardData, type OnboardingB
 import { useMeBootstrap } from "../../bootstrap/MeBootstrapContext";
 import JoinerCard, { type JoinerAction } from "../../components/onboarding/JoinerCard";
 import JoinerDrawer, { openDocument } from "../../components/onboarding/JoinerDrawer";
-import { CloseDialog, DateDialog, LinkDialog, RejectDialog, StartDialog } from "../../components/onboarding/OnboardingDialogs";
+import { DateDialog, LinkDialog, RejectDialog, StartDialog } from "../../components/onboarding/OnboardingDialogs";
+import JoinerActionDialog, { type JoinerDialogKind } from "../../components/onboarding/JoinerActionDialog";
+import RecentJoiners from "../../components/onboarding/RecentJoiners";
 import { joinGroup, ownerText, useDateText, type JoinGroup } from "../../components/onboarding/shared";
 import { useI18n } from "../../i18n";
 import { celebrate, Cell, Emoji, EmptyState, FriendlyError, InfoTip, PageGrid, PageHeader, StatTile, StatusChip, UserAvatar } from "../../ui-kit";
@@ -39,7 +41,8 @@ export default function OnboardingDashboardPage() {
   const [starting, setStarting] = useState(false);
   const [link, setLink] = useState<{ token: string; name: string } | null>(null);
   const [dateFor, setDateFor] = useState<JoinerCardData | null>(null);
-  const [closeFor, setCloseFor] = useState<{ card: JoinerCardData; kind: "no_show" | "revoke" } | null>(null);
+  // fix 2026-10-05: every joiner action (before / on / after joining) goes through one dialog
+  const [actFor, setActFor] = useState<{ caseId: string; name: string; kind: JoinerDialogKind; lastSeen?: string | null } | null>(null);
   const [rejecting, setRejecting] = useState<{ id: string; label: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -83,8 +86,9 @@ export default function OnboardingDashboardPage() {
     switch (action) {
       case "open": setOpenCase(card.case_id); break;
       case "date": setDateFor(card); break;
-      case "no_show": setCloseFor({ card, kind: "no_show" }); break;
-      case "revoke": setCloseFor({ card, kind: "revoke" }); break;
+      case "no_show": setActFor({ caseId: card.case_id, name: card.name, kind: "no_show" }); break;
+      case "revoke": setActFor({ caseId: card.case_id, name: card.name, kind: "withdraw_offer" }); break;
+      case "declined": setActFor({ caseId: card.case_id, name: card.name, kind: "candidate_declined" }); break;
       case "link":
         void act(`link:${card.case_id}`, async () => {
           const res = await onboardingExtraApi.rotateLink(card.case_id);
@@ -186,6 +190,11 @@ export default function OnboardingDashboardPage() {
               ))
             )}
 
+            {board && board.recent_joiners.length > 0 && (
+              <RecentJoiners rows={board.recent_joiners} canAct={perm.approve || perm.edit}
+                onAct={(r, kind) => setActFor({ caseId: r.case_id, name: r.name, kind, lastSeen: r.not_reporting?.last_seen })} />
+            )}
+
             {board && (
               <PageGrid>
                 <Cell span={{ xs: 12, lg: 7 }}>
@@ -269,15 +278,12 @@ export default function OnboardingDashboardPage() {
           load();
         }}
       />
-      <CloseDialog
-        kind={closeFor?.kind ?? null} name={closeFor?.card.name ?? ""} onClose={() => setCloseFor(null)}
-        onConfirm={async (reason) => {
-          if (!closeFor) return;
-          const { card, kind } = closeFor;
-          if (kind === "revoke") await onboardingExtraApi.revoke(card.case_id, reason || undefined);
-          else await onboardingExtraApi.noShow(card.case_id, reason || undefined);
-          setToast(t(kind === "revoke" ? "onboarding.toast.revoked" : "onboarding.toast.no_show", { name: card.name }));
-          setCloseFor(null);
+      <JoinerActionDialog
+        kind={actFor?.kind ?? null} caseId={actFor?.caseId ?? null} name={actFor?.name ?? ""} lastSeen={actFor?.lastSeen}
+        onClose={() => setActFor(null)}
+        onDone={(kind) => {
+          setToast(t(`joinerx.done.${kind}`, { name: actFor?.name ?? "" }));
+          setActFor(null);
           load();
         }}
       />

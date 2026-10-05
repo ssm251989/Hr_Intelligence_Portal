@@ -61,6 +61,41 @@ DEFAULTS: dict[str, tuple[str, str, list[str]]] = {
         "name and tick \"I accept\". Please sign by {{ expiry_date }}.\n\nYour letter:\n\n{{ letter }}\n\nBest regards,\n{{ company_name }} HR",
         ["candidate_first_name", "job_title", "letter", "sign_link"],
     ),
+    # fix 2026-10-05: joiner exits (app/onboarding/joiner_actions.py)
+    "onboarding.offer_withdrawn": (
+        "About your offer for {{ job_title }} at {{ company_name }}",
+        "Hi {{ candidate_first_name }},\n\nThank you for your time and interest in {{ company_name }}. We are sorry to let you know that "
+        "we are withdrawing our offer for {{ job_title }}. Your earlier offer and welcome links no longer work.\n\n"
+        "If you have any questions, please reply to this email and our HR team will get back to you.\n\nBest regards,\n{{ company_name }} HR",
+        ["candidate_first_name", "job_title"],
+    ),
+    "onboarding.not_reporting_reminder": (
+        "We missed you at work - please get in touch",
+        "Hi {{ candidate_first_name }},\n\nWe have not seen you at work since {{ last_seen }}, and we could not reach you. We hope you are "
+        "well.\n\nPlease contact {{ hr_contact }} by {{ respond_by }} to let us know when you will be back.\n\nBest regards,\n{{ company_name }} HR",
+        ["candidate_first_name", "last_seen"],
+    ),
+    "onboarding.not_reporting_show_cause": (
+        "Absence from work since {{ last_seen }} - please explain and return to work",
+        "Hi {{ candidate_first_name }},\n\nYou have been absent from work as {{ job_title }} since {{ last_seen }} ({{ days_absent }} days) "
+        "without telling us, and our earlier message got no reply.\n\nPlease report back to work, or tell {{ hr_contact }} in writing why "
+        "you have been away, by {{ respond_by }}. If we do not hear from you, we will have to treat this as leaving your job without "
+        "notice.\n\nBest regards,\n{{ company_name }} HR",
+        ["candidate_first_name", "last_seen", "respond_by"],
+    ),
+    "onboarding.not_reporting_final": (
+        "Final notice: absence from work since {{ last_seen }}",
+        "Hi {{ candidate_first_name }},\n\nThis is our final notice. You have been absent since {{ last_seen }} ({{ days_absent }} days) and "
+        "have not replied to our earlier messages.\n\nIf we do not hear from you by {{ respond_by }}, your employment as {{ job_title }} "
+        "will be ended as absconding (leaving without notice), and you will need to return any company property you have.\n\n"
+        "Please contact {{ hr_contact }}.\n\n{{ company_name }} HR",
+        ["candidate_first_name", "last_seen", "respond_by"],
+    ),
+    "onboarding.joiner_exit_internal": (
+        "{{ summary }}",
+        "{{ summary }}\n\nOpen the record: {{ link }}\n\nThe exit case has the clearance checklist (incl. any assets to collect).\n\n{{ company_name }} HR system",
+        ["summary"],
+    ),
     # fix 2026-10-05: resend for signature / revised offer (app/offers/revisions.py)
     "recruitment.offer_resend": (
         "Reminder: your offer for {{ job_title }} is waiting for your signature",

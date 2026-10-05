@@ -688,3 +688,123 @@ Found by this proof and fixed:
 1. Kishore: open his profile -> "We call them" pencil -> **Swap first and last** -> Save (first "Kishore", last "Gunda"). His portal and emails then say "Kishore". His resume was read before the parser returned given / family names.
 2. Anyone with a welcome page left open from before 2026-10-04 needs one reload. Newer pages reload themselves when the server is newer.
 3. Above-band revised offers notify the salary approvers (Settings > Hiring > Salary approvers). Today that falls back to the admins, i.e. kg@ctdtechs.com.
+
+# Post-joining exits and absconding (bug + logic change 2026-10-05: "Withdraw offer" on a JOINED person)
+
+## 1. What "Withdraw offer" did to the record (Kishore Gunda, ctd-techs)
+```
+12:53:40  kg@ctdtechs.com  offer marked signed by hand (sign_method manual)
+12:53:57  system           application onboarding_started -> onboarding_completed   <- Offers page "Complete onboarding" (shown everywhere as "Joined"),
+                                                                                       9 days BEFORE his joining date (14 Oct)
+14:35:41  gkishore1433@... inbound email: "Confirms joining the company on 14 October 2026."
+14:45:25  kg@ctdtechs.com  portal_token_rotated (new welcome link)
+14:46:20  kg@ctdtechs.com  case history "revoked", reason "Accepted another offer"    <- Onboarding board "Withdraw offer"
+```
+State after the click (half joined, half withdrawn):
+| record | state |
+|---|---|
+| onboarding case 738b43dc | `revoked` |
+| application c7291dc9 | `onboarding_completed` ("Joined") |
+| offer 6c5feb90 | signed, onboarding_status `completed` |
+| pre-hire employee EMP-00013 | `inactive` (never converted) |
+| budget | 2,80,000 still `committed` |
+| emails | none sent for the withdraw |
+| audit log | **no entry** (only the case's own history line) |
+
+**Cause:** there were two separate "joined" markers.
+- The Offers page "Complete onboarding" set the *application* to Joined with no joining-date check and no employee conversion.
+- The Onboarding board's own checks looked only at the *case* (`_close` refused only `case.status == "joined"`), which was still open.
+- The menu showed Withdraw / Didn't join to everyone, whatever the stage.
+
+**Repair** (audit `record_repaired`, before/after on the case and the application):
+- He had not joined (14 Oct is in the future) and had confirmed joining by email, so he was restored to signed, waiting to join: case `in_progress`, application `onboarding_started`, offer `in_progress`, pre-hire record `pre_hire`, budget left committed. No email was sent.
+- Then, at **16:00:22, kg@ctdtechs.com recorded "Candidate declined" (Accepted another offer)** with the new flow. That is now his consistent state: case `declined`, application `offer_declined`, budget released, his job's opening free again + a to-do.
+
+## 2. Actions by stage (one rule set: `app/onboarding/joiner_stage.py`)
+| stage | actions shown and accepted |
+|---|---|
+| before joining date | Withdraw offer (company decision, reason, email to candidate) - Candidate declined (reason list) |
+| on / after joining date, not joined | Mark as joined - Did not join (reason, optional "contacted on") - (withdraw / declined still allowed: they haven't joined) |
+| joined | Not reporting - Absconded - Resigned - Terminated (last working day, reason, notes, rehire eligible; confirmation step) |
+| closed | nothing |
+- The board shows exactly `allowed_actions`, and every endpoint calls `require()` first: 409 `ACTION_NOT_ALLOWED` with a plain message, e.g. "Chetan Absconds has already joined, so the offer can't be withdrawn or declined. Use Absconded, Resigned or Terminated instead."
+- **Mark as joined** is the only way to "joined" (employee record made live + application Joined). The Offers page "Complete onboarding" now goes through it too, so it can't run before the joining date.
+- New statuses: application `offer_withdrawn / offer_declined / no_show / left_after_joining`, case `declined / exited` (migration f22b4c5d6e7a). Shown with labels everywhere (status chip, Kanban "not moving", stepper, jobs stage "Dropped out / left", pipeline report).
+
+## 3. After joining: exits (`app/onboarding/joiner_actions.py`, on top of the Exits module)
+- **Absconded / Resigned / Terminated** each create a real Exit case (separations: absconding / resignation / termination):
+  - the LWD is approved at once (notice shortfall waived: the date is a fact, not a request);
+  - clearance checklist + **asset recovery** for anything still issued;
+  - rehire eligible (default No for absconded / terminated, Yes for resigned; editable).
+- The record is kept: the employee goes `on_notice` until the Exit case completes, and the case history keeps every step.
+- **Access:** the welcome link stops; the app login is switched off at once for absconding (and when the LWD has passed), otherwise on the LWD (hourly job).
+- **Notify:** in-app + email to the job owner / hiring manager and the employee's manager / HRBP.
+- **Not reporting -> absconding** (Settings > Onboarding & employees > Leaving soon after joining):
+  - Reminder after 2 days, show-cause / return-to-work notice after 5, final notice after 10 (days from the last day they came in; all editable; can be switched off).
+  - Each is sent once by the hourly scheduler job `joiner_exits`, and HR is told in-app; after the final notice HR confirms Absconded.
+  - "Back at work (stop notices)" ends the flow, with a note.
+
+## 4. After any exit / no-show / withdraw / decline
+- Application status updated -> the job's opening counts again; a job that had **closed itself as filled re-opens** (audit `job_reopened_position_open_again`).
+- Recruiter to-do on Home ("Your to-do"): **"Position open again - N past candidates match (job)"** (talent-pool re-match), linking to the job's talent pool. One to-do per job; it closes when a pool candidate is added.
+- Department budget commitment **released**.
+- Queued emails for the person suppressed, open links (action tokens) invalidated, welcome link revoked, offer link says "This offer is no longer open".
+- Audit on the case AND the application, so the candidate timeline tells the story (labels in en / hi / ta).
+
+## 5. Report: Reports > "Dropouts & early exits"
+- Counts: offer dropouts (withdrawn + declined), no-shows, early leavers (resigned / terminated within 90 days), absconding.
+- By job, department, recruiter and reason; period 30 / 90 / 365 days / all. Endpoint `GET /api/v1/onboarding/dropout-report`.
+
+## 6. Proof (mailpit, proof API :8010 with DEV_MAIL_CAPTURE, web :5174)
+Test joiners on two test jobs, temporary admin proof.hr@example.com:
+```
+(a) Anil Withdrawn, joins in 10 days
+    menu: Change date | New link | Candidate declined | Withdraw offer        (no "didn't join", Mark joined disabled)
+    Withdraw, reason "Position put on hold by the business"
+      -> case revoked, application offer_withdrawn, budget released, audit offer_withdrawn
+      -> mailpit "About your offer for Proof Exit Role A at CTD Techs" (no internal reason in it)
+      -> his offer link: "This offer is no longer open"; welcome link: "This link doesn't work any more."
+      -> Home > Your to-do: "Position open again - 0 past ca... / Anil Withdrawn - offer withdrawn"
+(b) Bina NoShow, joins today
+    menu adds "Mark as didn't join" -> reason "Could not be reached", contacted on 5 Oct, notes
+      -> case no_show, application no_show, outcome stored with reason + contacted_on
+(c) Chetan Absconds, joined 20 Sep (Mark joined in the UI)
+    after joining the menu is only: Not reporting | Absconded | Resigned | Terminated
+    API: POST /revoke, /declined, /no-show -> 409 ACTION_NOT_ALLOWED "...has already joined..."
+    Not reporting, last day 4 Oct -> scheduler run at day 1/2/3/5/7/10/11 -> sent 0/1/0/1/0/1/0:
+      "We missed you at work - please get in touch" (day 2)
+      "Absence from work since 04 October 2026 - please explain and return to work" (day 5)
+      "Final notice: absence from work since 04 October 2026" (day 10)
+    Absconded -> Exit case absconding, LWD 4 Oct, rehire No, 3 notices on it, 6 clearance items incl.
+      "Recover Proof test laptop (PROOF-LAPTOP-01)", login switched off, budget released
+      (this confirmation was clicked by kg@ctdtechs.com in the live app at 16:00:59; the confirm dialog was re-proved on Esha)
+    Esha Absconds: Not reporting with a last day 11 days back -> all 3 notices at once -> Absconded with the
+      confirmation step ("...mark them as NOT re-hirable") -> Exit case absconding, LWD 24 Sep
+(d) Divya Resigns, joined 20 Sep, job A set to 1 opening -> job auto-closed as filled (16:06:27)
+    Resigned, reason "Better offer elsewhere", confirm ("mark them as re-hirable")
+      -> Exit case resignation, rehire Yes; job A re-opened (16:07:22); to-do; HR/manager email
+Report: offer dropouts 2, no-shows 1, early leavers 1, absconding 2; by job A 3 / B 2 / Junior AI Developer 1 (Kishore)
+```
+**Found and fixed during the proof:**
+- A raw `{name}` in the withdraw email note.
+- A second exit on the same job added a duplicate to-do; it now updates the one open to-do.
+- The new statuses fell into the Kanban "New" column and stepper step 1; they now map to "Not moving" / the offer or joined step.
+
+**Screenshots** (`screens/`):
+- Before joining: fix21-a-card-before, fix21-a-menu-before-joining, fix21-a-withdraw-dialog, fix21-a-mail-withdrawn, fix21-a-offer-link-closed, fix21-a-recruiter-todo
+- Joining day: fix21-b-menu-joining-day, fix21-b-no-show-dialog
+- After joining: fix21-recent-joiners, fix21-c-menu-after-joining, fix21-c-not-reporting-dialog, fix21-c-not-reporting-started
+- Notices: fix21-c-mail-reminder, fix21-c-mail-show-cause, fix21-c-mail-final, fix21-c-notices-sent, fix21-c-menu-not-reporting
+- Exits: fix21-c-absconded-dialog, fix21-c-absconded-confirm, fix21-d-resigned-dialog, fix21-d-resigned-confirm, fix21-board-after
+- Reports, timeline, settings: fix21-report, fix21-timeline-esha, fix21-settings-leavers
+
+**Clean-up:**
+- All test records deleted by id in one transaction: 5 candidates, 5 applications, 5 offers, 5 cases, 5 employees, 3 employment records, 3 exit cases + 16 clearance items, the test laptop + its allocation, 4 budget rows, 5 to-dos, 2 test jobs, 35 audit rows, 19 messages, the temporary admin + 3 employee logins created by Mark joined.
+- Kishore's records were not touched after the repair, except by kg@ctdtechs.com's own decline.
+
+**Checks:** alembic upgrade head (f22b4c5d6e7a); pytest test_offers, test_onboarding, test_offer_revisions, test_joiner_exits (7 new), test_jobs, test_jobs_service: 163 passed. test_service_desk has 8 failures that are identical on HEAD (not touched). tsc; i18n 4281 keys, 0 missing; npm run build OK.
+
+**Owner actions:**
+1. Kishore is now "declined" (your 16:00 action). If that was a test click, tell me and I'll restore him to "signed, joining 14 Oct". If it was real, send him a note yourself: "declined" sends no email by design.
+2. Check the notice wording in Settings > Message templates (onboarding.not_reporting_*) with your HR/legal practice.
+3. Add salary / HR contacts (Settings > Hiring > Contacts) so the notices name a person, not "your HR team".

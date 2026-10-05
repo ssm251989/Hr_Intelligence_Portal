@@ -35,6 +35,11 @@ def items_for(db: Session, tenant: TenantContext, user: User) -> list[dict]:
                     "path": f"/approvals?step={step.id}", "actions": ["approve", "reject"]})
 
     for s in agent_inbox(db, tenant, user):
+        if s.kind == "position_open_again":  # fix 2026-10-05: a to-do, not something to approve
+            out.append({"kind": "todo", "id": str(s.id), "title": s.title,
+                        "subtitle": f"{(s.payload_json or {}).get('person')} - {(s.payload_json or {}).get('why')}",
+                        "due_at": None, "path": f"/jobs?view={(s.payload_json or {}).get('job_id')}", "actions": ["open"]})
+            continue
         out.append({"kind": "ai_suggestion", "id": str(s.id), "title": s.title, "subtitle": f"{s.agent} suggestion -- review before it takes effect",
                     "due_at": None, "path": f"/approvals?suggestion={s.id}", "actions": ["approve", "edit", "reject"]})
 

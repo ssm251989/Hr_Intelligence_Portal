@@ -13,7 +13,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from app.core.database import Base
 from app.platform.tenancy.mixins import TenantOwned
 
-PREBOARDING_STATUSES = ("invited", "in_progress", "ready", "joined", "no_show", "revoked")
+PREBOARDING_STATUSES = ("invited", "in_progress", "ready", "joined", "no_show", "revoked", "declined", "exited")  # + declined / exited: fix 2026-10-05
 PREBOARDING_DOC_STATUSES = ("pending", "verified", "rejected")
 BGV_SUBJECT_TYPES = ("candidate", "employee")
 BGV_CHECK_TYPES = ("identity", "address", "education", "employment", "criminal", "credit", "drug")

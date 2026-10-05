@@ -117,7 +117,7 @@ class PreboardingPortal:
             raise PortalAuthError("invalid")
         if case.portal_token_expires_at < _now():
             raise PortalAuthError("expired")
-        if case.status in ("revoked", "no_show", "joined"):
+        if case.status in ("revoked", "no_show", "joined", "declined", "exited"):
             raise PortalAuthError("closed")
         return case
 

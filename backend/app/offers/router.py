@@ -266,6 +266,29 @@ def complete_onboarding(
 
     offer = _get_offer_or_404(db, application_id)
 
+    # fix 2026-10-05: "joined" is decided in ONE place -- the onboarding case's Mark as joined (joining date reached,
+    # employee record made live). Without an onboarding case (module off), the joining date must have arrived.
+    from datetime import date as _date
+
+    from app.models.onboarding import PreboardingCase
+    from app.onboarding import joiner_actions
+    from app.onboarding.joiner_stage import ActionNotAllowed
+    from app.platform.tenancy.context import require_current_tenant
+
+    case = db.query(PreboardingCase).filter(PreboardingCase.offer_id == offer.id).first()
+    if case is not None:
+        try:
+            joiner_actions.mark_joined(db, require_current_tenant(), case, actor=current_user.email)
+        except ActionNotAllowed as exc:
+            raise HTTPException(status_code=409, detail={"code": exc.code, "message": str(exc)}) from exc
+        except joiner_actions.ActionError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        db.refresh(offer)
+        return offer
+    if offer.joining_date and offer.joining_date > _date.today():
+        raise HTTPException(status_code=409, detail={"code": "ACTION_NOT_ALLOWED", "message":
+                            f"The joining date is {offer.joining_date.strftime('%d %b %Y')}. You can mark them joined from that day."})
+
     previous_status = application.status
     offer.onboarding_status = "completed"
     application.status = "onboarding_completed"

@@ -80,6 +80,12 @@ def add_from_talent_pool(db: Session, tenant, job: JobRole, candidate: Candidate
     db.refresh(app)
     score_application(db, tenant, app, job=job, candidate=candidate)
     log_action(db, "application", app.id, "added_from_talent_pool", actor[:50], {"job_id": str(job.id), "candidate_id": str(candidate.id)})
+    from app.models.intelligence import AgentSuggestion  # fix 2026-10-05: the "Position open again" to-do is done
+
+    for todo in db.query(AgentSuggestion).filter(AgentSuggestion.tenant_id == tenant.tenant_id, AgentSuggestion.kind == "position_open_again",
+                                                 AgentSuggestion.entity_id == job.id, AgentSuggestion.status == "pending").all():
+        todo.status, todo.reviewed_by, todo.reviewed_at = "approved", actor[:200], datetime.now(timezone.utc)
+    db.commit()
     return app
 
 

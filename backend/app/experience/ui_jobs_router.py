@@ -56,8 +56,10 @@ STAGE_OF_STATUS: dict[str, str] = {
     "salary_rejected": "not_selected",
     "bgv_rejected": "not_selected",
     "on_hold": "paused",
+    # fix 2026-10-05: dropped out after the offer, or left soon after joining -> no longer fills an opening
+    "offer_withdrawn": "dropped", "offer_declined": "dropped", "no_show": "dropped", "left_after_joining": "dropped",
 }
-STAGES = ("new", "screening", "shortlisted", "interview", "offer", "hired", "not_selected", "paused")
+STAGES = ("new", "screening", "shortlisted", "interview", "offer", "hired", "not_selected", "paused", "dropped")
 AUTO_CLOSE_ACTIONS = ("job_auto_closed_deadline_passed", "job_auto_closed_positions_filled")
 
 

@@ -26,7 +26,7 @@ portal endpoint; only the joiner's own data is returned, never HR-only fields):
                                                        agenda, whether a welcome video exists
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 from uuid import UUID
@@ -42,7 +42,7 @@ from app.models.application import Application
 from app.models.candidate import Candidate
 from app.models.onboarding import OnboardingPlan, OnboardingTask, PreboardingCase, PreboardingDocument
 from app.models.user import User
-from app.onboarding import plans
+from app.onboarding import joiner_stage, plans
 from app.onboarding.portal import UPLOAD_DIR, PortalAuthError, PreboardingPortal
 from app.platform.iam.authz import has_permission, require
 from app.platform.tenancy.context import require_current_tenant
@@ -242,7 +242,26 @@ def board(lang: str = "en", db: Session = Depends(get_db), current_user: User = 
             "not_ready_soon": days <= 3 and readiness["percent"] < 100, "documents_waiting": pending_by_case.get(case.id, 0),
             "overdue_tasks": overdue_by_case.get(case.id, 0), "has_plan": case.id in cases_with_plan,
             "link_expires_at": _iso(case.portal_token_expires_at), "link_expired": case.portal_token_expires_at < datetime.now(timezone.utc),
-            "can_mark_joined": case.joining_date <= today,
+            "can_mark_joined": "mark_joined" in joiner_stage.allowed_actions(db, case, today),
+            # fix 2026-10-05: the stage + exactly the actions the server will accept (joiner_stage.py)
+            "stage": joiner_stage.stage(db, case, today), "allowed_actions": joiner_stage.allowed_actions(db, case, today),
+        })
+
+    # fix 2026-10-05: joined in the last 90 days (or marked not reporting) -> the after-joining actions live here
+    recent = []
+    since = datetime.now(timezone.utc) - timedelta(days=90)
+    joined = [c for c in db.query(PreboardingCase).filter(PreboardingCase.tenant_id == tenant.tenant_id, PreboardingCase.status == "joined").all()
+              if (c.joined_at and c.joined_at >= since) or ((c.attributes_json or {}).get("not_reporting") or {}).get("status") == "active"]
+    jp = _people(db, joined)
+    for case in sorted(joined, key=lambda c: c.joining_date, reverse=True):
+        p = jp[case.id]
+        flow = (case.attributes_json or {}).get("not_reporting") or {}
+        recent.append({
+            "case_id": str(case.id), "name": p["name"], "email": case.email, "role": p["role"], "department": p["department"],
+            "candidate_id": p["candidate_id"], "joining_date": case.joining_date.isoformat(), "days_since_joining": (today - case.joining_date).days,
+            "status": case.status, "stage": joiner_stage.stage(db, case, today), "allowed_actions": joiner_stage.allowed_actions(db, case, today),
+            "not_reporting": ({"status": flow.get("status"), "last_seen": flow.get("last_seen"), "notices": [n.get("kind") for n in flow.get("notices", [])]}
+                              if flow else None),
         })
 
     # names for the queue + overdue lists, including cases outside the active set
@@ -279,7 +298,7 @@ def board(lang: str = "en", db: Session = Depends(get_db), current_user: User = 
                              "role": job.title if job else None, "joining_date": _iso(offer.joining_date)})
 
     return {
-        "today": today.isoformat(), "cards": cards, "documents_waiting": documents, "overdue_tasks": overdue_rows,
+        "today": today.isoformat(), "cards": cards, "recent_joiners": recent, "documents_waiting": documents, "overdue_tasks": overdue_rows,
         "digest": _digest_status(db, tenant), "ready_offers": ready_offers,
         "can": {
             "create": has_permission(db, tenant, current_user, "onboarding.preboarding.create"),

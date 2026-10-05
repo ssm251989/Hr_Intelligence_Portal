@@ -212,7 +212,10 @@ def _page(db: Session, tenant, offer: Optional[Offer], *, error: Optional[str] =
         cand = db.get(Candidate, db.get(Application, offer.application_id).candidate_id)
         token = escape(offer.sign_token or "")
         letter = offer.offer_letter_text or ""  # server-rendered from the company's own template
-        if offer.signed:
+        app_status = db.get(Application, offer.application_id).status
+        if app_status in ("offer_withdrawn", "offer_declined", "no_show", "left_after_joining"):  # fix 2026-10-05
+            body = f"<h1>This offer is no longer open</h1><p>Please contact HR at {escape(org)} if you have any questions.</p>"
+        elif offer.signed:
             portal = _portal_link(db, offer)
             body = (("<div style='font-size:44px'>&#127881;</div>" if just_signed else "")
                     + f"<h1>{'Welcome aboard!' if just_signed else 'Offer signed'}</h1><p>Thank you{(', ' + escape(offer.signed_name)) if offer.signed_name else ''}! "
@@ -300,7 +303,7 @@ def offer_sign(token: str, request: Request, full_name: str = Form(""), accept: 
     offer = _offer_by_token(db, token)
     if offer is None:
         return HTMLResponse(_page(db, tenant, None, replaced=_replacement(db, token)))
-    if offer.signed:
+    if offer.signed or db.get(Application, offer.application_id).status in ("offer_withdrawn", "offer_declined", "no_show", "left_after_joining"):
         return HTMLResponse(_page(db, tenant, offer))
     if offer.expiry_date and offer.expiry_date < date.today():
         return HTMLResponse(_page(db, tenant, offer))

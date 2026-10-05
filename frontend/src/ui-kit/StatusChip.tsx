@@ -39,6 +39,11 @@ export const STATUS_STYLES: Record<string, StatusStyle> = {
   offer_sent: { tone: "sky", emoji: "envelope", label: "Offer sent" },
   onboarding_started: { tone: "brand", emoji: "waving_hand", label: "Onboarding" },
   onboarding_completed: { tone: "ok", emoji: "party", label: "Joined" },
+  // fix 2026-10-05: how an offer / a new joiner ended
+  offer_withdrawn: { tone: "coral", emoji: "cross", label: "Offer withdrawn" },
+  offer_declined: { tone: "muted", emoji: "speech", label: "Offer declined" },
+  no_show: { tone: "coral", emoji: "pause", label: "Did not join" },
+  left_after_joining: { tone: "muted", emoji: "door", label: "Left after joining" },
   // jobs
   draft: { tone: "muted", emoji: "pencil", label: "Draft" },
   ready_for_publishing: { tone: "sun", emoji: "hourglass", label: "Ready to publish" },

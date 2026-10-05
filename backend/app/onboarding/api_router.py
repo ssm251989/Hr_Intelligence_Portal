@@ -116,24 +116,116 @@ def change_joining_date(case_id: UUID, payload: JoiningDateChange, db: Session =
 
 class CloseCase(BaseModel):
     reason: Optional[str] = None
+    reason_code: Optional[str] = None
+    notes: Optional[str] = None
+    contacted_on: Optional[date] = None
+
+
+def _joiner_call(fn):
+    """fix 2026-10-05: every joiner action goes through joiner_stage rules -> 409 with a plain message when not allowed."""
+    from app.onboarding.joiner_actions import ActionError
+    from app.onboarding.joiner_stage import ActionNotAllowed
+
+    try:
+        return fn()
+    except ActionNotAllowed as exc:
+        raise HTTPException(status_code=409, detail={"code": exc.code, "message": str(exc)}) from exc
+    except (ActionError, PortalValidationError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/cases/{case_id}/no-show")
 def mark_no_show(case_id: UUID, payload: CloseCase, db: Session = Depends(get_db), current_user: User = Depends(require("onboarding.preboarding.edit"))):
-    try:
-        case = PreboardingPortal(db, require_current_tenant()).mark_no_show(_case_or_404(db, case_id), actor=current_user.email, reason=payload.reason)
-    except PortalValidationError as exc:
-        raise _bad_request(exc)
+    from app.onboarding import joiner_actions
+
+    case = _case_or_404(db, case_id)
+    _joiner_call(lambda: joiner_actions.no_show(db, require_current_tenant(), case, actor=current_user.email, reason_code=payload.reason_code or "other",
+                                                notes=payload.notes or payload.reason, contacted_on=payload.contacted_on))
     return case_to_dict(case)
 
 
 @router.post("/cases/{case_id}/revoke")
 def revoke_offer(case_id: UUID, payload: CloseCase, db: Session = Depends(get_db), current_user: User = Depends(require("onboarding.preboarding.edit"))):
-    try:
-        case = PreboardingPortal(db, require_current_tenant()).revoke_offer(_case_or_404(db, case_id), actor=current_user.email, reason=payload.reason)
-    except PortalValidationError as exc:
-        raise _bad_request(exc)
+    """Withdraw the offer (company decision). Refused once the person has joined."""
+    from app.onboarding import joiner_actions
+
+    case = _case_or_404(db, case_id)
+    _joiner_call(lambda: joiner_actions.withdraw_offer(db, require_current_tenant(), case, actor=current_user.email,
+                                                       reason=payload.reason or "", notes=payload.notes))
     return case_to_dict(case)
+
+
+@router.post("/cases/{case_id}/declined")
+def candidate_declined(case_id: UUID, payload: CloseCase, db: Session = Depends(get_db), current_user: User = Depends(require("onboarding.preboarding.edit"))):
+    from app.onboarding import joiner_actions
+
+    case = _case_or_404(db, case_id)
+    _joiner_call(lambda: joiner_actions.candidate_declined(db, require_current_tenant(), case, actor=current_user.email,
+                                                           reason_code=payload.reason_code or "", notes=payload.notes))
+    return case_to_dict(case)
+
+
+class NotReportingIn(BaseModel):
+    last_seen: date
+    notes: Optional[str] = None
+
+
+@router.post("/cases/{case_id}/not-reporting")
+def start_not_reporting(case_id: UUID, payload: NotReportingIn, db: Session = Depends(get_db), current_user: User = Depends(require("onboarding.preboarding.edit"))):
+    from app.onboarding import joiner_actions
+
+    case = _case_or_404(db, case_id)
+    return _joiner_call(lambda: joiner_actions.start_not_reporting(db, require_current_tenant(), case, actor=current_user.email,
+                                                                  last_seen=payload.last_seen, notes=payload.notes))
+
+
+class StopIn(BaseModel):
+    note: str
+
+
+@router.post("/cases/{case_id}/not-reporting/stop")
+def stop_not_reporting(case_id: UUID, payload: StopIn, db: Session = Depends(get_db), current_user: User = Depends(require("onboarding.preboarding.edit"))):
+    from app.onboarding import joiner_actions
+
+    case = _case_or_404(db, case_id)
+    return _joiner_call(lambda: joiner_actions.stop_not_reporting(db, require_current_tenant(), case, actor=current_user.email, note=payload.note))
+
+
+class ExitIn(BaseModel):
+    kind: str  # absconded | resigned | terminated
+    last_working_day: date
+    reason_code: str
+    notes: str
+    rehire_eligible: Optional[bool] = None
+    confirm: bool = False
+
+
+@router.post("/cases/{case_id}/exit")
+def record_exit(case_id: UUID, payload: ExitIn, db: Session = Depends(get_db), current_user: User = Depends(require("onboarding.preboarding.approve"))):
+    """After joining only: absconded / resigned / terminated -> an Exit case with clearance + asset recovery."""
+    from app.onboarding import joiner_actions
+
+    if not payload.confirm:
+        raise HTTPException(status_code=400, detail="Please confirm: this records an exit and can't be undone here.")
+    case = _case_or_404(db, case_id)
+    return _joiner_call(lambda: joiner_actions.record_exit(db, require_current_tenant(), case, kind=payload.kind, actor=current_user.email,
+                                                          last_working_day=payload.last_working_day, reason_code=payload.reason_code,
+                                                          notes=payload.notes, rehire_eligible=payload.rehire_eligible, actor_user_id=current_user.id))
+
+
+@router.get("/joiner-reasons")
+def joiner_reasons(current_user: User = Depends(require("onboarding.preboarding.view"))):
+    from app.onboarding import joiner_actions as ja
+
+    return {"declined": ja.DECLINE_REASONS, "no_show": ja.NO_SHOW_REASONS, "exit": ja.EXIT_REASONS}
+
+
+@router.get("/dropout-report")
+def dropout_report(since: Optional[date] = None, early_days: int = 90, db: Session = Depends(get_db),
+                   current_user: User = Depends(require("onboarding.preboarding.view"))):
+    from app.onboarding import joiner_actions
+
+    return joiner_actions.dropout_report(db, require_current_tenant(), since=since, early_days=early_days)
 
 
 class ConvertRequest(BaseModel):
@@ -144,10 +236,12 @@ class ConvertRequest(BaseModel):
 def convert_case(case_id: UUID, payload: ConvertRequest, db: Session = Depends(get_db), current_user: User = Depends(require("onboarding.preboarding.approve"))):
     if not payload.confirm_joined:
         raise HTTPException(status_code=400, detail="Confirm the new hire has actually joined before converting")
-    try:
-        return conversion.convert(db, require_current_tenant(), _case_or_404(db, case_id), actor=current_user.email)
-    except conversion.ConversionError as exc:
-        raise _bad_request(exc)
+    case = _case_or_404(db, case_id)
+    if case.status == "joined":  # idempotent: converting again returns the same employee
+        return conversion.convert(db, require_current_tenant(), case, actor=current_user.email)
+    from app.onboarding import joiner_actions  # fix 2026-10-05: also marks the hiring record Joined
+
+    return _joiner_call(lambda: joiner_actions.mark_joined(db, require_current_tenant(), case, actor=current_user.email))
 
 
 # ---- document verification queue (HR) ----

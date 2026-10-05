@@ -31,7 +31,8 @@ export const BOARD_COLUMNS: BoardColumn[] = [
   { key: "offer", emoji: "envelope", statuses: ["offer_sent", "onboarding_started"] },
   { key: "joined", emoji: "party", statuses: ["onboarding_completed"] },
   { key: "on_hold", emoji: "pause", statuses: ["on_hold"] },
-  { key: "not_moving", emoji: "cross", statuses: ["hr_rejected", "interview_rejected", "salary_rejected", "bgv_rejected"] },
+  { key: "not_moving", emoji: "cross", statuses: ["hr_rejected", "interview_rejected", "salary_rejected", "bgv_rejected",
+    "offer_withdrawn", "offer_declined", "no_show", "left_after_joining"] }, // fix 2026-10-05: dropped out / left soon after
 ];
 
 export function columnOf(status: string): BoardColumnKey {
@@ -89,6 +90,8 @@ export function stepperIndex(status: string, previousStatus?: string | null): nu
       if (s === "hr_rejected") return 2;
       if (s === "interview_rejected") return 3;
       if (s === "salary_rejected" || s === "bgv_rejected") return 4;
+      if (s === "offer_withdrawn" || s === "offer_declined" || s === "no_show") return 5; // fix 2026-10-05: stopped at the offer
+      if (s === "left_after_joining") return 6; // joined, then left
       return 0;
   }
 }
