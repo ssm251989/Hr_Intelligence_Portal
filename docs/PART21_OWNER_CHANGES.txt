@@ -1,0 +1,135 @@
+PART 21 - OWNER CHANGES (2026-10-06)
+(Repo hr-automation, branch hrms-platform. Do AFTER finishing whatever is
+in progress (PART 20, exit interview move, actionable exit checklist).
+STANDING RULES: no test suites (only tsc -p tsconfig.app.json, compileall,
+alembic upgrade head, npm run build). Verify with curl + Playwright
+screenshots + mailpit; proof in docs/ui/FIXES_21.md. For every BUG: find
+and quote the real cause first. Don't ask; log decisions in
+docs/build_log.md. Commit + push after each item ("part-21.N: <title>"),
+NEXT: line. Never delete real data without the dry-run + confirm rules.)
+
+--------------------------------------------------------------------------
+21.1 CLOSED JOBS ARE CLEANED UP AFTER N DAYS (configurable)
+- Settings > Hiring > Closed jobs: "Move closed jobs to the Recycle bin
+  after [30] days" (number, 0 = never). Also "Keep candidates of closed
+  jobs in the talent pool" (on by default).
+- Daily background job: for each job closed more than N days ago:
+  job + its applications, screening results, scores, shortlist records,
+  interviews, negotiation links, salary forms, documents -> Recycle bin
+  (soft delete, same rules as 17.15: hidden everywhere, restorable).
+  Candidates who were HIRED / are employees are never touched.
+  If "keep in talent pool" is on, the candidate profile + resume stay in
+  the talent pool (unlinked from the job); only job-specific data moves.
+- 3 days before: job card shows "Will move to Recycle bin on <date>" with
+  [Keep this job] (pauses cleanup for that job).
+- Recycle bin: new "Jobs" tab next to Candidates, with Restore (brings back
+  the job and its data) and Delete permanently. Items in the bin are
+  deleted permanently after the existing recycle-bin retention (setting).
+- Audit entry per run: jobs moved, counts.
+
+21.2 WHEN A PERSON EXITS -> THEIR HIRING DATA GOES TO THE RECYCLE BIN
+- Trigger: exit status Completed (after last working day + clearance).
+- Moves to Recycle bin: candidate record and applications, screening
+  results / AI scores, shortlist records, interviews + scorecards,
+  negotiation / form links, salary forms, candidate emails (HR inbox),
+  pre-joining portal data.
+- KEPT (not moved): the employee record, signed offer letter, joining
+  documents, BGV result, relieving/experience letters, exit record and
+  exit interview, audit log - needed for HR/legal records. Retention for
+  these follows Settings > Data & privacy > Retention.
+- Settings > Onboarding & employees > After exit: choose which hiring data
+  categories move to the bin (checkboxes, defaults as above) and "after
+  [0] days from exit completion".
+- Candidate timeline note: "Hiring data moved to Recycle bin on exit
+  (<date>)". Restorable from the bin like any other item.
+
+21.3 BUG: AUTO-SHORTLIST DOES NOT SEND THE INTERVIEW EMAIL TO THE
+     INTERVIEWER (it only works after clicking "Retry scheduling")
+- Trace a new auto-shortlisted test candidate: shortlist event, undo window
+  end, scheduling job queued/run, emails created for candidate and
+  interviewer (message log). Quote where it stops. Compare with the code
+  path of "Retry scheduling" - they must use the SAME function.
+- Likely causes to check: job runs before the undo window ends and isn't
+  re-queued; scheduler/worker not running the delayed job; interviewer
+  email only sent on the manual path; interviewer resolved from the pool
+  only on retry; exception swallowed.
+- Fix so auto and manual paths are identical: after the undo window, the
+  scheduler sends time choices to the candidate AND notifies the
+  interviewer ("New interview being scheduled: <candidate>, <job>"); once
+  the candidate picks a time, both get the calendar invite + meeting link.
+- Any failure shows on the candidate profile + HR to-do with the plain
+  reason and [Retry]; never silent.
+- Verify with 2 auto-shortlisted candidates, no manual clicks: mailpit
+  shows emails to both candidate and interviewer.
+
+21.4 BACKGROUND CHECK: DOWNLOAD ALL + ASSIGN TO A BGV VENDOR
+- BGV page and candidate BGV section:
+  [Download all] -> one ZIP of all the candidate's BGV documents
+  (folder per document type, file names "<Candidate> - <Document>.pdf",
+  plus a summary PDF/Excel of statuses). Bulk on the BGV list: select
+  candidates -> Download all (background job for large sets). Audit-logged.
+  [Assign BGV vendor] -> pick a vendor from Agencies (type BGV), choose
+  checks (education, employment, address, criminal, identity, reference,
+  drug - list from the vendor's offered checks), due date -> vendor gets
+  an email with a secure, expiring link (setting, default 14 days) to view
+  /download ONLY this candidate's documents and upload the report.
+  Status: Assigned -> In progress (vendor opened) -> Report received ->
+  HR decision (Clear / Discrepancy / Failed / Resend form - existing HR
+  decision step). Reminders to the vendor before/after due date.
+  Reassign to another vendor; cancel assignment (link stops working).
+- Report uploaded by the vendor appears in the candidate's BGV section,
+  HR notified. Vendor never sees other candidates.
+
+21.5 AGENCIES TAB WORKS FOR RECRUITMENT AND BGV
+- Agency record: name, type (Recruitment / BGV / Both), contact person,
+  email, phone, address, GST/PAN (optional), contract dates, status
+  (Active / Inactive), notes.
+  Recruitment fields: fee % / fixed, payment terms, jobs they can submit
+  for, submission portal access (existing).
+  BGV fields: checks offered + price per check, turnaround days (SLA),
+  report format.
+- List with filter by type; agency profile shows: recruitment -> candidates
+  submitted, hired, fees due; BGV -> cases assigned, average turnaround,
+  overdue, cost so far.
+- Add / edit / deactivate all work (check save + reload); sample import
+  file. Agency tab visible in the menu (it may be hidden today - check).
+
+21.6 BUG: HR ASSISTANT IS NOT WORKING PROPERLY
+- Test it: open the assistant, ask 5 questions (one from an uploaded policy,
+  "how many open jobs", "candidates waiting for interview", "my
+  interviews this week", a general HR question). Quote each answer, any
+  error, the API/AI calls and the GenAI usage/limit status.
+- Check: GenAI connection + model name valid, token limit not blocking,
+  policy documents indexed (status Ready), tools use the user's
+  permissions, answers show sources, friendly error instead of a blank /
+  spinner forever, modules hidden/disabled not breaking it.
+- Fix the root cause(s). Clear message when it can't answer ("I couldn't
+  find this in your policies - ask HR" / "AI limit reached for today").
+- Verify the same 5 questions give correct answers with sources.
+
+21.7 BUDGET GOES BACK TO FINANCE WHEN A PERSON EXITS
+- On exit completed (and also on offer withdraw / no-show / decline -
+  check those already work): the hire's committed salary amount is
+  released back to the department budget "available" amount.
+  Settings > Hiring > Budgets: "Release budget on exit" on (default),
+  "release for the remaining months of the budget year" (pro-rata) vs
+  "release full annual amount" (choice, default pro-rata).
+- Finance dashboard shows the movement: "+6.5 L released - Kishore Gunda
+  exited (Junior AI Developer) on <date>" in budget history; department
+  totals update immediately. Audit-logged.
+
+21.8 SIDEBAR: ONLY ONE GROUP OPEN AT A TIME
+- When a menu group is expanded and the user clicks another module/group,
+  the previously open group collapses automatically (accordion). The group
+  of the current page stays open; works with the collapsed icon-only
+  sidebar too; remembers the state per page on reload.
+
+--------------------------------------------------------------------------
+21.9 PROOF (docs/ui/FIXES_21.md) + HAND-OVER
+Screenshots/mailpit for every item: closed job with 0-day setting moves to
+the bin and restores; exit -> hiring data in bin, employee record kept,
+budget released on the finance dashboard; 2 auto-shortlisted candidates ->
+interviewer + candidate emails without any manual click; BGV Download all
+ZIP + assign vendor -> vendor link -> report upload -> HR decision;
+agency add/edit for both types; HR assistant 5 answers; sidebar accordion.
+Then tell me in short points what changed and anything not finished.

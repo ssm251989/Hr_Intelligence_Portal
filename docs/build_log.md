@@ -2799,3 +2799,8 @@ NEXT: part-20.6 end-to-end proof (new test candidate -> offer signed -> joining 
   - PART 20 complete.
 
 NEXT: RESUME order -> docs/PART18_OWNER_CHANGES.txt (check which 18.x items are still open against FIXES_18.md), then PART17/15/16 leftovers (PART16 16.3 settings reorganised was the last open NEXT before PART 20).
+
+## PART 21 started (2026-10-06)
+- Spec copied from "Claude outputs/" to docs/PART21_OWNER_CHANGES.txt; RESUME.txt order: PART 21 after PART 20 (owner instruction).
+
+NEXT: part-21.1 closed jobs to the Recycle bin after N days (setting, daily job, Keep this job, Jobs tab in the bin).
