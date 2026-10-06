@@ -17,6 +17,7 @@ import { onboardingExtraApi, type JoinerDetail, type PlanTemplateRow } from "../
 import { useI18n } from "../../i18n";
 import { Emoji, EmptyState, FriendlyError, ProgressRing, StatusChip, Timeline, UserAvatar } from "../../ui-kit";
 import { RejectDialog, WelcomeEditor } from "./OnboardingDialogs";
+import JoiningDetailsPanel from "./JoiningDetailsPanel";
 import { JoinerStatusChip, ownerText, useDateText } from "./shared";
 
 const KIND_EMOJI: Record<string, string> = { form: "memo", document: "page", policy: "clipboard" };
@@ -125,6 +126,7 @@ export default function JoinerDrawer({
 
                 <Tabs value={tab} onChange={(_, v) => setTab(v)} variant="scrollable" allowScrollButtonsMobile>
                   <Tab value="checklist" label={t("onboarding.drawer.tab_checklist")} />
+                  <Tab value="details" label={t("jform.hr.tab")} />
                   <Tab value="documents" label={t("onboarding.drawer.tab_documents", { count: data.documents.length })} />
                   <Tab value="tasks" label={t("onboarding.drawer.tab_tasks", { count: data.tasks.length })} />
                   <Tab value="welcome" label={t("onboarding.drawer.tab_welcome")} />
@@ -152,6 +154,8 @@ export default function JoinerDrawer({
                       </Stack>
                     )
                 )}
+
+                {tab === "details" && <JoiningDetailsPanel caseId={data.case_id} details={data.joining_details} canEdit={canEdit} onChanged={load} />}
 
                 {tab === "documents" && (
                   data.documents.length === 0

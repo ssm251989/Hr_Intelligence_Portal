@@ -19,6 +19,7 @@ import RequiredDocumentsPage from "../components/documents/RequiredDocumentsPage
 import ContactsSettingsPage from "../components/offers/ContactsSettingsPage";
 import OfficesPage from "../components/people/OfficesPage";
 import PoliciesPage from "../components/policies/PoliciesPage";
+import JoiningFormSettingsPage from "../components/onboarding/JoiningFormSettingsPage";
 import UsersPage from "../components/people/UsersPage";
 import GenAISettingsPage from "../components/genai/GenAISettingsPage";
 import PrivacyPanel from "../components/PrivacyPanel";
@@ -84,6 +85,7 @@ export const LEGACY: Record<string, string> = {
   helpdesk: "helpdesk/main", assets: "helpdesk/main", exits: "helpdesk/main", "service-desk": "helpdesk/main",
   all: "advanced/all", modules: "company/modules", "module-lock": "company/modules", "advanced/modules": "company/modules", platform: "advanced/all", "all-settings": "advanced/all",
   health: "data/health", "system-health": "data/health",
+  "joining-form": "onboarding/joining-form", "joining-details": "onboarding/joining-form",
   policies: "company/policies", handbook: "company/policies", knowledge: "company/policies",
 };
 
@@ -148,6 +150,9 @@ export const CATEGORIES: SettingsCategory[] = [
   {
     id: "onboarding", emoji: "waving_hand", pages: [
       { id: "plans", emoji: "clipboard", module: "onboarding", keywords: "onboarding checklist tasks", visible: ADMIN, render: () => <OnboardingPanel /> },
+      // change 2026-10-05: required / optional / hidden for every joining-details field and joining document
+      { id: "joining-form", emoji: "memo", module: "onboarding", keywords: "joining details form fields required optional hidden pan aadhaar bank ifsc help text format check documents",
+        prefixes: ["onboarding.joining_form"], visible: ADMIN, render: () => <JoiningFormSettingsPage /> },
       { id: "documents", emoji: "page", module: "onboarding", keywords: "documents letters portal forms policies", prefixes: ["onboarding.", "core_hr."], visible: ADMIN,
         render: scoped(["onboarding.documents", "onboarding.portal", "onboarding.conversion", "core_hr."], "settingsHome.page.onboarding.documents") },
       { id: "leavers", emoji: "door", module: "onboarding", keywords: "absconding not reporting no show early leaver notices", prefixes: ["onboarding.not_reporting"], visible: ADMIN,

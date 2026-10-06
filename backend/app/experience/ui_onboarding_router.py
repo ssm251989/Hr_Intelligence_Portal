@@ -342,7 +342,104 @@ def case_detail(case_id: UUID, lang: str = "en", db: Session = Depends(get_db), 
         "history": [{"event": h.get("event"), "at": h.get("at"), "actor": h.get("actor"), "reason": h.get("reason"), "old": h.get("old"), "new": h.get("new")}
                     for h in (case.history_json or []) if isinstance(h, dict)],
         "welcome": _welcome(case), "link_expires_at": _iso(case.portal_token_expires_at),
+        "joining_details": _joining_details_hr(db, tenant, case),
     }
+
+
+def _joining_details_hr(db: Session, tenant, case) -> Optional[dict]:
+    from app.onboarding import welcome_steps
+
+    try:
+        return welcome_steps.hr_details_view(db, tenant, case)
+    except Exception:  # noqa: BLE001 -- the joiner page must open even if this part can't be read
+        return None
+
+
+# ---- change 2026-10-05: joining details -- remind the joiner, lock, and the form settings ----
+
+
+@router.post("/cases/{case_id}/joining-details/remind")
+def remind_joining_details(case_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(require("onboarding.preboarding.edit"))):
+    """Emails the joiner the list of empty fields with their welcome link (at most once an hour)."""
+    from datetime import timedelta
+
+    from app.candidates.names import given_name
+    from app.models.candidate import Candidate
+    from app.platform.links import public_app_url
+    from app.onboarding import welcome_steps
+    from app.platform.comms.defaults import send_default
+
+    tenant = require_current_tenant()
+    case = _case_or_404(db, case_id)
+    if case.status not in ("invited", "in_progress", "ready"):
+        raise HTTPException(status_code=409, detail="This joiner's onboarding is closed.")
+    view = welcome_steps.hr_details_view(db, tenant, case)
+    labels = {f["key"]: f["label"] for f in view["fields"]}
+    missing = view["missing_required"] + view["missing_optional"]
+    if not missing:
+        raise HTTPException(status_code=409, detail="Nothing is missing - every field is filled in.")
+    last = view.get("last_reminder_at")
+    if last and datetime.fromisoformat(last) > datetime.now(timezone.utc) - timedelta(hours=1):
+        raise HTTPException(status_code=429, detail="A reminder was sent less than an hour ago.")
+    if not case.portal_token:
+        raise HTTPException(status_code=409, detail="This joiner has no welcome link. Send a new link first.")
+    cand = db.get(Candidate, case.candidate_id) if case.candidate_id else None
+    lines = [f"- {labels[k]}{' (needed)' if k in view['missing_required'] else ''}" for k in missing]
+    msg = send_default(db, tenant, "onboarding.details_reminder", to=[case.email], purpose="email.outbound.onboarding",
+                       related_entity_type="preboarding_case", related_entity_id=case.id,
+                       ctx={"candidate_first_name": given_name(cand) if cand else (case.first_name or "there"), "missing": "\n".join(lines),
+                            "portal_link": f"{public_app_url(db)}/welcome/{case.portal_token}"})
+    welcome_steps.mark_reminded(db, case)
+    log_action(db, "preboarding_case", case.id, "joining_details_reminder_sent", current_user.email, {"missing": missing, "email": msg.status})
+    return {"sent": True, "status": msg.status, "missing": missing}
+
+
+class LockIn(BaseModel):
+    locked: bool
+
+
+@router.post("/cases/{case_id}/joining-details/lock")
+def lock_joining_details(case_id: UUID, body: LockIn, db: Session = Depends(get_db), current_user: User = Depends(require("onboarding.preboarding.edit"))):
+    """While locked the joiner can't change their details (HR unlocks to let them edit again)."""
+    from app.onboarding import welcome_steps
+
+    case = _case_or_404(db, case_id)
+    welcome_steps.set_lock(db, case, locked=body.locked, actor=current_user.email)
+    log_action(db, "preboarding_case", case.id, "joining_details_locked" if body.locked else "joining_details_unlocked", current_user.email)
+    return welcome_steps.hr_details_view(db, require_current_tenant(), case)
+
+
+@router.get("/joining-form")
+def joining_form_settings(db: Session = Depends(get_db), current_user: User = Depends(require("platform.settings.configure"))):
+    from app.onboarding import joining_form
+
+    return joining_form.admin_view(db, require_current_tenant())
+
+
+class JoiningFormIn(BaseModel):
+    fields: dict = Field(default_factory=dict)
+    documents: dict = Field(default_factory=dict)
+
+
+@router.put("/joining-form")
+def save_joining_form(body: JoiningFormIn, db: Session = Depends(get_db), current_user: User = Depends(require("platform.settings.configure"))):
+    from app.onboarding import joining_form
+
+    return joining_form.save(db, require_current_tenant(), body.model_dump(), actor=current_user.email)
+
+
+class RevertIn(BaseModel):
+    version: int
+
+
+@router.post("/joining-form/revert")
+def revert_joining_form(body: RevertIn, db: Session = Depends(get_db), current_user: User = Depends(require("platform.settings.configure"))):
+    from app.onboarding import joining_form
+
+    try:
+        return joining_form.revert(db, require_current_tenant(), body.version, actor=current_user.email)
+    except joining_form.FormSettingsError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/documents/{document_id}/file")
@@ -482,6 +579,7 @@ def portal_summary(token: str, lang: str = "en", db: Session = Depends(get_db)):
 class JoiningDetailsIn(BaseModel):
     data: dict = Field(default_factory=dict)
     submit: bool = False
+    form_version: Optional[int] = None  # the settings version the form was opened with
 
 
 def _portal_case(db: Session, token: str):
@@ -507,7 +605,10 @@ def portal_joining_details(token: str, body: JoiningDetailsIn, db: Session = Dep
 
     case = _portal_case(db, token)
     _unlocked(db, case)
-    out = welcome_steps.save_joining_details(db, require_current_tenant(), case, body.data, submit=body.submit)
+    try:
+        out = welcome_steps.save_joining_details(db, require_current_tenant(), case, body.data, submit=body.submit, form_version=body.form_version)
+    except welcome_steps.DetailsLocked as exc:
+        raise HTTPException(status_code=423, detail=str(exc)) from exc
     if body.submit and out["errors"]:
         raise HTTPException(status_code=400, detail={"message": "Please check the highlighted fields.", "errors": out["errors"]})
     return out

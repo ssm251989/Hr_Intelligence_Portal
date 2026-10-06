@@ -897,3 +897,61 @@ Each link was opened by Playwright as an admin on the live app (`fix22-link-01..
 **Owner actions:**
 1. The handbook you uploaded is the **sample**: 18 days leave, Rs 5,00,000 insurance, and so on. The assistant now answers from it. Replace it with your real handbook (**New version** on its row), or delete it.
 2. Optional: connect a storage service (Integrations > Connections) so policy files live there instead of on the server disk.
+
+
+# Configurable joining details fields, all optional by default (change 2026-10-05)
+
+## 1. Why every field said "Needed"
+- `backend/app/onboarding/welcome_steps.py` had the rules hardcoded: `FIELDS = (key, label, required=True/False, kind)`, with 15 of the 19 fields `True`. Submit returned "<label> is needed." for any of those that was empty, so an empty Aadhaar blocked "Send to HR" ("Please check the 1 highlighted field(s)").
+- The portal showed "Needed" as the helper text of **every** required field, whether or not it had a value: `fl.required ? "Needed" : "Optional"`. So filled fields like Name on bank account, Bank account number, IFSC and PAN also said "Needed".
+
+## 2. What changed
+- **Settings > Onboarding & employees > Joining details form** (`/settings/onboarding/joining-form`, `app/onboarding/joining_form.py`, one setting `onboarding.joining_form`). Every field is listed by section (About you, Your address, Emergency contact, Bank and ID) with:
+  - **Required / Optional / Hidden**
+  - **Help text** in English, Hindi and Tamil, shown under the field
+  - **Format check** on/off, for date of birth, mobile, email, PIN code, bank account, IFSC, PAN and Aadhaar
+- The same Required / Optional / Hidden control applies to the **Upload documents** list. A document with no setting keeps its own default.
+- **Default for every field: Optional.** That is CTD Techs' setting now; no saved value means all optional.
+- **Save as new version:** each save is a settings version. The form remembers the version it was opened with (`form_version`), so a change applies to forms opened after saving. The **History** section lists each version, who saved it, when, and what changed (e.g. "Aadhaar number: optional -> required"), with **Go back to this version**, which saves the old rules as a new version.
+- **The joiner's form:**
+  - Optional fields have no `*` and no "Needed"; they show their help text, or nothing.
+  - Required fields show `*`, and "Needed" only while empty.
+  - A format check runs only when something is typed, in plain words ("PAN looks like ABCDE1234F (5 letters, 4 digits, 1 letter).").
+  - Hidden fields are not shown and not accepted.
+  - "Send to HR" works once every **required** field is filled; everything autosaves as a draft. With empty optional fields it shows: "Some details are still empty. That's fine - you can add the missing details later and send again."
+  - The joiner can come back and edit until HR locks the details (then: "HR has locked your joining details…", HTTP 423).
+- **Backend validation** follows the same settings: no hardcoded required list, and empty optional values are accepted.
+- **HR view:** the joiner drawer has a new **Joining details** tab:
+  - Each field shows its value (bank/PAN/Aadhaar masked to the last 4) or "Not filled yet", not as errors.
+  - A count line, e.g. "14 field(s) still empty (0 required)".
+  - **Remind candidate:** emails the list of empty fields with their welcome link (template `onboarding.details_reminder`, at most once an hour, audited).
+  - **Lock details / Unlock for editing** (audited).
+- **Bank/ID masking is unchanged:** stored encrypted and shown as the last 4 digits. The audited reveal (HR/payroll right `core_hr.employee.view_sensitive`) stays on the employee record.
+- **Hiring-stage forms:** the documents form already had Required/Optional per document (Settings > Hiring > Required documents; leaving one out = hidden). In the salary form, current CTC, expected CTC and notice period stay required because the salary approval is calculated from them; its optional asks (offers in hand, payslip) already have on/off settings. Neither was changed.
+
+## 3. Proof (live app, temporary admin + test joiner "Meera Proof" @example.com, all removed afterwards; no email sent)
+| Check | Result | Screenshot |
+|---|---|---|
+| Settings page, defaults | every field Optional, format checks on, documents with their defaults, "No changes yet" | fix23-01-settings-default |
+| All optional: form | 0 asterisks, no "Needed" | fix23-02-form-all-optional |
+| Almost empty form (first name + city) -> Send to HR | sent (dialog closed, step done); the "add the missing details later" note was shown | fix23-03-almost-empty-sent |
+| Aadhaar -> Required, Preferred name -> Hidden, PAN help text -> Save | "Saved. Forms opened from now on use these rules." | fix23-04-settings-changed |
+| Form reopened | Preferred name gone; Aadhaar `*` + "Needed"; PAN shows "As printed on your PAN card"; filled City shows nothing | fix23-05-aadhaar-required-blocks |
+| Send with Aadhaar empty | blocked: "Please check the 1 highlighted field(s)." / "Aadhaar number is needed." | fix23-05 |
+| PAN "ABC123" | "PAN looks like ABCDE1234F (5 letters, 4 digits, 1 letter)." | fix23-06-pan-format-message |
+| Aadhaar typed, PAN fixed | "Needed" gone -> Send to HR works | fix23-07-filled-no-needed |
+| HR: joiner > Joining details | values / "Not filled yet", "14 field(s) still empty (0 required)", Remind candidate, Lock details | fix23-08-hr-joining-details |
+| History + revert | v2 "PAN: format check off" -> Go back to v1 -> v3 "PAN: format check on" | fix23-09-history-revert |
+
+Remind and lock were checked by tests, not clicked live: a reminder would go out through the company mailbox.
+
+**Clean-up:**
+- Removed the test joiner (candidate, application, offer, case, pre-hire employee), the test job, and the temporary admin with its role.
+- Removed the proof's 3 settings versions and their 3 audit rows, so CTD Techs is back on the defaults (every field optional, empty history).
+- Your own Kishore Gunda record (re-uploaded 5 Oct 22:40 and marked joined today 09:33 by kg@ctdtechs.com) was not touched.
+
+**Checks:**
+- New tests: `tests/test_joining_form.py` (8), all passing.
+- test_offer_revisions, test_joiner_exits, test_onboarding*: 53 passed.
+- i18n 4369 keys, 0 missing; `npm run build` OK.
+- vitest: the same 3 failures as before (theme mock, UploadCandidateDialog).

@@ -147,6 +147,7 @@ export interface JoinerDetail {
   history: { event: string; at: string | null; actor: string | null; reason: string | null; old: string | null; new: string | null }[];
   welcome: WelcomeContent;
   link_expires_at: string | null;
+  joining_details?: JoiningDetailsHr | null;
 }
 
 export interface PlanTemplateRow {
@@ -161,6 +162,13 @@ export const onboardingExtraApi = {
   detail: (caseId: UUID, lang: string) => http.get<JoinerDetail>(`/api/v1/ui/onboarding/cases/${caseId}/detail?lang=${encodeURIComponent(lang)}`),
   documentFile: (documentId: UUID) => http.fetchBlob(`/api/v1/ui/onboarding/documents/${documentId}/file`),
   saveWelcome: (caseId: UUID, payload: WelcomeContent) => http.put<WelcomeContent>(`/api/v1/ui/onboarding/cases/${caseId}/welcome`, payload),
+  // change 2026-10-05: joining details -- remind / lock, and the form settings
+  remindDetails: (caseId: UUID) => http.post<{ sent: boolean; status: string; missing: string[] }>(`/api/v1/ui/onboarding/cases/${caseId}/joining-details/remind`, {}),
+  lockDetails: (caseId: UUID, locked: boolean) => http.post<JoiningDetailsHr>(`/api/v1/ui/onboarding/cases/${caseId}/joining-details/lock`, { locked }),
+  joiningForm: () => http.get<JoiningFormSettings>("/api/v1/ui/onboarding/joining-form"),
+  saveJoiningForm: (body: { fields: Record<string, { show: FieldShow; help: Record<string, string>; check: boolean }>; documents: Record<string, FieldShow> }) =>
+    http.put<JoiningFormSettings>("/api/v1/ui/onboarding/joining-form", body),
+  revertJoiningForm: (version: number) => http.post<JoiningFormSettings>("/api/v1/ui/onboarding/joining-form/revert", { version }),
 
   // existing /api/v1/onboarding endpoints not wrapped in client.ts
   createCase: (payload: { email?: string; first_name?: string; last_name?: string; joining_date?: string; offer_id?: UUID }) =>
@@ -205,7 +213,25 @@ export interface PortalField {
   placeholder: string | null;
 }
 
-export interface JoiningField { key: string; label: string; required: boolean; kind: string; sensitive: boolean }
+export interface JoiningField {
+  key: string; label: string; required: boolean; kind: string; sensitive: boolean;
+  /** change 2026-10-05: from Settings > Onboarding & employees > Joining details form */
+  section?: string; help?: Partial<Record<"en" | "hi" | "ta", string>>; check?: boolean;
+}
+/** change 2026-10-05: HR's view of a joiner's details -- empty fields are listed, not errors */
+export interface JoiningDetailsHr {
+  status: string; submitted_at: string | null; updated_at: string | null; locked: boolean; locked_by: string | null; locked_at: string | null;
+  fields: { key: string; label: string; section: string; required: boolean; value: string }[];
+  missing_required: string[]; missing_optional: string[]; last_reminder_at: string | null;
+}
+export type FieldShow = "required" | "optional" | "hidden";
+export interface JoiningFormSettings {
+  version: number;
+  sections: { key: string; label: string }[];
+  fields: { key: string; label: string; kind: string; section: string; checkable: boolean; show: FieldShow; help: Record<"en" | "hi" | "ta", string>; check: boolean }[];
+  documents: { code: string; label: string; default: FieldShow; show: FieldShow }[];
+  history: { version: number; updated_by: string | null; updated_at: string | null; changes: string[] }[];
+}
 export interface JoiningDoc { code: string; label: string; required: boolean; status: "missing" | "uploaded" | "verified" | "rejected" | "received_earlier"; rejection_reason: string | null; types?: string[] | null; max_mb?: number | null }
 export interface DayOneInfo {
   date: string; start_time: string | null; address: string | null; map_url: string | null; meet: string | null;
@@ -220,7 +246,8 @@ export type StepState = "locked" | "not_started" | "in_progress" | "done";
 interface StepBase { code: string; done: boolean; counted?: boolean; state: StepState; status_text: string; description?: string | null; locked_reason?: string | null }
 export type PortalStep =
   | (StepBase & { kind: "offer"; label: string; version_no: number; signed_at?: string | null; sign_url?: string | null; pdf_url?: string | null; expiry_date?: string | null; method: "docusign" | "in_app" })
-  | (StepBase & { kind: "joining_details"; label: string; fields?: JoiningField[]; saved?: Record<string, string>; status?: string })
+  | (StepBase & { kind: "joining_details"; label: string; fields?: JoiningField[]; saved?: Record<string, string>; status?: string;
+      form_version?: number; locked?: boolean; missing_required?: string[]; missing_optional?: string[] })
   | (StepBase & { kind: "joining_documents"; label: string; documents: JoiningDoc[] })
   | (StepBase & { kind: "day_one"; label: string; info: DayOneInfo | null })
   | (StepBase & { kind: "form"; label: string; fields: PortalField[]; saved: Record<string, unknown> })
@@ -272,9 +299,9 @@ export const welcomePortalApi = {
     publicRequest<unknown>(`/api/v1/public/onboarding/portal/${enc(token)}/forms/${enc(formKey)}`, { method: "POST", body: JSON.stringify({ data }) }),
   acknowledgePolicy: (token: string, policyCode: string) =>
     publicRequest<unknown>(`/api/v1/public/onboarding/portal/${enc(token)}/policies/${enc(policyCode)}/acknowledge`, { method: "POST" }),
-  saveJoiningDetails: (token: string, data: Record<string, string>, submit: boolean) =>
-    publicRequest<{ saved: Record<string, string>; status: string; errors: Record<string, string> }>(`/api/v1/public/ui/onboarding/portal/${enc(token)}/joining-details`,
-      { method: "PUT", body: JSON.stringify({ data, submit }) }),
+  saveJoiningDetails: (token: string, data: Record<string, string>, submit: boolean, formVersion?: number) =>
+    publicRequest<{ saved: Record<string, string>; status: string; errors: Record<string, string>; missing_required: string[]; missing_optional: string[] }>(
+      `/api/v1/public/ui/onboarding/portal/${enc(token)}/joining-details`, { method: "PUT", body: JSON.stringify({ data, submit, form_version: formVersion }) }),
   uploadJoiningDocument: (token: string, code: string, file: Blob, filename: string) => {
     const form = new FormData();
     form.append("code", code);

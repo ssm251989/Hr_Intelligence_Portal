@@ -26,17 +26,19 @@ KEY = "joining_details"
 DAY_ONE = "__day_one"
 LOCKED = "Unlocks after you sign your offer."
 
-# (key, label, required, kind)
+# (key, label, kind, section). Required / optional / hidden, help text and format checks come from
+# Settings > Onboarding & employees > Joining details form (app/onboarding/joining_form.py; default:
+# every field optional) -- change 2026-10-05, they were hardcoded here before.
 FIELDS = (
-    ("first_name", "First name", True, "text"), ("last_name", "Last name (surname)", False, "text"),
-    ("preferred_name", "Preferred name (what we should call you)", False, "text"), ("date_of_birth", "Date of birth", True, "date"),
-    ("phone", "Mobile number", True, "phone"), ("personal_email", "Personal email", False, "email"),
-    ("address_line1", "Address line 1", True, "text"), ("address_line2", "Address line 2", False, "text"),
-    ("city", "City", True, "text"), ("state", "State", True, "text"), ("pin_code", "PIN code", True, "pin"),
-    ("emergency_name", "Emergency contact name", True, "text"), ("emergency_relation", "Relationship", True, "text"),
-    ("emergency_phone", "Emergency contact mobile", True, "phone"),
-    ("bank_account_holder", "Name on bank account", True, "text"), ("bank_account_number", "Bank account number", True, "bank_account"),
-    ("bank_ifsc", "IFSC code", True, "ifsc"), ("pan", "PAN", True, "pan"), ("aadhaar", "Aadhaar number", True, "aadhaar"),
+    ("first_name", "First name", "text", "personal"), ("last_name", "Last name (surname)", "text", "personal"),
+    ("preferred_name", "Preferred name (what we should call you)", "text", "personal"), ("date_of_birth", "Date of birth", "date", "personal"),
+    ("phone", "Mobile number", "phone", "personal"), ("personal_email", "Personal email", "email", "personal"),
+    ("address_line1", "Address line 1", "text", "address"), ("address_line2", "Address line 2", "text", "address"),
+    ("city", "City", "text", "address"), ("state", "State", "text", "address"), ("pin_code", "PIN code", "pin", "address"),
+    ("emergency_name", "Emergency contact name", "text", "emergency"), ("emergency_relation", "Relationship", "text", "emergency"),
+    ("emergency_phone", "Emergency contact mobile", "phone", "emergency"),
+    ("bank_account_holder", "Name on bank account", "text", "bank_id"), ("bank_account_number", "Bank account number", "bank_account", "bank_id"),
+    ("bank_ifsc", "IFSC code", "ifsc", "bank_id"), ("pan", "PAN", "pan", "bank_id"), ("aadhaar", "Aadhaar number", "aadhaar", "bank_id"),
 )
 SENSITIVE = {"bank_account_number", "pan", "aadhaar"}
 _PATTERNS = {
@@ -122,47 +124,108 @@ def _plain(case: PreboardingCase) -> dict:
     return data
 
 
-def joining_details_view(case: PreboardingCase) -> dict:
+def _rules(db: Session, tenant, version: Optional[int] = None) -> dict:
+    from app.onboarding import joining_form
+
+    return joining_form.at_version(db, tenant, version)
+
+
+def joining_details_view(db: Session, tenant, case: PreboardingCase, *, version: Optional[int] = None) -> dict:
+    """What the joiner's form shows: visible fields only, each with required / help / format check, the
+    rules version the form was opened with, and which fields are still empty."""
+    from app.onboarding import joining_form
+
+    rules = _rules(db, tenant, version)
     data = _plain(case)
-    shown = {k: (_mask(k, data.get(k, "")) if k in SENSITIVE else data.get(k, "")) for k, *_ in FIELDS}
+    fields, shown = [], {}
+    for k, label, kind, section in FIELDS:
+        r = joining_form.rule(rules, k)
+        if r["show"] == "hidden":
+            continue
+        fields.append({"key": k, "label": label, "kind": kind, "section": section, "required": r["show"] == "required",
+                       "help": r["help"], "check": r["check"], "sensitive": k in SENSITIVE})
+        shown[k] = _mask(k, data.get(k, "")) if k in SENSITIVE else data.get(k, "")
     st = _stored(case)
-    return {"fields": [{"key": k, "label": label, "required": req, "kind": kind, "sensitive": k in SENSITIVE} for k, label, req, kind in FIELDS],
-            "saved": shown, "status": st.get("status", "new"), "submitted_at": st.get("submitted_at"), "updated_at": st.get("updated_at")}
+    return {"fields": fields, "saved": shown, "status": st.get("status", "new"), "submitted_at": st.get("submitted_at"),
+            "updated_at": st.get("updated_at"), "form_version": rules["version"], "locked": bool(st.get("locked_at")),
+            "missing_required": [f["key"] for f in fields if f["required"] and not shown.get(f["key"])],
+            "missing_optional": [f["key"] for f in fields if not f["required"] and not shown.get(f["key"])]}
 
 
-def save_joining_details(db: Session, tenant, case: PreboardingCase, values: dict, *, submit: bool) -> dict:
-    """Autosave (submit=False) keeps whatever is there, even incomplete; submit=True checks everything."""
+class DetailsLocked(Exception):
+    pass
+
+
+def save_joining_details(db: Session, tenant, case: PreboardingCase, values: dict, *, submit: bool, form_version: Optional[int] = None) -> dict:
+    """Autosave (submit=False) keeps whatever is there, even incomplete; submit=True needs every REQUIRED field.
+    Rules come from the settings version the form was opened with. A typed value is format-checked only when
+    that field's check is on; empty optional fields are fine; hidden fields are neither shown nor taken."""
     from app.core.crypto import encrypt
+    from app.onboarding import joining_form
 
+    if _stored(case).get("locked_at"):
+        raise DetailsLocked("HR has locked your joining details. Please contact HR to change anything.")
+    rules = _rules(db, tenant, form_version)
     current = _plain(case)
     errors: dict[str, str] = {}
-    for key, label, req, kind in FIELDS:
-        if key not in values:
+    for key, label, kind, _section in FIELDS:
+        if key not in values or joining_form.rule(rules, key)["show"] == "hidden":
             continue
         raw = values.get(key)
         if key in SENSITIVE and isinstance(raw, str) and "X" in raw and current.get(key):  # unchanged masked value
             continue
         current[key] = _clean(key, kind, raw)
-    for key, label, req, kind in FIELDS:
+    for key, label, kind, _section in FIELDS:
+        r = joining_form.rule(rules, key)
+        if r["show"] == "hidden":
+            continue
         v = current.get(key, "")
         if v:
-            msg = _check(kind, v)
+            msg = _check(kind, v) if r["check"] else None
             if msg:
                 errors[key] = msg
-        elif submit and req:
+        elif submit and r["show"] == "required":
             errors[key] = f"{label} is needed."
     stored = {k: (("enc:" + encrypt(v)) if (k in SENSITIVE and v) else v) for k, v in current.items()}
     now = datetime.now(timezone.utc).isoformat()
     prev = _stored(case)
     status = "submitted" if submit and not errors else ("submitted" if prev.get("status") == "submitted" and not errors and not submit else "draft")
-    entry = {"data": stored, "status": status, "updated_at": now, "submitted_at": now if status == "submitted" and submit else prev.get("submitted_at")}
+    entry = {**prev, "data": stored, "status": status, "updated_at": now, "form_version": rules["version"],
+             "submitted_at": now if status == "submitted" and submit else prev.get("submitted_at")}
     case.form_submissions_json = {**(case.form_submissions_json or {}), KEY: entry}
     if case.status == "invited":
         case.status = "in_progress"
     if status == "submitted":
         _update_employee(db, case, current)
     db.commit()
-    return {**joining_details_view(case), "errors": errors}
+    return {**joining_details_view(db, tenant, case, version=rules["version"]), "errors": errors}
+
+
+def hr_details_view(db: Session, tenant, case: PreboardingCase) -> dict:
+    """HR's view of the joining details: every visible field with its (masked) value, what is still empty
+    (not errors), whether it was sent, and the lock."""
+    view = joining_details_view(db, tenant, case)
+    st = _stored(case)
+    return {"status": view["status"], "submitted_at": view["submitted_at"], "updated_at": view["updated_at"],
+            "locked": view["locked"], "locked_by": st.get("locked_by"), "locked_at": st.get("locked_at"),
+            "fields": [{"key": f["key"], "label": f["label"], "section": f["section"], "required": f["required"],
+                        "value": view["saved"].get(f["key"]) or ""} for f in view["fields"]],
+            "missing_required": view["missing_required"], "missing_optional": view["missing_optional"],
+            "last_reminder_at": st.get("last_reminder_at")}
+
+
+def set_lock(db: Session, case: PreboardingCase, *, locked: bool, actor: str) -> None:
+    entry = dict(_stored(case))
+    entry.update({"locked_at": datetime.now(timezone.utc).isoformat(), "locked_by": actor} if locked else {"locked_at": None, "locked_by": None})
+    case.form_submissions_json = {**(case.form_submissions_json or {}), KEY: entry}
+    db.commit()
+
+
+def mark_reminded(db: Session, case: PreboardingCase) -> None:
+    entry = dict(_stored(case))
+    entry["last_reminder_at"] = datetime.now(timezone.utc).isoformat()
+    case.form_submissions_json = {**(case.form_submissions_json or {}), KEY: entry}
+    db.commit()
 
 
 def _update_employee(db: Session, case: PreboardingCase, data: dict) -> None:
@@ -187,6 +250,20 @@ def joining_details_done(case: PreboardingCase) -> bool:
 # ---------------------------------------------------------------- documents
 
 def document_list(db: Session, tenant) -> list[dict]:
+    """The list the joiner sees: the configured documents with Required / Optional / Hidden from
+    Settings > Onboarding & employees > Joining details form (hidden ones left out)."""
+    from app.onboarding import joining_form
+
+    rules = joining_form.current(db, tenant)
+    out = []
+    for d in base_document_list(db, tenant):
+        show = joining_form.document_show(rules, d["code"], d["required"])
+        if show != "hidden":
+            out.append({**d, "required": show == "required"})
+    return out
+
+
+def base_document_list(db: Session, tenant) -> list[dict]:
     from app.platform.settings.resolver import SettingContext, SettingsService
 
     s = SettingsService(db)
@@ -333,7 +410,7 @@ def builtin_steps(db: Session, tenant, case: PreboardingCase) -> list[dict]:
     if locked:
         steps.append(_step("joining_details", KEY, "locked"))
     else:
-        view = joining_details_view(case)
+        view = joining_details_view(db, tenant, case)
         st = "done" if joining_details_done(case) else ("in_progress" if view["status"] == "draft" and any(view["saved"].values()) else "not_started")
         steps.append(_step("joining_details", KEY, st, **view))
     docs = documents_view(db, tenant, case)

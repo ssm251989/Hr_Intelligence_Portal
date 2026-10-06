@@ -128,6 +128,8 @@ def register_all() -> None:
     register(SettingDef("onboarding.day_one.meet", "str", "", module="onboarding", group="Day one"))  # who to ask for at reception
     # fix 2026-10-05: a new joiner stops coming -> "Not reporting" emails (days counted from the last day they came in)
     register(SettingDef("onboarding.not_reporting.enabled", "bool", True, module="onboarding", group="Leaving soon after joining"))
+    # change 2026-10-05: joining details form -- required/optional/hidden, help text, format checks + documents (app/onboarding/joining_form.py)
+    register(SettingDef("onboarding.joining_form", "json", {"fields": {}, "documents": {}}, module="onboarding", group="Joining details form"))
     register(SettingDef("onboarding.not_reporting.reminder_days", "int", 2, module="onboarding", group="Leaving soon after joining"))
     register(SettingDef("onboarding.not_reporting.show_cause_days", "int", 5, module="onboarding", group="Leaving soon after joining"))
     register(SettingDef("onboarding.not_reporting.final_days", "int", 10, module="onboarding", group="Leaving soon after joining"))

@@ -91,6 +91,14 @@ DEFAULTS: dict[str, tuple[str, str, list[str]]] = {
         "Please contact {{ hr_contact }}.\n\n{{ company_name }} HR",
         ["candidate_first_name", "last_seen", "respond_by"],
     ),
+    # change 2026-10-05: HR's "Remind candidate" on missing joining details (ui_onboarding_router)
+    "onboarding.details_reminder": (
+        "A few joining details are still missing",
+        "Hi {{ candidate_first_name }},\n\nThank you for filling in your joining details for {{ company_name }}. A few are still empty:\n\n"
+        "{{ missing }}\n\nYou can add them here whenever you are ready: {{ portal_link }}\n\nIf you have any questions, just reply to this email.\n\n"
+        "Best regards,\n{{ company_name }} HR",
+        ["candidate_first_name", "missing", "portal_link"],
+    ),
     "onboarding.joiner_exit_internal": (
         "{{ summary }}",
         "{{ summary }}\n\nOpen the record: {{ link }}\n\nThe exit case has the clearance checklist (incl. any assets to collect).\n\n{{ company_name }} HR system",

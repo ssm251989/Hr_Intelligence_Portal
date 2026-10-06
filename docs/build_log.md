@@ -2703,3 +2703,15 @@ NEXT: owner confirms Kishore's "declined" was intended and reviews the notice wo
 - **Proof:** FIXES_19.md "Configuration health links + Policies & handbook" (link table, 28 screenshots fix22-*). The owner uploaded the sample handbook live; my proof copy and temporary admin were deleted.
 
 NEXT: owner replaces the sample handbook with the real one (Policies & handbook > New version); then RESUME order -> PART16 16.3 settings reorganised.
+
+## Change -- configurable joining details fields, all optional by default (2026-10-05)
+- **Cause of "Needed" everywhere:** the required list was hardcoded in `welcome_steps.FIELDS` (15 of 19 fields required), and the portal printed "Needed" under every required field even when it was filled.
+- **Change:**
+  - Settings > Onboarding & employees > Joining details form (`app/onboarding/joining_form.py`, setting `onboarding.joining_form`): Required / Optional / Hidden, help text (en/hi/ta) and format check per field; the same control for the welcome-portal documents. Default: every field optional. Each save is a version (the form uses the version it was opened with); history + revert.
+  - Portal: `*` and "Needed" only on an empty required field; format check only when typed; hidden fields gone; "add the missing details later" note.
+  - Backend validation follows the same rules.
+  - HR joiner drawer "Joining details" tab: empty fields, Remind candidate (`onboarding.details_reminder`, hourly limit), Lock / Unlock.
+  - Masking and the audited reveal are unchanged.
+- Tests test_joining_form.py (8). Proof: FIXES_19.md "Configurable joining details fields" (fix23-01..09). Test records and the proof's settings versions removed (company on defaults).
+
+NEXT: owner decides which joining details should be Required for CTD Techs (Settings > Onboarding & employees > Joining details form); then RESUME order -> PART16 16.3 settings reorganised.

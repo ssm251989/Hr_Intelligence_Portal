@@ -71,12 +71,17 @@ const FIELD_KEYS: Record<string, { labelKey: string }> = {
   bank_ifsc: { labelKey: "wsteps.f.bank_ifsc" }, pan: { labelKey: "wsteps.f.pan" }, aadhaar: { labelKey: "wsteps.f.aadhaar" },
 };
 
-const GROUPS: { titleKey: string; keys: string[] }[] = [
-  { titleKey: "wsteps.g.personal", keys: ["first_name", "last_name", "preferred_name", "date_of_birth", "phone", "personal_email"] },
-  { titleKey: "wsteps.g.address", keys: ["address_line1", "address_line2", "city", "state", "pin_code"] },
-  { titleKey: "wsteps.g.emergency", keys: ["emergency_name", "emergency_relation", "emergency_phone"] },
-  { titleKey: "wsteps.g.bank", keys: ["bank_account_holder", "bank_account_number", "bank_ifsc", "pan", "aadhaar"] },
+// change 2026-10-05: sections come with each field from the server; this keeps their order and titles
+const SECTIONS: { key: string; titleKey: string }[] = [
+  { key: "personal", titleKey: "wsteps.g.personal" }, { key: "address", titleKey: "wsteps.g.address" },
+  { key: "emergency", titleKey: "wsteps.g.emergency" }, { key: "bank_id", titleKey: "wsteps.g.bank" },
 ];
+const SECTION_OF: Record<string, string> = {
+  first_name: "personal", last_name: "personal", preferred_name: "personal", date_of_birth: "personal", phone: "personal", personal_email: "personal",
+  address_line1: "address", address_line2: "address", city: "address", state: "address", pin_code: "address",
+  emergency_name: "emergency", emergency_relation: "emergency", emergency_phone: "emergency",
+  bank_account_holder: "bank_id", bank_account_number: "bank_id", bank_ifsc: "bank_id", pan: "bank_id", aadhaar: "bank_id",
+};
 
 const EXAMPLES: Record<string, string> = {
   pan: "ABCDE1234F", bank_ifsc: "HDFC0001234", bank_account_number: "123456789012", phone: "+91 98765 43210", emergency_phone: "+91 98765 43210",
@@ -134,8 +139,11 @@ export function BuiltinStepBody({ step, token, onChanged, onClose }: { step: Bui
 
 function JoiningDetails({ step, token, onChanged, onClose }: { step: Extract<Builtin, { kind: "joining_details" }>; token: string; onChanged: () => void; onClose: () => void }) {
   const f = useTheme().palette.fresh;
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const fields: JoiningField[] = step.fields ?? [];
+  // change 2026-10-05: the rules this form was opened with (Settings > Joining details form); a later change applies to forms opened after it
+  const formVersion = step.form_version;
+  const locked = Boolean(step.locked);
   const [values, setValues] = useState<Record<string, string>>({ ...(step.saved ?? {}) });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState<Set<string>>(new Set());
@@ -152,7 +160,7 @@ function JoiningDetails({ step, token, onChanged, onClose }: { step: Extract<Bui
     dirty.current = {};
     setState("saving");
     try {
-      const out = await welcomePortalApi.saveJoiningDetails(token, changes, false);
+      const out = await welcomePortalApi.saveJoiningDetails(token, changes, false, formVersion);
       setErrors(out.errors || {});
       setState("saved");
     } catch {
@@ -175,7 +183,7 @@ function JoiningDetails({ step, token, onChanged, onClose }: { step: Extract<Bui
     setSubmitting(true);
     setProblem(null);
     try {
-      await welcomePortalApi.saveJoiningDetails(token, values, true);
+      await welcomePortalApi.saveJoiningDetails(token, values, true, formVersion);
       onChanged();
       onClose();
     } catch (e) {
@@ -184,39 +192,47 @@ function JoiningDetails({ step, token, onChanged, onClose }: { step: Extract<Bui
         setErrors(det.errors);
         setTouched(new Set(Object.keys(det.errors)));
         setProblem(t("wsteps.details.fix_fields", { count: Object.keys(det.errors).length }));
-      } else setProblem(t("welcome.save_failed"));
+      } else setProblem(e instanceof ApiError && e.status === 423 ? t("jform.locked") : t("welcome.save_failed"));
     } finally {
       setSubmitting(false);
     }
   };
 
-  const byKey = Object.fromEntries(fields.map((x) => [x.key, x]));
+  const filled = (k: string) => Boolean((values[k] ?? "").trim());
+  const emptyOptional = fields.filter((x) => !x.required && !filled(x.key)).length;
+  const helpOf = (fl: JoiningField) => fl.help?.[locale as "en" | "hi" | "ta"] || fl.help?.en || "";
+  const sections = SECTIONS.map((sec) => ({ ...sec, fields: fields.filter((x) => (x.section ?? SECTION_OF[x.key]) === sec.key) })).filter((sec) => sec.fields.length);
   return (
     <Stack spacing={2.25} sx={{ pt: 1 }}>
-      {step.done && <Alert severity="success">{t("wsteps.details.sent_before")}</Alert>}
-      <Typography sx={{ color: f.muted, fontSize: 13 }} role="status" aria-live="polite">
-        {state === "saving" ? t("wsteps.autosave.saving") : state === "saved" ? t("wsteps.autosave.saved") : state === "failed" ? t("wsteps.autosave.failed") : t("wsteps.autosave.hint")}
-      </Typography>
-      {GROUPS.map((g) => (
-        <Box key={g.titleKey}>
+      {locked && <Alert severity="info">{t("jform.locked")}</Alert>}
+      {step.done && !locked && <Alert severity="success">{t("wsteps.details.sent_before")}</Alert>}
+      {!locked && (
+        <Typography sx={{ color: f.muted, fontSize: 13 }} role="status" aria-live="polite">
+          {state === "saving" ? t("wsteps.autosave.saving") : state === "saved" ? t("wsteps.autosave.saved") : state === "failed" ? t("wsteps.autosave.failed") : t("wsteps.autosave.hint")}
+        </Typography>
+      )}
+      {sections.map((g) => (
+        <Box key={g.key}>
           <Typography component="h3" sx={{ fontWeight: 700, mb: 1 }}>{t(g.titleKey)}</Typography>
-          {g.titleKey === "wsteps.g.bank" && <Typography sx={{ color: f.muted, fontSize: 13, mb: 1 }}>{t("wsteps.bank_private")}</Typography>}
+          {g.key === "bank_id" && <Typography sx={{ color: f.muted, fontSize: 13, mb: 1 }}>{t("wsteps.bank_private")}</Typography>}
           <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
-            {g.keys.filter((k) => byKey[k]).map((k) => {
-              const fl = byKey[k];
+            {g.fields.map((fl) => {
+              const k = fl.key;
               const err = touched.has(k) || values[k] ? errors[k] : undefined;
               const label = FIELD_KEYS[k] ? t(FIELD_KEYS[k].labelKey) : fl.label;
+              // change 2026-10-05: "Needed" only on a REQUIRED field while it is empty; optional fields show their help text (or nothing)
+              const helper = err || (fl.sensitive && /X/.test(values[k] ?? "") ? t("wsteps.masked_hint") : fl.required && !filled(k) ? t("welcome.form.required") : helpOf(fl));
               return (
                 <TextField
-                  key={k} fullWidth label={label} required={fl.required} value={values[k] ?? ""}
+                  key={k} fullWidth label={label} required={fl.required} value={values[k] ?? ""} disabled={locked}
                   type={fl.kind === "date" ? "date" : fl.kind === "email" ? "email" : "text"}
                   placeholder={EXAMPLES[k] ?? ""}
                   inputMode={fl.kind === "phone" || fl.kind === "pin" || fl.kind === "bank_account" || fl.kind === "aadhaar" ? "numeric" : undefined}
                   onChange={(e) => set(k, e.target.value)}
                   onFocus={(e) => { if (fl.sensitive && /X/.test(values[k] ?? "")) e.target.select(); }}
-                  onBlur={() => { setTouched((p) => new Set(p).add(k)); void flush(); }}
+                  onBlur={() => { setTouched((prev) => new Set(prev).add(k)); void flush(); }}
                   error={Boolean(err)}
-                  helperText={err || (fl.sensitive && /X/.test(values[k] ?? "") ? t("wsteps.masked_hint") : fl.required ? t("welcome.form.required") : t("welcome.form.optional"))}
+                  helperText={helper || undefined}
                   slotProps={fl.kind === "date" ? { inputLabel: { shrink: true } } : undefined}
                 />
               );
@@ -225,9 +241,12 @@ function JoiningDetails({ step, token, onChanged, onClose }: { step: Extract<Bui
         </Box>
       ))}
       {problem && <Alert severity="warning">{problem}</Alert>}
-      <Stack direction="row" justifyContent="flex-end">
-        <Button variant="contained" size="large" onClick={submit} disabled={submitting}>{submitting ? t("welcome.saving") : t("wsteps.details.submit")}</Button>
-      </Stack>
+      {!locked && emptyOptional > 0 && <Typography sx={{ color: f.muted, fontSize: 13 }} data-testid="jform-later-note">{t("jform.later_note")}</Typography>}
+      {!locked && (
+        <Stack direction="row" justifyContent="flex-end">
+          <Button variant="contained" size="large" onClick={submit} disabled={submitting}>{submitting ? t("welcome.saving") : t("wsteps.details.submit")}</Button>
+        </Stack>
+      )}
     </Stack>
   );
 }
