@@ -2721,3 +2721,6 @@ NEXT: owner decides which joining details should be Required for CTD Techs (Sett
 - part-20.0A: already built 2026-10-05 (a3b92ce). Checked against the spec; the only open point (exits started from the Employee list / own login) is part of 20.1/20.3. Proof quoted in FIXES_20.md.
 
 NEXT: part-20.0B configuration health links + policies (check against spec, FIXES_20 table).
+- part-20.0B: already built 2026-10-05 (90eae0b): policies page, health link, "Ignore this", link audit, AI max_tokens fix. Checked against the spec; nothing open. Table + cause in FIXES_20.md.
+
+NEXT: part-20.0C joining details fields (add the hiring salary form to the same settings).
