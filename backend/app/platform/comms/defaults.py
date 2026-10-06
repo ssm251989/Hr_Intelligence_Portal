@@ -91,6 +91,15 @@ DEFAULTS: dict[str, tuple[str, str, list[str]]] = {
         "Please contact {{ hr_contact }}.\n\n{{ company_name }} HR",
         ["candidate_first_name", "last_seen", "respond_by"],
     ),
+    # Part 20: employees (app/employees/*)
+    "employee.app_invite": (
+        "Welcome to {{ company_name }} - set your password for the HR app",
+        "Hi {{ first_name }},\n\nYour account for the {{ company_name }} HR app is ready.\n\nSign-in: {{ login }}\n"
+        "Set your password here (the link works for {{ hours }} hours, once): {{ link }}\n\n"
+        "In the app you can see your profile, documents and assets, and raise requests.\n\n"
+        "If the link has expired, ask HR to send a new one.\n\nBest regards,\n{{ company_name }} HR",
+        ["first_name", "link", "login"],
+    ),
     # change 2026-10-05: HR's "Remind candidate" on missing joining details (ui_onboarding_router)
     "onboarding.details_reminder": (
         "A few joining details are still missing",

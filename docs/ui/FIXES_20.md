@@ -132,7 +132,7 @@ Each link was opened by Playwright as an admin on the live app (`fix22-link-01..
 ## 20.0-D Asset type dropdown not working
 
 **Investigation (2026-10-06, CTD Techs):**
-1. *Does the list load?* `GET /api/v1/ui/service-desk/categories?kind=asset` read `master_values` with `type_code='asset_category'`. The DB had **0 rows** for it:
+1. *Does the list load?* `GET /api/v1/ui/servicedesk/categories?kind=asset` read `master_values` with `type_code='asset_category'`. The DB had **0 rows** for it:
    ```
    select type_code, count(*) from master_values group by type_code
    -> blood_group 8, document_type 5, education_level 5, notice_period 5, relationship 4, source_of_hire 8
@@ -168,3 +168,43 @@ Each link was opened by Playwright as an admin on the live app (`fix22-link-01..
 | Joiner actions (withdraw / declined / no-show / exits) | Reason | fixed lists in `joiner_actions.py` | ok | ok |
 
 **Assets with the Assets module hidden:** assigning from the Employee list and profile is part of **20.1** (it uses its own endpoint, not the module-gated `/service-desk/assets`). Assets already appear in the exit clearance checklist (`joiner_actions.record_exit` -> clearance "Return <asset>").
+
+**Proof (live app, 2026-10-06):**
+- `p20-0d-assets-add-dialog-dropdown`: Assets > Add an asset > Type opens **above** the dialog with the 10 types and "+ Add asset type".
+- `p20-0d-add-type-inline`: the inline add.
+- `p20-0d-asset-type-dropdown-in-dialog`: the same list in the Employee "Assign asset" dialog.
+- `p20-0d-settings-asset-categories`: the Settings list.
+
+---
+
+## 20.1 Employees tab
+
+**Built:**
+- Menu **People > Employees** (first in the group, always on). It is not the older hidden People module, although it uses the same `employees` rows. The old `/employees` route forwarded to that hidden module; it is now this page. The old links to `/employees/<id>` open the new profile.
+- Columns (column chooser + saved views):
+  - Employee ID, Photo + Name, Designation, Department, Manager, Location, Joined on
+  - Experience here (today - joined, or the exit date - joined)
+  - Overall experience (previous experience from the resume at hire, editable, + experience here; e.g. "4 yrs 3 mths")
+  - Company email (grey **TEST** chip for test mailboxes), Phone, Employment type
+  - Status (Active / Notice period / Exited / Absconded)
+  - App account (Active / Invited / Disabled / No account)
+  - Roles (app roles + "Manager" when someone reports to them + "Interviewer" when in a pool or with availability)
+- Filters: search (name, ID, email, phone), department, location, status, role, joined between.
+- Exports: **Excel** of the visible columns (`GET /api/v1/ui/employees/export.xlsx`, audited), plus the toolbar's CSV.
+- Bulk: **Resend app invite**.
+- Row click -> **profile** with Personal / Job / Documents / Assets / History. Bank, PAN and Aadhaar are masked; the audited reveal stays on the HR record.
+- Row "..." menu: View profile, Edit, Assign asset, Resend app invite. Make interviewer (20.4) and Start exit (20.3) plug in through `components/employees/registry.tsx`.
+- **Assign asset** works with the Assets module hidden: own endpoint `POST /api/v1/ui/employees/{id}/assets`, from stock or a new asset registered on the spot. Mark returned also works there.
+- **Edit:** corrections, logged with before/after (`employee_details_corrected`). The **Employee ID is read-only**.
+- **Employee ID format:** Settings > Onboarding & employees > **Employee ID** (prefix + digits, preview of the next ID). It edits the `core_hr.employee_code` sequence pattern; the running number carries on, so an ID is never reused, and existing IDs never change. Audited `employee_id_format_changed`.
+- Decision: **CTD Techs set to `CTD-{SEQ:4}`.** The next new employee gets CTD-0024; the counter was at 23. Kishore keeps EMP-00022.
+- Migration `b24d6e7f8a9c`:
+  - employees: `company_email`, `company_email_provider`, `joined_on`, `previous_experience_months`, `rehire_eligible`, `exited_on`, `candidate_id`
+  - statuses `exited` / `absconded`
+  - `users.password_set_at` (Invited = never set a password); it is written by the set-password link
+
+**Proof:**
+- `p20-1-employees-list`: the list. CTD Techs has 1 real employee today (Kishore Gunda, EMP-00022, Active, app account Active, role Employee). The demo employees come in 20.2b.
+- `p20-1-employee-profile`, `p20-1-profile-job`: the profile.
+- `p20-1-settings-employee-id`: the Employee ID setting.
+- Found during proof: the menu item was there but 4th in People (below Exits, out of view in the sidebar); it now comes first.

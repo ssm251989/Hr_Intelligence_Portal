@@ -21,6 +21,7 @@ import OfficesPage from "../components/people/OfficesPage";
 import PoliciesPage from "../components/policies/PoliciesPage";
 import CategoryListPage from "../components/servicedesk/CategoryListPage";
 import JoiningFormSettingsPage from "../components/onboarding/JoiningFormSettingsPage";
+import EmployeeIdSettings from "../components/employees/EmployeeIdSettings";
 import UsersPage from "../components/people/UsersPage";
 import GenAISettingsPage from "../components/genai/GenAISettingsPage";
 import PrivacyPanel from "../components/PrivacyPanel";
@@ -86,6 +87,7 @@ export const LEGACY: Record<string, string> = {
   helpdesk: "helpdesk/main", assets: "helpdesk/main", exits: "helpdesk/main", "service-desk": "helpdesk/main",
   all: "advanced/all", modules: "company/modules", "module-lock": "company/modules", "advanced/modules": "company/modules", platform: "advanced/all", "all-settings": "advanced/all",
   health: "data/health", "system-health": "data/health",
+  "employee-id": "onboarding/employee-id",
   "joining-form": "onboarding/joining-form", "joining-details": "onboarding/joining-form",
   "asset-types": "helpdesk/asset-types", "asset-categories": "helpdesk/asset-types", "exit-reasons": "helpdesk/exit-reasons",
   policies: "company/policies", handbook: "company/policies", knowledge: "company/policies",
@@ -152,6 +154,8 @@ export const CATEGORIES: SettingsCategory[] = [
   {
     id: "onboarding", emoji: "waving_hand", pages: [
       { id: "plans", emoji: "clipboard", module: "onboarding", keywords: "onboarding checklist tasks", visible: ADMIN, render: () => <OnboardingPanel /> },
+      // Part 20.1: Employee ID format (prefix + running number + padding)
+      { id: "employee-id", emoji: "id_card", keywords: "employee id number code format prefix padding", visible: ADMIN, render: () => <EmployeeIdSettings /> },
       // change 2026-10-05: required / optional / hidden for every joining-details field and joining document
       { id: "joining-form", emoji: "memo", module: "onboarding", keywords: "joining details form fields required optional hidden pan aadhaar bank ifsc help text format check documents",
         prefixes: ["onboarding.joining_form"], visible: ADMIN, render: () => <JoiningFormSettingsPage /> },

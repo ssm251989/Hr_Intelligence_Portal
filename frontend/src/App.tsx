@@ -53,6 +53,8 @@ const InterviewersPage = lazy(() => import("./pages/interviews/InterviewersPage"
 const EmployeeProfilePage = lazy(() => import("./pages/people/EmployeeProfilePage"));
 const OrgChartPage = lazy(() => import("./pages/people/OrgChartPage"));
 const OnboardingDashboardPage = lazy(() => import("./pages/onboarding/OnboardingDashboardPage"));
+const EmployeesPage = lazy(() => import("./pages/employees/EmployeesPage")); // Part 20.1
+const EmployeeRecordPage = lazy(() => import("./pages/employees/EmployeeProfilePage"));
 const TalentPoolPage = lazy(() => import("./pages/TalentPoolPage"));
 const WelcomePortalPage = lazy(() => import("./pages/onboarding/WelcomePortalPage"));
 const SalaryDetailsFormPage = lazy(() => import("./pages/salary/SalaryDetailsFormPage"));
@@ -161,11 +163,12 @@ export default function App() {
                 <Route path="/analytics" element={<AnalyticsPage />} />
                 <Route path="/people" element={<PeoplePage />} />
                 <Route path="/people/:employeeId" element={<EmployeeProfilePage />} />
-                <Route path="/employees" element={<KeepQuery to="/people" extra="view=hr" />} />
-                <Route path="/employees/:employeeId" element={<EmployeeProfilePage />} />
                 <Route path="/directory" element={<KeepQuery to="/people" />} />
                 <Route path="/org-chart" element={<OrgChartPage />} />
                 <Route path="/onboarding" element={<OnboardingDashboardPage />} />
+                <Route path="/employees" element={<EmployeesPage />} />
+                {/* Part 20.1: /employees is the Employees tab now (it used to forward to the hidden People module) */}
+                <Route path="/employees/:id" element={<EmployeeRecordPage />} />
                 <Route path="/performance" element={<PerformancePage />} />
                 <Route path="/performance/team" element={<TeamPerformancePage />} />
                 <Route path="/performance/review/:reviewId" element={<ReviewFormPage />} />

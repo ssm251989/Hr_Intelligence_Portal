@@ -23,7 +23,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from app.core.database import Base
 from app.platform.tenancy.mixins import TenantOwned
 
-EMPLOYEE_STATUSES = ("pre_hire", "active", "on_notice", "inactive", "terminated", "rehire_eligible")
+EMPLOYEE_STATUSES = ("pre_hire", "active", "on_notice", "inactive", "terminated", "rehire_eligible", "exited", "absconded")  # part 20: exited / absconded
 WORKER_TYPES = ("employee", "contractor", "intern", "consultant", "gig")
 WORK_MODES = ("onsite", "hybrid", "remote")
 POSITION_STATUSES = ("vacant", "filled", "frozen")
@@ -168,6 +168,14 @@ class Employee(Base, TenantOwned):
 
     custom_fields = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
     created_at = Column(DateTime(timezone=True), server_default=text("now()"))
+    # Part 20.1 Employees list
+    company_email = Column(Text)
+    company_email_provider = Column(String(20))  # test | google | microsoft | manual
+    joined_on = Column(Date)
+    previous_experience_months = Column(Integer)
+    rehire_eligible = Column(Boolean)
+    exited_on = Column(Date)
+    candidate_id = Column(UUID(as_uuid=True))
 
 
 class EmploymentRecord(Base, TenantOwned):

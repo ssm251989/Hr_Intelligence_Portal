@@ -259,5 +259,8 @@ def set_password(payload: SetPasswordRequest, db: Session = Depends(get_db)):
     if user is None:
         raise HTTPException(status_code=400, detail="This link is invalid or has expired. Ask your administrator for a new one.")
     user.hashed_password = hash_password(payload.password)
+    from datetime import datetime as _dt, timezone as _tz
+
+    user.password_changed_at = user.password_set_at = _dt.now(_tz.utc)  # part 20.1: app account Invited -> Active
     db.commit()
     mark_action_token_responded(db, row)

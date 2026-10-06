@@ -61,6 +61,8 @@ MODULES: tuple[ModuleDef, ...] = (
         # the original Reports page (13-module parity); the builder lives on it too
         NavItem("nav.reports", "/reports", group="insights", icon="bar_chart"),
     ), always_on=True),
+    # Part 20.1: the Employees list -- always on (first in People; not the older People module below, which a company can hide)
+    ModuleDef("employees", (NavItem("nav.employees", "/employees", "core_hr.employee.view", group="people", icon="id_card"),), always_on=True),
     ModuleDef("onboarding", (NavItem("nav.onboarding", "/onboarding", "onboarding.preboarding.view", group="people", icon="waving_hand"),),
               ("/api/v1/onboarding", "/api/v1/public/onboarding", "/api/v1/ui/onboarding", "/api/v1/public/ui/onboarding")),
     ModuleDef("core_hr", (

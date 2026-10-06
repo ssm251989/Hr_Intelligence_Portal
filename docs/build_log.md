@@ -2730,3 +2730,6 @@ NEXT: part-20.0D asset type dropdown (investigate cause first).
 - part-20.0D: cause = `asset_category` / `exit_reason` / `ticket_category` were never seeded (hrctl seed_masters skips them), so the dropdowns had 0 options; plus the dialog chose its default only on open. Fix: defaults seeded the first time an empty list is read (seeded for CTD now); "+ Add asset type" inside the dropdown; Settings > Helpdesk & assets > Asset categories / Exit reasons. No z-index/portal problem found anywhere (table in FIXES_20.md). Decision: never delete list items (switch off), because assets and exits point at the codes.
 
 NEXT: part-20.1 Employees tab (list, profile, Employee ID format, assign asset without the Assets module).
+- part-20.1: Employees tab (list, filters, Excel, bulk invites, profile tabs, edit, assign asset without the Assets module, Employee ID format). Decisions: CTD Techs ID format CTD-{SEQ:4} (running number continues; old IDs unchanged); job-detail edits here are corrections in place (logged) - formal transfers/promotions stay in the older People module; /employees now opens this page (it used to forward to the hidden People module).
+
+NEXT: part-20.2 onboarding completed -> agent prepares the employee (approval card), company email, app account + invite.
