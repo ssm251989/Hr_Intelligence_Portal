@@ -147,6 +147,11 @@ def register_all() -> None:
         {"title": "Final settlement and documents", "owner": "HR"},
     ], module="onboarding", group=G))
     register(SettingDef("employees.interviewer.auto_rules", "json", [], module="onboarding", group=G))
+    # Part 21.2: Settings > Onboarding & employees > After exit
+    register(SettingDef("employees.after_exit.move_hiring_data", "bool", True, module="onboarding", group=G))
+    register(SettingDef("employees.after_exit.days", "int", 0, module="onboarding", group=G, json_schema={"type": "integer", "minimum": 0, "maximum": 365}))
+    register(SettingDef("employees.after_exit.categories", "json", ["candidate_profile", "applications_interviews", "links_forms", "inbox_emails", "portal_access"],
+                        module="onboarding", group=G))
     register(SettingDef("employees.interviewer.scorecard_reminder_hours", "int", 24, module="onboarding", group=G,
                         json_schema={"type": "integer", "minimum": 1, "maximum": 240}))
     from app.employees.exit_interview import DEFAULT as _EXIT_INTERVIEW  # fix 2026-10-06: answered by the employee

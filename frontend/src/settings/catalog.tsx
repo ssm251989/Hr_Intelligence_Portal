@@ -26,6 +26,7 @@ import EmployeeIdSettings from "../components/employees/EmployeeIdSettings";
 import ExitInterviewSettingsPage from "../components/exits/ExitInterviewSettings";
 import ExitChecklistSettingsPage from "../components/exits/ExitChecklistSettings";
 import EmployeeRulesSettings from "../components/employees/EmployeeRulesSettings";
+import AfterExitSettings from "../components/exits/AfterExitSettings";
 import UsersPage from "../components/people/UsersPage";
 import GenAISettingsPage from "../components/genai/GenAISettingsPage";
 import PrivacyPanel from "../components/PrivacyPanel";
@@ -178,6 +179,9 @@ export const CATEGORIES: SettingsCategory[] = [
       // feat 2026-10-06: actionable exit checklist -- items, owners, due days, required, how each completes
       { id: "exit-checklist", emoji: "clipboard", keywords: "exit checklist clearance assets return id card access revoke finance settlement handover letters owners due",
         prefixes: ["employees.exit.clearance_items"], visible: ADMIN, render: () => <ExitChecklistSettingsPage /> },
+      // Part 21.2: hiring data -> Recycle bin when an exit is completed
+      { id: "after-exit", emoji: "file_folder", keywords: "after exit hiring data recycle bin candidate applications interviews delete retention", prefixes: ["employees.after_exit"],
+        visible: ADMIN, render: () => <AfterExitSettings /> },
       { id: "leavers", emoji: "door", module: "onboarding", keywords: "absconding not reporting no show early leaver notices", prefixes: ["onboarding.not_reporting"], visible: ADMIN,
         render: scoped(["onboarding.not_reporting"], "settingsHome.page.onboarding.leavers") },
       { id: "fields", emoji: "label", keywords: "employee fields custom", visible: ADMIN, render: () => <MetadataPanel only="Custom Fields" /> },

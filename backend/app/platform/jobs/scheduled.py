@@ -159,7 +159,15 @@ def _closed_jobs_cleanup(db, tenant):
     return run_daily(db, tenant)
 
 
+def _hiring_data_after_exit(db, tenant):
+    """Part 21.2: exits completed N days ago -> hiring data to the bin; binned exit data past the limit -> deleted."""
+    from app.employees.hiring_on_exit import run_daily
+
+    return run_daily(db, tenant)
+
+
 JOBS = {
+    "hiring_data_after_exit": _hiring_data_after_exit,
     "closed_jobs_cleanup": _closed_jobs_cleanup,
     "interviewer_links": _interviewer_links,
     "exit_checklist": _exit_checklist,
@@ -261,5 +269,6 @@ celery_app.conf.beat_schedule = {
     "exit-checklist": {"task": "hrms.fan_out", "schedule": 3600.0, "args": ("exit_checklist",)},
     "interviewer-links": {"task": "hrms.fan_out", "schedule": 86400.0, "args": ("interviewer_links",)},
     "closed-jobs-cleanup": {"task": "hrms.fan_out", "schedule": 86400.0, "args": ("closed_jobs_cleanup",)},
+    "hiring-data-after-exit": {"task": "hrms.fan_out", "schedule": 86400.0, "args": ("hiring_data_after_exit",)},
 }
 celery_app.conf.timezone = "UTC"

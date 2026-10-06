@@ -29,8 +29,10 @@ from app.models.audit_log import AuditLog
 from app.models.candidate import Candidate
 from app.models.interview import Interview
 from app.models.job_role import JobRole
+from app.models.hr_inbound_email import HrInboundEmail
 
 _APPS = Application.__table__
+_CANDS = Candidate.__table__
 
 REASONS = ("duplicate", "test_data", "privacy_request", "withdrawn", "other")
 INCLUDE_REMOVED = "include_removed"  # execution option: see the recycle bin itself
@@ -51,6 +53,9 @@ def _hide_removed(execute_state) -> None:
         with_loader_criteria(Application, lambda cls: cls.removed_at.is_(None), include_aliases=True),
         # Part 21.1: a closed job moved to the Recycle bin is hidden the same way
         with_loader_criteria(JobRole, lambda cls: cls.deleted_at.is_(None), include_aliases=True),
+        # Part 21.2: a binned candidate's emails in the HR inbox too
+        with_loader_criteria(HrInboundEmail, lambda cls: or_(cls.matched_candidate_id.is_(None), cls.matched_candidate_id.notin_(
+            select(_CANDS.c.id).where(_CANDS.c.deleted_at.isnot(None)))), include_aliases=True),
         # Part 18.28: their interviews too -- otherwise a removed candidate's interview still
         # counted as "done / passed" on the Interviews dashboard. (Core table, so the
         # Application criteria above don't apply inside this subquery.)
@@ -206,7 +211,7 @@ def restore(db: Session, tenant, candidate: Candidate, *, actor: str) -> dict:
     candidate.deleted_at = candidate.deleted_by = candidate.delete_reason = candidate.delete_note = None
     n = 0
     for a in _q(db, Application).filter(Application.candidate_id == candidate.id, Application.removed_at.isnot(None)):
-        a.removed_at = None
+        a.removed_at = a.removed_reason = None  # Part 21: also hiring data moved on exit
         n += 1
     db.commit()
     log_action(db, "candidate", candidate.id, "candidate_restored", actor[:50], {"applications": n})
@@ -411,7 +416,8 @@ def run_bulk(tenant_id, slug: str, isolation: str, run_id) -> None:
 
 def recycle_bin(db: Session, tenant) -> dict:
     days = int(_setting(db, tenant, "recruitment.candidates.recycle_days") or 30)
-    rows = _q(db, Candidate).filter(Candidate.tenant_id == tenant.tenant_id, Candidate.deleted_at.isnot(None)).order_by(Candidate.deleted_at.desc()).limit(1000).all()
+    rows = [c for c in _q(db, Candidate).filter(Candidate.tenant_id == tenant.tenant_id, Candidate.deleted_at.isnot(None)).order_by(Candidate.deleted_at.desc()).limit(1000).all()
+            if not (c.custom_fields or {}).get("hiring_data_purged_at")]  # Part 21.2: exit data already deleted for good -> no longer in the bin
     ids = [c.id for c in rows]
     apps: dict = {}
     for cid, jid in db.query(Application.candidate_id, Application.job_role_id).execution_options(**{INCLUDE_REMOVED: True}).filter(Application.candidate_id.in_(ids or [None])):
@@ -432,7 +438,8 @@ def purge_expired(db: Session, tenant) -> dict:
     days = int(_setting(db, tenant, "recruitment.candidates.recycle_days") or 30)
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     done, blocked = 0, 0
-    for cand in _q(db, Candidate).filter(Candidate.tenant_id == tenant.tenant_id, Candidate.deleted_at.isnot(None), Candidate.deleted_at < cutoff).limit(200).all():
+    for cand in _q(db, Candidate).filter(Candidate.tenant_id == tenant.tenant_id, Candidate.deleted_at.isnot(None), Candidate.deleted_at < cutoff,
+                                         or_(Candidate.delete_reason.is_(None), Candidate.delete_reason != "exit")).limit(200).all():  # Part 21.2: exit data -> hiring_on_exit
         try:
             delete_permanently(db, tenant, cand, reason=cand.delete_reason or "other", actor="system (recycle bin time limit)", confirm="DELETE")
             done += 1
