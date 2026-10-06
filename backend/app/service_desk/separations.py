@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from app.core_hr import lifecycle
 from app.models.core_hr import Employee
 from app.models.metadata import MasterValue
-from app.models.service_desk import Asset, AssetAllocation, ClearanceItem, Separation, CLEARANCE_DEPARTMENTS, CLEARANCE_KINDS
+from app.models.service_desk import Asset, AssetAllocation, ClearanceItem, Separation, CLEARANCE_CLOSED, CLEARANCE_DEPARTMENTS, CLEARANCE_KINDS, CLEARANCE_OPEN
 from app.models.workflow import WorkflowDefinition
 from app.platform.settings.resolver import SettingContext, SettingsService
 from app.platform.tenancy.context import TenantContext
@@ -146,8 +146,9 @@ def withdraw(db: Session, separation: Separation, *, actor: str) -> Separation:
     if employee.status == "on_notice":
         employee.status = "active"
     for item in _items(db, separation):
-        if item.status == "pending":
-            item.status = "waived"
+        if item.status in CLEARANCE_OPEN:
+            item.status = "not_applicable"
+            item.reason = item.reason or "Exit withdrawn"
             item.notes = f"withdrawn by {actor}"
     db.commit()
     db.refresh(separation)
@@ -191,8 +192,15 @@ def _asset_clearance_department(db: Session, tenant: TenantContext, asset: Asset
 
 
 def generate_clearance(db: Session, tenant: TenantContext, separation: Separation) -> list[ClearanceItem]:
-    """Idempotent: checklist items from `separation.clearance_checklist` + one asset-recovery
-    item per unreturned allocation. Re-running only adds what's missing."""
+    """feat 2026-10-06: the actionable exit checklist (app/employees/exit_checklist.py) -- items from
+    Settings > Onboarding & employees > Exit checklist + one line per assigned asset, with owners and due dates."""
+    from app.employees import exit_checklist
+
+    return exit_checklist.generate(db, tenant, separation)
+
+
+def _legacy_generate_clearance(db: Session, tenant: TenantContext, separation: Separation) -> list[ClearanceItem]:
+    """Before 2026-10-06 (kept for reference; no longer called)."""
     existing = _items(db, separation)
     existing_titles = {(i.department, i.title) for i in existing}
     existing_allocations = {i.asset_allocation_id for i in existing if i.asset_allocation_id}
@@ -227,7 +235,7 @@ def add_kt_task(db: Session, tenant: TenantContext, separation: Separation, *, t
 
 
 def clear_item(db: Session, item: ClearanceItem, *, actor: str, waive: bool = False, notes: Optional[str] = None, amount_due=None) -> ClearanceItem:
-    if item.status != "pending":
+    if item.status in CLEARANCE_CLOSED:
         return item
     if item.kind == "asset_recovery" and not waive:
         allocation = db.get(AssetAllocation, item.asset_allocation_id) if item.asset_allocation_id else None
@@ -235,7 +243,9 @@ def clear_item(db: Session, item: ClearanceItem, *, actor: str, waive: bool = Fa
             raise SeparationError("record the asset return first (or waive the item with a reason)")
     if waive and not notes:
         raise SeparationError("waiving a clearance item needs a reason")
-    item.status = "waived" if waive else "cleared"
+    item.status = "not_applicable" if waive else "done"
+    if waive:
+        item.reason = notes
     item.cleared_by = actor
     item.cleared_at = _now()
     item.notes = notes
@@ -247,8 +257,9 @@ def clear_item(db: Session, item: ClearanceItem, *, actor: str, waive: bool = Fa
 
 
 def on_asset_returned(db: Session, tenant: TenantContext, allocation: AssetAllocation, *, actor: str) -> None:
-    for item in db.query(ClearanceItem).filter(ClearanceItem.tenant_id == tenant.tenant_id, ClearanceItem.asset_allocation_id == allocation.id, ClearanceItem.status == "pending").all():
-        item.status = "cleared"
+    for item in db.query(ClearanceItem).filter(ClearanceItem.tenant_id == tenant.tenant_id, ClearanceItem.asset_allocation_id == allocation.id,
+                                               ClearanceItem.status.in_(CLEARANCE_OPEN)).all():
+        item.status = "done"
         item.cleared_by = actor
         item.cleared_at = _now()
         item.notes = f"returned ({allocation.return_condition})"
@@ -256,7 +267,8 @@ def on_asset_returned(db: Session, tenant: TenantContext, allocation: AssetAlloc
 
 
 def relieving_blockers(db: Session, separation: Separation) -> list[str]:
-    blockers = [f"{i.department}: {i.title}" for i in _items(db, separation) if i.blocks_relieving and i.status == "pending"]
+    blockers = [f"{i.department}: {i.title}" for i in _items(db, separation) if i.blocks_relieving and i.status in CLEARANCE_OPEN
+                and i.kind != "exit_docs"]  # the exit-docs item completes BY the letters, so it can't block them
     if separation.approved_lwd is None:
         blockers.insert(0, "last working day not approved")
     return blockers
@@ -377,8 +389,8 @@ def exit_summary(db: Session, separation: Separation) -> dict:
         "notice_period_days": separation.notice_period_days, "notice_served_days": served,
         "notice_short_days": max(0, separation.notice_period_days - served) if served is not None else None,
         "notice_waived_days": separation.notice_waived_days, "notice_buyout_days": separation.notice_buyout_days,
-        "assets_pending": sum(1 for i in items if i.kind == "asset_recovery" and i.status == "pending"),
-        "clearance_pending": sum(1 for i in items if i.status == "pending"),
+        "assets_pending": sum(1 for i in items if i.kind in ("asset_recovery", "id_card") and i.status in CLEARANCE_OPEN),
+        "clearance_pending": sum(1 for i in items if i.status in CLEARANCE_OPEN),
         "amount_due": float(sum((i.amount_due or 0) for i in items)),
         "rehire_eligible": separation.rehire_eligible, "reason_code": separation.reason_code,
     }

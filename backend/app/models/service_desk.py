@@ -19,8 +19,11 @@ ASSET_REQUEST_STATUSES = ("requested", "approved", "rejected", "fulfilled", "can
 SEPARATION_TYPES = ("resignation", "termination", "absconding", "retirement", "contract_end", "death")
 SEPARATION_STATUSES = ("submitted", "retention", "approved", "clearance", "completed", "withdrawn", "rejected")
 CLEARANCE_DEPARTMENTS = ("it", "admin", "finance", "manager", "hr")
-CLEARANCE_STATUSES = ("pending", "cleared", "waived")
-CLEARANCE_KINDS = ("clearance", "asset_recovery", "access_revocation", "knowledge_transfer")
+CLEARANCE_STATUSES = ("todo", "requested", "waiting_confirmation", "done", "not_applicable", "blocked")  # feat 2026-10-06: actionable exit checklist
+CLEARANCE_OPEN = ("todo", "requested", "waiting_confirmation", "blocked")
+CLEARANCE_CLOSED = ("done", "not_applicable")
+CLEARANCE_KINDS = ("clearance", "asset_recovery", "access_revocation", "knowledge_transfer", "id_card", "finance_settlement", "handover_signoff",
+                   "exit_docs", "no_assets")
 
 
 def _in(column: str, values: tuple) -> str:
@@ -268,6 +271,8 @@ class Separation(Base, TenantOwned):
     exit_interview_json = Column(JSONB)
     exit_interview_ai_summary_json = Column(JSONB)  # advisory, HITL
     exit_interview_hr_notes = Column(Text)  # fix 2026-10-06: HR's private notes, never shown to the employee or managers
+    completion_note = Column(Text)  # feat 2026-10-06: closed with items still open -> HR's reason
+    letters_emailed_at = Column(DateTime(timezone=True))  # feat 2026-10-06: relieving + experience letters emailed on completion
     rehire_eligible = Column(Boolean)
     alumni_opt_in = Column(Boolean, nullable=False, server_default=text("false"))
     absconding_notices_json = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
@@ -293,8 +298,18 @@ class ClearanceItem(Base, TenantOwned):
     owner_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     asset_allocation_id = Column(UUID(as_uuid=True), ForeignKey("asset_allocations.id"))
     blocks_relieving = Column(Boolean, nullable=False, server_default=text("true"))
-    status = Column(String(20), nullable=False, server_default=text("'pending'"))
+    status = Column(String(20), nullable=False, server_default=text("'todo'"))
     amount_due = Column(Numeric)
+    # feat 2026-10-06: actionable exit checklist (app/employees/exit_checklist.py)
+    item_key = Column(String(40))  # the settings entry it came from (it_access, cards, finance, handover, exit_docs) or "asset"
+    owner_role = Column(String(20))  # it | admin | finance | manager | hr | person
+    due_date = Column(Date)
+    reason = Column(Text)  # why Not applicable / Blocked
+    auto_rule = Column(String(30))  # asset_return | access_revoke | exit_interview_letters | manual
+    requested_at = Column(DateTime(timezone=True))
+    last_reminder_at = Column(DateTime(timezone=True))
+    details_json = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    history_json = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
     notes = Column(Text)
     cleared_by = Column(Text)
     cleared_at = Column(DateTime(timezone=True))

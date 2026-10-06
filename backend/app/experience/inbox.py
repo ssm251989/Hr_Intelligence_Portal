@@ -18,7 +18,7 @@ def _iso(value):
 
 def items_for(db: Session, tenant: TenantContext, user: User) -> list[dict]:
     from app.agents.service import inbox as agent_inbox
-    from app.models.service_desk import ClearanceItem
+    from app.models.service_desk import CLEARANCE_OPEN, ClearanceItem
     from app.models.workflow import WorkflowDefinition, WorkflowInstance, WorkflowStep
     from app.platform.iam.org_scope import my_employee_id
 
@@ -55,9 +55,11 @@ def items_for(db: Session, tenant: TenantContext, user: User) -> list[dict]:
         for review in db.query(Review).filter(Review.tenant_id == tenant.tenant_id, Review.reviewer_employee_id == me, Review.status != "submitted").all():
             out.append({"kind": "review", "id": str(review.id), "title": f"Write {review.stage} review", "subtitle": "performance review", "due_at": None,
                         "path": f"/settings#performance?review={review.id}", "actions": ["open"]})
-    for item in db.query(ClearanceItem).filter(ClearanceItem.tenant_id == tenant.tenant_id, ClearanceItem.owner_user_id == user.id, ClearanceItem.status == "pending").all():
-        out.append({"kind": "clearance", "id": str(item.id), "title": item.title, "subtitle": f"exit clearance · {item.department}", "due_at": None,
-                    "path": f"/settings#helpdesk?clearance={item.id}", "actions": ["clear"]})
+    for item in db.query(ClearanceItem).filter(ClearanceItem.tenant_id == tenant.tenant_id, ClearanceItem.owner_user_id == user.id,
+                                               ClearanceItem.status.in_(CLEARANCE_OPEN)).all():  # feat 2026-10-06: actionable exit checklist
+        out.append({"kind": "clearance", "id": str(item.id), "title": item.title, "subtitle": f"exit checklist · {item.department}",
+                    "due_at": datetime.combine(item.due_date, datetime.min.time(), tzinfo=timezone.utc).isoformat() if item.due_date else None,
+                    "path": f"/exits?item={item.id}", "actions": ["open"]})
 
     far = datetime.max.replace(tzinfo=timezone.utc).isoformat()
     return sorted(out, key=lambda i: (i["due_at"] or far, i["kind"]))

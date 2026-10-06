@@ -92,6 +92,36 @@ DEFAULTS: dict[str, tuple[str, str, list[str]]] = {
         ["candidate_first_name", "last_seen", "respond_by"],
     ),
     # Part 20: employees (app/employees/*)
+    "employee.exit_task_assigned": (  # feat 2026-10-06: actionable exit checklist
+        "Exit checklist: {{ item }} for {{ name }}",
+        "Hi,\n\n{{ name }} is leaving {{ company_name }}; their last working day is {{ last_day }}.\n\nYou own this exit checklist item: "
+        "{{ item }}\nPlease finish it by {{ due }}.\n\nOpen it: {{ link }}\n\n{{ company_name }} HR",
+        ["item", "name", "link"],
+    ),
+    "employee.exit_task_returned": (
+        "{{ name }} says they have returned: {{ item }}",
+        "Hi,\n\n{{ name }} has marked \"{{ item }}\" as returned. Please check it and click Received (Good / Damaged / Missing parts), "
+        "or Lost / not returned.\n\nOpen it: {{ link }}\n\n{{ company_name }} HR",
+        ["item", "name", "link"],
+    ),
+    "employee.exit_task_reminder": (
+        "Reminder: {{ item }} for {{ name }} is due {{ due }}",
+        "Hi,\n\nThis exit checklist item is still open: {{ item }} ({{ name }}, last working day {{ last_day }}).\nIt is due {{ due }}.\n\n"
+        "Open it: {{ link }}\n\n{{ company_name }} HR",
+        ["item", "name", "link"],
+    ),
+    "employee.asset_return_request": (
+        "Please return: {{ what }}",
+        "Hi {{ first_name }},\n\nBefore you leave, please return {{ what }} by {{ by }}.\n\nWhen you have handed it over, open your exit page "
+        "and click \"I have returned it\" (you can add a note or a photo): {{ link }}\n\nThank you.\n\n{{ company_name }} HR",
+        ["first_name", "what", "link"],
+    ),
+    "employee.exit_letters": (
+        "Your relieving and experience letters from {{ company_name }}",
+        "Hi {{ first_name }},\n\nYour exit is complete; your last working day was {{ last_working_day }}. Your relieving letter and "
+        "experience letter are attached as PDFs.\n\nThank you for your time with us, and all the best.\n\n{{ company_name }} HR",
+        ["first_name", "last_working_day"],
+    ),
     "employee.exit_interview_reminder": (  # fix 2026-10-06: the employee answers their own exit interview
         "A few questions before you go",
         "Hi {{ first_name }},\n\n{{ before }}, please take a few minutes to answer some questions about your time at "

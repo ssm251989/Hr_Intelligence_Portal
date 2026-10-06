@@ -387,7 +387,10 @@ def _items(db: Session, s: Separation) -> list[dict]:
     return [{"id": str(r.id), "department": r.department, "kind": r.kind, "title": r.title, "status": r.status, "blocks_relieving": r.blocks_relieving,
              "owner_name": _user_name(owners.get(r.owner_user_id)) if r.owner_user_id else None, "cleared_by": r.cleared_by,
              "cleared_at": _iso(r.cleared_at), "notes": r.notes, "amount_due": float(r.amount_due) if r.amount_due is not None else None,
-             "asset_allocation_id": str(r.asset_allocation_id) if r.asset_allocation_id else None} for r in rows]
+             "asset_allocation_id": str(r.asset_allocation_id) if r.asset_allocation_id else None,
+             # feat 2026-10-06: actionable checklist
+             "item_key": r.item_key, "owner_role": r.owner_role, "due_date": _iso(r.due_date), "reason": r.reason,
+             "overdue": bool(r.due_date and r.due_date < datetime.now(timezone.utc).date() and r.status not in ("done", "not_applicable"))} for r in rows]
 
 
 def _separation_row(db: Session, s: Separation, *, with_items: bool, interview: bool = False) -> dict:
@@ -400,8 +403,8 @@ def _separation_row(db: Session, s: Separation, *, with_items: bool, interview: 
         "id": str(s.id), "employee_id": str(s.employee_id), "employee_name": _employee_name(employee), "employee_code": employee.employee_code if employee else None,
         "type": s.separation_type, "status": s.status, "submitted_on": _iso(s.submitted_on), "requested_lwd": _iso(s.requested_lwd),
         "approved_lwd": _iso(s.approved_lwd), "notice_period_days": s.notice_period_days, "reason_code": s.reason_code, "reason_text": s.reason_text,
-        "items_total": len(items), "items_pending": sum(1 for i in items if i.get("status") == "pending"),
-        "blocking_pending": sum(1 for i in items if i.get("status") == "pending" and i.get("blocks_relieving")),
+        "items_total": len(items), "items_pending": sum(1 for i in items if i.get("status") not in ("done", "not_applicable")),
+        "blocking_pending": sum(1 for i in items if i.get("status") not in ("done", "not_applicable") and i.get("blocks_relieving")),
         "exit_interview_done": bool((s.exit_interview_json or {}).get("submitted_at")),
         "exit_interview_status": status_of(s),
         **({"exit_interview": s.exit_interview_json, "exit_interview_ai_summary": s.exit_interview_ai_summary_json} if interview else {}),

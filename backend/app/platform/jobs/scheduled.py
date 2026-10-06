@@ -137,7 +137,16 @@ def _exit_interview_reminders(db, tenant):
     return {"reminders": run_reminders(db, tenant)}
 
 
+def _exit_checklist(db, tenant):
+    """feat 2026-10-06: exit checklist -- scheduled access revokes on the last day, owner reminders the day before due,
+    exit completes by itself when everything is done and the last working day has passed."""
+    from app.employees.exit_checklist import run_reminders
+
+    return run_reminders(db, tenant)
+
+
 JOBS = {
+    "exit_checklist": _exit_checklist,
     "exit_interview_reminders": _exit_interview_reminders,
     "joiner_exits": _joiner_exits,
     "workflow_timers": _workflow_timers,
@@ -233,5 +242,6 @@ celery_app.conf.beat_schedule = {
     "recycle-bin-purge": {"task": "hrms.fan_out", "schedule": 86400.0, "args": ("recycle_bin_purge",)},
     "joiner-exits": {"task": "hrms.fan_out", "schedule": 3600.0, "args": ("joiner_exits",)},
     "exit-interview-reminders": {"task": "hrms.fan_out", "schedule": 3600.0, "args": ("exit_interview_reminders",)},
+    "exit-checklist": {"task": "hrms.fan_out", "schedule": 3600.0, "args": ("exit_checklist",)},
 }
 celery_app.conf.timezone = "UTC"
