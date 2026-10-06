@@ -2812,3 +2812,7 @@ NEXT: part-21.1 closed jobs to the Recycle bin after N days.
 - part-21.1: closed jobs -> Recycle bin after N days (setting, daily job, Keep this job, Jobs tab, restore/delete). Proof in FIXES_21.md. Decisions: 0 days = next daily run, on/off switch = never; a binned job linked to a hired person is never deleted permanently.
 
 NEXT: part-21.2 on exit completed -> the person's hiring data to the Recycle bin (settings: categories + days).
+
+- part-21.2: hiring data -> Recycle bin on exit (After exit settings, kept HR/legal records, restore, bin time limit deletes hiring-only rows). Proof in FIXES_21.md. Note: the real completed exit EMP-00022 Jagadeesh T had its hiring data moved by the same rule (restorable).
+
+NEXT: part-21.4 BGV Download all ZIP + assign BGV vendor (secure link, report upload, reminders).

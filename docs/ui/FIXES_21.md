@@ -82,3 +82,41 @@ Note: the proof used the TEST-mailbox inboxes instead of mailpit, because the re
 - **Settings page:** fix21-cj-06.
 
 Small known limit: the Jobs page "Recent activity" names a binned job "a job" (its title lookup is hidden by the bin filter). The title is in the audit details.
+
+## 21.2 When a person exits, their hiring data goes to the Recycle bin (2026-10-06)
+
+**Built** (`app/employees/hiring_on_exit.py`):
+- **Trigger:** exit completed (`exit_checklist.try_complete`). With "after 0 days" it moves straight away; otherwise the daily job `hiring_data_after_exit` moves it N days after completion.
+- **Moves to the bin** (each a checkbox in **Settings > Onboarding & employees > After exit**, all on by default):
+  - candidate record (resume, salary-form payslips)
+  - applications with their screening scores, shortlist, interviews + scorecards
+  - interview / confirmation / salary / document form links (stopped)
+  - candidate emails in the HR inbox
+  - pre-joining welcome portal (link stopped)
+- **Hidden everywhere:** by the global bin filter, which now also hides a binned candidate's HR-inbox emails.
+- **KEPT** (never moved): employee record, signed offer letter, joining documents, BGV result, relieving / experience letters, exit record + exit interview, audit log.
+- **Timeline note:** audit on the candidate, "Hiring data moved to Recycle bin on exit (<date>)"; also the candidate's bin note.
+- **Restore:** Recycle bin > Candidates shows the person with reason **"Exit completed"**; Restore brings everything back.
+- **Permanent delete:** after the bin's time limit, only the **hiring-only rows** are deleted for good (interviews + scorecards, screening results, links, inbox emails, resume file, payslips). The candidate / application / offer / BGV rows behind the kept records stay, hidden; then it leaves the bin.
+  - Decision: the old candidate permanent delete would have cascaded into the signed offer and BGV records, which must be kept.
+
+**Proof** (proof hire "Proof Leaver Arjun" CTD-9901: candidate, application, interview + scorecard, signed offer, BGV document, inbox email, employee on notice; exit completed by the real `try_complete`; all removed afterwards):
+| Data | After exit completed: visible / exists |
+|---|---|
+| candidate | 0 / 1 (in the bin, reason `exit`, note "Hiring data moved to the Recycle bin on exit (06 Oct 2026)") |
+| application | 0 / 1 |
+| interview + scorecard | 0 / 1 |
+| HR-inbox email | 0 / 1 |
+| signed offer | **1 / 1 (kept)** |
+| BGV document | **1 / 1 (kept)** |
+| employee | **1 / 1 (kept)** |
+
+- Audit: `hiring_data_moved_on_exit {'moved': {'candidate': 1, 'applications': 1, 'inbox_emails': 1}}`.
+- Recycle bin shows "Proof Leaver Arjun - Exit completed" (fix21-hx-01). The employee profile is still there (fix21-hx-02). Settings > After exit (fix21-hx-03).
+- **Restore** in the UI -> candidate and application back (fix21-hx-04).
+- **Bin time limit** (put back in the bin dated 40 days ago, daily job run): `{'purged': 1}`.
+  - interview and inbox email deleted for good
+  - candidate, application, signed offer and BGV rows still there (hidden)
+  - no longer listed in the bin
+
+**Note - real data:** the same daily run also moved the hiring data of the real completed exit **EMP-00022 Jagadeesh T** (exit completed in the live app at 17:05 today): candidate, application, 4 open form links stopped, portal link closed. This is exactly what the new rule does for every completed exit (the live app's own daily job would have done it within a day), and it can be restored from Recycle bin > Candidates.
