@@ -657,6 +657,36 @@ def _off_interviewer_pools(db: Session, tenant, e: Optional[Employee], *, actor:
     if removed:
         db.commit()
         log_action(db, "employee", e.id, "removed_from_interviewer_pools", actor[:50], {"pools": removed})
+    _future_interviews_todo(db, tenant, e, emails, user, actor=actor)
+
+
+def _future_interviews_todo(db: Session, tenant, e: Employee, emails: set, user: Optional[User], *, actor: str) -> None:
+    """Part 20.3: interviews this person was still due to take -> one HR to-do to reassign them (never moved silently)."""
+    from sqlalchemy import func, or_
+
+    from app.models.intelligence import AgentSuggestion
+    from app.models.interview import Interview
+
+    conds = [func.lower(Interview.interviewer_email).in_(list(emails))] if emails else []
+    if user is not None:
+        conds.append(Interview.interviewer_id == user.id)
+    if not conds:
+        return
+    rows = (db.query(Interview).filter(Interview.tenant_id == tenant.tenant_id, or_(*conds), Interview.scheduled_at > _now(), Interview.decision.is_(None))
+            .order_by(Interview.scheduled_at).all())
+    if not rows:
+        return
+    exists = db.query(AgentSuggestion).filter(AgentSuggestion.tenant_id == tenant.tenant_id, AgentSuggestion.kind == "interviews_reassign",
+                                              AgentSuggestion.entity_id == e.id, AgentSuggestion.status == "pending").first()
+    payload = {"employee_id": str(e.id), "name": _name(e), "interviews": [{"id": str(i.id), "at": i.scheduled_at.isoformat(), "application_id": str(i.application_id)} for i in rows]}
+    title = f"Reassign {len(rows)} interview(s) - {_name(e)} has left"
+    if exists is not None:
+        exists.title, exists.payload_json = title, payload
+    else:
+        db.add(AgentSuggestion(tenant_id=tenant.tenant_id, agent="onboarding", kind="interviews_reassign", title=title, entity_type="employee",
+                               entity_id=e.id, reviewer_permission="core_hr.employee.edit", payload_json=payload))
+    db.commit()
+    log_action(db, "employee", e.id, "interviews_reassign_todo", actor[:50], {"count": len(rows)})
 
 
 def letter_pdf(db: Session, letter_id) -> Optional[bytes]:

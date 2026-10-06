@@ -40,6 +40,10 @@ def items_for(db: Session, tenant: TenantContext, user: User) -> list[dict]:
                         "subtitle": "approve to create the employee" if s.kind == "employee_create" else "IT: mailbox",
                         "due_at": None, "path": f"/employees?card={s.id}", "actions": ["open"]})
             continue
+        if s.kind == "interviews_reassign":  # Part 20.3: a leaver's future interviews
+            out.append({"kind": "todo", "id": str(s.id), "title": s.title, "subtitle": "pick another interviewer for each",
+                        "due_at": ((s.payload_json or {}).get("interviews") or [{}])[0].get("at"), "path": "/interviews", "actions": ["open"]})
+            continue
         if s.kind == "position_open_again":  # fix 2026-10-05: a to-do, not something to approve
             out.append({"kind": "todo", "id": str(s.id), "title": s.title,
                         "subtitle": f"{(s.payload_json or {}).get('person')} - {(s.payload_json or {}).get('why')}",
