@@ -43,3 +43,42 @@ Spec: docs/PART21_OWNER_CHANGES.txt. One section per item.
 - All proof records were removed afterwards.
 
 Note: the proof used the TEST-mailbox inboxes instead of mailpit, because the release is done by the live app's background job (the point of the test), which doesn't use the proof stack's mail capture.
+
+## 21.1 Closed jobs go to the Recycle bin after N days (2026-10-06)
+
+**Built** (`app/jobs/cleanup.py`, migration `b4ad3e4f5a6b`):
+- **Settings > Hiring > Closed jobs:**
+  - "Move closed jobs to the Recycle bin" (on) and "after [30] days"
+  - "Keep candidates of closed jobs in the talent pool" (on)
+  - how long the bin keeps items (`recruitment.candidates.recycle_days`, 30)
+  - Decision: the spec says both "0 = never" and "a 0-day setting moves to the bin". So **0 days = at the next daily run**, and the on/off switch is "never".
+- **Daily job `closed_jobs_cleanup`** (Health: "Closed jobs to Recycle bin"), for every closed job past N days:
+  - **What moves:** the job, and its applications (and through them screening scores, shortlist, interviews + scorecards, offers, documents) go to the bin.
+    - `job_roles.deleted_at`; applications `removed_at` + `removed_reason = 'job_cleanup'`
+    - hidden everywhere by the same global filter as removed candidates, now also covering jobs
+  - **Links stopped:** open interview, confirmation and salary/document form links; queued emails suppressed; budget released.
+  - **Never touched:** people hired / employees (offer signed, onboarding started/completed, employee record). Their application stays.
+  - **Candidates:** "keep in talent pool" on -> the candidate profile + resume stay; off -> a candidate with nothing else open goes to the bin too.
+  - **Purge:** binned jobs past the bin time limit are deleted permanently, except one still linked to a hired person (kept, restorable).
+  - **Audit:** `job_moved_to_recycle_bin` per job and `closed_jobs_cleanup_run` per run (jobs moved, counts).
+- **closed_at:** automatic closes (deadline passed, all positions filled) now set `closed_at` too. Older jobs fall back to the close audit date.
+- **Warning:** from 3 days before, the job shows "Will move to the Recycle bin on <date>" with **[Keep this job]** (pauses the clean-up for that job).
+- **Recycle bin:** new **Candidates | Jobs** tabs.
+  - Jobs: closed, moved (by whom), applications, "deleted for good on", **Restore** (the job + exactly what moved with it; then it won't be moved again automatically) and **Delete permanently**.
+
+**Proof** (live app + temporary admin; two proof jobs; all removed afterwards):
+- **Safety check before the live job ran:** the only real closed job (Junior AI Developer, closed today) moves on 5 Nov.
+- **Automatic move:** Proof job A (closed 31 days ago; 1 ordinary candidate + 1 hired person) was moved **by the live app's own daily job** on its first run:
+  - `closed_jobs_cleanup_run {'jobs_moved': ['Proof job A - closed 31 days'], 'applications': 1, 'kept_hired': 1, 'candidates': 0}`
+  - DB: job `deleted_by 'system (closed 30+ days)'`
+  - the ordinary application `removed_reason 'job_cleanup'`, its candidate **not** deleted (talent pool)
+  - the hired person's application untouched
+  - Screenshot: fix21-cj-01.
+- **Warning + Keep:** Proof job B (closed 28 days ago) showed "Will move to the Recycle bin on 10/8/2026" + Keep this job (fix21-cj-02). Clicking Keep set `cleanup_paused_by` (fix21-cj-03).
+- **Restore:** Recycle bin > Jobs listed job A (closed 9/5, moved 10/6 by system, 1 application, deleted for good 11/5) (fix21-cj-04). **Restore** -> job and application back (`deleted_at` / `removed_at` null) (fix21-cj-05).
+- **Delete permanently:**
+  - job A was **refused** ("Someone hired through this job is still linked to it, so the job is kept…")
+  - job B (no hires) was deleted for good
+- **Settings page:** fix21-cj-06.
+
+Small known limit: the Jobs page "Recent activity" names a binned job "a job" (its title lookup is hidden by the bin filter). The title is in the audit details.

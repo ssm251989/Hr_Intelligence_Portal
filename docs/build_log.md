@@ -2808,3 +2808,7 @@ NEXT: part-21.1 closed jobs to the Recycle bin after N days (setting, daily job,
 - part-21.3 (done before 21.1/21.2 because the investigation was already open; the order of the rest is unchanged): cause = 4 working-hour undo window releases the next morning + owner retried first; Retry now uses the same automation.start(); profile says when emails go out. Proof: 2 auto-shortlisted candidates -> interviewer + candidate emails with no HR click (FIXES_21.md).
 
 NEXT: part-21.1 closed jobs to the Recycle bin after N days.
+
+- part-21.1: closed jobs -> Recycle bin after N days (setting, daily job, Keep this job, Jobs tab, restore/delete). Proof in FIXES_21.md. Decisions: 0 days = next daily run, on/off switch = never; a binned job linked to a hired person is never deleted permanently.
+
+NEXT: part-21.2 on exit completed -> the person's hiring data to the Recycle bin (settings: categories + days).
