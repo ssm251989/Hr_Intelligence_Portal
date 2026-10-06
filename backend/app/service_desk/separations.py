@@ -355,8 +355,8 @@ def complete(db: Session, tenant: TenantContext, separation: Separation, *, acto
     if blockers:
         raise ClearanceBlockedError("cannot complete: " + "; ".join(blockers))
     today = as_of or _now().date()
-    if separation.approved_lwd > today:
-        raise SeparationError(f"last working day {separation.approved_lwd.isoformat()} has not passed")
+    if separation.approved_lwd >= today:
+        raise SeparationError(f"last working day {separation.approved_lwd.isoformat()} has not passed yet")
     # feat 2026-10-06: HR's choices, then the same completion as the automatic one (Exited, login off, mailbox
     # suspended, letters emailed, out of interviewer pools) -- app/employees/exit_checklist.try_complete
     from app.employees import exit_checklist

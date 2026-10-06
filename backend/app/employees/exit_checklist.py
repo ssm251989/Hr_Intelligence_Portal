@@ -52,6 +52,7 @@ DEFAULT = [
 ]
 ASSET_OWNER_ROLE = "admin"
 UPLOADS = Path(__file__).resolve().parent.parent.parent / "uploads" / "exit"
+LETTER_VARS = ["today", "employee_name", "first_name", "employee_code", "designation", "department_text", "joined_on", "last_working_day", "company_name"]
 
 
 class ChecklistError(ValueError):
@@ -479,21 +480,26 @@ def ensure_letter_templates(db: Session, tenant) -> dict:
             "experience": _setting(db, tenant, "employees.letters.experience_template") or "experience_letter"}
     bodies = {
         "relieving": ("Relieving letter", "<p>{{ today }}</p><p><strong>To whom it may concern</strong></p>"
-                      "<p>This is to certify that <strong>{{ employee_name }}</strong> (Employee ID {{ employee_code }}) worked with {{ org.display_name }} "
+                      "<p>This is to certify that <strong>{{ employee_name }}</strong> (Employee ID {{ employee_code }}) worked with {{ company_name }} "
                       "as <strong>{{ designation }}</strong> from {{ joined_on }} to {{ last_working_day }}.</p>"
                       "<p>{{ first_name }} has been relieved from their duties at the close of business on {{ last_working_day }}, and all dues and company "
-                      "property have been settled.</p><p>We wish {{ first_name }} all the best.</p><p>For {{ org.display_name }}<br>Human Resources</p>"),
+                      "property have been settled.</p><p>We wish {{ first_name }} all the best.</p><p>For {{ company_name }}<br>Human Resources</p>"),
         "experience": ("Experience letter", "<p>{{ today }}</p><p><strong>Experience certificate</strong></p>"
-                       "<p>This is to certify that <strong>{{ employee_name }}</strong> (Employee ID {{ employee_code }}) was employed with {{ org.display_name }} "
+                       "<p>This is to certify that <strong>{{ employee_name }}</strong> (Employee ID {{ employee_code }}) was employed with {{ company_name }} "
                        "from {{ joined_on }} to {{ last_working_day }}. During this time {{ first_name }} worked as <strong>{{ designation }}</strong>"
                        "{{ department_text }}.</p><p>We found {{ first_name }} sincere and dependable, and wish them success in the future.</p>"
-                       "<p>For {{ org.display_name }}<br>Human Resources</p>"),
+                       "<p>For {{ company_name }}<br>Human Resources</p>"),
     }
     for kind, key in keys.items():
         exists = db.query(LetterTemplate).filter(LetterTemplate.tenant_id == tenant.tenant_id, LetterTemplate.key == key, LetterTemplate.status == "published").first()
         if exists is None:
             name, html = bodies[kind]
-            letters.publish(db, letters.create_draft(db, tenant, key=key[:50], name=name, html_tpl=html))
+            # publish() test-renders with the "required" variables only, so list every placeholder the letter uses
+            draft = (db.query(LetterTemplate).filter(LetterTemplate.tenant_id == tenant.tenant_id, LetterTemplate.key == key, LetterTemplate.status == "draft",
+                                                     LetterTemplate.html_tpl == html).first()
+                     or letters.create_draft(db, tenant, key=key[:50], name=name, html_tpl=html))
+            draft.variables_schema_json = {"required": LETTER_VARS}
+            letters.publish(db, draft)
     return keys
 
 
@@ -514,7 +520,8 @@ def generate_letters(db: Session, tenant, s: Separation, *, actor: str) -> dict:
     ctx = {"employee_name": _name(e), "first_name": (e.preferred_name or e.first_name) if e else "", "employee_code": e.employee_code if e else "",
            "designation": (r.designation if r else None) or "an employee", "department_text": f" in the {dep.name} team" if dep else "",
            "joined_on": (e.joined_on.strftime("%d %b %Y") if e and e.joined_on else "their joining date"),
-           "last_working_day": s.approved_lwd.strftime("%d %b %Y"), "today": _today().strftime("%d %b %Y"), "separation_type": s.separation_type}
+           "last_working_day": s.approved_lwd.strftime("%d %b %Y"), "today": _today().strftime("%d %b %Y"), "separation_type": s.separation_type,
+           "company_name": _setting(db, tenant, "org.display_name") or ""}
     if s.relieving_letter_id is None:
         s.relieving_letter_id = letters.generate_letter(db, tenant, employee_id=s.employee_id, template_key=keys["relieving"], context=ctx, generated_by=actor).id
     if s.experience_letter_id is None:
@@ -533,6 +540,10 @@ def refresh_auto(db: Session, tenant, s: Separation) -> None:
     """Auto rules: exit docs Done when the interview is in (or not applicable) AND both letters exist; a
     scheduled revoke runs on the last working day."""
     changed = False
+    for item in items(db, s):  # a scheduled revoke first, so the letters below can follow in the same run
+        d = item.details_json or {}
+        if item.kind == "access_revocation" and item.status == "requested" and d.get("scheduled_for") and date.fromisoformat(d["scheduled_for"]) <= _today():
+            _revoke(db, tenant, s, item, "system (last working day)")
     rows = items(db, s)
     docs = next((i for i in rows if i.kind == "exit_docs" and i.status in CLEARANCE_OPEN), None)
     if docs is not None and s.approved_lwd is not None:
@@ -563,9 +574,6 @@ def refresh_auto(db: Session, tenant, s: Separation) -> None:
                 _set(item, "done", "system", "auto_done", f"Exit interview {how}; relieving and experience letters generated")
                 item.details_json = {**d, "auto_done_on": _today().isoformat()}
                 changed = True
-        if item.kind == "access_revocation" and item.status == "requested" and d.get("scheduled_for") and date.fromisoformat(d["scheduled_for"]) <= _today():
-            _revoke(db, tenant, s, item, "system (last working day)")
-            changed = True
     if changed:
         db.commit()
 
@@ -582,14 +590,14 @@ def try_complete(db: Session, tenant, s: Separation, *, actor: str, force_reason
     if s.status != "clearance" or end is None:
         return False
     open_items = [i for i in pending(db, s) if i.blocks_relieving]
-    if force_reason is None and (open_items or end > _today()):
+    if force_reason is None and (open_items or end >= _today()):  # completes the day AFTER the last working day
         return False
     for i in pending(db, s):
         if not i.blocks_relieving:  # optional items never hold an exit up
             i.reason = "Optional - closed with the exit"
             _set(i, "not_applicable", actor, "closed_with_exit", "Optional item")
     if force_reason is not None:
-        if end > _today():
+        if end >= _today():
             raise ChecklistError("The last working day hasn't passed yet.")
         for i in open_items:
             i.reason = f"Closed by HR: {force_reason}"[:500]
@@ -722,6 +730,18 @@ def extend(db: Session, tenant, s: Separation, new_lwd: date, *, actor: str) -> 
         if i.status in CLEARANCE_OPEN:
             days = (cfg.get(i.item_key) or {}).get("due_days_before", 0)
             i.due_date = new_lwd - timedelta(days=days)
+            if i.kind == "access_revocation" and (i.details_json or {}).get("scheduled_for"):  # "on the last working day" follows the new day
+                i.details_json = {**i.details_json, "scheduled_for": new_lwd.isoformat()}
+                _hist(i, actor, "revoke_scheduled", f"Moved to {new_lwd.strftime('%d %b %Y')}")
+    if old != new_lwd and s.letters_emailed_at is None and (s.relieving_letter_id or s.experience_letter_id):
+        # the letters carry the last working day -> make them again (unsent ones only)
+        s.relieving_letter_id = s.experience_letter_id = None
+        for i in items(db, s):
+            if i.kind == "exit_docs" and i.status == "done":
+                _set(i, "todo", actor, "reopened", "Last working day changed - the letters will be made again")
+                i.cleared_at = i.cleared_by = None
+            if i.kind == "exit_docs":
+                i.due_date = new_lwd
     db.commit()
     log_action(db, "separation", s.id, "exit_last_day_extended", actor[:50], {"from": old.isoformat() if old else None, "to": new_lwd.isoformat()})
 
@@ -750,7 +770,7 @@ def _is_demo(db: Session, s: Separation) -> bool:
     return bool(e is not None and (e.custom_fields or {}).get("demo") is True)
 
 
-def notify_owner(db: Session, tenant, s: Separation, item: ClearanceItem, *, kind: str) -> None:
+def notify_owner(db: Session, tenant, s: Separation, item: ClearanceItem, *, kind: str) -> bool:
     """Assigned / returned / reminder email to the item's owner. Demo employees (hrctl demo employees) never email real staff."""
     from app.platform.comms.defaults import send_default
     from app.platform.links import public_app_url
@@ -760,7 +780,7 @@ def notify_owner(db: Session, tenant, s: Separation, item: ClearanceItem, *, kin
     else:
         to = _owner_emails(db, tenant, s, item)
     if not to:
-        return
+        return False
     e = _employee(db, s)
     key = {"assigned": "employee.exit_task_assigned", "returned": "employee.exit_task_returned", "reminder": "employee.exit_task_reminder"}[kind]
     end = lwd(s)
@@ -769,7 +789,8 @@ def notify_owner(db: Session, tenant, s: Separation, item: ClearanceItem, *, kin
                      ctx={"item": item.title, "name": _name(e), "last_day": end.strftime("%d %b %Y") if end else "not set yet",
                           "due": item.due_date.strftime("%d %b %Y") if item.due_date else "the last working day", "link": f"{public_app_url(db)}/exits?item={item.id}"})
     except Exception:  # noqa: BLE001 -- the to-do is still in their list
-        pass
+        return False
+    return True
 
 
 def _ask_employee_to_return(db: Session, tenant, s: Separation, item: ClearanceItem) -> None:
@@ -796,9 +817,8 @@ def run_reminders(db: Session, tenant) -> dict:
         refresh_auto(db, tenant, s)
         for i in pending(db, s):
             if i.due_date and i.due_date - timedelta(days=1) <= _today() and i.last_reminder_at is None:
-                notify_owner(db, tenant, s, i, kind="reminder")
+                sent += 1 if notify_owner(db, tenant, s, i, kind="reminder") else 0
                 i.last_reminder_at = _now()
-                sent += 1
         db.commit()
         if try_complete(db, tenant, s, actor="exit checklist"):
             completed += 1

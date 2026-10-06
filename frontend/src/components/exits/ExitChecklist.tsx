@@ -195,8 +195,8 @@ function Details({ item }: { item: ChecklistItem }) {
   if (d.handover) lines.push(t("xc.d.handover", { by: d.handover.by }) + (d.handover.takeover ? ` - ${t("xc.d.takeover", { name: d.handover.takeover.name })}` : ""));
   if (d.interview_na) lines.push(t("xc.d.interview_na", { reason: d.interview_na.reason }));
   const files: [string, string][] = [];
-  if (d.employee_returned?.photo) files.push([t("xc.f.photo"), d.employee_returned.photo]);
-  if (d.handover?.document) files.push([t("xc.f.kt_doc"), d.handover.document]);
+  if (d.employee_returned?.photo) files.push([t("xc.d.photo"), d.employee_returned.photo]);
+  if (d.handover?.document) files.push([t("xc.d.kt_doc"), d.handover.document]);
   if (!lines.length && !files.length && !d.handover?.notes) return null;
   return (
     <Stack spacing={0.5}>

@@ -300,3 +300,66 @@ Each link was opened by Playwright as an admin on the live app (`fix22-link-01..
 
 **Note:** the live backend reloaded the new hourly job straight away and sent **one automatic reminder to Kishore Gunda** (his requested last day is today; audit `exit_interview_reminder_sent`, 11:33). That is the intended behaviour, but it went out before this proof.
 The star rating in the proof reads 1/5 because the test clicked the first star; it is test data.
+
+## Feat -- actionable exit checklist + asset returns (2026-10-06)
+
+**Before:** the exit "Handover checklist" listed 5 items as "To do" that nobody could finish. The employee's page and HR's exit dialog only displayed them; Mark done / Skip lived on a hidden "Board" tab; "Revoke access" revoked nothing; "Exit interview and documents" never completed itself; the relieving / experience letter templates did not exist.
+
+**Now** (`app/employees/exit_checklist.py`, `/api/v1/ui/exit-checklist`, `components/exits/ExitChecklist.tsx`, migration `e27a9b0c1d2f`):
+- Every item has a status (To do / Requested / Waiting for confirmation / Done / Not applicable + reason / Blocked + reason), an owner, a due date (last working day minus the item's days) and a history. It opens to show the buttons for the person looking at it. Overdue items turn red.
+- **One line per assigned asset**, plus the ID and access cards:
+  - HR/Admin: **Request return** (email + to-do for the employee)
+  - employee: **I have returned it** (note / photo)
+  - owner: **Received** (Good / Damaged / Missing parts; the asset goes back In stock) or **Lost / not returned** (the amount is added to the Finance item)
+  - no assets at all -> "No assets assigned" (done)
+- **Revoke system and email access:** **Revoke now** or **On the last working day** turns off the app login and suspends the company mailbox through the email provider (TEST provider for now). Without an email-admin connection, IT gets a to-do and confirms by hand.
+- **Settle advances and reimbursements:** amounts to recover / pay (lost-asset recoveries are listed), or **Nothing pending**.
+- **Handover sign-off:** the manager's item. Notes, who takes over (pick or type), knowledge-transfer document.
+- **Exit interview and documents:** done by itself when both of these are true:
+  - the exit interview is in: submitted, recorded from a call, or "No exit interview" with a reason (not answered by the last day counts as not answered);
+  - both letters exist. They are made automatically once every other required item is done; default templates are created when missing.
+- **The exit completes by itself** the day after the last working day, once every required item is Done / Not applicable (open optional items are closed with it). On completion:
+  - employee Exited, app login off, mailbox suspended
+  - removed from interviewer pools
+  - letters emailed as PDFs to the personal email
+- HR can close earlier only after the last day, with a reason. The old "Close the exit" button runs the same completion.
+- Changing the last working day moves the due dates and a scheduled revoke, and remakes letters that weren't sent yet.
+- **Owners:**
+  - email when assigned, and when the employee says an item is returned
+  - a reminder the day before it is due (hourly job `exit_checklist`)
+  - email links `/exits?item=<id>` open the item
+  - non-HR owners see **My exit tasks**
+  - demo employees never email real staff
+- **Settings > Onboarding & employees > Exit checklist:** items, owner, owner email, due days, required, how each item completes, card names.
+
+**Proof** (proof stack: API :8010 with mail capture, web :5174, mailpit; demo employees Diya CTD-9002, Meera CTD-9004 and Rohan CTD-9005, manager Sneha CTD-9006; all test records removed afterwards and the demo employees restored):
+| Check | Result | Screenshot |
+|---|---|---|
+| Diya resigns, HR confirms the last day | 7 items: laptop (proof asset PROOF-XC-1), ID card, access card, handover (manager Sneha, due a day earlier -> Overdue), revoke, finance, exit docs; each with owner + due date + actions | fix-xc-01, fix-xc-02 |
+| Employee's own page | same list; "Your turn" only on her asset lines | fix-xc-03 |
+| HR: Request return (laptop) | status Requested; mailpit: "Please return: Laptop - Proof Dell Latitude 5440, tag PROOF-XC-1" to her (TEST) mailbox | fix-xc-04 |
+| Employee: I have returned it (access card, note + photo) | Waiting for confirmation; note + photo on the item, history entry | fix-xc-05..07 |
+| HR: Received Good (laptop) | DB: asset `in_stock`, allocation returned, condition good, received by proof HR | fix-xc-09 |
+| HR: Lost (ID card), 500 | item Done, amount 500; the Finance item shows "Recover 500 for Return ID card" | fix-xc-08 |
+| Manager Sneha opens the email link `/exits?item=<handover>` | the exit opens with the handover item expanded; she signs off with notes and Aarav taking over | fix-xc-11 |
+| Finance: recover 500 | Done | fix-xc-10 |
+| IT: Revoke now | DB: user `deactivated_at` set; `test_mailboxes` status `suspended`; the employee's next API call -> 401 | fix-xc-12, fix-xc-13 |
+| Exit docs | letters made automatically once the rest was done; interview recorded from a call -> Done by itself ("Exit interview recorded from a call; relieving and experience letters generated") | fix-xc-14 |
+| Last day is today | 7/7 done, "The exit completes by itself after the last working day" (not completed yet) | fix-xc-14 |
+| Next day (last day moved to 5 Oct, hourly job run) | job `{'reminders': 0, 'completed': 1}`; employee `exited`, exited_on 2026-10-05; mailpit: "Your relieving and experience letters from CTD Techs" with relieving-letter-CTD-9002.pdf + experience-letter-CTD-9002.pdf | fix-xc-15 |
+| Meera (no assets): HR-started exit, revoke "On the last working day", last day moved | "No assets assigned" line (done); revoke Requested for 7 Oct and moved with the last day; one job run: revoke -> letters -> completed | api |
+| Rohan: letters made, then the last day moved | letter ids replaced (f2f247b1 -> efd7fc02); emailed PDF reads "from 01 Jan 2026 to 05 Oct 2026" | api |
+| Settings page | items, owner, due days, required, how each completes | fix-xc-16 |
+
+**Found and fixed during the proof:**
+1. Letters failed with "'today' is undefined". `letters.publish` test-renders with the template's required variables only. The default templates now list their variables and use `company_name`.
+2. The exit completed **on** the last working day. It now completes the day after (the old Close button too).
+3. Letters made before the last day changed kept the old date. Unsent letters are now made again.
+4. A scheduled revoke kept its old date when the last day changed. It now follows the new day, and runs before the letters check, so completion happens in the same job run.
+5. The job counted reminders that weren't sent (demo owners). It now counts real sends only.
+6. The attached photo was labelled "Add a photo". It now reads "Photo".
+
+**Notes:**
+- The owner's live exit (Kishore Gunda, last day 11 Nov) already has the new items. Nothing was changed on it.
+- For demo employees, owner emails go only to @example.com addresses, so "assigned" / "returned" emails to IT/Admin/Finance don't appear in mailpit. For real exits they go to the item's owner, or to the HR admins when no person is named.
+- Revoking before the last day also stops the employee answering the exit interview (expected). "On the last working day" is the softer option.

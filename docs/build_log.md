@@ -2746,3 +2746,18 @@ NEXT: part-20.2b Test email provider settings page (UI), then 20.3 employee self
 - wip (feat: actionable exit checklist): the live DB was already migrated to e27a9b0c1d2f before the restart, so the committed code no longer matched it. Decision: finish this item BEFORE the rest of PART 20 (owner order was PART 20 -> exit interview -> checklist), because the old code reads clearance status "pending" which no longer exists. Backend committed: exit_checklist.py, /api/v1/ui/exit-checklist router, hourly job exit_checklist, 5 email templates, inbox query.
 
 NEXT: exit checklist frontend (clickable items with owner actions on HR exit dialog + employee exit page + my tasks), settings editor, proof; then 20.2b Test email provider settings page.
+
+- feat (owner): actionable exit checklist + asset returns -- done and proved (FIXES_20.md, fix-xc-01..16).
+  - Items are clickable, with owner actions.
+  - One line per asset: Request return -> I have returned it -> Received / Lost.
+  - IT revoke disables the app login + TEST mailbox.
+  - Letters are made automatically.
+  - The exit completes by itself the day after the last working day, and the letters are emailed as PDFs.
+  - 6 issues found and fixed during the proof (listed there).
+  - Decisions:
+    - exits complete the day AFTER the last working day;
+    - optional items never hold an exit up;
+    - an exit interview not answered by the last day counts as not answered;
+    - default relieving/experience templates are created the first time they are needed (kept for CTD Techs).
+
+NEXT: part-20.2b Test email provider settings page (UI), then 20.3 employee self-service + exit (rest), 20.4 interviewer, 20.5 settings, 20.6 end-to-end proof.
