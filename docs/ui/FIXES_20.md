@@ -504,3 +504,32 @@ Fixed while taking the proof: the table was too wide for the settings panel (Inb
 **Proof-script notes:**
 - The first scorecard attempt saved 1/1/1: forced clicks on MUI's hidden star radios land on the first star (same artifact as the exit-interview proof). The keyboard (focus the star, arrow keys) gives the real 4/4/3.
 - The "Move forward" click hit the info tip (its text contains the same words), so no decision was saved. Saving without a decision is allowed.
+
+## part-20.5 -- Settings > Onboarding & employees (2026-10-06)
+
+**Before:** these settings existed (with help text) but had no screen:
+- `employees.email.*`, `employees.on_onboarding_complete`, `employees.default_roles`, `employees.role_rules`
+- `employees.interviewer.*`, `employees.notice_days`, `employees.exit.approval_steps`
+
+They could only be changed through the raw settings API.
+
+**Now:** **Settings > Onboarding & employees > Employee rules** (`components/employees/EmployeeRulesSettings.tsx`), plain language, en/hi/ta:
+- **Company email:**
+  - domain, pattern ({first}.{last} etc.) and "If taken, try" fallbacks
+  - a live example ("Kishore Gunda -> kishore.gunda@ctdtechs.com")
+- **When onboarding completes:** HR approves first (recommended) / create straight away.
+- **App roles for new employees:** Employee always; tick Interviewer / Manager / Hiring Manager for everyone; extra roles by rule ("If the Designation contains … give the role …").
+- **Interviewers:** auto rule (designation / department contains …) + scorecard reminder hours (both read by 20.4).
+- **Notice period (days) by employment type** (full time, part time, contract, intern, consultant, anyone else).
+- **Who approves a resignation:** the manager first, then HR / HR only (read by 20.3).
+
+**Already on their own pages in the same section:** Employee ID (20.1), Joining details form (20.0-C), Exit interview, Exit checklist, Documents & letters.
+
+**Proof** (live app, temporary admin, removed afterwards):
+- page shown with the current values: fix-er-01
+- **Save** with nothing changed -> "Saved." The values stored in `setting_values` match the defaults the app was already using, so behaviour is unchanged:
+  - default_roles `["Employee"]`; domain `""` (= the admins' domain, ctdtechs.com)
+  - fallbacks `["{first}.{l}", "{first}.{last}{n}"]`, pattern `{first}.{last}`
+  - approval_steps `["manager", "hr"]`, auto_rules `[]`, reminder 24
+  - notice days `{default 30, full_time 60, part_time 30, contract 15, intern 7, consultant 15}`
+  - on_onboarding_complete `approve`, role_rules `[]`

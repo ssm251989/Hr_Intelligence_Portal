@@ -25,6 +25,7 @@ import JoiningFormSettingsPage from "../components/onboarding/JoiningFormSetting
 import EmployeeIdSettings from "../components/employees/EmployeeIdSettings";
 import ExitInterviewSettingsPage from "../components/exits/ExitInterviewSettings";
 import ExitChecklistSettingsPage from "../components/exits/ExitChecklistSettings";
+import EmployeeRulesSettings from "../components/employees/EmployeeRulesSettings";
 import UsersPage from "../components/people/UsersPage";
 import GenAISettingsPage from "../components/genai/GenAISettingsPage";
 import PrivacyPanel from "../components/PrivacyPanel";
@@ -159,6 +160,10 @@ export const CATEGORIES: SettingsCategory[] = [
       { id: "plans", emoji: "clipboard", module: "onboarding", keywords: "onboarding checklist tasks", visible: ADMIN, render: () => <OnboardingPanel /> },
       // Part 20.1: Employee ID format (prefix + running number + padding)
       { id: "employee-id", emoji: "id_card", keywords: "employee id number code format prefix padding", visible: ADMIN, render: () => <EmployeeIdSettings /> },
+      // Part 20.5: company email, onboarding complete, roles, interviewers, notice periods, resignation approval
+      { id: "employee-rules", emoji: "gear", keywords: "company email pattern domain onboarding complete approve automatic default roles role rules interviewer auto rule scorecard reminder notice period resignation approval manager hr",
+        prefixes: ["employees.email", "employees.on_onboarding_complete", "employees.default_roles", "employees.role_rules", "employees.interviewer", "employees.notice_days", "employees.exit.approval_steps"],
+        visible: ADMIN, render: () => <EmployeeRulesSettings /> },
       // change 2026-10-05: required / optional / hidden for every joining-details field and joining document
       { id: "joining-form", emoji: "memo", module: "onboarding", keywords: "joining details form fields required optional hidden pan aadhaar bank ifsc help text format check documents",
         prefixes: ["onboarding.joining_form"], visible: ADMIN, render: () => <JoiningFormSettingsPage /> },

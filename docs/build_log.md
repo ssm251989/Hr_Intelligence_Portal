@@ -2790,3 +2790,6 @@ NEXT: part-20.4 employee as interviewer (Make interviewer + skills/pools, auto-r
     - the link to-dos for kg/si/jr/zzverify are real and kept for the owner.
 
 NEXT: part-20.5 Settings > Onboarding & employees (one place: email pattern + domain, when onboarding completes, default roles + role rules, interviewer auto rule + scorecard reminder hours, notice period by employment type, exit approval steps; Employee ID, exit checklist, letter templates already there) with plain help text, then 20.6 end-to-end proof.
+- part-20.5: Settings > Onboarding & employees > Employee rules (company email, onboarding complete, roles + rules, interviewer auto rule + reminder hours, notice days, resignation approval). Proof in FIXES_20.md (fix-er-01). Decision: one page for the small rules; the bigger editors (Employee ID, joining form, exit interview, exit checklist, letters) stay as their own pages next to it.
+
+NEXT: part-20.6 end-to-end proof (new test candidate -> offer signed -> joining details -> onboarding complete -> approval card -> employee + TEST mailbox + invite -> sets password, logs in -> own data -> made interviewer -> availability, interview, scorecard -> resigns -> manager + HR approve -> laptop returned -> exit completed -> login disabled), screenshots, plain-words summary.
