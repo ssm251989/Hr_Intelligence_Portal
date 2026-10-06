@@ -12,10 +12,21 @@ import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
 import { Link as RouterLink } from "react-router-dom";
 
-import { ApiError, schedulingApi } from "../api/client";
+import { ApiError, candidatesApi, extractErrorMessage, schedulingApi } from "../api/client";
 import { interviewsExtraApi, type MyInterviewRow } from "../api/interviewsExtra";
 import { useAuth } from "../auth/AuthContext";
-import { ROLE_MATRIX } from "../auth/roles";
+import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
+import InterviewWeekCalendar from "../components/interviews/InterviewWeekCalendar";
+import { startOfWeek } from "../components/interviews/weekDates";
+import { openBlob } from "../api/selfServiceApi";
+import Alert from "@mui/material/Alert";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogTitle from "@mui/material/DialogTitle";
+import TextField from "@mui/material/TextField";
+import ToggleButton from "@mui/material/ToggleButton";
+import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import { InterviewStatusChip } from "../components/InterviewChips";
 import RefreshButton from "../components/RefreshButton";
 import ScorecardForm from "../components/interviews/ScorecardForm";
@@ -39,8 +50,14 @@ type TabKey = "upcoming" | "feedback" | "done";
 export default function MyInterviewsPage() {
   const f = useTheme().palette.fresh;
   const { t, locale } = useI18n();
-  const { user, can } = useAuth();
-  const canWrite = can(ROLE_MATRIX.interviewsWrite);
+  const { user } = useAuth();
+  const me = useMeBootstrap();
+  // Part 20.4: every row here is the signed-in person's own interview -> they can always give feedback (the server checks it)
+  const canWrite = true;
+  const staff = me.can("recruitment.candidate.view");
+  const [view, setView] = useState<"list" | "calendar">("list");
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  const [answer, setAnswer] = useState<{ row: MyInterviewRow; kind: "declined" | "reschedule" } | null>(null);
   const reduced = useReducedMotion();
   const [rows, setRows] = useState<MyInterviewRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -92,7 +109,7 @@ export default function MyInterviewsPage() {
         title={t("interviews.my.title")}
         purpose={t("interviews.my.purpose")}
         tourKey="interviews"
-        extra={<RefreshButton loading={loading} onRefresh={load} />}
+        extra={<Stack direction="row" spacing={1}><Button component={RouterLink} to="/interviews/availability" startIcon={<Emoji name="calendar" size={16} />}>{t("iv20.my_availability")}</Button><RefreshButton loading={loading} onRefresh={load} /></Stack>}
         primary={
           nextJoin ? (
             <Button variant="contained" component="a" href={nextJoin} target="_blank" rel="noopener noreferrer" startIcon={<Emoji name="link" size={18} />}>
@@ -114,6 +131,19 @@ export default function MyInterviewsPage() {
         </Grid>
       </Grid>
 
+      <ToggleButtonGroup exclusive size="small" value={view} onChange={(_e, v) => v && setView(v)} sx={{ mb: 1.5 }} aria-label={t("iv20.view")}>
+        <ToggleButton value="list">{t("iv20.view_list")}</ToggleButton>
+        <ToggleButton value="calendar">{t("iv20.view_calendar")}</ToggleButton>
+      </ToggleButtonGroup>
+      {view === "calendar" && (
+        <Box sx={{ mb: 2 }} data-testid="my-interviews-calendar">
+          <InterviewWeekCalendar weekStart={weekStart} onWeekChange={setWeekStart} rows={rows.map((r) => r.interview)} loading={loading}
+            onOpen={(row) => {
+              const r = rows.find((x) => x.interview.interview_id === row.interview_id);
+              if (r) { setView("list"); setTab(groups.upcoming.includes(r) ? "upcoming" : groups.feedback.includes(r) ? "feedback" : "done"); }
+            }} />
+        </Box>
+      )}
       <Tabs value={tab} onChange={(_e, v: TabKey) => setTab(v)} sx={{ mb: 2 }} aria-label={t("interviews.my.tabs")}>
         <Tab value="upcoming" label={t("interviews.my.tab_upcoming", { count: groups.upcoming.length })} />
         <Tab value="feedback" label={t("interviews.my.tab_feedback", { count: groups.feedback.length })} />
@@ -133,11 +163,11 @@ export default function MyInterviewsPage() {
           <EmptyState
             illustration={tab === "feedback" ? "done" : "calendar"}
             title={t(`interviews.my.empty_${tab}`)}
-            action={
+            action={staff ? (
               <Button variant="outlined" component={RouterLink} to="/interviews/list">
                 {t("interviews.my.see_all")}
               </Button>
-            }
+            ) : undefined}
           />
         </Card>
       ) : (
@@ -169,6 +199,10 @@ export default function MyInterviewsPage() {
                     <StatusChip tone="muted" emoji="alarm_clock" label={iv.scheduled_at ? fmt.format(new Date(iv.scheduled_at)) : t("interviews.no_time")} />
                     <InterviewStatusChip status={iv.status} />
                     {r.feedback_submitted && <StatusChip tone="ok" emoji="check" label={t("interviews.my.feedback_sent")} />}
+                    {r.interviewer_response && (
+                      <StatusChip tone={r.interviewer_response.kind === "declined" ? "coral" : "sun"} emoji="hourglass"
+                        label={t(r.interviewer_response.kind === "declined" ? "iv20.declined_chip" : "iv20.proposed_chip", { when: r.interviewer_response.proposed ?? "" })} />
+                    )}
                   </Stack>
                 </Stack>
 
@@ -189,9 +223,21 @@ export default function MyInterviewsPage() {
                       {t("interviews.join")}
                     </Button>
                   )}
-                  <Button variant="outlined" component={RouterLink} to={`/candidates/${iv.application_id}`}>
-                    {t("interviews.action.view")}
-                  </Button>
+                  {staff ? (
+                    <Button variant="outlined" component={RouterLink} to={`/candidates/${iv.application_id}`}>
+                      {t("interviews.action.view")}
+                    </Button>
+                  ) : r.has_resume && r.candidate_id ? (
+                    <Button variant="outlined" startIcon={<Emoji name="page" size={16} />} onClick={() => openBlob(candidatesApi.fetchResumeBlob(r.candidate_id!))}>
+                      {t("iv20.resume")}
+                    </Button>
+                  ) : null}
+                  {tab === "upcoming" && !r.interviewer_response && (
+                    <>
+                      <Button color="warning" onClick={() => setAnswer({ row: r, kind: "reschedule" })}>{t("iv20.propose")}</Button>
+                      <Button color="error" onClick={() => setAnswer({ row: r, kind: "declined" })}>{t("iv20.decline")}</Button>
+                    </>
+                  )}
                   {canWrite && (
                     <Button variant={tab === "feedback" ? "contained" : "text"} onClick={() => setOpenId(isOpen ? null : iv.interview_id)} aria-expanded={isOpen} startIcon={<Emoji name="memo" size={16} />}>
                       {isOpen ? t("interviews.my.hide_scorecard") : t("interviews.action.scorecard")}
@@ -218,6 +264,49 @@ export default function MyInterviewsPage() {
           })}
         </Stack>
       )}
+      {answer && <AnswerDialog row={answer.row} kind={answer.kind} onClose={() => setAnswer(null)} onDone={() => { setAnswer(null); load(); }} />}
     </Box>
+  );
+}
+
+// Part 20.4: "Can't make it" (reason) / "Ask for another time" -> an HR to-do; the interview stays booked until HR changes it.
+function AnswerDialog({ row, kind, onClose, onDone }: { row: MyInterviewRow; kind: "declined" | "reschedule"; onClose: () => void; onDone: () => void }) {
+  const { t } = useI18n();
+  const [reason, setReason] = useState("");
+  const [when, setWhen] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const send = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      if (kind === "declined") await interviewsExtraApi.decline(row.interview.interview_id, reason);
+      else await interviewsExtraApi.proposeTime(row.interview.interview_id, when, reason);
+      onDone();
+    } catch (e) {
+      setError(extractErrorMessage(e, ""));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog open onClose={onClose} fullWidth maxWidth="sm" aria-labelledby="iv20-answer-title">
+      <DialogTitle id="iv20-answer-title">{t(kind === "declined" ? "iv20.decline_title" : "iv20.propose_title", { name: row.interview.candidate_name ?? "" })}</DialogTitle>
+      <DialogContent dividers>
+        <Stack spacing={1.5}>
+          <Typography sx={{ fontSize: 13, color: "text.secondary" }}>{t("iv20.answer_hint")}</Typography>
+          {kind === "reschedule" && <TextField label={t("iv20.when")} placeholder={t("iv20.when_ph")} value={when} onChange={(e) => setWhen(e.target.value)} required />}
+          <TextField label={t(kind === "declined" ? "iv20.reason" : "iv20.reason_optional")} value={reason} onChange={(e) => setReason(e.target.value)}
+            multiline minRows={2} required={kind === "declined"} />
+          {error && <Alert severity="error">{error}</Alert>}
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>{t("action.cancel")}</Button>
+        <Button variant="contained" color={kind === "declined" ? "error" : "warning"} disabled={busy || (kind === "declined" ? reason.trim().length < 3 : !when.trim())} onClick={send}>
+          {t("iv20.send")}
+        </Button>
+      </DialogActions>
+    </Dialog>
   );
 }

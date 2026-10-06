@@ -15,6 +15,11 @@ export interface MyInterviewRow {
   composite_score?: number | null;
   match_score?: number | null;
   feedback_submitted: boolean;
+  // Part 20.4
+  candidate_id?: string | null;
+  application_id?: string | null;
+  has_resume?: boolean;
+  interviewer_response?: { kind: "declined" | "reschedule"; reason: string | null; proposed: string | null; at: string; by: string } | null;
 }
 
 export interface PanelEntry {
@@ -64,6 +69,10 @@ export interface AssignResult {
 export const interviewsExtraApi = {
   mine: (includeDone = true) => http.get<MyInterviewRow[]>(`/api/v1/ui/interviews/mine?include_done=${includeDone}`),
   panel: (interviewId: UUID) => http.get<PanelFeedback>(`/api/v1/ui/interviews/${interviewId}/panel`),
+  // Part 20.4: the interviewer can't make a booked interview
+  decline: (interviewId: UUID, reason: string) => http.post<{ ok: boolean }>(`/api/v1/ui/interviews/${interviewId}/decline`, { reason }),
+  proposeTime: (interviewId: UUID, proposed: string, reason?: string) =>
+    http.post<{ ok: boolean }>(`/api/v1/ui/interviews/${interviewId}/propose-time`, { proposed, reason }),
 };
 
 export const inboxExtraApi = {
