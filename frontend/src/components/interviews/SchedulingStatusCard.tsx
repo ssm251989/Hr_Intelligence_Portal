@@ -101,7 +101,7 @@ export default function SchedulingStatusCard({ applicationId, candidateName, can
       <Stack direction="row" spacing={1.25} alignItems="flex-start">
         <Emoji name={EMOJI[st.state]} size={22} />
         <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography sx={{ fontWeight: 800, fontSize: 14 }}>{t(`sched.title.${st.state}`)}</Typography>
+          <Typography sx={{ fontWeight: 800, fontSize: 14 }}>{t(`sched.title.${st.state}`, { time: when(st.undo_until ?? null) })}</Typography>
           <Typography sx={{ fontSize: 13.5, color: f.muted, mt: 0.25 }}>{line}</Typography>
           {booked && <Typography sx={{ fontSize: 13, color: f.muted, mt: 0.25 }}>{booked}</Typography>}
           {linkLine && <Typography sx={{ fontSize: 12.5, color: f.muted, mt: 0.25 }}>{linkLine}</Typography>}

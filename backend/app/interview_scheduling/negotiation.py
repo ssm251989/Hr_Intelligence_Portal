@@ -821,7 +821,19 @@ def retry_negotiation(db: Session, application: Application, actor_user: User) -
         )
     log_action(db, "application", application.id, _RETRY_TRIGGERED_ACTION, actor_user.email, {})
     clear_manual_scheduling_flag(db, application, actor_user.email)
-    outcome, reason = attempt_auto_negotiate_interview_slots(db, application, actor_user)
+    # Part 21.3: the SAME function as the auto-shortlist release (automation.start) -- one path for auto and manual,
+    # with the same "never silent" problem to-do / mailbox retries. A retry inside the undo window ends the window
+    # (logged as released), so the background release can't start a second round later.
+    from app.interview_scheduling import automation
+    from app.platform.tenancy.context import require_current_tenant
+    from app.recruitment.scoring.autoshortlist import RELEASED
+
+    if automation.undo_window(db, application) is not None:
+        log_action(db, "application", application.id, RELEASED, actor_user.email[:50], {"trigger": "retry scheduling (undo window ended early)"})
+        db.commit()
+    result = automation.start(db, require_current_tenant(), application, actor_user, trigger="retry", force=True)
+    outcome = "started" if result.get("outcome") == "started" else None
+    reason = result.get("reason")
     if reason and reason.startswith(_TRACKER_LOCKED_REASON_MARKER):
         raise TrackerLockedNegotiationError(reason)
     return outcome, len(stale), reason

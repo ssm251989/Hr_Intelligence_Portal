@@ -1,7 +1,7 @@
 // Fix 2026-10-04: interview scheduling after a shortlist -- plain-words status, problems, buttons.
 export const en = {
-  "sched.title.waiting_undo": "Shortlisted - interview times go out soon",
-  "sched.waiting_undo": "Waiting: the undo window ends at {time}, then interview times go out automatically.",
+  "sched.title.waiting_undo": "Shortlisted - interview emails go out automatically at {time}",
+  "sched.waiting_undo": "The undo window (working hours only) ends at {time}; then the interviewer and the candidate are emailed automatically. To start now, use Send interview times now.",
   "sched.title.not_scheduled": "Interview not scheduled",
   "sched.not_scheduled_line": "Interview not scheduled for {name} - {reason}",
   "sched.title.mailbox_retry": "Interview email not sent",
@@ -37,7 +37,7 @@ export const en = {
 };
 
 export const hi: Partial<typeof en> = {
-  "sched.title.waiting_undo": "शॉर्टलिस्ट - इंटरव्यू के समय जल्द भेजे जाएँगे",
+  "sched.title.waiting_undo": "शॉर्टलिस्ट - इंटरव्यू ईमेल {time} पर अपने-आप जाएँगे",
   "sched.waiting_undo": "इंतज़ार: वापस लेने का समय {time} पर खत्म होगा, फिर इंटरव्यू के समय अपने-आप भेजे जाएँगे।",
   "sched.title.not_scheduled": "इंटरव्यू तय नहीं हुआ",
   "sched.not_scheduled_line": "{name} का इंटरव्यू तय नहीं हुआ - {reason}",
@@ -74,7 +74,7 @@ export const hi: Partial<typeof en> = {
 };
 
 export const ta: Partial<typeof en> = {
-  "sched.title.waiting_undo": "குறுகிய பட்டியலில் - நேர்காணல் நேரங்கள் விரைவில் அனுப்பப்படும்",
+  "sched.title.waiting_undo": "குறுகிய பட்டியலில் - நேர்காணல் மின்னஞ்சல்கள் {time}-க்கு தானாக அனுப்பப்படும்",
   "sched.waiting_undo": "காத்திருப்பு: திரும்பப் பெறும் நேரம் {time}-க்கு முடியும், பிறகு நேர்காணல் நேரங்கள் தானாக அனுப்பப்படும்.",
   "sched.title.not_scheduled": "நேர்காணல் திட்டமிடப்படவில்லை",
   "sched.not_scheduled_line": "{name}-க்கு நேர்காணல் திட்டமிடப்படவில்லை - {reason}",

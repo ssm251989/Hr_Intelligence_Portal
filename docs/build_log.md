@@ -2804,3 +2804,7 @@ NEXT: RESUME order -> docs/PART18_OWNER_CHANGES.txt (check which 18.x items are 
 - Spec copied from "Claude outputs/" to docs/PART21_OWNER_CHANGES.txt; RESUME.txt order: PART 21 after PART 20 (owner instruction).
 
 NEXT: part-21.1 closed jobs to the Recycle bin after N days (setting, daily job, Keep this job, Jobs tab in the bin).
+
+- part-21.3 (done before 21.1/21.2 because the investigation was already open; the order of the rest is unchanged): cause = 4 working-hour undo window releases the next morning + owner retried first; Retry now uses the same automation.start(); profile says when emails go out. Proof: 2 auto-shortlisted candidates -> interviewer + candidate emails with no HR click (FIXES_21.md).
+
+NEXT: part-21.1 closed jobs to the Recycle bin after N days.
