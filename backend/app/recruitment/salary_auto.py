@@ -46,13 +46,20 @@ def _num(v) -> Optional[float]:
         return None
 
 
-def missing_fields(candidate: Candidate) -> list[str]:
+def missing_fields(candidate: Candidate, db: Optional[Session] = None, tenant=None) -> list[str]:
+    """Figures still needed. Notice period counts only while the salary form asks for it as Required
+    (Settings > Onboarding & employees > Joining details form, part 20.0-C)."""
     need = []
     if candidate.expected_ctc is None:
         need.append("expected_ctc")
     if candidate.current_ctc is None:
         need.append("current_ctc")
-    if candidate.notice_period_days is None:
+    notice_required = True
+    if db is not None and tenant is not None:
+        from app.onboarding.joining_form import salary_show
+
+        notice_required = salary_show(db, tenant)["notice_period_days"] == "required"
+    if candidate.notice_period_days is None and notice_required:
         need.append("notice_period_days")
     return need
 
@@ -86,7 +93,7 @@ def check(db: Session, tenant, application: Application, *, job: Optional[JobRol
     lo, hi = _num(job.salary_band_min), _num(job.salary_band_max)
     margin = float(_setting(db, tenant, "recruitment.salary.approval_margin_pct") or 0)
     result: dict = {"expected": expected, "current": _num(candidate.current_ctc), "notice_days": candidate.notice_period_days,
-                    "band_min": lo, "band_max": hi, "margin_pct": margin, "missing": missing_fields(candidate),
+                    "band_min": lo, "band_max": hi, "margin_pct": margin, "missing": missing_fields(candidate, db, tenant),
                     "checked_at": datetime.now(timezone.utc).isoformat()}
     # Part 18.13: auto-approve only when ALL pass -- hike <= X%, inside the band, budget left.
     hike_limit = float(_setting(db, tenant, "recruitment.salary.auto_approve_hike_pct") or 20)
@@ -262,7 +269,7 @@ def after_shortlist(db: Session, tenant, application: Application, actor: str = 
     # Part 18.12: the form goes out at the moment chosen in Settings (default: interview cleared)
     if (_setting(db, tenant, "recruitment.salary.form_trigger") or "interview_cleared") != "shortlisted":
         return None
-    if candidate is not None and missing_fields(candidate) and _setting(db, tenant, "recruitment.salary.ask_after_shortlist"):
+    if candidate is not None and missing_fields(candidate, db, tenant) and _setting(db, tenant, "recruitment.salary.ask_after_shortlist"):
         return send_form(db, tenant, application, actor=actor)
     return None
 

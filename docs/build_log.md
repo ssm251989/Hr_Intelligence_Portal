@@ -2724,3 +2724,6 @@ NEXT: part-20.0B configuration health links + policies (check against spec, FIXE
 - part-20.0B: already built 2026-10-05 (90eae0b): policies page, health link, "Ignore this", link audit, AI max_tokens fix. Checked against the spec; nothing open. Table + cause in FIXES_20.md.
 
 NEXT: part-20.0C joining details fields (add the hiring salary form to the same settings).
+- part-20.0C: joining details already built 2026-10-05 (3613c9c). Added the hiring salary form to the same versioned settings (Required/Optional/Hidden per question; current/expected CTC locked Required; defaults = old behaviour); `missing_fields` follows it. Decision: salary rules live in `onboarding.joining_form` ("salary" key) so one page, one history.
+
+NEXT: part-20.0D asset type dropdown (investigate cause first).

@@ -166,7 +166,7 @@ export const onboardingExtraApi = {
   remindDetails: (caseId: UUID) => http.post<{ sent: boolean; status: string; missing: string[] }>(`/api/v1/ui/onboarding/cases/${caseId}/joining-details/remind`, {}),
   lockDetails: (caseId: UUID, locked: boolean) => http.post<JoiningDetailsHr>(`/api/v1/ui/onboarding/cases/${caseId}/joining-details/lock`, { locked }),
   joiningForm: () => http.get<JoiningFormSettings>("/api/v1/ui/onboarding/joining-form"),
-  saveJoiningForm: (body: { fields: Record<string, { show: FieldShow; help: Record<string, string>; check: boolean }>; documents: Record<string, FieldShow> }) =>
+  saveJoiningForm: (body: { fields: Record<string, { show: FieldShow; help: Record<string, string>; check: boolean }>; documents: Record<string, FieldShow>; salary: Record<string, FieldShow> }) =>
     http.put<JoiningFormSettings>("/api/v1/ui/onboarding/joining-form", body),
   revertJoiningForm: (version: number) => http.post<JoiningFormSettings>("/api/v1/ui/onboarding/joining-form/revert", { version }),
 
@@ -230,6 +230,8 @@ export interface JoiningFormSettings {
   sections: { key: string; label: string }[];
   fields: { key: string; label: string; kind: string; section: string; checkable: boolean; show: FieldShow; help: Record<"en" | "hi" | "ta", string>; check: boolean }[];
   documents: { code: string; label: string; default: FieldShow; show: FieldShow }[];
+  /** Part 20.0-C: the hiring salary form; current / expected CTC are locked to Required */
+  salary: { key: string; label: string; locked: boolean; default: FieldShow; show: FieldShow }[];
   history: { version: number; updated_by: string | null; updated_at: string | null; changes: string[] }[];
 }
 export interface JoiningDoc { code: string; label: string; required: boolean; status: "missing" | "uploaded" | "verified" | "rejected" | "received_earlier"; rejection_reason: string | null; types?: string[] | null; max_mb?: number | null }

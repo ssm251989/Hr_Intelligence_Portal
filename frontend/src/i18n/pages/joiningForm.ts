@@ -46,6 +46,16 @@ export const en = {
   "jform.hr.unlocked_msg": "Unlocked. The joiner can edit their details again.",
   "jform.hr.last_reminder": "Last reminder: {when}",
   "jform.hr.not_filled": "Not filled yet",
+  "jform.salary.title": "Hiring: salary & joining details form",
+  "jform.salary.intro": "The form candidates fill in during hiring (salary, notice period, joining date). Current and expected CTC are always required - the salary check is calculated from them.",
+  "jform.salary.locked": "Always required",
+  "jform.salary.f.current_ctc": "Current CTC (yearly)",
+  "jform.salary.f.expected_ctc": "Expected CTC (yearly)",
+  "jform.salary.f.notice_period_days": "Notice period (days)",
+  "jform.salary.f.willing_to_relocate": "Willing to relocate",
+  "jform.salary.f.earliest_joining_date": "Earliest joining date",
+  "jform.salary.f.offers": "Other offers in hand",
+  "jform.salary.f.payslip": "Latest payslip",
 };
 
 export const hi: Partial<typeof en> = {
@@ -94,6 +104,16 @@ export const hi: Partial<typeof en> = {
   "jform.hr.unlocked_msg": "अनलॉक हो गया। जॉइनर फिर से अपने विवरण बदल सकते हैं।",
   "jform.hr.last_reminder": "पिछला रिमाइंडर: {when}",
   "jform.hr.not_filled": "अभी नहीं भरा",
+  "jform.salary.title": "भर्ती: वेतन और जॉइनिंग विवरण फ़ॉर्म",
+  "jform.salary.intro": "भर्ती के दौरान उम्मीदवार यह फ़ॉर्म भरते हैं (वेतन, नोटिस अवधि, जॉइनिंग तारीख)। मौजूदा और अपेक्षित CTC हमेशा ज़रूरी हैं - वेतन जाँच इन्हीं से होती है।",
+  "jform.salary.locked": "हमेशा ज़रूरी",
+  "jform.salary.f.current_ctc": "मौजूदा CTC (सालाना)",
+  "jform.salary.f.expected_ctc": "अपेक्षित CTC (सालाना)",
+  "jform.salary.f.notice_period_days": "नोटिस अवधि (दिन)",
+  "jform.salary.f.willing_to_relocate": "स्थान बदलने को तैयार",
+  "jform.salary.f.earliest_joining_date": "सबसे जल्दी जॉइनिंग तारीख",
+  "jform.salary.f.offers": "हाथ में दूसरे ऑफ़र",
+  "jform.salary.f.payslip": "हाल की सैलरी स्लिप",
 };
 
 export const ta: Partial<typeof en> = {
@@ -142,4 +162,14 @@ export const ta: Partial<typeof en> = {
   "jform.hr.unlocked_msg": "திறக்கப்பட்டது. சேர்பவர் மீண்டும் விவரங்களைத் திருத்தலாம்.",
   "jform.hr.last_reminder": "கடைசி நினைவூட்டல்: {when}",
   "jform.hr.not_filled": "இன்னும் நிரப்பவில்லை",
+  "jform.salary.title": "பணியமர்த்தல்: சம்பளம் & சேர்க்கை விவரப் படிவம்",
+  "jform.salary.intro": "பணியமர்த்தலின் போது விண்ணப்பதாரர்கள் நிரப்பும் படிவம் (சம்பளம், அறிவிப்புக் காலம், சேரும் தேதி). தற்போதைய மற்றும் எதிர்பார்க்கும் CTC எப்போதும் கட்டாயம் - சம்பளச் சரிபார்ப்பு அவற்றிலிருந்தே கணக்கிடப்படுகிறது.",
+  "jform.salary.locked": "எப்போதும் கட்டாயம்",
+  "jform.salary.f.current_ctc": "தற்போதைய CTC (ஆண்டு)",
+  "jform.salary.f.expected_ctc": "எதிர்பார்க்கும் CTC (ஆண்டு)",
+  "jform.salary.f.notice_period_days": "அறிவிப்புக் காலம் (நாட்கள்)",
+  "jform.salary.f.willing_to_relocate": "இடம் மாறத் தயார்",
+  "jform.salary.f.earliest_joining_date": "முன்கூட்டிய சேரும் தேதி",
+  "jform.salary.f.offers": "கையில் உள்ள பிற சலுகைகள்",
+  "jform.salary.f.payslip": "சமீபத்திய சம்பளச் சீட்டு",
 };

@@ -21,6 +21,14 @@ LANGS = ("en", "hi", "ta")
 # kinds whose values have a format check (welcome_steps._check)
 CHECKABLE = ("pan", "ifsc", "aadhaar", "phone", "pin", "email", "bank_account", "date")
 SECTIONS = (("personal", "Personal details"), ("address", "Address"), ("emergency", "Emergency contact"), ("bank_id", "Bank and ID"))
+# Part 20.0-C: the hiring "Salary & joining details" form (app/experience/ui_salary_router.py). Current and
+# expected CTC are always required (the salary approval is calculated from them) -- `locked`.
+SALARY_FIELDS = (
+    ("current_ctc", "Current CTC (yearly)", True), ("expected_ctc", "Expected CTC (yearly)", True),
+    ("notice_period_days", "Notice period (days)", False), ("willing_to_relocate", "Willing to relocate", False),
+    ("earliest_joining_date", "Earliest joining date", False), ("offers", "Other offers in hand", False),
+    ("payslip", "Latest payslip", False),
+)
 
 
 class FormSettingsError(ValueError):
@@ -34,7 +42,7 @@ def _fields():
 
 
 def empty() -> dict:
-    return {"fields": {}, "documents": {}}
+    return {"fields": {}, "documents": {}, "salary": {}}
 
 
 def _clean(value: Optional[dict]) -> dict:
@@ -50,7 +58,9 @@ def _clean(value: Optional[dict]) -> dict:
                        "help": {lang: str(help_text.get(lang) or "").strip()[:300] for lang in LANGS if str(help_text.get(lang) or "").strip()},
                        "check": rule.get("check") is not False}
     documents = {str(c)[:60]: s for c, s in (value.get("documents") or {}).items() if s in SHOWS}
-    return {"fields": fields, "documents": documents}
+    open_salary = {k for k, _l, locked in SALARY_FIELDS if not locked}
+    salary = {k: s for k, s in (value.get("salary") or {}).items() if k in open_salary and s in SHOWS}
+    return {"fields": fields, "documents": documents, "salary": salary}
 
 
 def _row(db: Session, tenant):
@@ -88,13 +98,33 @@ def document_show(rules: dict, code: str, default_required: bool) -> str:
     return (rules.get("documents") or {}).get(code) or ("required" if default_required else "optional")
 
 
+def salary_defaults(db: Session, tenant) -> dict:
+    """Before 20.0-C the salary form had two on/off settings; they still decide the defaults."""
+    from app.platform.settings.resolver import SettingContext, SettingsService
+
+    s, ctx = SettingsService(db), SettingContext(tenant=tenant)
+    return {"current_ctc": "required", "expected_ctc": "required", "notice_period_days": "required", "willing_to_relocate": "optional",
+            "earliest_joining_date": "optional", "offers": "optional" if s.get("recruitment.salary.ask_offers", ctx) else "hidden",
+            "payslip": "optional" if s.get("recruitment.salary.ask_payslip", ctx) else "hidden"}
+
+
+def salary_show(db: Session, tenant, rules: Optional[dict] = None) -> dict:
+    """{field: required|optional|hidden} for the hiring salary form."""
+    rules = rules or current(db, tenant)
+    out = salary_defaults(db, tenant)
+    for key, _label, locked in SALARY_FIELDS:
+        if not locked and (rules.get("salary") or {}).get(key):
+            out[key] = rules["salary"][key]
+    return out
+
+
 def save(db: Session, tenant, value: dict, *, actor: str) -> dict:
     from app.audit.service import log_action
     from app.platform.settings.resolver import SettingsService
 
     before = current(db, tenant)
     clean = _clean(value)
-    if clean["fields"] == before["fields"] and clean["documents"] == before["documents"]:
+    if clean["fields"] == before["fields"] and clean["documents"] == before["documents"] and clean["salary"] == before["salary"]:
         return admin_view(db, tenant)
     row = SettingsService(db).set(SETTING, clean, scope_type="tenant", scope_id=None, actor=actor, tenant=tenant)
     log_action(db, "setting", None, "joining_form_saved", actor[:50], {"version": row.version, "changes": _diff(before, clean)})
@@ -105,7 +135,7 @@ def revert(db: Session, tenant, version: int, *, actor: str) -> dict:
     old = at_version(db, tenant, version)
     if old["version"] != version:
         raise FormSettingsError("That version doesn't exist.")
-    return save(db, tenant, {"fields": old["fields"], "documents": old["documents"]}, actor=actor)
+    return save(db, tenant, {"fields": old["fields"], "documents": old["documents"], "salary": old.get("salary", {})}, actor=actor)
 
 
 def _diff(a: dict, b: dict) -> list[str]:
@@ -119,6 +149,9 @@ def _diff(a: dict, b: dict) -> list[str]:
             out.append(f"{labels[key]}: format check {'on' if rb['check'] else 'off'}")
         if ra["help"] != rb["help"]:
             out.append(f"{labels[key]}: help text")
+    for key, label, _locked in SALARY_FIELDS:
+        if (a.get("salary") or {}).get(key) != (b.get("salary") or {}).get(key):
+            out.append(f"Salary form - {label}: {(a.get('salary') or {}).get(key, 'default')} -> {(b.get('salary') or {}).get(key, 'default')}")
     for code in sorted(set(a.get("documents", {})) | set(b.get("documents", {}))):
         if a.get("documents", {}).get(code) != b.get("documents", {}).get(code):
             out.append(f"Document {code}: {a.get('documents', {}).get(code, 'default')} -> {b.get('documents', {}).get(code, 'default')}")
@@ -149,5 +182,7 @@ def admin_view(db: Session, tenant) -> dict:
                        "show": r["show"], "help": {lang: r["help"].get(lang, "") for lang in LANGS}, "check": r["check"]})
     documents = [{"code": d["code"], "label": d["label"], "default": "required" if d["required"] else "optional",
                   "show": document_show(rules, d["code"], d["required"])} for d in base_document_list(db, tenant)]
+    defaults, shown = salary_defaults(db, tenant), salary_show(db, tenant, rules)
+    salary = [{"key": k, "label": label, "locked": locked, "default": defaults[k], "show": shown[k]} for k, label, locked in SALARY_FIELDS]
     return {"version": rules["version"], "sections": [{"key": k, "label": label} for k, label in SECTIONS], "fields": fields,
-            "documents": documents, "history": history(db, tenant)}
+            "documents": documents, "salary": salary, "history": history(db, tenant)}

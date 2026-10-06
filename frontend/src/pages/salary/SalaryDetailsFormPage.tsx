@@ -134,9 +134,18 @@ export default function SalaryDetailsFormPage() {
     );
   }
 
+  // Part 20.0-C: which questions are asked, and which must be answered
+  const show = (k: keyof NonNullable<SalaryFormView["fields"]>, dflt: "required" | "optional" | "hidden") => view.fields?.[k] ?? dflt;
+  const noticeShow = show("notice_period_days", "required");
+  const relocateShow = show("willing_to_relocate", "optional");
+  const joiningShow = show("earliest_joining_date", "optional");
+  const offersShow = show("offers", view.ask_offers ? "optional" : "hidden");
+  const payslipShow = show("payslip", view.ask_payslip ? "optional" : "hidden");
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!current || !expected || notice === "") {
+    if (!current || !expected || (noticeShow === "required" && notice === "") || (relocateShow === "required" && relocate === "")
+      || (joiningShow === "required" && !joining) || (offersShow === "required" && offers === "")) {
       setProblem(t("salaryForm.need_all"));
       return;
     }
@@ -151,11 +160,11 @@ export default function SalaryDetailsFormPage() {
       await salaryFormApi.submit(token, {
         current_ctc: Number(current),
         expected_ctc: Number(expected),
-        notice_period_days: Number(notice),
+        notice_period_days: notice === "" ? null : Number(notice),
         willing_to_relocate: relocate === "" ? null : relocate === "yes",
         earliest_joining_date: joining || null,
-        offers_in_hand: view.ask_offers && offers !== "" ? Number(offers) : null,
-        best_offer_ctc: view.ask_offers && bestOffer ? Number(bestOffer) : null,
+        offers_in_hand: offersShow !== "hidden" && offers !== "" ? Number(offers) : null,
+        best_offer_ctc: offersShow !== "hidden" && bestOffer ? Number(bestOffer) : null,
       });
       setDone(true);
     } catch (err) {
@@ -183,17 +192,18 @@ export default function SalaryDetailsFormPage() {
 
           <MoneyField label={t("salaryForm.current")} required value={current} onChange={setCurrent} />
           <MoneyField label={t("salaryForm.expected")} required value={expected} onChange={setExpected} />
-          <DaysField label={t("salaryForm.notice")} required value={notice} onChange={setNotice} />
+          {noticeShow !== "hidden" && <DaysField label={t("salaryForm.notice")} required={noticeShow === "required"} value={notice} onChange={setNotice} />}
 
-          <Box>
+          {relocateShow !== "hidden" && <Box>
             <FormLabel id="relocate-label" sx={{ color: f.ink, fontWeight: 600, fontSize: 14 }}>{t("salaryForm.relocate")}</FormLabel>
             <RadioGroup row aria-labelledby="relocate-label" value={relocate} onChange={(e) => setRelocate(e.target.value as "yes" | "no")}>
               <FormControlLabel value="yes" control={<Radio />} label={t("salaryForm.yes")} />
               <FormControlLabel value="no" control={<Radio />} label={t("salaryForm.no")} />
             </RadioGroup>
-          </Box>
+          </Box>}
 
-          <TextField
+          {joiningShow !== "hidden" && <TextField
+            required={joiningShow === "required"}
             label={t("salaryForm.joining")}
             type="date"
             value={joining}
@@ -201,16 +211,16 @@ export default function SalaryDetailsFormPage() {
             fullWidth
             slotProps={{ inputLabel: { shrink: true } }}
             helperText={t("salaryForm.joining_hint")}
-          />
+          />}
 
-          {view.ask_offers && (
+          {offersShow !== "hidden" && (
             <Stack spacing={2}>
-              <TextField label={t("salaryForm.offers")} type="number" value={offers} onChange={(e) => setOffers(e.target.value)} fullWidth
+              <TextField label={t("salaryForm.offers")} required={offersShow === "required"} type="number" value={offers} onChange={(e) => setOffers(e.target.value)} fullWidth
                 helperText={t("salaryForm.offers_hint")} slotProps={{ htmlInput: { min: 0, max: 20 } }} />
               {Number(offers) > 0 && <MoneyField label={t("salaryForm.best_offer")} value={bestOffer} onChange={setBestOffer} />}
             </Stack>
           )}
-          {view.ask_payslip && (
+          {payslipShow !== "hidden" && (
             <Box>
               <Button variant="outlined" component="label" disabled={uploading}>
                 {uploading ? t("salaryForm.uploading") : t("salaryForm.payslip")}

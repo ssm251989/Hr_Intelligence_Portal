@@ -99,12 +99,15 @@ export interface SalaryFormView {
   ask_offers?: boolean; // Part 18.12
   ask_payslip?: boolean;
   payslips?: number;
+  /** Part 20.0-C: required / optional / hidden per question (Settings > Onboarding & employees > Joining details form) */
+  fields?: Partial<Record<"current_ctc" | "expected_ctc" | "notice_period_days" | "willing_to_relocate" | "earliest_joining_date" | "offers" | "payslip",
+    "required" | "optional" | "hidden">>;
 }
 
 export interface SalaryFormAnswers {
   current_ctc: number;
   expected_ctc: number;
-  notice_period_days: number;
+  notice_period_days: number | null;
   willing_to_relocate?: boolean | null;
   earliest_joining_date?: string | null;
   offers_in_hand?: number | null; // Part 18.12

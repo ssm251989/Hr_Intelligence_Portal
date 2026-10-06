@@ -88,3 +88,41 @@ Each link was opened by Playwright as an admin on the live app (`fix22-link-01..
 - Every link was opened by Playwright as an admin.
 - The sample handbook went to Ready and the warning disappeared.
 - The HR assistant answered "18 days … carry forward up to 6" and cited "Employee handbook · Leave policy" as the source.
+
+---
+
+## 20.0-C Joining details fields: all optional, configurable
+
+**Real cause** (quoted, 2026-10-05):
+- `welcome_steps.FIELDS` hardcoded `required=True` on 15 of 19 fields, so submit returned "Aadhaar number is needed." and blocked "Send to HR".
+- The portal printed `fl.required ? "Needed" : "Optional"` under every required field, filled or not. That's why Name on bank account, account number, IFSC and PAN said "Needed" while filled.
+
+**What exists:**
+- Settings > Onboarding & employees > **Joining details form** (one versioned setting `onboarding.joining_form`, history + revert). Every field is listed by section with:
+  - Required / Optional / Hidden
+  - help text in en/hi/ta
+  - format check on/off
+- **Default: every field optional.**
+- The same control covers the welcome-portal **Upload documents** list.
+- Portal: `*` and "Needed" only on an empty required field; format check only when something is typed ("PAN looks like ABCDE1234F …"); drafts autosave; a gentle note when optional fields are empty; editable until HR locks.
+- Backend validation reads the same settings.
+- HR joiner drawer **Joining details** tab: empty fields (not errors), **Remind candidate**, Lock / Unlock.
+- Bank/ID stay masked (last 4); the reveal is audited on the employee record.
+
+**Added in PART 20:** the hiring **salary & joining details form** is on the same settings page (card "Hiring: salary & joining details form").
+- Notice period, Willing to relocate, Earliest joining date, Other offers in hand and Latest payslip can each be Required / Optional / Hidden.
+- Current and expected CTC are locked to Required, because the salary check is calculated from them.
+- Defaults keep today's behaviour: notice period required; relocate and joining date optional; offers and payslip follow the older on/off switches (`recruitment.salary.ask_offers` / `ask_payslip`).
+- The public form (`/salary-details/:token`) shows, hides and requires fields from it.
+- `POST /api/v1/public/ui/salary-form/{token}` checks Required ones ("Please fill in: Notice period.") and drops Hidden ones.
+- `salary_auto.missing_fields` only counts a missing notice period while it is Required, so an optional notice period no longer makes the app ask again.
+- The hiring **documents form** already had Required/Optional per document (Settings > Hiring > Required documents; removing a document = hidden). No change needed.
+
+**Proof:**
+- `FIXES_19.md` "Configurable joining details fields", screenshots `screens/fix23-01..09`:
+  - an almost-empty form submits
+  - Aadhaar switched to Required blocks only while empty
+  - a wrong PAN shows the plain message
+  - a Hidden field disappears
+  - history + revert work
+- The salary-form card is in the 20.6 screenshots.

@@ -177,16 +177,22 @@ def form_view(token: str, db: Session = Depends(get_db)):
             "expected_ctc": float(cand.expected_ctc) if cand and cand.expected_ctc is not None else None,
             "notice_period_days": cand.notice_period_days if cand else None,
             "willing_to_relocate": cand.willing_to_relocate if cand else None,
-            # Part 18.12: optional asks (Settings > Hiring > Salary)
-            "ask_offers": bool(salary_auto._setting(db, tenant, "recruitment.salary.ask_offers")),
-            "ask_payslip": bool(salary_auto._setting(db, tenant, "recruitment.salary.ask_payslip")),
+            # Part 20.0-C: required / optional / hidden per question (Settings > Onboarding & employees > Joining details form)
+            "fields": (shown := _salary_fields(db, tenant)),
+            "ask_offers": shown["offers"] != "hidden", "ask_payslip": shown["payslip"] != "hidden",
             "payslips": len((cand.custom_fields or {}).get("payslips", [])) if cand else 0}
+
+
+def _salary_fields(db: Session, tenant) -> dict:
+    from app.onboarding.joining_form import salary_show
+
+    return salary_show(db, tenant)
 
 
 class FormIn(BaseModel):
     current_ctc: float = Field(..., ge=0, le=1_000_000_000)
     expected_ctc: float = Field(..., ge=0, le=1_000_000_000)
-    notice_period_days: int = Field(..., ge=0, le=365)
+    notice_period_days: Optional[int] = Field(None, ge=0, le=365)
     willing_to_relocate: Optional[bool] = None
     earliest_joining_date: Optional[str] = Field(None, max_length=20)
     offers_in_hand: Optional[int] = Field(None, ge=0, le=20)  # Part 18.12
@@ -230,6 +236,18 @@ def form_submit(token: str, payload: FormIn, db: Session = Depends(get_db)):
 
     tenant, row, app = _resolve(db, token)
     cand = db.get(Candidate, app.candidate_id)
+    shown = _salary_fields(db, tenant)
+    labels = {"notice_period_days": "Notice period", "willing_to_relocate": "Willing to relocate", "earliest_joining_date": "Earliest joining date",
+              "offers": "Other offers in hand"}
+    values = {"notice_period_days": payload.notice_period_days, "willing_to_relocate": payload.willing_to_relocate,
+              "earliest_joining_date": payload.earliest_joining_date, "offers": payload.offers_in_hand}
+    missing = [labels[k] for k, v in values.items() if shown.get(k) == "required" and v in (None, "")]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Please fill in: {', '.join(missing)}.")
+    for key, field in (("notice_period_days", "notice_period_days"), ("willing_to_relocate", "willing_to_relocate"),
+                       ("earliest_joining_date", "earliest_joining_date"), ("offers", "offers_in_hand"), ("offers", "best_offer_ctc")):
+        if shown.get(key) == "hidden":
+            setattr(payload, field, None)
     figures = payload.model_dump()
     app.expected_salary = payload.expected_ctc
     salary_auto.take_figures(db, tenant, cand, figures, source="candidate form", overwrite=True)

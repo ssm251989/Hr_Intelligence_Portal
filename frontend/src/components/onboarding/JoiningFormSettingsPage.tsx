@@ -36,6 +36,7 @@ function payload(r: Rules) {
   return {
     fields: Object.fromEntries(r.fields.map((x) => [x.key, { show: x.show, help: x.help, check: x.check }])),
     documents: Object.fromEntries(r.documents.filter((x) => x.show !== x.default).map((x) => [x.code, x.show])),
+    salary: Object.fromEntries((r.salary ?? []).filter((x) => !x.locked && x.show !== x.default).map((x) => [x.key, x.show])),
   };
 }
 
@@ -57,6 +58,7 @@ export default function JoiningFormSettingsPage() {
   const setField = (key: string, patch: Partial<Rules["fields"][number]>) =>
     setDraft({ ...draft, fields: draft.fields.map((x) => (x.key === key ? { ...x, ...patch } : x)) });
   const setDoc = (code: string, show: FieldShow) => setDraft({ ...draft, documents: draft.documents.map((x) => (x.code === code ? { ...x, show } : x)) });
+  const setSalary = (key: string, show: FieldShow) => setDraft({ ...draft, salary: draft.salary.map((x) => (x.key === key ? { ...x, show } : x)) });
   const run = async (fn: () => Promise<Rules>, ok: string) => {
     setBusy(true);
     setMsg(null);
@@ -131,6 +133,24 @@ export default function JoiningFormSettingsPage() {
                   <Typography sx={{ fontSize: 12, color: f.muted }}>{t("jform.docs.default", { show: t(SHOW_KEYS[x.default]) })}</Typography>
                 </Box>
                 {showGroup(x.show, (v) => setDoc(x.code, v), x.label)}
+              </Stack>
+            ))}
+          </Stack>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent>
+          <Typography sx={{ fontWeight: 800 }}>{t("jform.salary.title")}</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>{t("jform.salary.intro")}</Typography>
+          <Stack spacing={1}>
+            {(draft.salary ?? []).map((x) => (
+              <Stack key={x.key} direction={{ xs: "column", md: "row" }} spacing={1.25} alignItems={{ md: "center" }} sx={{ p: 1.25, border: `1px solid ${f.line}`, borderRadius: "10px" }}>
+                <Box sx={{ flex: 1 }}>
+                  <Typography sx={{ fontWeight: 600 }}>{t(`jform.salary.f.${x.key}`)}</Typography>
+                  <Typography sx={{ fontSize: 12, color: f.muted }}>{x.locked ? t("jform.salary.locked") : t("jform.docs.default", { show: t(SHOW_KEYS[x.default]) })}</Typography>
+                </Box>
+                {x.locked ? <Typography sx={{ fontSize: 14, fontWeight: 600 }}>{t(SHOW_KEYS.required)}</Typography> : showGroup(x.show, (v) => setSalary(x.key, v), x.label)}
               </Stack>
             ))}
           </Stack>
