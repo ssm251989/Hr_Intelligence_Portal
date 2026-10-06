@@ -43,11 +43,12 @@ export const NAV_CHILDREN: Record<string, { labelKey: string; path: string; perm
     { labelKey: "nav.sub.shortlist", path: "/shortlisting/list" },
   ],
   "/interviews": [
-    { labelKey: "nav.sub.dashboard", path: "/interviews/dashboard" },
-    { labelKey: "nav.sub.all_interviews", path: "/interviews/list" },
+    // Part 20.4: an employee who only interviews sees just their own pages here
+    { labelKey: "nav.sub.dashboard", path: "/interviews/dashboard", permission: "recruitment.interview.view" },
+    { labelKey: "nav.sub.all_interviews", path: "/interviews/list", permission: "recruitment.interview.view" },
     { labelKey: "nav.sub.my_interviews", path: "/interviews/my" },
     { labelKey: "nav.sub.my_availability", path: "/interviews/availability" },
-    { labelKey: "nav.sub.interviewers", path: "/interviews/interviewers" },
+    { labelKey: "nav.sub.interviewers", path: "/interviews/interviewers", permission: "recruitment.interview.view" },
   ],
   "/performance": [
     { labelKey: "nav.sub.my_performance", path: "/performance" },

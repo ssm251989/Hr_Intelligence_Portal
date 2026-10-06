@@ -2774,3 +2774,19 @@ NEXT: part-20.3 employee self-service (employee home: My profile + change reques
     - employees can't change name, date of birth, bank or ID numbers themselves (HR edits those).
 
 NEXT: part-20.4 employee as interviewer (Make interviewer + skills/pools, auto-rule; My availability, My interviews, assigned candidates only, scorecard, reschedule/decline; interviewer sees no salary/other candidates/settings - narrow the Interviewer role's recruitment view; scorecard reminder; link existing interviewers by email).
+- part-20.4: employee as interviewer.
+  - Built:
+    - Interviewer role narrowed to recruitment.availability.view (synced to roles);
+    - per-interview access for candidates / resume / AI questions / scorecard (app/scheduling/access.py); candidate lists, all interviews and offer pages are hiring-team only;
+    - Make interviewer / Interviewer settings / Stop interviewing;
+    - auto rule employees.interviewer.auto_rules at employee creation;
+    - My interviews for employees: scorecard, Resume, Can't make it / Ask for another time -> HR to-do (migration a39c2d3e4f5a), calendar view;
+    - daily linking of old interviewers by email -> HR to-do when no match;
+    - scorecard reminder hours from employees.interviewer.scorecard_reminder_hours.
+  - Proof in FIXES_20.md (fix-iv-01..10).
+  - Decisions:
+    - an interviewer's "can't make it" never cancels or moves the interview by itself - HR decides;
+    - the real "AI interviewers" pool is never used in proofs;
+    - the link to-dos for kg/si/jr/zzverify are real and kept for the owner.
+
+NEXT: part-20.5 Settings > Onboarding & employees (one place: email pattern + domain, when onboarding completes, default roles + role rules, interviewer auto rule + scorecard reminder hours, notice period by employment type, exit approval steps; Employee ID, exit checklist, letter templates already there) with plain help text, then 20.6 end-to-end proof.

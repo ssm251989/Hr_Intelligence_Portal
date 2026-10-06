@@ -103,6 +103,9 @@ def _audit(db: Session, entity_type: str, entity_ids: list, actions: tuple) -> l
 
 @router.get("/context")
 def ui_context(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from app.scheduling.access import require_staff  # Part 20.4: hiring team only (not employees / interviewers)
+
+    require_staff(db, current_user)
     return {"currency": _setting(db, "org.currency", None), "offer_expiry_days": _expiry_days(db)}
 
 
@@ -143,6 +146,9 @@ def _approval_steps(db: Session, entity_ids: list) -> list[dict]:
 
 @router.get("/applications/{application_id}/offer-timeline")
 def offer_timeline(application_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from app.scheduling.access import require_staff  # Part 20.4: hiring team only (not employees / interviewers)
+
+    require_staff(db, current_user)
     from app.models.offer import Offer
 
     application = _application_or_404(db, application_id)
@@ -177,6 +183,9 @@ _BGV_DOC_ACTIONS = ("bgv_document_uploaded", "ai_document_validator_scored")
 
 @router.get("/applications/{application_id}/bgv-timeline")
 def bgv_timeline(application_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from app.scheduling.access import require_staff  # Part 20.4: hiring team only (not employees / interviewers)
+
+    require_staff(db, current_user)
     from app.models.bgv_document import BgvDocument
     from app.models.onboarding import BgvCase
 
@@ -301,6 +310,9 @@ def _offer_or_404(db: Session, application_id: UUID):
 
 @router.get("/applications/{application_id}/offer-versions")
 def offer_versions(application_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from app.scheduling.access import require_staff  # Part 20.4: hiring team only (not employees / interviewers)
+
+    require_staff(db, current_user)
     from app.offers import revisions
 
     return revisions.summary(db, require_current_tenant(), _offer_or_404(db, application_id), current_user)
@@ -375,6 +387,9 @@ def offer_revision_decide(application_id: UUID, version_id: UUID, payload: Revis
 
 @router.get("/applications/{application_id}/offer/versions/{version_no}/pdf")
 def offer_version_pdf(application_id: UUID, version_no: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from app.scheduling.access import require_staff  # Part 20.4: hiring team only (not employees / interviewers)
+
+    require_staff(db, current_user)
     from fastapi.responses import Response
 
     from app.offers import revisions

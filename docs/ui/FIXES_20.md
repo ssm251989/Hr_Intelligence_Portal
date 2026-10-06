@@ -450,3 +450,57 @@ Fixed while taking the proof: the table was too wide for the settings panel (Inb
 4. `directory.profile` read `LetterRecord.created_at`, which doesn't exist (`generated_at`), so letter dates were always empty.
 
 **Decision:** the manager step applies only when the employee resigned themselves (`initiated_by` = their login). Exits recorded by HR (Employees list, joiner exits) go straight to HR.
+
+## part-20.4 -- Employee as interviewer (2026-10-06)
+
+**What was there:** interviewer pools, per-person availability (weekly hours, blocked dates, most per day/week), My interviews, My availability, the scorecard, AI questions, the scorecard reminder.
+
+**Problems found (survey), with causes:**
+1. **An interviewer saw the whole hiring module.** The Interviewer role was `("recruitment", {"view"})`, widened to every `recruitment.*.view`: candidates, salary, offers, BGV, jobs.
+2. **Candidate APIs had no per-person limit.** `GET /candidates`, `/candidates/{id}`, `/resume` and `/photo` only needed a login. `GET /interviews` listed every interview to anyone. The offers context, timelines, versions and version PDF also needed only a login.
+3. **Interviewers who are employees couldn't give feedback.** The scorecard and AI-question endpoints used a flat-role check (`interviewer`, `recruiter`...), and an employee's login has flat role `employee`. Conversely, any flat-role interviewer could score **any** interview.
+4. **Unused settings, missing linking.** No "Make interviewer". `employees.interviewer.auto_rules` and `employees.interviewer.scorecard_reminder_hours` were defined but nothing read them. Interviewers from the old Excel (jr, si, kg...) were never linked to employees.
+5. **Booked interviews and feedback.** Once an interview was booked, the interviewer couldn't decline or ask for another time. "Feedback due" and My interviews matched only the login email, not the company email.
+
+**Built:**
+- **Interviewer role** = `recruitment.availability.view` only (+ workflow view); synced to the roles table.
+  - Menu for an employee who interviews: Home, My approvals, My profile, **My interviews** (with My availability), Assets, Exits.
+  - The HR sub-pages (Interviews dashboard, All interviews, Interviewers & pools) now need `recruitment.interview.view`.
+- **Per-interview access** (`app/scheduling/access.py`). The hiring team (`recruitment.candidate.view` or a staff flat role) sees everything as before; anyone else:
+  - a candidate, resume or photo, AI questions and a scorecard **only for their own interviews**, matched by login id or by login / company / personal email
+  - candidate lists, the all-interviews list and the offer pages: 403
+- **Make interviewer** (Employees list "..." / profile): skills, most interviews a day, pools.
+  - Gives the Interviewer role.
+  - Creates their availability linked to the employee (company email, Mon-Fri 10:00-18:00 to start).
+  - Adds them to the chosen pools.
+  - Also **Interviewer settings** and **Stop interviewing** (out of every pool, role removed; booked interviews stay).
+- **Auto rule:** Settings `employees.interviewer.auto_rules` (e.g. designation contains "lead") gives new employees the Interviewer role and availability when the agent creates them.
+- **My interviews for employees:**
+  - Scorecard always available (the server checks it is theirs).
+  - **Resume** instead of the HR candidate page.
+  - **Ask for another time** / **Can't make it** (reason) on upcoming interviews: saved on the interview (`interviewer_response_json`, migration `a39c2d3e4f5a`), chip on the card, HR to-do "… asks to move the interview with … to: …" / "… can't take the interview …". The interview stays booked until HR changes it.
+  - List / **Calendar** toggle, link to My availability.
+- **Linking existing interviewers** (daily job `interviewer_links`, also `POST /api/v1/ui/self-service/interviewers/link`): availability rows without an employee are matched by email; otherwise HR gets one to-do "Link interviewer <name> (<email>) to an employee, or add them as one". A manual link endpoint resolves it.
+- **Reminders:** the scorecard reminder now uses `employees.interviewer.scorecard_reminder_hours` (falls back to the older recruitment setting). "Feedback due" on Home and My interviews match the company email too.
+
+**Proof** (proof stack, temporary admin, Demo - Aarav CTD-9001; a separate "Proof pool (demo)" so the real "AI interviewers" pool was never touched; 3 proof candidates with generated PDF resumes; all removed afterwards and Aarav put back):
+| Check | Result | Screenshot |
+|---|---|---|
+| HR: Make interviewer (skills Python, RPA, UiPath; 2 a day; Proof pool) | DB: availability `demo.aarav.sharma@ctdtechs.com`, linked to the employee, Mon 10:00-18:00, max 2, skills; pool members `[demo.aarav.sharma@ctdtechs.com]`; roles Employee + Interviewer; real pool still `[kg@ctdtechs.com]` | fix-iv-01, fix-iv-02 |
+| Aarav: candidate list / applications / all interviews | 403 "Only the hiring team can see this…" | api |
+| Aarav: own candidate + resume | 200 / 200 | api |
+| Aarav: someone else's candidate, resume, AI questions, scorecard | 404 each | api |
+| Aarav: offers context / offer timeline | 403 (HR: 200) | api |
+| Aarav: AI questions for his own candidate | 200, questions returned | api |
+| Aarav: My interviews, list + calendar | 1 coming up (Meena), 1 needs feedback (Rahul); match score, skills, Resume, Join | fix-iv-03, fix-iv-04 |
+| Ask for another time ("Thu 9 Oct after 3 pm") | DB `interviewer_response_json` kind reschedule; chip "You asked for Thu 9 Oct after 3 pm - waiting for HR"; HR Home to-do | fix-iv-05, fix-iv-06, fix-iv-10 |
+| Scorecard for Rahul (keyboard) | DB technical 4, communication 4, overall 3, comment saved | fix-iv-07, fix-iv-08 |
+| My availability | weekly grid, blocked dates, most per day | fix-iv-09 |
+| Linking existing interviewers | the live app's daily job (17:15) made to-dos for Kishore (kg@), Suresh A (si@), Jagadeesh (jr@) and a leftover test address: none has an employee record. **Kept** - the owner links or adds them | fix-iv-10 |
+| Auto rule (inside a rolled-back transaction) | no rule: `['Employee']`; rule designation contains "lead": "Interviewer Lead" -> `['Employee', 'Interviewer']`, "QA Engineer" -> `['Employee']`; nothing saved (`setting_values` 0 rows) | api |
+
+**Found and fixed during the proof:** the sidebar showed the HR sub-pages (Dashboard, All interviews, Interviewers & pools) under an interviewer's My interviews, because those front-end sub-items had no permission. Their data was already blocked by the API.
+
+**Proof-script notes:**
+- The first scorecard attempt saved 1/1/1: forced clicks on MUI's hidden star radios land on the first star (same artifact as the exit-interview proof). The keyboard (focus the star, arrow keys) gives the real 4/4/3.
+- The "Move forward" click hit the info tip (its text contains the same words), so no decision was saved. Saving without a decision is allowed.
