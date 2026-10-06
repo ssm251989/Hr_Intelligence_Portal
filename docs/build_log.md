@@ -2764,3 +2764,13 @@ NEXT: part-20.2b Test email provider settings page (UI), then 20.3 employee self
 - part-20.2b (UI): Settings > Integrations > Test email provider -- switch, test mailboxes + test inbox, move-to-real dry run / apply. Proof in FIXES_20.md (fix-tp-01..03). Decision: the switch lives on its own page next to Connections rather than inside the Connections panel, so the test inbox has room.
 
 NEXT: part-20.3 employee self-service (employee home: My profile + change requests -> HR approves, My documents/letters, My assets, Raise exit; resign form early-release + resignation letter upload; Manager -> HR approval; HR starts exit from the Employee list), then 20.4, 20.5, 20.6.
+- part-20.3: employee self-service.
+  - Built: My profile (/me) + change requests -> HR approves (migration f28b1c2d3e4f); resign form with early release + letter; Manager -> HR step (employees.exit.approval_steps); the employee can withdraw until HR approves; Start exit (Resigned / Terminated / Absconded + notice / Retirement / Contract ended) on the Employees list; leaver's future interviews -> HR to-do.
+  - Fixed: the employee menu showed every hiring item (no permission on those NavItems); the exit dialog's usual date was a day early in India (UTC).
+  - Proof in FIXES_20.md (fix-ss-01..16).
+  - Decisions:
+    - the manager step only for resignations the employee sent themselves;
+    - no new permission for My profile (it uses the existing self-service permissions, so roles need no re-seed);
+    - employees can't change name, date of birth, bank or ID numbers themselves (HR edits those).
+
+NEXT: part-20.4 employee as interviewer (Make interviewer + skills/pools, auto-rule; My availability, My interviews, assigned candidates only, scorecard, reschedule/decline; interviewer sees no salary/other candidates/settings - narrow the Interviewer role's recruitment view; scorecard reminder; link existing interviewers by email).

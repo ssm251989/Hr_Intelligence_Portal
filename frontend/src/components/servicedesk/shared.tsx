@@ -231,3 +231,8 @@ export function EscalationChip({ level }: { level: number }) {
     </Box>
   );
 }
+
+/** Part 20.3: a date as YYYY-MM-DD in the viewer's own time zone (toISOString() is UTC -- the day before in India until 5:30 am). */
+export function localISO(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}

@@ -20,13 +20,14 @@ import { extractErrorMessage } from "../../api/client";
 import type { EmployeeRow } from "../../api/employeesApi";
 import { selfServiceApi, type StartExitKind } from "../../api/selfServiceApi";
 import { useT } from "../../i18n";
+import { localISO } from "../servicedesk/shared";
 
 const KINDS: StartExitKind[] = ["resigned", "terminated", "absconded", "retirement", "contract_end"];
 
 export default function StartExitDialog({ row, onClose, onToast }: { row: EmployeeRow; onClose: () => void; onToast: (m: string) => void }) {
   const t = useT();
   const nav = useNavigate();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localISO();
   const [kind, setKind] = useState<StartExitKind>("resigned");
   const [lwd, setLwd] = useState(today);
   const [notes, setNotes] = useState("");

@@ -24,7 +24,7 @@ import { LetterChip, LetterPreviewButton, letterState } from "./LetterStatus";
 import { HrExitInterviewCard } from "../exits/ExitInterviewCards";
 import ExitChecklist from "../exits/ExitChecklist";
 import { openBlob, selfServiceApi } from "../../api/selfServiceApi";
-import { SeparationStatusChip, typeLabel, useDateFmt } from "./shared";
+import { SeparationStatusChip, localISO, typeLabel, useDateFmt } from "./shared";
 
 const STAGES = ["submitted", "approved", "clearance", "completed"];
 export function stageIndex(status: string): number {
@@ -36,7 +36,8 @@ export function stageIndex(status: string): number {
 function addDays(iso: string, days: number): string {
   const d = new Date(`${iso}T00:00:00`);
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  // local date -- toISOString() is UTC and gave the day before in India (4 Dec instead of 5 Dec)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function Block({ emoji, title, children, tip }: { emoji: string; title: string; children: ReactNode; tip?: string }) {
@@ -75,7 +76,7 @@ export default function ExitCaseDialog({ separation, onClose, onChanged, onToast
   const [alumni, setAlumni] = useState(false);
   const [regretted, setRegretted] = useState(false);
 
-  const standard = s ? addDays(s.submitted_on ?? new Date().toISOString().slice(0, 10), s.notice_period_days) : "";
+  const standard = s ? addDays(s.submitted_on ?? localISO(), s.notice_period_days) : "";
 
   useEffect(() => {
     if (!s) return;

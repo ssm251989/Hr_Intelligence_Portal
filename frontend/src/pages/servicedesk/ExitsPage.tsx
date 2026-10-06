@@ -32,7 +32,7 @@ import ConfirmDialog from "../../components/ConfirmDialog";
 import ClearanceBoard from "../../components/servicedesk/ClearanceBoard";
 import ExitCaseDialog, { stageIndex } from "../../components/servicedesk/ExitCaseDialog";
 import { LetterChip, LetterPreviewButton, letterState } from "../../components/servicedesk/LetterStatus";
-import { Section, SeparationStatusChip, typeLabel, useCategories, useDateFmt, useToast } from "../../components/servicedesk/shared";
+import { Section, SeparationStatusChip, localISO, typeLabel, useCategories, useDateFmt, useToast } from "../../components/servicedesk/shared";
 import { useT } from "../../i18n";
 import { MyExitInterview } from "../../components/exits/ExitInterviewCards";
 import ExitChecklist, { MyExitTasks } from "../../components/exits/ExitChecklist";
@@ -46,7 +46,7 @@ const OPEN = ["submitted", "retention", "approved", "clearance"];
 function addDays(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return localISO(d);
 }
 
 // ---- employee ----
@@ -64,7 +64,7 @@ function ResignForm({ notice, onSent }: { notice: number | null; onSent: () => v
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localISO();
 
   const send = async () => {
     setConfirm(false);
@@ -209,7 +209,7 @@ function HrExits({ onToast, focusItem, openSep }: { onToast: (m: string) => void
   const [tab, setTab] = useState<"list" | "board">("list");
   const [includeClosed, setIncludeClosed] = useState(false);
   const [rows, setRows] = useState<SeparationRow[] | null>(null);
-  const [today, setToday] = useState(new Date().toISOString().slice(0, 10));
+  const [today, setToday] = useState(localISO());
   const [error, setError] = useState<unknown>(null);
   const [openId, setOpenId] = useState<string | null>(null);
 

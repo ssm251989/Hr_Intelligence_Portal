@@ -41,7 +41,10 @@ function Field({ label, value }: { label: string; value: ReactNode }) {
 
 function show(v: unknown): string {
   if (v === null || v === undefined || v === "") return "—";
-  if (typeof v === "object") return Object.values(v as Record<string, unknown>).filter(Boolean).join(", ") || "—";
+  if (typeof v === "object") {  // an emergency contact: always name, relation, phone (the database reorders keys)
+    const o = v as Record<string, unknown>;
+    return [o.name, o.relation, o.phone].filter(Boolean).join(", ") || "—";
+  }
   return String(v);
 }
 

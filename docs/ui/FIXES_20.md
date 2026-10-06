@@ -383,3 +383,70 @@ The star rating in the proof reads 1/5 because the test clicked the first star; 
 | Dry run | 7 would move (the suspended one not included); blocked: "Connect Google Workspace or Microsoft 365 first" | fix-tp-03 |
 
 Fixed while taking the proof: the table was too wide for the settings panel (Inbox column cut off), so quota and password moved into one line under the table. The dry run said "would move to -" when no provider was connected; it now says "once Google Workspace or Microsoft 365 is connected".
+
+## part-20.3 -- Employee self-service (2026-10-06)
+
+**What was there before** (survey): the employee Home had letters/assets widgets and `/exits` had the resign form. Missing:
+- My profile and change requests
+- early release and a resignation letter on the resign form
+- a Manager -> HR step: `employees.exit.approval_steps` existed but nothing used it
+- the employee withdrawing their own resignation (only HR could)
+- "Start exit" on the Employees list (an empty placeholder)
+
+**Bug found in the survey:** an Employee-only login saw every hiring menu item (Jobs, Candidates, Screening, Salary, BGV, Offers...). Cause: those NavItems had no permission (`app/platform/modules.py`), so they showed to every signed-in user.
+
+**Built:**
+- **Menu:** each hiring item needs its own `recruitment.*.view` permission.
+  - Before: an employee-only user saw /, approvals, every hiring page, assets and exits.
+  - After: an employee sees Home, My approvals, My profile, Assets, Exits. HR and owner menus are unchanged.
+- **My profile** (`/me`, `pages/MyProfilePage.tsx`):
+  - personal details, job details (read-only), documents & letters (letters open as PDF), assets, My change requests
+  - buttons: Request a change, Resign / See my exit, My interviews (interviewers)
+  - only the person's own record (`/api/v1/ui/self-service/me`)
+  - bank / ID numbers stay masked
+- **Change requests** (table `employee_change_requests`, migration `f28b1c2d3e4f`):
+  - the employee can change preferred name, pronouns, personal email, phone, marital status, blood group, current address and emergency contact, with a note
+  - HR sees it on Home ("Profile change: <name>") and on the employee's profile: **Approve and save**, or **Not approved** with a reason
+  - the employee gets an email either way
+  - nothing changes until HR approves; the employee can cancel while it waits
+- **Resign form:**
+  - the last working day defaults to the notice period
+  - "I'd like to be released early"
+  - attach a resignation letter (optional; PDF / Word / photo)
+- **Manager -> HR** (`employees.exit.approval_steps`, default manager then HR):
+  - The manager gets an email plus a Home to-do "Approve the resignation of <name>". `/exits` shows "Resignations waiting for you", with a note (e.g. a retention talk) and **Approve**.
+  - HR can't confirm the last day before that ("waiting for the manager's approval first (<name>)"). Only the employee's own manager can approve.
+  - Exits HR records itself have no manager step.
+- **What the employee sees:** Submitted (waiting for <manager>) / Manager approved - waiting for HR / HR approved - last day <date> / Withdrawn. **Withdraw my resignation** works until HR approves; after that it says to talk to HR.
+- **HR's exit dialog:** waiting for <manager> / Manager approved: <name>, <date> / Asked for early release / Resignation letter / Manager's note.
+- **Employees list / profile "Start exit"** (Resigned, Terminated, Absconded, Retirement, Contract ended):
+  - last working day, notes
+  - "Confirm this last working day now" (starts the exit checklist)
+  - for Absconded, "Email the absconding notice to their personal and company email"
+  - opens the exit afterwards
+- **On exit completion:** also an HR to-do "Reassign N interview(s) - <name> has left" for interviews they were still due to take.
+
+**Proof** (proof stack :8010 / :5174 / mailpit; temporary admin; Diya CTD-9002 with manager Sneha CTD-9006, Kabir CTD-9003; all records removed afterwards and both employees restored):
+| Check | Result | Screenshot |
+|---|---|---|
+| Employee menu + My profile | Home, My approvals, My profile, (Jobs - she is also a demo Interviewer, see 20.4), Assets, Exits | fix-ss-01 |
+| Request a change (phone, address, emergency contact, note) | "Sent to HR"; My change requests: Waiting for HR with old -> new | fix-ss-02, fix-ss-03 |
+| HR Home | to-do "Profile change: Demo - Diya Nair" | fix-ss-04 |
+| HR approves on the profile | DB: phone `+91 98450 11223`, address `[{"line": "Flat 4B, ...", "type": "current"}]`, emergency contact Ravi Nair; request `approved` by proof HR with the note; mailpit: "Your profile change was approved and saved" | fix-ss-05 |
+| Employee calls the HR list | 403 | api |
+| Resign with early release + letter | DB: `early_release_requested` true, letter stored, requested LWD 5 Dec (60-day notice); status "Submitted - waiting for Demo - Sneha Menon"; mailpit to Sneha: "Demo - Diya Nair has resigned - your approval is needed" | fix-ss-06, fix-ss-07 |
+| HR confirms the last day before the manager | 400 "waiting for the manager's approval first (Demo - Sneha Menon)" | api |
+| HR admin tries the manager step | 409 "Only the employee's manager can approve this step." | api |
+| Sneha approves from `/exits?approve=<id>` | "Approved. HR will confirm the last working day."; Diya sees "Manager approved - waiting for HR" | fix-ss-08, fix-ss-09 |
+| Diya withdraws | confirm -> DB separation `withdrawn`, employee back to `active`; resign form offered again | fix-ss-10, fix-ss-11 |
+| Round 2: resign, Sneha approves with a note | HR dialog: "Manager approved: ..., 6 Oct 2026", "Asked for early release", manager's note | fix-ss-12 |
+| HR confirms 20 Nov, letting 15 notice days go | Diya: "HR approved - last day 20 Nov 2026"; Withdraw gone; API withdraw -> 409 "HR has already approved your last working day - please talk to HR to withdraw." | fix-ss-12b, fix-ss-13, fix-ss-14 |
+| HR: Start exit -> Absconded for Kabir | separation `absconding`, `clearance` (no manager step), checklist made; mailpit: "Absence from work since 06 Oct 2026" to personal + company email; exit opens | fix-ss-15, fix-ss-16 |
+
+**Found and fixed during the proof:**
+1. **Bug:** HR's dialog said the usual full-notice date was **4 Dec**, but the server uses **5 Dec**, so HR was told 14 notice days were short while the server wanted 15. Cause: `addDays` in ExitCaseDialog used `toISOString()` (UTC), which gives the day before in India. Fixed with a local-date helper `localISO`, also used for "today" on the exits page and in Start exit (wrong between midnight and 5:30 am).
+2. Emergency contacts showed as "name, phone, relation" (the database reorders JSON keys); now always name, relation, phone.
+3. The manager chip showed an email; it now shows the name.
+4. `directory.profile` read `LetterRecord.created_at`, which doesn't exist (`generated_at`), so letter dates were always empty.
+
+**Decision:** the manager step applies only when the employee resigned themselves (`initiated_by` = their login). Exits recorded by HR (Employees list, joiner exits) go straight to HR.

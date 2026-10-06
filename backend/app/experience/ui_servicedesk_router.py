@@ -478,6 +478,13 @@ def _approval_info(db: Session, s: Separation) -> dict:
 
     boss = self_service.needs_manager(db, require_current_tenant(), s)
     return {"early_release_requested": bool(s.early_release_requested), "has_resignation_letter": bool(s.resignation_letter_ref),
-            "manager_approved_at": _iso(s.manager_approved_at), "manager_approved_by": s.manager_approved_by, "manager_note": s.manager_note,
+            "manager_approved_at": _iso(s.manager_approved_at), "manager_approved_by": _name_for_email(db, s.manager_approved_by), "manager_note": s.manager_note,
             "waiting_for_manager": (boss.full_name or boss.email) if boss is not None else None,
             "status_label": (self_service.status_label(s) or {}).get("key")}
+
+
+def _name_for_email(db: Session, email: Optional[str]) -> Optional[str]:
+    if not email:
+        return None
+    u = db.query(User).filter(User.email == email).first()
+    return (u.full_name or email) if u is not None else email
