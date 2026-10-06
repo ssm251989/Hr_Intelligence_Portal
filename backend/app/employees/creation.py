@@ -132,6 +132,9 @@ def gather(db: Session, tenant, case: PreboardingCase) -> dict:
         "previous_experience_months": int(round(years * 12)) if years is not None else None,
         "personal_email": personal_email, "phone": phone,
         "emergency_contact": {k: jd.get(f"emergency_{k}") for k in ("name", "relation", "phone")} if jd.get("emergency_name") else None,
+        # Part 20.6: the date of birth and address from the joining details reach the employee record too
+        "date_of_birth": jd.get("date_of_birth") or (e.dob.isoformat() if e.dob else None),
+        "address": ", ".join(str(jd[k]).strip() for k in ("address_line1", "address_line2", "city", "state", "pin_code") if jd.get(k)) or None,
         "has_bank_id": any(jd.get(k) for k in welcome_steps.SENSITIVE),
         "company_email": suggestion["address"], "company_email_tried": suggestion["tried"],
         "email_provider": mailboxes.active_provider(db, tenant) or "it_todo",
@@ -237,6 +240,13 @@ def approve(db: Session, tenant, s: AgentSuggestion, *, edits: Optional[dict], a
         if plan.get("emergency_contact"):
             ec = plan["emergency_contact"]
             e.emergency_contacts_json = [{"name": ec.get("name"), "relationship": ec.get("relation"), "phone": ec.get("phone")}]
+        if plan.get("date_of_birth") and not e.dob:
+            try:
+                e.dob = date.fromisoformat(str(plan["date_of_birth"])[:10])
+            except ValueError:
+                pass
+        if plan.get("address") and not any(isinstance(x, dict) and x.get("type") in (None, "current") for x in (e.addresses_json or [])):
+            e.addresses_json = [{"type": "current", "line": plan["address"]}, *(e.addresses_json or [])]
         if e.status in ("pre_hire", "inactive", "exited", "terminated", "rehire_eligible"):
             e.status = "active"
         r = current_record(db, e.id)

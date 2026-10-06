@@ -2793,3 +2793,9 @@ NEXT: part-20.5 Settings > Onboarding & employees (one place: email pattern + do
 - part-20.5: Settings > Onboarding & employees > Employee rules (company email, onboarding complete, roles + rules, interviewer auto rule + reminder hours, notice days, resignation approval). Proof in FIXES_20.md (fix-er-01). Decision: one page for the small rules; the bigger editors (Employee ID, joining form, exit interview, exit checklist, letters) stay as their own pages next to it.
 
 NEXT: part-20.6 end-to-end proof (new test candidate -> offer signed -> joining details -> onboarding complete -> approval card -> employee + TEST mailbox + invite -> sets password, logs in -> own data -> made interviewer -> availability, interview, scorecard -> resigns -> manager + HR approve -> laptop returned -> exit completed -> login disabled), screenshots, plain-words summary.
+- part-20.6: end-to-end proof done (FIXES_20.md, fix-e2e-01..17): offer signed -> portal -> joined -> approval card -> employee + TEST mailbox + invite -> password set + login -> own profile -> interviewer + scorecard -> resign -> checklist (laptop returned) -> exit completed -> letters emailed -> login refused.
+  - Fixed: the agent now copies date of birth + address from the joining details; the emergency contact's relation shows on My profile.
+  - All proof records removed and the Employee ID counter put back to 24.
+  - PART 20 complete.
+
+NEXT: RESUME order -> docs/PART18_OWNER_CHANGES.txt (check which 18.x items are still open against FIXES_18.md), then PART17/15/16 leftovers (PART16 16.3 settings reorganised was the last open NEXT before PART 20).

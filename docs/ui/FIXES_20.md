@@ -533,3 +533,28 @@ They could only be changed through the raw settings API.
   - approval_steps `["manager", "hr"]`, auto_rules `[]`, reminder 24
   - notice days `{default 30, full_time 60, part_time 30, contract 15, intern 7, consultant 15}`
   - on_onboarding_complete `approve`, role_rules `[]`
+
+## part-20.6 -- End-to-end proof (2026-10-06)
+
+One person through the whole life cycle on the isolated proof stack (API :8010 with mail capture, web :5174, mailpit; temporary admin). The proof joiner was **Ishaan Kapoor** (proof.ishaan.kapoor@example.com) on the real "Junior AI Developer" job, with a separate proof interviewer pool and proof laptop. Everything was removed afterwards, and the Employee ID counter was put back to 24, so the next real employee still gets CTD-0025.
+
+| # | Step | Result | Screenshot |
+|---|---|---|---|
+| 1 | Candidate opens "Review & sign", types the name, ticks accept, **Sign offer** | "Welcome aboard!"; application `onboarding_started`, offer signed; onboarding case created (pre-hire **CTD-0025**); mailpit: "Welcome to CTD Techs, Ishaan Kapoor!" + the recruiter's "signed the offer" notice | fix-e2e-01, 02 |
+| 2 | Welcome portal; joining details submitted (name, date of birth, phone, address, emergency contact; no ID numbers) | portal shows the joining details step done | fix-e2e-03, 04 |
+| 3 | HR: Mark as joined (joining date = today) | `employee_agent: {mode: approve}`: the agent prepared an approval card (default "HR approves first") | api |
+| 4 | HR: Employees > "Waiting for your approval": card shows ID CTD-0025, names, designation, department AI, location to pick ("From the job: Delhi"), no manager found, Full-time, 4 years before joining (resume), company email **ishaan.kapoor@ctdtechs.com** "Free" + "TEST provider", roles. **Approve and create** | CTD-0025 Active, TEST mailbox, app account Invited; mailpit: "set your password" invite to the company email **and** the personal email | fix-e2e-05, 06 |
+| 5 | Ishaan opens the invite link, **sets a password**, signs in with the company email | lands on Home; **My profile** shows only his own data (CTD-0025, TEST email, personal details from the portal) | fix-e2e-07..10 |
+| 6 | HR: Make interviewer (proof pool, Python/UiPath, 2 a day) -> his availability; an interview with a proof candidate yesterday -> Ishaan fills the **scorecard** | DB 4 / 3 / 4 + comment | fix-e2e-11..13 |
+| 7 | HR gives him a proof laptop; Ishaan **resigns** in the app | status "Submitted" (no manager on the job -> HR decides; the manager step was proved in 20.3) | fix-e2e-14, 15 |
+| 8 | HR confirms today as the last day. Exit checklist: HR **Request return** -> Ishaan **I have returned it** -> HR **Received (Good)**; ID card received; access card not applicable; **Revoke on the last working day** (runs at once on the last day); finance nothing pending; handover signed off; no exit interview | laptop history: return_requested (HR) -> employee_returned (ishaan.kapoor@...) -> received (HR); 7/7 done; **letters made automatically**; app login `deactivated_at` set, TEST mailbox `suspended`; mailpit: "Please return: Laptop..." to him, "says they have returned" to the owner | fix-e2e-16 |
+| 9 | The next day (last day moved to yesterday, hourly job run) | job `{'completed': 1}`; employee **exited** (exited_on 5 Oct), exit completed; mailpit: "Your relieving and experience letters from CTD Techs" with 2 PDFs to the personal email | api |
+| 10 | Ishaan tries to sign in again | "We couldn't sign you in." - **login disabled** | fix-e2e-17 |
+
+**Found and fixed in this run:**
+1. **Bug (20.2):** the agent never copied the **date of birth** and **address** from the joining details into the employee record, so My profile showed "—" for both. The plan now carries both, and the record step fills them (only when empty). Checked on Ishaan's real case: the plan gives `date_of_birth 1998-04-12`, `address "12 Lake Road, Hyderabad, Telangana, 500081"`. Ishaan's own record was made before the fix.
+2. **Bug (20.3):** the emergency contact's relation didn't show. The agent and HR store it as `relationship`; My profile read `relation`. It now reads both and stores `relationship`.
+
+**Notes:**
+- The job had no hiring manager who is an employee, so the card said "No manager found - set it later in Edit" and the resignation went straight to HR. Manager -> HR was proved with the demo team in 20.3.
+- A page tour covered the "Approve and create" button the first time; the proof dismissed it.

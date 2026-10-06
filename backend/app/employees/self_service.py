@@ -51,7 +51,8 @@ def _current(e: Employee) -> dict:
     return {"preferred_name": e.preferred_name, "pronouns": e.pronouns, "personal_email": e.personal_email, "phone": e.personal_phone,
             "marital_status": e.marital_status, "blood_group": e.blood_group,
             "address": addr.get("line") or addr.get("address") or ", ".join(str(v) for k, v in addr.items() if v and k not in ("type", "kind")) or None,
-            "emergency_contact": {"name": contact.get("name"), "relation": contact.get("relation"), "phone": contact.get("phone")} if contact else None}
+            # the agent / HR store "relationship"; older rows "relation"
+            "emergency_contact": {"name": contact.get("name"), "relation": contact.get("relation") or contact.get("relationship"), "phone": contact.get("phone")} if contact else None}
 
 
 def _apply(e: Employee, field: str, value) -> None:
@@ -62,7 +63,8 @@ def _apply(e: Employee, field: str, value) -> None:
         e.addresses_json = [{"type": "current", "line": value}, *rest] if value else rest
     elif field == "emergency_contact":
         rest = list(e.emergency_contacts_json or [])[1:]
-        e.emergency_contacts_json = ([value] + rest) if value else rest
+        stored = {"name": value.get("name"), "relationship": value.get("relation"), "phone": value.get("phone")} if value else None  # same keys as the agent / HR
+        e.emergency_contacts_json = ([stored] + rest) if stored else rest
     else:
         setattr(e, field, value)
 
