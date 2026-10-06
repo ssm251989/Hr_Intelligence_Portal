@@ -2742,3 +2742,7 @@ NEXT: fix exit interview -> employee self-service (owner change), then the Test 
 - fix (owner): exit interview moved to employee self-service. Cause: HR's ExitCaseDialog had the editable form; /me/separation stripped it from the employee; managers (separation.*.view) received answers. Now: employee answers (step 2 after resigning, until LWD), HR read-only + AI summary + reminder + private notes, "record from a call" only when the person can't answer, `separation_hr.exit_interview.*` permissions (HR Admin/HRBP/Super Admin), settings editor, hourly reminder job, Reports > Exit interviews (totals only). Migration d26f8a9b0c1e. Decision: a separate permission module so the Manager role's module-wide `separation` view can't include answers.
 
 NEXT: part-20.2b Test email provider settings page (UI), then 20.3 employee self-service + exit.
+
+- wip (feat: actionable exit checklist): the live DB was already migrated to e27a9b0c1d2f before the restart, so the committed code no longer matched it. Decision: finish this item BEFORE the rest of PART 20 (owner order was PART 20 -> exit interview -> checklist), because the old code reads clearance status "pending" which no longer exists. Backend committed: exit_checklist.py, /api/v1/ui/exit-checklist router, hourly job exit_checklist, 5 email templates, inbox query.
+
+NEXT: exit checklist frontend (clickable items with owner actions on HR exit dialog + employee exit page + my tasks), settings editor, proof; then 20.2b Test email provider settings page.
