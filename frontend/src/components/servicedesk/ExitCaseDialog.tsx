@@ -23,6 +23,7 @@ import { Emoji, FriendlyError, InfoTip, StageStepper, StatusChip } from "../../u
 import { LetterChip, LetterPreviewButton, letterState } from "./LetterStatus";
 import { HrExitInterviewCard } from "../exits/ExitInterviewCards";
 import ExitChecklist from "../exits/ExitChecklist";
+import { openBlob, selfServiceApi } from "../../api/selfServiceApi";
 import { SeparationStatusChip, typeLabel, useDateFmt } from "./shared";
 
 const STAGES = ["submitted", "approved", "clearance", "completed"];
@@ -136,6 +137,14 @@ export default function ExitCaseDialog({ separation, onClose, onChanged, onToast
             ))}
           </Box>
           {s.reason_text && <Typography sx={{ whiteSpace: "pre-wrap", maxWidth: "75ch", color: f.muted }}>“{s.reason_text}”</Typography>}
+          {/* Part 20.3: Manager -> HR, early release, resignation letter */}
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center" data-testid="exit-approval-info">
+            {s.waiting_for_manager && <StatusChip tone="sun" emoji="hourglass" label={t("me.exit.waiting_manager", { name: s.waiting_for_manager })} />}
+            {s.manager_approved_at && <StatusChip tone="ok" emoji="check" label={t("me.mgr.approved_by", { name: s.manager_approved_by ?? "", date: fmt.date(s.manager_approved_at) })} />}
+            {s.early_release_requested && <StatusChip tone="sky" emoji="rocket" label={t("me.resign.early_asked")} />}
+            {s.has_resignation_letter && <Button size="small" startIcon={<Emoji name="page" size={14} />} onClick={() => openBlob(selfServiceApi.resignationLetterBlob(s.id))}>{t("me.resign.open_letter")}</Button>}
+          </Stack>
+          {s.manager_note && <Typography sx={{ fontSize: 13 }}>{t("me.mgr.note_shown", { note: s.manager_note })}</Typography>}
           {error ? <FriendlyError error={error} compact /> : null}
 
           {s.status === "retention" && canEdit && (

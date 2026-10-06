@@ -6,6 +6,7 @@ import { useSearchParams } from "react-router-dom";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
+import Checkbox from "@mui/material/Checkbox";
 import CircularProgress from "@mui/material/CircularProgress";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import LinearProgress from "@mui/material/LinearProgress";
@@ -35,6 +36,8 @@ import { Section, SeparationStatusChip, typeLabel, useCategories, useDateFmt, us
 import { useT } from "../../i18n";
 import { MyExitInterview } from "../../components/exits/ExitInterviewCards";
 import ExitChecklist, { MyExitTasks } from "../../components/exits/ExitChecklist";
+import { selfServiceApi } from "../../api/selfServiceApi";
+import TeamExitApprovals from "../../components/exits/TeamExitApprovals";
 import { Cell, EmptyState, Emoji, FriendlyError, PageGrid, PageHeader, StageStepper, StatTile } from "../../ui-kit";
 
 const STAGES = ["submitted", "approved", "clearance", "completed"];
@@ -53,7 +56,9 @@ function ResignForm({ notice, onSent }: { notice: number | null; onSent: () => v
   const f = useTheme().palette.fresh;
   const fmt = useDateFmt();
   const reasons = useCategories("exit_reason");
-  const [lwd, setLwd] = useState("");
+  const [lwd, setLwd] = useState(notice != null ? addDays(notice) : "");  // Part 20.3: defaults to the notice period
+  const [early, setEarly] = useState(false);
+  const [letter, setLetter] = useState<File | null>(null);
   const [reason, setReason] = useState("");
   const [details, setDetails] = useState("");
   const [confirm, setConfirm] = useState(false);
@@ -66,7 +71,8 @@ function ResignForm({ notice, onSent }: { notice: number | null; onSent: () => v
     setBusy(true);
     setError(null);
     try {
-      await serviceDeskExtra.resign({ requested_lwd: lwd || null, reason_code: reason || null, reason_text: details.trim() || null });
+      await serviceDeskExtra.resign({ requested_lwd: lwd || null, reason_code: reason || null, reason_text: details.trim() || null, early_release_requested: early });
+      if (letter) await selfServiceApi.uploadResignationLetter(letter);
       onSent();
     } catch (e) {
       setError(e);
@@ -94,6 +100,14 @@ function ResignForm({ notice, onSent }: { notice: number | null; onSent: () => v
       )}
       <TextField label={t("exits.resign.details")} placeholder={t("exits.resign.details_ph")} helperText={t("exits.resign.reason_hint")} value={details}
         onChange={(e) => setDetails(e.target.value)} multiline minRows={3} fullWidth />
+      <FormControlLabel control={<Checkbox checked={early} onChange={(e) => setEarly(e.target.checked)} />} label={t("me.resign.early")} />
+      <Box>
+        <Button component="label" variant="text" startIcon={<Emoji name="page" size={16} />}>
+          {letter ? letter.name : t("me.resign.letter")}
+          <input hidden type="file" accept=".pdf,.doc,.docx,image/*" onChange={(e) => setLetter(e.target.files?.[0] ?? null)} />
+        </Button>
+        <Typography sx={{ fontSize: 12, color: f.muted }}>{t("me.resign.letter_hint")}</Typography>
+      </Box>
       {error ? <FriendlyError error={error} compact /> : null}
       <Box>
         <Button variant="contained" color="error" disabled={busy} onClick={() => setConfirm(true)} startIcon={<Emoji name="door" size={16} />}>
@@ -106,13 +120,32 @@ function ResignForm({ notice, onSent }: { notice: number | null; onSent: () => v
   );
 }
 
-function MyExit({ data, justResigned, onSkip }: { data: SeparationRow; justResigned?: boolean; onSkip?: () => void }) {
+function MyExit({ data, justResigned, onSkip, onChanged }: { data: SeparationRow; justResigned?: boolean; onSkip?: () => void; onChanged?: () => void }) {
   const t = useT();
   const f = useTheme().palette.fresh;
   const fmt = useDateFmt();
+  const [withdrawing, setWithdrawing] = useState(false);
+  const [werr, setWerr] = useState<unknown>(null);
+  const canWithdraw = ["submitted", "retention"].includes(data.status);
   return (
     <Stack spacing={2}>
-      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap><SeparationStatusChip status={data.status} /></Stack>
+      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
+        <SeparationStatusChip status={data.status} />
+        {/* Part 20.3: Submitted / Manager approved / HR approved - last day <date> / Withdrawn */}
+        {data.status_label && (
+          <Typography sx={{ fontSize: 14, fontWeight: 700 }} data-testid="my-exit-status">
+            {t(`me.exit.${data.status_label}`, { date: fmt.date(data.approved_lwd) })}
+            {data.waiting_for_manager ? ` - ${t("me.exit.waiting_manager", { name: data.waiting_for_manager })}` : ""}
+          </Typography>
+        )}
+        {data.early_release_requested && <Typography sx={{ fontSize: 13, color: f.muted }}>{t("me.resign.early_asked")}</Typography>}
+        <Box sx={{ flex: 1 }} />
+        {canWithdraw && <Button color="error" onClick={() => setWithdrawing(true)}>{t("me.resign.withdraw")}</Button>}
+      </Stack>
+      {werr ? <FriendlyError error={werr} compact /> : null}
+      <ConfirmDialog open={withdrawing} title={t("me.resign.withdraw")} message={t("me.resign.withdraw_confirm")} confirmLabel={t("me.resign.withdraw")}
+        cancelLabel={t("action.cancel")} onCancel={() => setWithdrawing(false)}
+        onConfirm={async () => { setWithdrawing(false); try { await selfServiceApi.withdraw(); onChanged?.(); } catch (e) { setWerr(e); } }} />
       {/* fix 2026-10-06: step 2 right after "Submit resignation" (skippable) -- and here until the last working day */}
       {justResigned && data.status !== "withdrawn" && <MyExitInterview firstTime onSkip={onSkip} />}
       {data.status !== "withdrawn" && <StageStepper stages={STAGES.map((k) => t(`exits.step.${k}`))} current={stageIndex(data.status)} />}
@@ -157,7 +190,7 @@ function EmployeeExit({ canResign, onToast, formRequested }: { canResign: boolea
   if (error) body = <FriendlyError error={error} onRetry={load} compact />;
   else if (!data) body = <Box sx={{ display: "grid", placeItems: "center", py: 4 }}><CircularProgress aria-label={t("helpdesk.common.loading")} /></Box>;
   else if (!data.linked) body = <EmptyState compact illustration="access-denied" title={t("exits.resign.not_linked")} />;
-  else if (data.separation && data.separation.status !== "withdrawn") body = <MyExit data={data.separation} justResigned={justResigned} onSkip={() => setJustResigned(false)} />;
+  else if (data.separation && data.separation.status !== "withdrawn") body = <MyExit data={data.separation} justResigned={justResigned} onSkip={() => setJustResigned(false)} onChanged={load} />;
   else if (!canResign || !["active", "probation"].includes(data.employee_status ?? "active")) body = <EmptyState compact illustration="empty" title={t("exits.resign.not_active")} />;
   else body = <ResignForm key={formRequested} notice={data.notice_period_days} onSent={() => { onToast(t("exits.resign.sent")); setJustResigned(true); load(); }} />;
 
@@ -167,7 +200,7 @@ function EmployeeExit({ canResign, onToast, formRequested }: { canResign: boolea
 
 // ---- HR ----
 
-function HrExits({ onToast, focusItem }: { onToast: (m: string) => void; focusItem: string | null }) {
+function HrExits({ onToast, focusItem, openSep }: { onToast: (m: string) => void; focusItem: string | null; openSep?: string | null }) {
   const t = useT();
   const f = useTheme().palette.fresh;
   const fmt = useDateFmt();
@@ -189,7 +222,8 @@ function HrExits({ onToast, focusItem }: { onToast: (m: string) => void; focusIt
   useEffect(() => {
     const hit = focusItem ? rows?.find((s) => (s.items ?? []).some((i) => i.id === focusItem)) : undefined;
     if (hit) setOpenId(hit.id);
-  }, [rows, focusItem]);
+    else if (openSep && rows?.some((r) => r.id === openSep)) setOpenId(openSep);  // Part 20.3: after HR starts an exit
+  }, [rows, focusItem, openSep]);
 
   const open = useMemo(() => (rows ?? []).filter((s) => OPEN.includes(s.status)), [rows]);
   const itemsLeft = open.reduce((n, s) => n + s.items_pending, 0);
@@ -268,6 +302,7 @@ export default function ExitsPage() {
   const [formKey, setFormKey] = useState(0);
   const [params] = useSearchParams();
   const focusItem = params.get("item");
+  const [hrKey, setHrKey] = useState(0);
   const isHr = can("separation.case.view");
   const canResign = can("separation.self.create");
   const canExport = can("separation.case.export");
@@ -293,7 +328,8 @@ export default function ExitsPage() {
   return (
     <Box>
       <PageHeader emoji="door" title={t("exits.title")} purpose={t(isHr ? "exits.purpose_hr" : "exits.purpose_me")} tourKey="exits" primary={primary} />
-      {isHr && <HrExits onToast={(m) => show(m)} focusItem={focusItem} />}
+      <TeamExitApprovals focusId={params.get("approve")} onToast={(m) => show(m)} onChanged={() => setHrKey((k) => k + 1)} />
+      {isHr && <HrExits key={hrKey} onToast={(m) => show(m)} focusItem={focusItem} openSep={params.get("open")} />}
       {!isHr && (
         <Box sx={{ mb: 2.25 }}><MyExitTasks focusItemId={focusItem} onToast={(m) => show(m)} /></Box>
       )}

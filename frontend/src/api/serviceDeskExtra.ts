@@ -186,6 +186,9 @@ export interface SeparationRow {
   notice_period_days: number;
   reason_code: string | null;
   reason_text: string | null;
+  // Part 20.3: Manager -> HR step, early release, resignation letter
+  early_release_requested?: boolean; has_resignation_letter?: boolean; manager_approved_at?: string | null; manager_approved_by?: string | null;
+  manager_note?: string | null; waiting_for_manager?: string | null; status_label?: string | null;
   items_total: number;
   items_pending: number;
   blocking_pending: number;
@@ -262,7 +265,7 @@ export const serviceDeskExtra = {
 
   // exits
   mySeparation: () => http.get<MySeparation>(`${UI}/me/separation`),
-  resign: (payload: { requested_lwd?: string | null; reason_code?: string | null; reason_text?: string | null }) => http.post<unknown>(`${SD}/me/resignation`, payload),
+  resign: (payload: { requested_lwd?: string | null; reason_code?: string | null; reason_text?: string | null; early_release_requested?: boolean }) => http.post<unknown>(`${SD}/me/resignation`, payload),
   separations: (includeClosed: boolean) => http.get<{ today: string; items: SeparationRow[] }>(`${UI}/separations-overview${qs({ include_closed: includeClosed })}`),
   approveLwd: (id: string, lwd: string, waived_days = 0, buyout_days = 0) => http.post<unknown>(`${SD}/separations/${id}/approve-lwd`, { lwd, waived_days, buyout_days }),
   retention: (id: string, notes: string, retained: boolean) => http.post<unknown>(`${SD}/separations/${id}/retention`, { notes, retained }),

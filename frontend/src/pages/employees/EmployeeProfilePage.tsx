@@ -16,6 +16,7 @@ import { extractErrorMessage } from "../../api/client";
 import { employeesApi, type EmployeeFacets, type EmployeeProfile, type EmployeeRow } from "../../api/employeesApi";
 import { AccountChip, CompanyEmail, EditEmployeeDialog, EmpStatusChip, GiveAssetDialog } from "../../components/employees/EmployeeDialogs";
 import { employeeActionsRegistry } from "../../components/employees/registry";
+import ChangeRequestsCard from "../../components/employees/ChangeRequestsCard";
 import { useT } from "../../i18n";
 import { EmptyState, FriendlyError, StatusChip, UserAvatar } from "../../ui-kit";
 
@@ -101,6 +102,7 @@ export default function EmployeeProfilePage() {
         </Stack>
       </Card>
 
+      <ChangeRequestsCard employeeId={p.id} canEdit={p.can_edit} onChanged={load} />
       <Card sx={{ p: { xs: 2, md: 2.5 } }}>
         <Tabs value={tab} onChange={(_, v) => setTab(v)} variant="scrollable" allowScrollButtonsMobile sx={{ mb: 2 }}>
           <Tab value="personal" label={t("emp.tab.personal")} />

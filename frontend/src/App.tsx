@@ -55,6 +55,7 @@ const OrgChartPage = lazy(() => import("./pages/people/OrgChartPage"));
 const OnboardingDashboardPage = lazy(() => import("./pages/onboarding/OnboardingDashboardPage"));
 const EmployeesPage = lazy(() => import("./pages/employees/EmployeesPage")); // Part 20.1
 const EmployeeRecordPage = lazy(() => import("./pages/employees/EmployeeProfilePage"));
+const MyProfilePage = lazy(() => import("./pages/MyProfilePage"));  // Part 20.3
 const TalentPoolPage = lazy(() => import("./pages/TalentPoolPage"));
 const WelcomePortalPage = lazy(() => import("./pages/onboarding/WelcomePortalPage"));
 const SalaryDetailsFormPage = lazy(() => import("./pages/salary/SalaryDetailsFormPage"));
@@ -153,6 +154,7 @@ export default function App() {
                 <Route path="/hr-inbox" element={<HrInboxListPage />} />
                 <Route path="/candidate-emails" element={<HrInboxListPage />} />
                 <Route path="/approvals" element={<UnifiedInboxPage />} />
+                <Route path="/me" element={<MyProfilePage />} />
                 <Route path="/salary" element={<SalaryPage />} />
                 <Route path="/bgv" element={<BgvPage />} />
                 <Route path="/offers" element={<OffersPage />} />
