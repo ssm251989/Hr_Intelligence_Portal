@@ -13,7 +13,11 @@ imported by the app), which is why its literals don't trip the hardcode guard.
 Part 15.8 review data ("Demo - " records for the new modules; see hrctl/demo_data.py):
 
     python -m hrctl.demo seed  --tenant <slug> [--demo-categories]
-    python -m hrctl.demo clear --tenant <slug> [--yes]      # dry run unless --yes
+    python -m hrctl.demo clear --tenant <slug> [--yes]      # dry run unless --yes (also the Part 20 demo employees)
+
+Part 20.2b demo employees (hrctl/demo_employees.py):
+
+    python -m hrctl.demo employees --tenant ctd-techs --count 8
 """
 
 import argparse
@@ -102,18 +106,27 @@ def main(argv=None) -> int:
     demo_seed = sub.add_parser("seed", help="add clearly marked 'Demo - ' records for reviewing the screens")
     demo_seed.add_argument("--tenant", required=True, help="tenant slug")
     demo_seed.add_argument("--demo-categories", action="store_true", help="add 'Demo - ' ticket/asset categories if the company has none")
+    demo_emp = sub.add_parser("employees", help="Part 20.2b: add 'Demo - ' employees for the Employees list (test mailboxes)")
+    demo_emp.add_argument("--tenant", default="ctd-techs", help="tenant slug")
+    demo_emp.add_argument("--count", type=int, default=8)
     demo_clear = sub.add_parser("clear", help="remove ONLY the demo records (dry run unless --yes)")
-    demo_clear.add_argument("--tenant", required=True, help="tenant slug")
+    demo_clear.add_argument("--tenant", default="ctd-techs", help="tenant slug")
     demo_clear.add_argument("--yes", action="store_true", help="actually delete (default: report only)")
     args = parser.parse_args(argv)
     if args.command == "seed":
         from hrctl.demo_data import run_seed
 
         print(json.dumps(run_seed(args.tenant, args.demo_categories), indent=2, default=str))
+    elif args.command == "employees":
+        from hrctl.demo_employees import run_seed as run_employees
+
+        print(json.dumps(run_employees(args.tenant, args.count), indent=2, default=str))
     elif args.command == "clear":
         from hrctl.demo_data import run_clear
+        from hrctl.demo_employees import run_clear as clear_employees
 
-        print(json.dumps(run_clear(args.tenant, args.yes), indent=2, default=str))
+        out = {"demo_employees": clear_employees(args.tenant, args.yes), "demo_data": run_clear(args.tenant, args.yes)}
+        print(json.dumps(out, indent=2, default=str))
     else:
         print(json.dumps(seed_two_tenants(args.mail_host, args.mail_port), indent=2))
     return 0

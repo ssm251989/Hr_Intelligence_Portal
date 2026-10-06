@@ -150,6 +150,7 @@ from app.models.scoring import ScoreRecalcRun, ScoringRuleSet
 from app.models.agency import AgencyJobAssignment, AgencyMember, AgencySubmission, RecruitmentAgency
 from app.models.setting_value import SettingValue, SettingValueHistory
 from app.models.user import User
+from app.models.test_mailbox import TestMailbox, TestMailboxMessage  # Part 20.2b
 from app.models.user_integration import UserIntegration
 from app.models.workflow import WorkflowDefinition, WorkflowInstance, WorkflowStep, WorkflowTimer
 

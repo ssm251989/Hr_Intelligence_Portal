@@ -230,6 +230,49 @@ def it_done(card_id: UUID, body: ItDoneIn, db: Session = Depends(get_db), curren
     return out
 
 
+# ---- Part 20.2b: Settings > Integrations > Test email provider ----
+
+
+@router.get("/test-provider")
+def test_provider_status(db: Session = Depends(get_db), current_user: User = Depends(require("platform.settings.configure"))):
+    from app.employees import test_provider
+
+    return test_provider.status(db, require_current_tenant())
+
+
+class SwitchIn(BaseModel):
+    on: bool
+
+
+@router.post("/test-provider/switch")
+def test_provider_switch(body: SwitchIn, db: Session = Depends(get_db), current_user: User = Depends(require("platform.settings.configure"))):
+    from app.employees import test_provider
+
+    return test_provider.switch(db, require_current_tenant(), on=body.on, actor=current_user.email)
+
+
+@router.get("/test-provider/mailboxes/{mailbox_id}/messages")
+def test_mailbox_messages(mailbox_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(require("platform.settings.configure"))):
+    from app.employees import test_inbox
+
+    return test_inbox.messages(db, require_current_tenant(), mailbox_id)
+
+
+class MoveIn(BaseModel):
+    apply: bool = False
+
+
+@router.post("/test-provider/move-to-real")
+def test_provider_move(body: MoveIn, db: Session = Depends(get_db), current_user: User = Depends(require("platform.settings.configure"))):
+    """Dry run (apply=false) lists who would move; apply=true creates the real mailboxes. Never automatic."""
+    from app.employees import test_provider
+
+    try:
+        return test_provider.move_to_real(db, require_current_tenant(), apply=body.apply, actor=current_user.email)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/{employee_id}")
 def get_profile(employee_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(require(VIEW))):
     from app.platform.iam.authz import has_permission

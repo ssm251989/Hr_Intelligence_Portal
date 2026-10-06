@@ -101,6 +101,23 @@ def send(
         outbound.subject = rendered["subject"]
         outbound.body_ref = rendered["html"] or rendered["text"]
 
+        # Part 20.2b: TEST (dummy) mailbox addresses never leave the server -- test inbox (+ mailpit in dev)
+        from app.employees import test_inbox
+
+        test_to, real_to = test_inbox.split(db, tenant, to)
+        test_cc, cc = test_inbox.split(db, tenant, cc or [])
+        test_bcc, bcc = test_inbox.split(db, tenant, bcc or [])
+        if test_to or test_cc or test_bcc:
+            test_inbox.deliver(db, tenant, [*test_to, *test_cc, *test_bcc], subject=rendered["subject"], text=rendered["text"], html=rendered["html"],
+                               template_key=template_key, outbound_id=outbound.id)
+            to = real_to
+            if not to:
+                outbound.status, outbound.provider_message_id = "sent", "test-inbox"
+                outbound.sent_at = datetime.now(timezone.utc)
+                db.commit()
+                db.refresh(outbound)
+                return outbound
+
         resolved = ConnectorRouter(db).resolve(purpose, ctx)
         outbound.connection_id = resolved.connection.id
         adapter = _get_adapter_and_secrets(db, tenant, resolved.connection)

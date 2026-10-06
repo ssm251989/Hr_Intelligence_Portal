@@ -120,6 +120,17 @@ def check(db: Session, tenant: TenantContext) -> dict:
             issues.append(_issue("info", "COPILOT_NO_KNOWLEDGE", "The HR assistant has no policy documents yet, so it sends every policy question to the helpdesk.",
                                  "Upload your handbook and policies so it can answer.", "/settings/company/policies", "Upload policies"))
 
+    # Part 20.2b: the TEST (dummy) email provider must never be the live email-admin connection in production
+    from app.core.config import settings as _app_settings
+
+    if _app_settings.ENV == "production":
+        from app.employees.mailboxes import active_provider
+
+        if active_provider(db, tenant) == "test":
+            issues.append(_issue("error", "TEST_EMAIL_PROVIDER_LIVE", "New employees get TEST (dummy) company emails - no real mailboxes are made.",
+                                 "Connect Google Workspace or Microsoft 365, then move the test mailboxes and switch the test provider off.",
+                                 "/settings/integrations/test-email", "Open test email provider"))
+
     for issue in issues:
         issue["key"] = issue_key(issue)
     ignored_keys = set(SettingsService(db).get("platform.health.ignored", SettingContext(tenant=tenant)) or [])

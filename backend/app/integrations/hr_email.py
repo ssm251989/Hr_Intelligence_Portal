@@ -88,6 +88,11 @@ def send_hr_email(
     password, or any smtplib/connection failure -- so every caller can handle both cases
     with the exact same except clause, unlike the old two-exception-type Gmail pattern.
     """
+    # Part 20.2b: a TEST (dummy) mailbox address never gets a real email -- test inbox (+ mailpit in dev)
+    from app.employees.test_inbox import intercept_single
+
+    if intercept_single(to, subject=subject, text=body, html=html_body, from_address=hr_integration.from_address or hr_integration.smtp_username):
+        return
     try:
         password = decrypt(hr_integration.smtp_password)
     except InvalidToken as exc:

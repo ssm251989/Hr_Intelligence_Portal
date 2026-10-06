@@ -23,12 +23,14 @@ def register_all() -> None:
     from app.platform.connectors.providers import google_workspace, microsoft_365  # Part 20.2: company mailboxes
     from app.platform.connectors.providers.google_workspace import GoogleWorkspaceAdapter
     from app.platform.connectors.providers.microsoft_365 import Microsoft365Adapter
+    from app.platform.connectors.providers import test_mailbox  # Part 20.2b
+    from app.platform.connectors.providers.test_mailbox import TestMailboxAdapter
 
     for module, adapter_cls in (
         (smtp, SmtpAdapter), (imap, ImapAdapter), (ics_only, IcsOnlyAdapter),
         (anthropic_provider, AnthropicAdapter), (excel_file, ExcelFileAdapter),
         (local_disk, LocalDiskAdapter), (generic_webhook, GenericWebhookAdapter),
-        (nominatim, NominatimAdapter), (google_workspace, GoogleWorkspaceAdapter), (microsoft_365, Microsoft365Adapter),
+        (nominatim, NominatimAdapter), (google_workspace, GoogleWorkspaceAdapter), (microsoft_365, Microsoft365Adapter), (test_mailbox, TestMailboxAdapter),
     ):
         register_provider(
             ProviderSpec(
