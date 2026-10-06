@@ -92,6 +92,13 @@ DEFAULTS: dict[str, tuple[str, str, list[str]]] = {
         ["candidate_first_name", "last_seen", "respond_by"],
     ),
     # Part 20: employees (app/employees/*)
+    "employee.exit_interview_reminder": (  # fix 2026-10-06: the employee answers their own exit interview
+        "A few questions before you go",
+        "Hi {{ first_name }},\n\n{{ before }}, please take a few minutes to answer some questions about your time at "
+        "{{ company_name }}. Your answers go only to HR - your manager will not see them.\n\nOpen your exit page: {{ link }}\n\n"
+        "Thank you, and all the best.\n\n{{ company_name }} HR",
+        ["first_name", "link"],
+    ),
     "employee.app_invite": (
         "Welcome to {{ company_name }} - set your password for the HR app",
         "Hi {{ first_name }},\n\nYour account for the {{ company_name }} HR app is ready.\n\nSign-in: {{ login }}\n"

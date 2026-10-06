@@ -35,6 +35,7 @@ _SYSTEM_ROLE_TEMPLATES: dict[str, str | list[tuple[str, set[str]]]] = {
         ("helpdesk", {"view", "create", "edit", "view_sensitive", "export", "configure"}),
         ("assets", {"view", "create", "edit", "approve", "export"}),
         ("separation", {"view", "create", "edit", "approve", "export"}),
+        ("separation_hr", {"view", "edit"}),  # fix 2026-10-06: exit interview answers (HR only)
         ("analytics", {"view", "create", "edit", "export", "configure"}),
         ("copilot", {"view", "configure"}),
         ("agents", {"view", "create"}),
@@ -55,6 +56,7 @@ _SYSTEM_ROLE_TEMPLATES: dict[str, str | list[tuple[str, set[str]]]] = {
         ("copilot.chat", {"view"}),
         ("agents.suggestion", {"view"}),
         ("separation", {"view", "create", "edit"}),
+        ("separation_hr", {"view", "edit"}),  # fix 2026-10-06: exit interview answers (HR only)
         ("analytics", {"view", "create", "edit", "export"}),
         ("copilot", {"view"}),
         ("agents", {"view", "create"}),

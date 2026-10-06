@@ -105,6 +105,8 @@ HELP: dict[str, tuple[str, str]] = {
     "employees.exit.clearance_items": ("The clearance checklist for every exit, with owners.", "Employee exits"),
     "employees.interviewer.auto_rules": ("Make people interviewers automatically by designation or department.", "Employees > Make interviewer"),
     "employees.interviewer.scorecard_reminder_hours": ("Remind an interviewer this many hours after the interview if the scorecard isn't in.", "Interviewer reminders"),
+    "employees.exit_interview": ("The exit interview questions the leaving employee answers (text, stars, Yes/Maybe/No, choice), which are required, AI summary on/off and reminder days before the last working day.",
+                                 "Employee's exit page; HR's exit page (read-only)"),
     "employees.letters.relieving_template": ("Letter template used for the relieving letter.", "Employee exits"),
     "employees.letters.experience_template": ("Letter template used for the experience letter.", "Employee exits"),
     "onboarding.joining_form": ("Which joining-details fields and documents are required, optional or hidden, with help text and format checks. Every field is optional unless set here.",

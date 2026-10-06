@@ -9,11 +9,8 @@ import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
 import FormControlLabel from "@mui/material/FormControlLabel";
-import Rating from "@mui/material/Rating";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
-import ToggleButton from "@mui/material/ToggleButton";
-import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import Typography from "@mui/material/Typography";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { useTheme } from "@mui/material/styles";
@@ -24,6 +21,7 @@ import { useT } from "../../i18n";
 import ConfirmDialog from "../ConfirmDialog";
 import { Emoji, FriendlyError, InfoTip, StageStepper, StatusChip } from "../../ui-kit";
 import { LetterChip, LetterPreviewButton, letterState } from "./LetterStatus";
+import { HrExitInterviewCard } from "../exits/ExitInterviewCards";
 import { SeparationStatusChip, typeLabel, useDateFmt } from "./shared";
 
 const STAGES = ["submitted", "approved", "clearance", "completed"];
@@ -53,7 +51,6 @@ function Block({ emoji, title, children, tip }: { emoji: string; title: string; 
   );
 }
 
-const YES_NO = ["yes", "maybe", "no"];
 
 export default function ExitCaseDialog({ separation, onClose, onChanged, onToast, reasonLabel }: {
   separation: SeparationRow | null; onClose: () => void; onChanged: () => void; onToast: (m: string) => void; reasonLabel: (c?: string | null) => string;
@@ -62,7 +59,7 @@ export default function ExitCaseDialog({ separation, onClose, onChanged, onToast
   const f = useTheme().palette.fresh;
   const fullScreen = useMediaQuery(useTheme().breakpoints.down("sm"));
   const fmt = useDateFmt();
-  const { can, aiFeature } = useMeBootstrap();
+  const { can } = useMeBootstrap();
   const s = separation;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -71,7 +68,6 @@ export default function ExitCaseDialog({ separation, onClose, onChanged, onToast
   const [buyout, setBuyout] = useState("");
   const [retention, setRetention] = useState("");
   const [withdrawOpen, setWithdrawOpen] = useState(false);
-  const [answers, setAnswers] = useState<Record<string, string | number | null>>({});
   const [rehire, setRehire] = useState(true);
   const [alumni, setAlumni] = useState(false);
   const [regretted, setRegretted] = useState(false);
@@ -85,7 +81,6 @@ export default function ExitCaseDialog({ separation, onClose, onChanged, onToast
     setWaived("");
     setBuyout("");
     setRetention("");
-    setAnswers((s.exit_interview?.answers as Record<string, string | number | null>) ?? {});
     setRehire(s.rehire_eligible ?? true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s?.id]);
@@ -108,8 +103,6 @@ export default function ExitCaseDialog({ separation, onClose, onChanged, onToast
   const name = s.employee_name ?? s.employee_code ?? "—";
   const canEdit = can("separation.case.edit");
   const canApprove = can("separation.case.approve");
-  const open = ["submitted", "retention", "approved", "clearance"].includes(s.status);
-  const ai = s.exit_interview_ai_summary as { summary?: string } | null | undefined;
   const lwdPassed = s.approved_lwd ? new Date(`${s.approved_lwd}T23:59:59`) < new Date() : false;
 
   return (
@@ -168,41 +161,10 @@ export default function ExitCaseDialog({ separation, onClose, onChanged, onToast
             </Block>
           )}
 
-          {open && canEdit && (
+          {/* fix 2026-10-06: the exit interview is answered by the EMPLOYEE; HR sees it read-only (managers not at all) */}
+          {can("separation_hr.exit_interview.view") && (
             <Block emoji="speech" title={t("exits.interview.title")}>
-              <Typography sx={{ color: f.muted, fontSize: 14, mb: 1.5 }}>{t("exits.interview.hint")}</Typography>
-              <Stack spacing={1.5}>
-                {(["reason", "liked", "improve"] as const).map((q) => (
-                  <TextField key={q} label={t(`exits.q.${q}`)} placeholder={t(`exits.q.${q}_ph`)} value={String(answers[q] ?? "")} multiline minRows={2}
-                    onChange={(e) => setAnswers((a) => ({ ...a, [q]: e.target.value }))} fullWidth />
-                ))}
-                <Box>
-                  <Typography id="sd-q-manager" sx={{ fontSize: 14, fontWeight: 600 }}>{t("exits.q.manager")}</Typography>
-                  <Rating aria-labelledby="sd-q-manager" value={Number(answers.manager) || null} onChange={(_, v) => setAnswers((a) => ({ ...a, manager: v }))}
-                    getLabelText={(v) => t("helpdesk.rate.label", { score: v, word: t(`helpdesk.rate.${v}`) })} />
-                </Box>
-                {(["recommend", "return"] as const).map((q) => (
-                  <Box key={q}>
-                    <Typography id={`sd-q-${q}`} sx={{ fontSize: 14, fontWeight: 600, mb: 0.5 }}>{t(`exits.q.${q}`)}</Typography>
-                    <ToggleButtonGroup exclusive size="small" aria-labelledby={`sd-q-${q}`} value={answers[q] ?? null} onChange={(_, v) => setAnswers((a) => ({ ...a, [q]: v }))}>
-                      {YES_NO.map((v) => <ToggleButton key={v} value={v}>{t(`exits.a.${v}`)}</ToggleButton>)}
-                    </ToggleButtonGroup>
-                  </Box>
-                ))}
-              </Stack>
-              <Stack direction="row" spacing={1} sx={{ mt: 1.5 }} flexWrap="wrap" useFlexGap>
-                <Button variant="contained" disabled={busy} onClick={() => run(() => serviceDeskExtra.exitInterview(s.id, answers), t("exits.interview.saved"))}>{t("exits.interview.save")}</Button>
-                {aiFeature("separation.exit_summary") && (
-                  <Button variant="outlined" disabled={busy} startIcon={<Emoji name="sparkles" size={14} />}
-                    onClick={() => run(() => serviceDeskExtra.exitInterview(s.id, answers, true), t("exits.interview.saved"))}>{t("exits.interview.summarize")}</Button>
-                )}
-              </Stack>
-              {ai?.summary && (
-                <Box sx={{ mt: 1.5, p: 1.5, bgcolor: f.skySoft, borderRadius: "12px" }}>
-                  <Typography sx={{ fontWeight: 700, fontSize: 13 }}>{t("exits.interview.ai")}</Typography>
-                  <Typography sx={{ fontSize: 14, whiteSpace: "pre-wrap", maxWidth: "75ch" }}>{ai.summary}</Typography>
-                </Box>
-              )}
+              <HrExitInterviewCard separationId={s.id} canEdit={can("separation_hr.exit_interview.edit")} onToast={onToast} />
             </Block>
           )}
 

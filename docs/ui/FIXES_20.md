@@ -243,3 +243,60 @@ Each link was opened by Playwright as an admin on the live app (`fix22-link-01..
 - **Failures** (e.g. mailbox API error, invite email failed) show per step in plain words, with **Retry**. Steps already done are not repeated. Everything is audited: `employee_prepared`, `employee_created`, `employee_creation_step_failed`, `mailbox_created`, `it_todo_*`, `app_invite_sent`, `employee_account_created`.
 
 **Proof:** in 20.6, on the isolated proof stack (mailpit), because the live backend would send invites through the real company mailbox.
+
+---
+
+## Fix (owner, 2026-10-06): exit interview moved to employee self-service
+
+**Real cause:**
+- `frontend/src/components/servicedesk/ExitCaseDialog.tsx` (HR's exit page) rendered the exit interview as an **editable form** for HR (`{open && canEdit && (<Block … "exits.interview.title">` with TextFields / Rating / Yes-Maybe-No).
+- It saved through `POST /api/v1/service-desk/separations/{id}/exit-interview` with HR's `separation.case.edit`.
+- The employee's own exit page could never show it: `GET /api/v1/ui/servicedesk/me/separation` **removed** `exit_interview` from the employee's row ("an employee sees progress, not HR's notes").
+- There was no employee endpoint at all, so only HR could "answer".
+- Any role with `separation.case.view` (e.g. **Manager**) received `exit_interview` and the AI summary in the overview and detail responses.
+
+**Change:**
+- **Employee** (`app/employees/exit_interview.py`, `/api/v1/ui/exit-interview/me`, `ExitInterviewCards.tsx`):
+  - After "Send resignation" -> **"Step 2: A few questions before you go"** (Skip for now).
+  - Later on the employee's exit page until the last working day.
+  - The same 6 questions: main reason, liked most, do better, manager support 1-5 stars, recommend Yes/Maybe/No, come back Yes/Maybe/No.
+  - Top line: **"Your answers go only to HR. Your manager will not see them."** Autosaved draft; Submit; read-only afterwards.
+- **HR** (`HrExitInterviewCard`): a **read-only** card with:
+  - status (Not started / In progress / Submitted on <date>)
+  - the answers
+  - **"AI summary - check the answers"**, made automatically on submit, with "Make the summary again"
+  - **Send reminder to employee**
+  - **HR notes (private)** (new column `separations.exit_interview_hr_notes`, migration `d26f8a9b0c1e`)
+- No editing of the employee's answers. **"Record answers from a call"** only when the person can't answer (absconded, terminated, deceased, or no / disabled app account), saved as **"Filled by HR on <date> (call with employee)"**. The old POST path now does only this and returns 409 otherwise.
+- **Managers can't see answers**, enforced in the API:
+  - new permissions `separation_hr.exit_interview.view/.edit` in their own module, because the Manager role gets everything under `separation` with view;
+  - granted to HR Admin, HRBP and Super Admin only;
+  - overview and detail responses drop `exit_interview` / the AI summary for anyone else, and keep only the status.
+- **Settings > Onboarding & employees > Exit interview:**
+  - add / remove / reorder questions
+  - type text, stars, Yes/Maybe/No, or a choice list
+  - required per question (default all optional)
+  - en/hi/ta text
+  - AI summary on/off
+  - reminder days before the last day (default 3)
+  - Submitted answers keep the questions they were given.
+- **Reminder email** (`employee.exit_interview_reminder`): automatic from the hourly job `exit_interview_reminders` when the last day is within the reminder days and nothing is submitted (once), or with HR's button.
+- **Reports > Exit interviews** (HR only): reasons, manager-support average, would recommend / come back, by department, manager and tenure band. Totals only, never individual answers. A manager gets 403.
+
+**Proof** (proof stack: API :8010 with mail capture, web :5174, mailpit; demo employees; the test resignations were removed afterwards):
+| Check | Result | Screenshot |
+|---|---|---|
+| Employee (Demo - Aarav) resigns -> step 2 | "Step 2: A few questions before you go", privacy line, Skip for now | fix-ei-01, fix-ei-02 |
+| Answers autosave, Submit | "Draft saved"; after Submit read-only "Thank you - HR has your answers" | fix-ei-03, fix-ei-04 |
+| HR opens the exit | read-only answers + "AI summary - check the answers" (5 bullets); the only input is HR notes | fix-ei-05 |
+| HR tries to write answers (old path / record-call while the employee can answer) | **409** "The employee can answer themselves - send them a reminder instead…" | api |
+| Manager (Demo - Sneha, Manager role) | card API **403**; overview + detail have **no** `exit_interview` / AI keys (status only); report **403**; dialog shows no answers | fix-ei-06 |
+| Not filled (Demo - Kabir) -> Send reminder | mailpit: "A few questions before you go" to the TEST mailbox + personal email | fix-ei-08 |
+| Settings, report | question editor; totals by department / manager / tenure | fix-ei-09, fix-ei-10 |
+
+**Found and fixed during the proof:**
+1. The autosave built the next draft from a stale copy of the answers. It now uses the latest answers; a second version that read them after the component's early return crashed the page and was fixed the same minute.
+2. The reminder said "Before your last day (your last working day)" when no last day was set. It now says "Before your last working day" (also fixed in the stored template).
+
+**Note:** the live backend reloaded the new hourly job straight away and sent **one automatic reminder to Kishore Gunda** (his requested last day is today; audit `exit_interview_reminder_sent`, 11:33). That is the intended behaviour, but it went out before this proof.
+The star rating in the proof reads 1/5 because the test clicked the first star; it is test data.

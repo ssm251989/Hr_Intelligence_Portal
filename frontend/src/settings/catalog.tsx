@@ -22,6 +22,7 @@ import PoliciesPage from "../components/policies/PoliciesPage";
 import CategoryListPage from "../components/servicedesk/CategoryListPage";
 import JoiningFormSettingsPage from "../components/onboarding/JoiningFormSettingsPage";
 import EmployeeIdSettings from "../components/employees/EmployeeIdSettings";
+import ExitInterviewSettingsPage from "../components/exits/ExitInterviewSettings";
 import UsersPage from "../components/people/UsersPage";
 import GenAISettingsPage from "../components/genai/GenAISettingsPage";
 import PrivacyPanel from "../components/PrivacyPanel";
@@ -87,7 +88,7 @@ export const LEGACY: Record<string, string> = {
   helpdesk: "helpdesk/main", assets: "helpdesk/main", exits: "helpdesk/main", "service-desk": "helpdesk/main",
   all: "advanced/all", modules: "company/modules", "module-lock": "company/modules", "advanced/modules": "company/modules", platform: "advanced/all", "all-settings": "advanced/all",
   health: "data/health", "system-health": "data/health",
-  "employee-id": "onboarding/employee-id",
+  "employee-id": "onboarding/employee-id", "exit-interview": "onboarding/exit-interview",
   "joining-form": "onboarding/joining-form", "joining-details": "onboarding/joining-form",
   "asset-types": "helpdesk/asset-types", "asset-categories": "helpdesk/asset-types", "exit-reasons": "helpdesk/exit-reasons",
   policies: "company/policies", handbook: "company/policies", knowledge: "company/policies",
@@ -161,6 +162,9 @@ export const CATEGORIES: SettingsCategory[] = [
         prefixes: ["onboarding.joining_form"], visible: ADMIN, render: () => <JoiningFormSettingsPage /> },
       { id: "documents", emoji: "page", module: "onboarding", keywords: "documents letters portal forms policies", prefixes: ["onboarding.", "core_hr."], visible: ADMIN,
         render: scoped(["onboarding.documents", "onboarding.portal", "onboarding.conversion", "core_hr."], "settingsHome.page.onboarding.documents") },
+      // fix 2026-10-06: the exit interview questions the leaving employee answers
+      { id: "exit-interview", emoji: "speech", keywords: "exit interview questions leaving resignation feedback stars ai summary reminder", prefixes: ["employees.exit_interview"],
+        visible: ADMIN, render: () => <ExitInterviewSettingsPage /> },
       { id: "leavers", emoji: "door", module: "onboarding", keywords: "absconding not reporting no show early leaver notices", prefixes: ["onboarding.not_reporting"], visible: ADMIN,
         render: scoped(["onboarding.not_reporting"], "settingsHome.page.onboarding.leavers") },
       { id: "fields", emoji: "label", keywords: "employee fields custom", visible: ADMIN, render: () => <MetadataPanel only="Custom Fields" /> },

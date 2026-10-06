@@ -149,6 +149,9 @@ def register_all() -> None:
     register(SettingDef("employees.interviewer.auto_rules", "json", [], module="onboarding", group=G))
     register(SettingDef("employees.interviewer.scorecard_reminder_hours", "int", 24, module="onboarding", group=G,
                         json_schema={"type": "integer", "minimum": 1, "maximum": 240}))
+    from app.employees.exit_interview import DEFAULT as _EXIT_INTERVIEW  # fix 2026-10-06: answered by the employee
+
+    register(SettingDef("employees.exit_interview", "json", _EXIT_INTERVIEW, module="onboarding", group=G))
     register(SettingDef("employees.letters.relieving_template", "str", "relieving_letter", module="onboarding", group=G))
     register(SettingDef("employees.letters.experience_template", "str", "experience_letter", module="onboarding", group=G))
     # change 2026-10-05: joining details form -- required/optional/hidden, help text, format checks + documents (app/onboarding/joining_form.py)

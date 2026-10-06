@@ -569,11 +569,15 @@ def list_separations(status: Optional[str] = None, db: Session = Depends(get_db)
 
 @router.get("/separations/{separation_id}")
 def get_separation(separation_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(require("separation.case.view"))):
+    from app.platform.iam.authz import has_permission
+
     row = _get(db, Separation, separation_id, "Separation")
     items = db.query(ClearanceItem).filter(ClearanceItem.tenant_id == row.tenant_id, ClearanceItem.separation_id == row.id).all()
+    hr = has_permission(db, require_current_tenant(), current_user, "separation_hr.exit_interview.view")  # fix 2026-10-06: HR only
     return {**separations.exit_summary(db, row), "clearance": [separations.item_to_dict(i) for i in items],
-            "relieving_blockers": separations.relieving_blockers(db, row), "exit_interview": row.exit_interview_json,
-            "exit_interview_ai_summary": row.exit_interview_ai_summary_json, "absconding_notices": row.absconding_notices_json}
+            "relieving_blockers": separations.relieving_blockers(db, row),
+            **({"exit_interview": row.exit_interview_json, "exit_interview_ai_summary": row.exit_interview_ai_summary_json} if hr else {}),
+            "absconding_notices": row.absconding_notices_json}
 
 
 class Retention(BaseModel):
@@ -646,12 +650,16 @@ class ExitInterview(BaseModel):
 
 
 @router.post("/separations/{separation_id}/exit-interview")
-def exit_interview(separation_id: UUID, payload: ExitInterview, summarize: bool = False, db: Session = Depends(get_db), current_user: User = Depends(require("separation.case.edit"))):
-    tenant = require_current_tenant()
-    row = separations.submit_exit_interview(db, _get(db, Separation, separation_id, "Separation"), answers=payload.answers)
-    if summarize:
-        row = separations.summarize_exit_interview(db, tenant, row)
-    return {"exit_interview": row.exit_interview_json, "ai_summary": row.exit_interview_ai_summary_json}
+def exit_interview(separation_id: UUID, payload: ExitInterview, summarize: bool = False, db: Session = Depends(get_db),
+                   current_user: User = Depends(require("separation_hr.exit_interview.edit"))):
+    """fix 2026-10-06: HR no longer fills the exit interview. This old path now only records answers from a call
+    when the person can't answer themselves (app/employees/exit_interview.record_from_call)."""
+    from app.employees import exit_interview as ei
+
+    try:
+        return ei.record_from_call(db, require_current_tenant(), _get(db, Separation, separation_id, "Separation"), payload.answers, actor=current_user.email)
+    except ei.ExitInterviewError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 class AbscondingNotice(BaseModel):

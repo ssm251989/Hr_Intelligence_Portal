@@ -390,7 +390,10 @@ def _items(db: Session, s: Separation) -> list[dict]:
              "asset_allocation_id": str(r.asset_allocation_id) if r.asset_allocation_id else None} for r in rows]
 
 
-def _separation_row(db: Session, s: Separation, *, with_items: bool) -> dict:
+def _separation_row(db: Session, s: Separation, *, with_items: bool, interview: bool = False) -> dict:
+    """`interview`: include the exit interview answers / AI summary -- only for separation_hr.exit_interview.view
+    (fix 2026-10-06: managers and the employee's own page never get them here)."""
+    from app.employees.exit_interview import status_of
     employee = db.get(Employee, s.employee_id)
     items = _items(db, s)
     row = {
@@ -399,7 +402,9 @@ def _separation_row(db: Session, s: Separation, *, with_items: bool) -> dict:
         "approved_lwd": _iso(s.approved_lwd), "notice_period_days": s.notice_period_days, "reason_code": s.reason_code, "reason_text": s.reason_text,
         "items_total": len(items), "items_pending": sum(1 for i in items if i.get("status") == "pending"),
         "blocking_pending": sum(1 for i in items if i.get("status") == "pending" and i.get("blocks_relieving")),
-        "exit_interview_done": bool(s.exit_interview_json), "exit_interview": s.exit_interview_json, "exit_interview_ai_summary": s.exit_interview_ai_summary_json,
+        "exit_interview_done": bool((s.exit_interview_json or {}).get("submitted_at")),
+        "exit_interview_status": status_of(s),
+        **({"exit_interview": s.exit_interview_json, "exit_interview_ai_summary": s.exit_interview_ai_summary_json} if interview else {}),
         "letters": _letters(db, s), "rehire_eligible": s.rehire_eligible,
     }
     if with_items:
@@ -437,7 +442,10 @@ def separations_overview(include_closed: bool = False, db: Session = Depends(get
     if not include_closed:
         query = query.filter(Separation.status.in_(OPEN_SEPARATION))
     rows = query.order_by(Separation.created_at.desc()).limit(200).all()
-    return {"today": datetime.now(timezone.utc).date().isoformat(), "items": [_separation_row(db, s, with_items=True) for s in rows]}
+    from app.platform.iam.authz import has_permission
+
+    hr = has_permission(db, tenant, current_user, "separation_hr.exit_interview.view")
+    return {"today": datetime.now(timezone.utc).date().isoformat(), "items": [_separation_row(db, s, with_items=True, interview=hr) for s in rows]}
 
 
 @router.get("/separations/{separation_id}/letters")

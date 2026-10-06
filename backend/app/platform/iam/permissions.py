@@ -171,6 +171,10 @@ def register_all() -> None:
     register_permission("agency", "portal", "create")
     register_permission("separation", "self", "view")
     register_permission("separation", "self", "create")
+    # fix 2026-10-06: exit interview answers are HR-only. A separate module so that roles granted
+    # ("separation", {"view"}) -- e.g. Manager -- do NOT get them by the module-wide widening in roles.py.
+    register_permission("separation_hr", "exit_interview", "view")
+    register_permission("separation_hr", "exit_interview", "edit")
 
     # Part 12: analytics, copilot, agents, AI governance.
     for action in ("view", "create", "edit", "export"):

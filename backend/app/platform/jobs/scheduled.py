@@ -130,7 +130,15 @@ def _joiner_exits(db, tenant):
     return {"notices": run_not_reporting_notices(db, tenant), "logins_off": deactivate_after_lwd(db, tenant)}
 
 
+def _exit_interview_reminders(db, tenant):
+    """fix 2026-10-06: remind leavers to answer their exit interview N days before their last day."""
+    from app.employees.exit_interview import run_reminders
+
+    return {"reminders": run_reminders(db, tenant)}
+
+
 JOBS = {
+    "exit_interview_reminders": _exit_interview_reminders,
     "joiner_exits": _joiner_exits,
     "workflow_timers": _workflow_timers,
     "ticket_escalations": _ticket_escalations,
@@ -224,5 +232,6 @@ celery_app.conf.beat_schedule = {
     "documents-reminders": {"task": "hrms.fan_out", "schedule": 3600.0, "args": ("documents_reminders",)},
     "recycle-bin-purge": {"task": "hrms.fan_out", "schedule": 86400.0, "args": ("recycle_bin_purge",)},
     "joiner-exits": {"task": "hrms.fan_out", "schedule": 3600.0, "args": ("joiner_exits",)},
+    "exit-interview-reminders": {"task": "hrms.fan_out", "schedule": 3600.0, "args": ("exit_interview_reminders",)},
 }
 celery_app.conf.timezone = "UTC"

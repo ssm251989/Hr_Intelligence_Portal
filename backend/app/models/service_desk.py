@@ -267,6 +267,7 @@ class Separation(Base, TenantOwned):
     workflow_instance_id = Column(UUID(as_uuid=True), ForeignKey("workflow_instances.id"))
     exit_interview_json = Column(JSONB)
     exit_interview_ai_summary_json = Column(JSONB)  # advisory, HITL
+    exit_interview_hr_notes = Column(Text)  # fix 2026-10-06: HR's private notes, never shown to the employee or managers
     rehire_eligible = Column(Boolean)
     alumni_opt_in = Column(Boolean, nullable=False, server_default=text("false"))
     absconding_notices_json = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))

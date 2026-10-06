@@ -1,4 +1,6 @@
 import DropoutReportView from "../components/reports/DropoutReportView";
+import ExitInterviewReportView from "../components/reports/ExitInterviewReportView";
+import { useMeBootstrap as useMeForReports } from "../bootstrap/MeBootstrapContext";
 import { useEffect, useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -435,12 +437,15 @@ export default function ReportsPage() {
     }
   };
 
+  const canExitInterviews = useMeForReports().can("separation_hr.exit_interview.view");
   const tabs = [
     { emoji: "compass", label: t("reports.tab.pipeline") },
     { emoji: "briefcase", label: t("reports.tab.summary") },
     { emoji: "clipboard", label: t("reports.tab.audit") },
     { emoji: "hourglass", label: t("reports.tab.timeline") },
     { emoji: "door", label: t("joinerx.report.tab") }, // fix 2026-10-05
+    // fix 2026-10-06: exit interview totals -- HR only (managers never see answers)
+    ...(canExitInterviews ? [{ emoji: "speech", label: t("exitq.rep.tab") }] : []),
   ];
 
   return (
@@ -486,6 +491,7 @@ export default function ReportsPage() {
             {tab === 2 && <AuditTrailView key={resetKey} />}
             {tab === 3 && <TimelineView key={resetKey} />}
             {tab === 4 && <DropoutReportView key={resetKey} />}
+            {tab === 5 && canExitInterviews && <ExitInterviewReportView key={resetKey} />}
           </Box>
         </Card>
         <SavedReportsCard reloadKey={resetKey + savedTick} />

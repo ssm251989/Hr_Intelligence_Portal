@@ -265,6 +265,9 @@ app.include_router(ui_policies_router)
 from app.experience.ui_employees_router import router as ui_employees_router  # noqa: E402  part 20.1
 
 app.include_router(ui_employees_router)
+from app.experience.ui_exit_interview_router import router as ui_exit_interview_router  # noqa: E402  fix 2026-10-06
+
+app.include_router(ui_exit_interview_router)
 from app.experience.ui_documents_router import public_router as documents_public_router, router as ui_documents_router  # noqa: E402
 
 app.include_router(ui_documents_router)

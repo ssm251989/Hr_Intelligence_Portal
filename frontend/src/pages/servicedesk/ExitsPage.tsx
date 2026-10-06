@@ -32,6 +32,7 @@ import ExitCaseDialog, { stageIndex } from "../../components/servicedesk/ExitCas
 import { LetterChip, LetterPreviewButton, letterState } from "../../components/servicedesk/LetterStatus";
 import { ItemStatusChip, Section, SeparationStatusChip, typeLabel, useCategories, useDateFmt, useToast } from "../../components/servicedesk/shared";
 import { useT } from "../../i18n";
+import { MyExitInterview } from "../../components/exits/ExitInterviewCards";
 import { Cell, EmptyState, Emoji, FriendlyError, PageGrid, PageHeader, ProgressRing, StageStepper, StatTile } from "../../ui-kit";
 
 const STAGES = ["submitted", "approved", "clearance", "completed"];
@@ -103,7 +104,7 @@ function ResignForm({ notice, onSent }: { notice: number | null; onSent: () => v
   );
 }
 
-function MyExit({ data }: { data: SeparationRow }) {
+function MyExit({ data, justResigned, onSkip }: { data: SeparationRow; justResigned?: boolean; onSkip?: () => void }) {
   const t = useT();
   const f = useTheme().palette.fresh;
   const fmt = useDateFmt();
@@ -112,6 +113,8 @@ function MyExit({ data }: { data: SeparationRow }) {
   return (
     <Stack spacing={2}>
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap><SeparationStatusChip status={data.status} /></Stack>
+      {/* fix 2026-10-06: step 2 right after "Submit resignation" (skippable) -- and here until the last working day */}
+      {justResigned && data.status !== "withdrawn" && <MyExitInterview firstTime onSkip={onSkip} />}
       {data.status !== "withdrawn" && <StageStepper stages={STAGES.map((k) => t(`exits.step.${k}`))} current={stageIndex(data.status)} />}
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 1.5 }}>
         <Box sx={{ bgcolor: f.surface2, borderRadius: "12px", p: 1.5 }}>
@@ -127,6 +130,7 @@ function MyExit({ data }: { data: SeparationRow }) {
           </Stack>
         </Box>
       </Box>
+      {!justResigned && data.status !== "withdrawn" && <MyExitInterview />}
       <Box>
         <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 1 }}>
           {items.length > 0 && <ProgressRing value={Math.round((100 * done) / items.length)} size={44} caption={t("exits.me.progress_text", { done, total: items.length })} />}
@@ -155,6 +159,7 @@ function EmployeeExit({ canResign, onToast, formRequested }: { canResign: boolea
   const t = useT();
   const [data, setData] = useState<MySeparation | null>(null);
   const [error, setError] = useState<unknown>(null);
+  const [justResigned, setJustResigned] = useState(false);
   const load = useCallback(() => {
     setError(null);
     serviceDeskExtra.mySeparation().then(setData).catch(setError);
@@ -165,9 +170,9 @@ function EmployeeExit({ canResign, onToast, formRequested }: { canResign: boolea
   if (error) body = <FriendlyError error={error} onRetry={load} compact />;
   else if (!data) body = <Box sx={{ display: "grid", placeItems: "center", py: 4 }}><CircularProgress aria-label={t("helpdesk.common.loading")} /></Box>;
   else if (!data.linked) body = <EmptyState compact illustration="access-denied" title={t("exits.resign.not_linked")} />;
-  else if (data.separation && data.separation.status !== "withdrawn") body = <MyExit data={data.separation} />;
+  else if (data.separation && data.separation.status !== "withdrawn") body = <MyExit data={data.separation} justResigned={justResigned} onSkip={() => setJustResigned(false)} />;
   else if (!canResign || !["active", "probation"].includes(data.employee_status ?? "active")) body = <EmptyState compact illustration="empty" title={t("exits.resign.not_active")} />;
-  else body = <ResignForm key={formRequested} notice={data.notice_period_days} onSent={() => { onToast(t("exits.resign.sent")); load(); }} />;
+  else body = <ResignForm key={formRequested} notice={data.notice_period_days} onSent={() => { onToast(t("exits.resign.sent")); setJustResigned(true); load(); }} />;
 
   const hasCase = Boolean(data?.separation && data.separation.status !== "withdrawn");
   return <Section id="sd-resign" emoji="door" title={t(hasCase ? "exits.me.title" : "exits.resign.title")}>{body}</Section>;
