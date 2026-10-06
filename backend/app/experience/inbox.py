@@ -35,6 +35,11 @@ def items_for(db: Session, tenant: TenantContext, user: User) -> list[dict]:
                     "path": f"/approvals?step={step.id}", "actions": ["approve", "reject"]})
 
     for s in agent_inbox(db, tenant, user):
+        if s.kind in ("employee_create", "it_mailbox_create", "it_mailbox_suspend"):  # Part 20.2: approval card / IT to-do on Employees
+            out.append({"kind": "todo", "id": str(s.id), "title": s.title,
+                        "subtitle": "approve to create the employee" if s.kind == "employee_create" else "IT: mailbox",
+                        "due_at": None, "path": f"/employees?card={s.id}", "actions": ["open"]})
+            continue
         if s.kind == "position_open_again":  # fix 2026-10-05: a to-do, not something to approve
             out.append({"kind": "todo", "id": str(s.id), "title": s.title,
                         "subtitle": f"{(s.payload_json or {}).get('person')} - {(s.payload_json or {}).get('why')}",

@@ -90,7 +90,10 @@ def _assign_rule_roles(db: Session, tenant: TenantContext, user: User, role_name
     return assigned
 
 
-def convert(db: Session, tenant: TenantContext, case: PreboardingCase, *, actor: str, as_of: Optional[date] = None) -> dict:
+def convert(db: Session, tenant: TenantContext, case: PreboardingCase, *, actor: str, as_of: Optional[date] = None,
+            create_account: bool = True) -> dict:
+    """Part 20.2: create_account=False -> the Onboarding agent (app/employees/creation.py) makes the app account
+    with the COMPANY email after HR approves, instead of a login on the personal email here."""
     today = as_of or datetime.now(timezone.utc).date()
     if case.status in ("revoked", "no_show"):
         raise ConversionError(f"case is {case.status}; it cannot be converted")
@@ -117,8 +120,8 @@ def convert(db: Session, tenant: TenantContext, case: PreboardingCase, *, actor:
             changes=changes, reason="pre-boarding conversion", created_by=actor,
         )
 
-    user = _ensure_user(db, tenant, employee, case)
-    roles = ["Employee", *_assign_rule_roles(db, tenant, user, assignment_rules.resolve_all(db, tenant, "role", ctx))]
+    user = _ensure_user(db, tenant, employee, case) if create_account else (db.get(User, employee.user_id) if employee.user_id else None)
+    roles = ["Employee", *(_assign_rule_roles(db, tenant, user, assignment_rules.resolve_all(db, tenant, "role", ctx)) if user is not None else [])]
 
     plan_code = assignment_rules.resolve_one(db, tenant, "onboarding_plan_template", ctx) or (
         SettingsService(db).get("onboarding.conversion.default_plan_template", SettingContext(tenant=tenant)) or None
@@ -151,10 +154,10 @@ def convert(db: Session, tenant: TenantContext, case: PreboardingCase, *, actor:
         case.joined_at = datetime.now(timezone.utc)
         case.history_json = [*(case.history_json or []), {"event": "joined", "actor": actor, "at": case.joined_at.isoformat()}]
         db.commit()
-        log_action(db, "preboarding_case", case.id, "converted_to_employee", actor, {"employee_id": str(employee.id), "user_id": str(user.id)})
+        log_action(db, "preboarding_case", case.id, "converted_to_employee", actor, {"employee_id": str(employee.id), "user_id": str(user.id) if user else None})
 
     return {
         "case_id": str(case.id), "employee_id": str(employee.id), "employee_code": employee.employee_code,
-        "user_id": str(user.id), "roles": roles, "plan_id": str(plan.id) if plan else None,
+        "user_id": str(user.id) if user else None, "roles": roles, "plan_id": str(plan.id) if plan else None,
         "letter_id": str(letter_id) if letter_id else None, "already_converted": already_joined,
     }

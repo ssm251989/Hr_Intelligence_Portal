@@ -208,3 +208,38 @@ Each link was opened by Playwright as an admin on the live app (`fix22-link-01..
 - `p20-1-employee-profile`, `p20-1-profile-job`: the profile.
 - `p20-1-settings-employee-id`: the Employee ID setting.
 - Found during proof: the menu item was there but 4th in People (below Exits, out of view in the sidebar); it now comes first.
+
+---
+
+## 20.2 Agent: onboarding completed -> employee created
+
+**Built** (`app/employees/creation.py`, `mailboxes.py`, `accounts.py`):
+- **Trigger:** "Mark as joined" (= onboarding complete). `joiner_actions.mark_joined` calls `creation.on_joined`. The older conversion no longer makes a login on the **personal** email (`convert(..., create_account=False)`); the agent makes it with the company email after approval.
+- **Duplicate check:**
+  - Same candidate or same personal email -> the same person: the existing record is **linked**, never duplicated.
+  - Same phone, or same name + date of birth -> the card asks **"Is this the same person as CTD-0007?"** and won't create anything until HR answers.
+- **The record** (from candidate + offer + job + joining details):
+  - first/last/preferred name, designation (offer, else job title)
+  - department and location (matched by name; the card says when the job's text didn't match, so HR picks)
+  - manager (the job's hiring manager, if they are an employee), joining date
+  - employment type (job type), previous experience (resume `total_experience_years`)
+  - personal email/phone, emergency contact
+  - **bank / PAN / Aadhaar moved from the joining form into the encrypted employee fields** (masked everywhere)
+- **Employee ID:** the pre-hire record's ID, from the Employee ID format.
+- **Company email:**
+  - Built from the pattern (Settings: `employees.email.pattern` `{first}.{last}`, fallbacks `{first}.{l}`, `{first}.{last}{n}`; domain = setting, else the admins' sign-in domain) and **checked free**: not used here, and free at the provider.
+  - Created through the email-admin connection (purpose `directory.mailboxes`). New connection types:
+    - **Google Workspace** (Admin SDK Directory API, service-account JSON in SecretStore)
+    - **Microsoft 365** (Graph, client id/secret in SecretStore)
+    - Both are written against the public APIs but **not run against a live tenant yet**.
+  - A provider's first password is returned **once** to show HR on screen and is never stored, logged or emailed.
+  - **No connection:** an IT to-do "Create mailbox kishore.gunda@ctdtechs.com for Kishore Gunda (joins 2026-10-14)" with **"Done - mailbox created"** (IT can correct the address). The login moves to it and a fresh invite goes there.
+- **App account:** login = company email (personal email until a mailbox exists). Role Employee + roles from the rules (`employees.default_roles`, `employees.role_rules`, e.g. designation contains "Interviewer" -> Interviewer). An invite with a "Set your password" link (72 h, single use) goes to the company email + the personal email as backup.
+- **Move to Employees:** status Active; the onboarding "Joined recently" row shows **"Employee created - CTD-0012"** (or "Approve employee" while the card waits).
+- **Human in the loop:** Settings `employees.on_onboarding_complete` = `approve` (**default**) or `automatic`.
+  - The approval card is on **Employees** (top) and in the inbox to-dos (`/employees?card=<id>`).
+  - It shows and lets HR edit everything: ID (read-only), names, designation, department, location, type, joining date, previous experience, company email (live "free?" check), roles; the duplicate question when needed.
+  - "Approve and create" / "Not now".
+- **Failures** (e.g. mailbox API error, invite email failed) show per step in plain words, with **Retry**. Steps already done are not repeated. Everything is audited: `employee_prepared`, `employee_created`, `employee_creation_step_failed`, `mailbox_created`, `it_todo_*`, `app_invite_sent`, `employee_account_created`.
+
+**Proof:** in 20.6, on the isolated proof stack (mailpit), because the live backend would send invites through the real company mailbox.

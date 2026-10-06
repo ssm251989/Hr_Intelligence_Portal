@@ -19,10 +19,11 @@ import TableRow from "@mui/material/TableRow";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { extractErrorMessage } from "../../api/client";
-import { employeesApi, type EmployeeFilters, type EmployeeList, type EmployeeProfile, type EmployeeRow } from "../../api/employeesApi";
+import { employeesApi, type AgentCard, type EmployeeFilters, type EmployeeList, type EmployeeProfile, type EmployeeRow, type ItTodo } from "../../api/employeesApi";
+import { EmployeeApprovalCard, ItTodoCard } from "../../components/employees/EmployeeApprovalCard";
 import ListToolbar, { type ListColumn, type ListViewState } from "../../components/ListToolbar";
 import { AccountChip, CompanyEmail, EditEmployeeDialog, EmpStatusChip, GiveAssetDialog } from "../../components/employees/EmployeeDialogs";
 import { employeeActionsRegistry } from "../../components/employees/registry";
@@ -58,6 +59,13 @@ export default function EmployeesPage() {
   const [giving, setGiving] = useState<EmployeeRow | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [extra, setExtra] = useState<ReactNode>(null);
+  // Part 20.2: the Onboarding agent's approval cards and IT to-dos (?card=<id> from the inbox highlights one)
+  const [cards, setCards] = useState<AgentCard[]>([]);
+  const [itTodos, setItTodos] = useState<ItTodo[]>([]);
+  const [params] = useSearchParams();
+  const focusCard = params.get("card");
+  const loadCards = useCallback(() => { employeesApi.agentPending().then((r) => { setCards(r.cards); setItTodos(r.it_todos); }).catch(() => undefined); }, []);
+  useEffect(loadCards, [loadCards]);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -110,6 +118,21 @@ export default function EmployeesPage() {
     <Box>
       <PageHeader emoji="id_card" title={t("emp.title")} purpose={t("emp.purpose")} tourKey="employees" />
       {data?.test_mode && <Alert severity="info" sx={{ mb: 2 }} data-testid="emp-test-banner">{t("emp.test_banner")}</Alert>}
+      {cards.length > 0 && (
+        <Box sx={{ mb: 2 }}>
+          <Typography component="h2" sx={{ fontWeight: 800, fontSize: 17, mb: 1 }}>{t("emp.card.section", { n: cards.length })}</Typography>
+          <Stack spacing={1.5}>
+            {cards.map((c) => <EmployeeApprovalCard key={c.id} card={c} facets={data?.facets ?? null} highlight={c.id === focusCard}
+              onChanged={() => { loadCards(); load(); setToast(t("emp.card.done_toast")); }} />)}
+          </Stack>
+        </Box>
+      )}
+      {itTodos.length > 0 && (
+        <Box sx={{ mb: 2 }}>
+          <Typography component="h2" sx={{ fontWeight: 800, fontSize: 17, mb: 1 }}>{t("emp.it.section", { n: itTodos.length })}</Typography>
+          <Stack spacing={1}>{itTodos.map((x) => <ItTodoCard key={x.id} todo={x} onChanged={() => { loadCards(); load(); setToast(t("emp.it.done_toast")); }} />)}</Stack>
+        </Box>
+      )}
       <Card sx={{ p: { xs: 1.5, md: 2 } }}>
         <Stack direction={{ xs: "column", md: "row" }} spacing={1} sx={{ mb: 1.5 }} flexWrap="wrap" useFlexGap>
           <TextField size="small" label={t("emp.search")} value={q} onChange={(e) => setQ(e.target.value)} sx={{ minWidth: 220 }} />

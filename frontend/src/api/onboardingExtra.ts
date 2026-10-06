@@ -52,6 +52,9 @@ export interface RecentJoiner {
   stage: JoinerStage;
   allowed_actions: JoinerActionKey[];
   not_reporting: { status: string; last_seen: string; notices: string[] } | null;
+  /** Part 20.2 */
+  employee_created?: { code: string; employee_id: string; at: string; by: string } | null;
+  employee_card?: { id: string; status: string } | null;
 }
 
 export interface JoinerReasons {

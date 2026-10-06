@@ -2733,3 +2733,6 @@ NEXT: part-20.1 Employees tab (list, profile, Employee ID format, assign asset w
 - part-20.1: Employees tab (list, filters, Excel, bulk invites, profile tabs, edit, assign asset without the Assets module, Employee ID format). Decisions: CTD Techs ID format CTD-{SEQ:4} (running number continues; old IDs unchanged); job-detail edits here are corrections in place (logged) - formal transfers/promotions stay in the older People module; /employees now opens this page (it used to forward to the hidden People module).
 
 NEXT: part-20.2 onboarding completed -> agent prepares the employee (approval card), company email, app account + invite.
+- part-20.2: Onboarding agent (prepare -> approval card -> create record, company email via email-admin connection or IT to-do, app account + 72h invite). Decisions: default = HR approves (setting `employees.on_onboarding_complete`); the Employee ID is the pre-hire record's (made at case creation from the format); a provider's first password is shown once on screen and never stored; Google Workspace + Microsoft 365 adapters written to the public APIs but unverified until a real tenant is connected; mark_joined no longer creates a personal-email login.
+
+NEXT: part-20.2b TEST email provider (dummy mailboxes, test inbox, mailpit) + `hrctl demo employees` / `demo clear`.

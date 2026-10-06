@@ -61,6 +61,14 @@ export default function RecentJoiners({ rows, canAct, onAct }: { rows: RecentJoi
                 )}
               </Box>
               <StatusChip tone={flow ? "coral" : "ok"} emoji={flow ? "warning" : "check"} label={flow ? t("joinerx.recent.chip_not_reporting") : t("onboarding.status.joined")} />
+              {/* Part 20.2: the Onboarding agent -> "Employee created - CTD-0012", or the approval card waiting */}
+              {r.employee_created ? (
+                <Button size="small" component={RouterLink} to={`/employees/${r.employee_created.employee_id}`} data-testid="employee-created-chip">
+                  {t("emp.card.created_chip", { code: r.employee_created.code })}
+                </Button>
+              ) : r.employee_card?.status === "pending" ? (
+                <Button size="small" variant="contained" component={RouterLink} to={`/employees?card=${r.employee_card.id}`}>{t("emp.card.approve_open")}</Button>
+              ) : null}
               {canAct && acts.length > 0 && (
                 <Button size="small" variant="outlined" onClick={(e) => setMenu({ el: e.currentTarget, row: r })} aria-label={t("joinerx.recent.actions_for", { name: r.name })}>
                   {t("joinerx.recent.actions")}

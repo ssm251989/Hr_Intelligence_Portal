@@ -121,6 +121,115 @@ def bulk_invites(body: InvitesIn, db: Session = Depends(get_db), current_user: U
     return {"results": out}
 
 
+# ---- Part 20.2: the Onboarding agent's approval cards + IT to-dos ----
+
+
+def _card(db: Session, card_id: UUID):
+    from app.models.intelligence import AgentSuggestion
+
+    s = db.get(AgentSuggestion, card_id)
+    if s is None or s.tenant_id != require_current_tenant().tenant_id or s.kind not in ("employee_create", "it_mailbox_create", "it_mailbox_suspend"):
+        raise HTTPException(status_code=404, detail="That card no longer exists.")
+    return s
+
+
+@router.get("/agent/pending")
+def agent_pending(db: Session = Depends(get_db), current_user: User = Depends(require(VIEW))):
+    from app.employees import creation
+
+    tenant = require_current_tenant()
+    return {"cards": creation.pending(db, tenant), "it_todos": creation.it_todos(db, tenant)}
+
+
+@router.get("/agent/by-case/{case_id}")
+def agent_by_case(case_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(require(VIEW))):
+    from app.employees import creation
+    from app.models.intelligence import AgentSuggestion
+
+    s = (db.query(AgentSuggestion).filter(AgentSuggestion.tenant_id == require_current_tenant().tenant_id, AgentSuggestion.kind == creation.KIND,
+                                          AgentSuggestion.entity_id == case_id).order_by(AgentSuggestion.created_at.desc()).first())
+    return creation.to_dict(s) if s is not None else None
+
+
+class ApproveIn(BaseModel):
+    edits: dict = Field(default_factory=dict)
+
+
+@router.post("/agent/{card_id}/approve")
+def agent_approve(card_id: UUID, body: ApproveIn, db: Session = Depends(get_db), current_user: User = Depends(require(EDIT))):
+    """Approve (or Retry after a failed step). The provider's one-time password, if any, is in this
+    response only -- shown to HR once, never stored."""
+    from app.employees import creation
+
+    try:
+        return creation.approve(db, require_current_tenant(), _card(db, card_id), edits=body.edits, actor=current_user.email)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+class NoteIn(BaseModel):
+    note: Optional[str] = Field(None, max_length=500)
+
+
+@router.post("/agent/{card_id}/reject")
+def agent_reject(card_id: UUID, body: NoteIn, db: Session = Depends(get_db), current_user: User = Depends(require(EDIT))):
+    from app.employees import creation
+
+    return creation.reject(db, require_current_tenant(), _card(db, card_id), actor=current_user.email, note=body.note)
+
+
+@router.post("/agent/{card_id}/refresh")
+def agent_refresh(card_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(require(EDIT))):
+    """Prepare the card again (e.g. after the joiner changed their details)."""
+    from app.employees import creation
+    from app.models.onboarding import PreboardingCase
+
+    s = _card(db, card_id)
+    case = db.get(PreboardingCase, s.entity_id)
+    if case is None:
+        raise HTTPException(status_code=404, detail="The joiner no longer exists.")
+    return creation.to_dict(creation.prepare(db, require_current_tenant(), case, actor=current_user.email))
+
+
+class EmailCheckIn(BaseModel):
+    address: str = Field(..., max_length=200)
+    employee_id: Optional[UUID] = None
+
+
+@router.post("/email/check")
+def email_check(body: EmailCheckIn, db: Session = Depends(get_db), current_user: User = Depends(require(VIEW))):
+    from app.employees import mailboxes
+
+    ok, why = mailboxes.is_free(db, require_current_tenant(), body.address, except_employee_id=body.employee_id)
+    return {"address": body.address.strip().lower(), "free": ok, "why": why or None}
+
+
+class ItDoneIn(BaseModel):
+    address: Optional[str] = Field(None, max_length=200)
+
+
+@router.post("/it-todos/{card_id}/done")
+def it_done(card_id: UUID, body: ItDoneIn, db: Session = Depends(get_db), current_user: User = Depends(require(EDIT))):
+    """"Done - mailbox created" (IT/HR confirms the address). The app login moves to it and a fresh invite goes there."""
+    from app.employees import mailboxes
+    from app.models.core_hr import Employee
+
+    tenant = require_current_tenant()
+    s = _card(db, card_id)
+    try:
+        out = mailboxes.confirm_it_todo(db, tenant, s, address=body.address, actor=current_user.email)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if s.kind == "it_mailbox_create":
+        e = db.get(Employee, s.entity_id)
+        if e is not None and e.status in ("active", "on_notice"):
+            try:
+                out["invite"] = accounts.send_invite(db, tenant, e, actor=current_user.email)
+            except ValueError as exc:
+                out["invite_error"] = str(exc)
+    return out
+
+
 @router.get("/{employee_id}")
 def get_profile(employee_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(require(VIEW))):
     from app.platform.iam.authz import has_permission

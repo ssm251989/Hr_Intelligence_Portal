@@ -253,6 +253,12 @@ def board(lang: str = "en", db: Session = Depends(get_db), current_user: User = 
     joined = [c for c in db.query(PreboardingCase).filter(PreboardingCase.tenant_id == tenant.tenant_id, PreboardingCase.status == "joined").all()
               if (c.joined_at and c.joined_at >= since) or ((c.attributes_json or {}).get("not_reporting") or {}).get("status") == "active"]
     jp = _people(db, joined)
+    # Part 20.2: the Onboarding agent's card per joiner (waiting for approval) / "Employee created - CTD-0012"
+    from app.models.intelligence import AgentSuggestion
+
+    cards_by_case = {r.entity_id: r for r in db.query(AgentSuggestion).filter(AgentSuggestion.tenant_id == tenant.tenant_id,
+                                                                              AgentSuggestion.kind == "employee_create",
+                                                                              AgentSuggestion.entity_id.in_([c.id for c in joined] or [None])).all()}
     for case in sorted(joined, key=lambda c: c.joining_date, reverse=True):
         p = jp[case.id]
         flow = (case.attributes_json or {}).get("not_reporting") or {}
@@ -262,6 +268,8 @@ def board(lang: str = "en", db: Session = Depends(get_db), current_user: User = 
             "status": case.status, "stage": joiner_stage.stage(db, case, today), "allowed_actions": joiner_stage.allowed_actions(db, case, today),
             "not_reporting": ({"status": flow.get("status"), "last_seen": flow.get("last_seen"), "notices": [n.get("kind") for n in flow.get("notices", [])]}
                               if flow else None),
+            "employee_created": (case.attributes_json or {}).get("employee_created"),
+            "employee_card": ({"id": str(cards_by_case[case.id].id), "status": cards_by_case[case.id].status} if case.id in cards_by_case else None),
         })
 
     # names for the queue + overdue lists, including cases outside the active set

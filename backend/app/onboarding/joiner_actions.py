@@ -162,9 +162,12 @@ def mark_joined(db: Session, tenant, case: PreboardingCase, *, actor: str) -> di
 
     _require(db, case, "mark_joined")
     try:
-        result = convert(db, tenant, case, actor=actor)
+        result = convert(db, tenant, case, actor=actor, create_account=False)  # part 20.2: the agent makes the account
     except ConversionError as exc:
         raise ActionError(str(exc)) from exc
+    from app.employees import creation
+
+    result["employee_agent"] = creation.on_joined(db, tenant, case, actor=actor)
     application, _cand, _job, offer = _ctx(db, case)
     if application is not None and application.status != "onboarding_completed":
         previous = application.status

@@ -128,6 +128,29 @@ def register_all() -> None:
     register(SettingDef("onboarding.day_one.meet", "str", "", module="onboarding", group="Day one"))  # who to ask for at reception
     # fix 2026-10-05: a new joiner stops coming -> "Not reporting" emails (days counted from the last day they came in)
     register(SettingDef("onboarding.not_reporting.enabled", "bool", True, module="onboarding", group="Leaving soon after joining"))
+    # Part 20: employees (app/employees/*) -- Settings > Onboarding & employees
+    G = "Employees"
+    register(SettingDef("employees.on_onboarding_complete", "str", "approve", module="onboarding", group=G,
+                        json_schema={"enum": ["approve", "automatic"]}))
+    register(SettingDef("employees.email.domain", "str", "", module="onboarding", group=G))
+    register(SettingDef("employees.email.pattern", "str", "{first}.{last}", module="onboarding", group=G))
+    register(SettingDef("employees.email.fallbacks", "json", ["{first}.{l}", "{first}.{last}{n}"], module="onboarding", group=G))
+    register(SettingDef("employees.default_roles", "json", ["Employee"], module="onboarding", group=G))
+    register(SettingDef("employees.role_rules", "json", [], module="onboarding", group=G))
+    register(SettingDef("employees.notice_days", "json", {"default": 30, "full_time": 60, "part_time": 30, "contract": 15, "intern": 7, "consultant": 15},
+                        module="onboarding", group=G))
+    register(SettingDef("employees.exit.approval_steps", "json", ["manager", "hr"], module="onboarding", group=G))
+    register(SettingDef("employees.exit.clearance_items", "json", [
+        {"title": "Return company assets", "owner": "IT", "auto_assets": True},
+        {"title": "Remove system and building access", "owner": "IT"},
+        {"title": "Hand over work and documents", "owner": "Manager"},
+        {"title": "Final settlement and documents", "owner": "HR"},
+    ], module="onboarding", group=G))
+    register(SettingDef("employees.interviewer.auto_rules", "json", [], module="onboarding", group=G))
+    register(SettingDef("employees.interviewer.scorecard_reminder_hours", "int", 24, module="onboarding", group=G,
+                        json_schema={"type": "integer", "minimum": 1, "maximum": 240}))
+    register(SettingDef("employees.letters.relieving_template", "str", "relieving_letter", module="onboarding", group=G))
+    register(SettingDef("employees.letters.experience_template", "str", "experience_letter", module="onboarding", group=G))
     # change 2026-10-05: joining details form -- required/optional/hidden, help text, format checks + documents (app/onboarding/joining_form.py)
     register(SettingDef("onboarding.joining_form", "json", {"fields": {}, "documents": {}}, module="onboarding", group="Joining details form"))
     register(SettingDef("onboarding.not_reporting.reminder_days", "int", 2, module="onboarding", group="Leaving soon after joining"))

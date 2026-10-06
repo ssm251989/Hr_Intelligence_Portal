@@ -26,7 +26,7 @@ _PLAIN = (
     ("email.outbound.", "The company mailbox (sending email)"), ("email.inbound.", "The company mailbox (reading replies)"),
     ("calendar.", "A calendar (Google or Outlook)"), ("meeting.", "A video-meeting service (Google Meet, Teams or Zoom)"),
     ("llm.", "The AI service (Settings > Integrations > GenAI)"), ("esign.", "E-signing (DocuSign or Leegality)"),
-    ("bgv.", "A background-check provider"), ("storage.", "File storage"), ("geo.", "Maps"), ("chat.", "Team chat"),
+    ("bgv.", "A background-check provider"), ("storage.", "File storage"), ("directory.", "Company email accounts (Google Workspace / Microsoft 365)"), ("geo.", "Maps"), ("chat.", "Team chat"),
     ("analytics.", "The data warehouse"),
 )
 
@@ -54,6 +54,7 @@ def _register_all() -> None:
     register_purpose("meeting.interviews")
     register_purpose("chat.hr_alerts")
     register_purpose("storage.documents")
+    register_purpose("directory.mailboxes")  # Part 20.2: company mailboxes for new employees (email-admin connection)
     register_purpose("geo.geocoding")  # Part 17.3: place name / PIN -> map coordinates
     register_purpose("storage.exports")
     register_purpose("llm.resume_extraction")
