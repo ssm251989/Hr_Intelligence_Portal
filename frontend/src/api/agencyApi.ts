@@ -13,9 +13,27 @@ export interface AgencyRow {
   jobs: number;
   members: number;
   submissions: number;
+  // Part 21.5
+  agency_type: AgencyType; contact_person: string | null; phone: string | null; address: string | null; gst_pan: string | null;
+  contract_start: string | null; contract_end: string | null; fee_type: string | null; fee_value: number | null; payment_terms: string | null;
+  bgv_checks: { check: string; price: number | null }[]; turnaround_days: number | null; report_format: string | null;
+}
+
+export type AgencyType = "recruitment" | "bgv" | "both";
+export const BGV_CHECKS = ["education", "employment", "address", "criminal", "identity", "reference", "drug"];
+export interface AgencyInput {
+  name: string; contact_email?: string | null; notes?: string | null; agency_type: AgencyType; contact_person?: string | null; phone?: string | null;
+  address?: string | null; gst_pan?: string | null; contract_start?: string | null; contract_end?: string | null; fee_type?: string | null;
+  fee_value?: number | null; payment_terms?: string | null; bgv_checks?: { check: string; price: number | null }[]; turnaround_days?: number | null;
+  report_format?: string | null; active?: boolean;
+}
+export interface AgencyStats {
+  recruitment?: { submitted: number; hired: number; fees_due: number; fees_unknown: number };
+  bgv?: { cases: number; open: number; average_turnaround_days: number | null; overdue: number; cost_so_far: number };
 }
 
 export interface AgencyDetail extends AgencyRow {
+  stats?: AgencyStats;
   job_list: { id: string; title: string; location: string | null; status: string; open: boolean }[];
   member_list: { user_id: string; email: string; full_name: string | null; added_at: string | null }[];
   submission_list: { application_id: string; candidate_id: string; candidate_name: string | null; job_title: string; status: string; submitted_at: string | null }[];
@@ -63,9 +81,15 @@ const HR = "/api/v1/agencies";
 const PORTAL = "/api/v1/agency-portal";
 
 export const agencyApi = {
-  list: () => http.get<AgencyRow[]>(HR),
-  create: (payload: { name: string; contact_email?: string; notes?: string }) => http.post<AgencyRow>(HR, payload),
-  update: (id: string, payload: Partial<Pick<AgencyRow, "name" | "contact_email" | "notes" | "active">>) => http.patch<AgencyRow>(`${HR}/${id}`, payload),
+  list: (type?: "recruitment" | "bgv") => http.get<AgencyRow[]>(`${HR}${type ? `?agency_type=${type}` : ""}`),
+  create: (payload: AgencyInput) => http.post<AgencyRow>(HR, payload),
+  update: (id: string, payload: Partial<AgencyInput>) => http.patch<AgencyRow>(`${HR}/${id}`, payload),
+  importSample: () => http.fetchBlob(`${HR}/import-sample`),
+  importFile: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return http.postForm<{ results: { row: number; name: string; result: string; error?: string }[] }>(`${HR}/import`, form);
+  },
   detail: (id: string) => http.get<AgencyDetail>(`${HR}/${id}`),
   setJobs: (id: string, jobIds: string[]) => http.put<{ jobs: number }>(`${HR}/${id}/jobs`, { job_ids: jobIds }),
   invite: (id: string, payload: { email: string; full_name?: string }) => http.post<InviteResult>(`${HR}/${id}/members`, payload),

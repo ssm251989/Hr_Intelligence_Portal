@@ -147,7 +147,7 @@ from app.models.department_budget import BudgetCommitment, DepartmentBudget
 from app.models.candidate_document import CandidateDocument
 from app.models.interviewer_pool import InterviewerPool
 from app.models.scoring import ScoreRecalcRun, ScoringRuleSet
-from app.models.agency import AgencyJobAssignment, AgencyMember, AgencySubmission, RecruitmentAgency
+from app.models.agency import AgencyJobAssignment, AgencyMember, AgencySubmission, RecruitmentAgency, BgvAssignment
 from app.models.setting_value import SettingValue, SettingValueHistory
 from app.models.user import User
 from app.models.test_mailbox import TestMailbox, TestMailboxMessage  # Part 20.2b

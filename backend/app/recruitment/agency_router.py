@@ -84,17 +84,66 @@ def _open_job(job: Optional[JobRole]) -> bool:
 
 # ---------------------------------------------------------------- HR side
 
-class AgencyIn(BaseModel):
+# Part 21.5: Recruitment / BGV / Both, with contact, contract, fees (recruitment) and checks + prices, SLA, report format (BGV)
+AGENCY_TYPES = ("recruitment", "bgv", "both")
+BGV_CHECKS = ("education", "employment", "address", "criminal", "identity", "reference", "drug")
+
+
+class AgencyFields(BaseModel):
+    agency_type: Optional[str] = None
+    contact_person: Optional[str] = Field(None, max_length=255)
+    phone: Optional[str] = Field(None, max_length=50)
+    address: Optional[str] = None
+    gst_pan: Optional[str] = Field(None, max_length=50)
+    contract_start: Optional[date] = None
+    contract_end: Optional[date] = None
+    fee_type: Optional[str] = None
+    fee_value: Optional[float] = Field(None, ge=0)
+    payment_terms: Optional[str] = None
+    bgv_checks: Optional[list[dict]] = None  # [{"check": "education", "price": 800}]
+    turnaround_days: Optional[int] = Field(None, ge=0, le=365)
+    report_format: Optional[str] = None
+
+
+class AgencyIn(AgencyFields):
     name: str = Field(min_length=1, max_length=255)
     contact_email: Optional[str] = Field(None, max_length=255)
     notes: Optional[str] = None
 
 
-class AgencyPatch(BaseModel):
+class AgencyPatch(AgencyFields):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     contact_email: Optional[str] = Field(None, max_length=255)
     notes: Optional[str] = None
     active: Optional[bool] = None
+
+
+def _apply_fields(agency: RecruitmentAgency, data: dict) -> None:
+    if "agency_type" in data:
+        if data["agency_type"] not in AGENCY_TYPES:
+            raise HTTPException(status_code=400, detail="Type must be Recruitment, BGV or Both.")
+        agency.agency_type = data["agency_type"]
+    if "fee_type" in data and data["fee_type"] not in (None, "", "percent", "fixed"):
+        raise HTTPException(status_code=400, detail="Fee must be a percentage or a fixed amount.")
+    if data.get("contract_start") and data.get("contract_end") and data["contract_end"] < data["contract_start"]:
+        raise HTTPException(status_code=400, detail="The contract can't end before it starts.")
+    for key in ("contact_person", "phone", "address", "gst_pan", "contract_start", "contract_end", "fee_type", "fee_value", "payment_terms",
+                "turnaround_days", "report_format"):
+        if key in data:
+            value = data[key]
+            setattr(agency, key, (value.strip() or None) if isinstance(value, str) else value)
+    if "bgv_checks" in data and data["bgv_checks"] is not None:
+        checks = []
+        for c in data["bgv_checks"]:
+            code = str((c or {}).get("check") or "").strip().lower()
+            if code not in BGV_CHECKS:
+                raise HTTPException(status_code=400, detail=f"Unknown check: {code or '(empty)'}.")
+            try:
+                price = float(c.get("price")) if c.get("price") not in (None, "") else None
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail=f"The price for {code} must be a number.")
+            checks.append({"check": code, "price": price})
+        agency.bgv_checks_json = checks
 
 
 class JobsIn(BaseModel):
@@ -116,12 +165,59 @@ def _counts(db: Session, model, agency_ids: list[uuid.UUID]) -> dict:
 
 def _agency_row(agency: RecruitmentAgency, jobs: int = 0, members: int = 0, submissions: int = 0) -> dict:
     return {"id": str(agency.id), "name": agency.name, "contact_email": agency.contact_email, "notes": agency.notes,
-            "active": agency.active, "created_at": _iso(agency.created_at), "jobs": jobs, "members": members, "submissions": submissions}
+            "active": agency.active, "created_at": _iso(agency.created_at), "jobs": jobs, "members": members, "submissions": submissions,
+            # Part 21.5
+            "agency_type": agency.agency_type or "recruitment", "contact_person": agency.contact_person, "phone": agency.phone,
+            "address": agency.address, "gst_pan": agency.gst_pan, "contract_start": _iso(agency.contract_start), "contract_end": _iso(agency.contract_end),
+            "fee_type": agency.fee_type, "fee_value": float(agency.fee_value) if agency.fee_value is not None else None,
+            "payment_terms": agency.payment_terms, "bgv_checks": agency.bgv_checks_json or [], "turnaround_days": agency.turnaround_days,
+            "report_format": agency.report_format}
+
+
+def _stats(db: Session, agency: RecruitmentAgency) -> dict:
+    """Part 21.5: recruitment -> submitted, hired, fees due; BGV -> cases, average turnaround, overdue, cost so far."""
+    from app.models.agency import BgvAssignment
+    from app.models.offer import Offer
+
+    tid = _tid()
+    out: dict = {}
+    if (agency.agency_type or "recruitment") in ("recruitment", "both"):
+        rows = (db.query(Application).join(AgencySubmission, AgencySubmission.application_id == Application.id)
+                .filter(AgencySubmission.tenant_id == tid, AgencySubmission.agency_id == agency.id).all())
+        hired = [a for a in rows if a.status in ("onboarding_started", "onboarding_completed")]
+        due, unknown = 0.0, 0
+        for a in hired:
+            if agency.fee_type == "fixed" and agency.fee_value is not None:
+                due += float(agency.fee_value)
+            elif agency.fee_type == "percent" and agency.fee_value is not None:
+                o = db.query(Offer).filter(Offer.application_id == a.id).first()
+                ctc = (o.ctc_breakup_json or {}) if o is not None else {}
+                annual = ctc.get("annual_ctc") or ctc.get("total") or ctc.get("ctc")
+                if annual:
+                    due += float(annual) * float(agency.fee_value) / 100
+                else:
+                    unknown += 1
+            else:
+                unknown += 1
+        out["recruitment"] = {"submitted": len(rows), "hired": len(hired), "fees_due": round(due, 2), "fees_unknown": unknown}
+    if (agency.agency_type or "recruitment") in ("bgv", "both"):
+        cases = db.query(BgvAssignment).filter(BgvAssignment.tenant_id == tid, BgvAssignment.agency_id == agency.id).all()
+        done = [c for c in cases if c.report_uploaded_at is not None and c.created_at is not None]
+        avg = round(sum((c.report_uploaded_at - c.created_at).total_seconds() for c in done) / len(done) / 86400, 1) if done else None
+        today = date.today()
+        out["bgv"] = {"cases": len(cases), "open": sum(1 for c in cases if c.status in ("assigned", "in_progress")),
+                      "average_turnaround_days": avg,
+                      "overdue": sum(1 for c in cases if c.status in ("assigned", "in_progress") and c.due_date and c.due_date < today),
+                      "cost_so_far": round(sum(float(c.cost or 0) for c in cases if c.status in ("report_received", "decided")), 2)}
+    return out
 
 
 @router.get("")
-def list_agencies(db: Session = Depends(get_db), current_user: User = Depends(require("recruitment.agency.view"))):
-    agencies = db.query(RecruitmentAgency).filter(RecruitmentAgency.tenant_id == _tid()).order_by(RecruitmentAgency.name).all()
+def list_agencies(agency_type: Optional[str] = None, db: Session = Depends(get_db), current_user: User = Depends(require("recruitment.agency.view"))):
+    q = db.query(RecruitmentAgency).filter(RecruitmentAgency.tenant_id == _tid())
+    if agency_type in ("recruitment", "bgv"):  # Part 21.5: "Both" counts for either
+        q = q.filter(RecruitmentAgency.agency_type.in_((agency_type, "both")))
+    agencies = q.order_by(RecruitmentAgency.name).all()
     ids = [a.id for a in agencies]
     jobs, members, subs = _counts(db, AgencyJobAssignment, ids), _counts(db, AgencyMember, ids), _counts(db, AgencySubmission, ids)
     return [_agency_row(a, jobs.get(a.id, 0), members.get(a.id, 0), subs.get(a.id, 0)) for a in agencies]
@@ -133,11 +229,90 @@ def create_agency(payload: AgencyIn, db: Session = Depends(get_db), current_user
     if db.query(RecruitmentAgency).filter(RecruitmentAgency.tenant_id == _tid(), func.lower(RecruitmentAgency.name) == name.lower()).first():
         raise HTTPException(status_code=409, detail="An agency with this name already exists")
     agency = RecruitmentAgency(tenant_id=_tid(), name=name, contact_email=(payload.contact_email or "").strip().lower() or None, notes=payload.notes)
+    _apply_fields(agency, payload.model_dump(exclude_unset=True))
     db.add(agency)
     db.commit()
     db.refresh(agency)
     log_action(db, "recruitment_agency", agency.id, "agency_created", current_user.email, {"name": agency.name})
     return _agency_row(agency)
+
+
+IMPORT_COLUMNS = ["Name", "Type (Recruitment / BGV / Both)", "Contact person", "Email", "Phone", "Address", "GST / PAN", "Contract start (YYYY-MM-DD)",
+                  "Contract end (YYYY-MM-DD)", "Fee type (percent / fixed)", "Fee value", "Payment terms", "BGV checks (check:price; ...)",
+                  "Turnaround days", "Report format", "Notes"]
+
+
+@router.get("/import-sample")
+def import_sample(db: Session = Depends(get_db), current_user: User = Depends(require("recruitment.agency.edit"))):
+    """Part 21.5: an Excel file to fill in and import."""
+    import io
+
+    from fastapi.responses import StreamingResponse
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Agencies"
+    ws.append(IMPORT_COLUMNS)
+    ws.append(["TalentBridge Staffing", "Recruitment", "Ravi Kumar", "ravi@talentbridge.example", "+91 98000 11111", "Hyderabad", "", "2026-04-01",
+               "2027-03-31", "percent", 8.33, "30 days after joining", "", "", "", "Sample row - replace it"])
+    ws.append(["VerifyFirst BGV", "BGV", "Anita Rao", "ops@verifyfirst.example", "+91 98000 22222", "Bengaluru", "", "2026-04-01", "2027-03-31", "", "", "",
+               "education:800; employment:1000; address:600; criminal:900; identity:300", 7, "PDF report per candidate", "Sample row - replace it"])
+    for col in ws.columns:
+        ws.column_dimensions[col[0].column_letter].width = 24
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": 'attachment; filename="agencies-import-sample.xlsx"'})
+
+
+@router.post("/import")
+async def import_agencies(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(require("recruitment.agency.edit"))):
+    """Part 21.5: create agencies from the sample's columns; an existing name is updated. Returns what happened per row."""
+    import io
+
+    from openpyxl import load_workbook
+
+    try:
+        ws = load_workbook(io.BytesIO(await file.read()), data_only=True).active
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail="That isn't an Excel file - use the sample.")
+    results = []
+    types = {"recruitment": "recruitment", "bgv": "bgv", "both": "both"}
+    for n, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+        vals = [(str(v).strip() if v is not None else "") for v in (list(row) + [None] * 16)[:16]]
+        name = vals[0]
+        if not name or "sample row" in vals[15].lower():
+            continue
+        try:
+            checks = []
+            for part in [x for x in vals[12].split(";") if x.strip()]:
+                code, _, price = part.partition(":")
+                checks.append({"check": code.strip().lower(), "price": price.strip() or None})
+            data = {"agency_type": types.get(vals[1].lower(), "recruitment"), "contact_person": vals[2], "phone": vals[4], "address": vals[5],
+                    "gst_pan": vals[6], "contract_start": date.fromisoformat(vals[7][:10]) if vals[7] else None,
+                    "contract_end": date.fromisoformat(vals[8][:10]) if vals[8] else None, "fee_type": vals[9].lower() or None,
+                    "fee_value": float(vals[10]) if vals[10] else None, "payment_terms": vals[11], "bgv_checks": checks,
+                    "turnaround_days": int(float(vals[13])) if vals[13] else None, "report_format": vals[14]}
+            agency = db.query(RecruitmentAgency).filter(RecruitmentAgency.tenant_id == _tid(), func.lower(RecruitmentAgency.name) == name.lower()).first()
+            created = agency is None
+            if created:
+                agency = RecruitmentAgency(tenant_id=_tid(), name=name)
+                db.add(agency)
+            agency.contact_email = vals[3].lower() or agency.contact_email
+            agency.notes = vals[15] or agency.notes
+            _apply_fields(agency, data)
+            db.commit()
+            results.append({"row": n, "name": name, "result": "created" if created else "updated"})
+        except HTTPException as exc:
+            db.rollback()
+            results.append({"row": n, "name": name, "result": "error", "error": exc.detail})
+        except ValueError as exc:
+            db.rollback()
+            results.append({"row": n, "name": name, "result": "error", "error": f"Check the dates and numbers ({exc})"})
+    log_action(db, "recruitment_agency", None, "agencies_imported", current_user.email, {"rows": len(results)})
+    return {"results": results}
 
 
 @router.patch("/{agency_id}")
@@ -149,8 +324,10 @@ def update_agency(agency_id: uuid.UUID, payload: AgencyPatch, db: Session = Depe
         changes["name"] = changes["name"].strip()
     if "contact_email" in changes:
         changes["contact_email"] = (changes["contact_email"] or "").strip().lower() or None
+    _apply_fields(agency, changes)
     for key, value in changes.items():
-        setattr(agency, key, value)
+        if key in ("name", "contact_email", "notes", "active"):
+            setattr(agency, key, value)
     db.commit()
     db.refresh(agency)
     log_action(db, "recruitment_agency", agency.id, "agency_updated", current_user.email, {k: v for k, v in changes.items() if k != "notes"})
@@ -173,6 +350,7 @@ def agency_detail(agency_id: uuid.UUID, db: Session = Depends(get_db), current_u
             .order_by(AgencySubmission.created_at.desc()).limit(200).all())
     return {
         **_agency_row(agency, len(jobs), len(members), len(subs)),
+        "stats": _stats(db, agency),
         "job_list": [{"id": str(j.id), "title": j.title, "location": j.location, "status": j.status, "open": _open_job(j)} for j in jobs],
         "member_list": [{"user_id": str(u.id), "email": u.email, "full_name": u.full_name, "added_at": _iso(m.created_at)} for u, m in members],
         "submission_list": [{"application_id": str(a.id), "candidate_id": str(c.id), "candidate_name": c.full_name, "job_title": j.title,

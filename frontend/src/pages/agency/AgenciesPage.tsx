@@ -27,46 +27,9 @@ import { useMeBootstrap } from "../../bootstrap/MeBootstrapContext";
 import { Section, useDateFmt, useToast } from "../../components/servicedesk/shared";
 import { useT } from "../../i18n";
 import { Cell, EmptyState, Emoji, FriendlyError, PageGrid, PageHeader, StatusChip } from "../../ui-kit";
-
-function AddAgencyDialog({ open, onClose, onAdded }: { open: boolean; onClose: () => void; onAdded: (a: AgencyRow) => void }) {
-  const t = useT();
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [notes, setNotes] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<unknown>(null);
-  useEffect(() => {
-    if (open) { setName(""); setEmail(""); setNotes(""); setError(null); }
-  }, [open]);
-  const save = async () => {
-    setSaving(true);
-    setError(null);
-    try {
-      onAdded(await agencyApi.create({ name: name.trim(), contact_email: email.trim() || undefined, notes: notes.trim() || undefined }));
-    } catch (e) {
-      setError(e);
-    } finally {
-      setSaving(false);
-    }
-  };
-  return (
-    <Dialog open={open} onClose={saving ? undefined : onClose} fullWidth maxWidth="sm">
-      <DialogTitle>{t("agencies.add.title")}</DialogTitle>
-      <DialogContent>
-        <Stack spacing={2} sx={{ pt: 1 }}>
-          <TextField required autoFocus label={t("agencies.field.name")} placeholder={t("agencies.field.name_ph")} value={name} onChange={(e) => setName(e.target.value)} inputProps={{ maxLength: 255 }} />
-          <TextField type="email" label={t("agencies.field.contact")} helperText={t("agencies.field.contact_hint")} value={email} onChange={(e) => setEmail(e.target.value)} />
-          <TextField label={t("agencies.field.notes")} helperText={t("agencies.field.notes_hint")} value={notes} onChange={(e) => setNotes(e.target.value)} multiline minRows={2} />
-          {error ? <FriendlyError error={error} compact /> : null}
-        </Stack>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose} disabled={saving}>{t("agency.common.cancel")}</Button>
-        <Button variant="contained" onClick={save} disabled={saving || !name.trim()}>{saving ? t("agencies.saving") : t("agencies.add.save")}</Button>
-      </DialogActions>
-    </Dialog>
-  );
-}
+import AgencyFormDialog from "../../components/agency/AgencyFormDialog";
+import Tab from "@mui/material/Tab";
+import Tabs from "@mui/material/Tabs";
 
 function JobsDialog({ agency, onClose, onSaved }: { agency: AgencyDetail | null; onClose: () => void; onSaved: () => void }) {
   const t = useT();
@@ -177,6 +140,7 @@ function AgencyPanel({ id, canEdit, onChanged, onToast }: { id: string; canEdit:
   const [jobsFor, setJobsFor] = useState<AgencyDetail | null>(null);
   const [inviteFor, setInviteFor] = useState<AgencyDetail | null>(null);
   const [link, setLink] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);  // Part 21.5
 
   const load = useCallback(() => {
     setError(null);
@@ -213,11 +177,37 @@ function AgencyPanel({ id, canEdit, onChanged, onToast }: { id: string; canEdit:
     <Stack spacing={2.5}>
       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
         <Typography component="h3" sx={{ fontWeight: 800, fontSize: 18, flex: 1 }}>{data.name}</Typography>
+        <StatusChip tone="sky" emoji={data.agency_type === "recruitment" ? "briefcase" : "shield"} label={t(`ag21.type.${data.agency_type}`)} />
+        {canEdit && <Button size="small" variant="outlined" onClick={() => setEditing(true)}>{t("ag21.edit")}</Button>}
         {canEdit && <FormControlLabel control={<Switch checked={data.active} onChange={toggleActive} />} label={t(data.active ? "agencies.active" : "agencies.inactive")} />}
       </Stack>
-      {data.contact_email || data.notes ? (
-        <Typography sx={{ fontSize: 14, color: f.muted, whiteSpace: "pre-wrap" }}>{[data.contact_email, data.notes].filter(Boolean).join("\n")}</Typography>
-      ) : null}
+      <Box sx={{ display: "grid", gap: 0.5, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }} data-testid="agency-details">
+        {[["ag21.contact_person", data.contact_person], ["agencies.field.contact", data.contact_email], ["ag21.phone", data.phone], ["ag21.gst_pan", data.gst_pan],
+          ["ag21.contract", data.contract_start || data.contract_end ? `${fmt.date(data.contract_start)} - ${fmt.date(data.contract_end)}` : null],
+          ["ag21.address", data.address],
+          ...(data.agency_type !== "bgv" ? [["ag21.fee_type", data.fee_type ? (data.fee_type === "percent" ? `${data.fee_value ?? "-"}%` : `${data.fee_value ?? "-"}`) : null], ["ag21.payment_terms", data.payment_terms]] : []),
+          ...(data.agency_type !== "recruitment" ? [["ag21.checks", (data.bgv_checks ?? []).map((c) => `${t(`ag21.check.${c.check}`)}${c.price != null ? ` (${c.price})` : ""}`).join(", ") || null],
+            ["ag21.turnaround", data.turnaround_days != null ? t("ag21.days", { n: data.turnaround_days }) : null], ["ag21.report_format", data.report_format]] : []),
+        ].filter(([, val]) => val).map(([k, val]) => (
+          <Typography key={k as string} sx={{ fontSize: 13 }}><b>{t(k as string)}:</b> {val}</Typography>
+        ))}
+      </Box>
+      {data.notes ? <Typography sx={{ fontSize: 14, color: f.muted, whiteSpace: "pre-wrap" }}>{data.notes}</Typography> : null}
+      {data.stats && (
+        <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap data-testid="agency-stats">
+          {data.stats.recruitment && <>
+            <StatusChip tone="brand" emoji="technologist" label={t("ag21.st.submitted", { n: data.stats.recruitment.submitted })} />
+            <StatusChip tone="ok" emoji="party" label={t("ag21.st.hired", { n: data.stats.recruitment.hired })} />
+            <StatusChip tone="sun" emoji="money" label={t("ag21.st.fees_due", { amount: data.stats.recruitment.fees_due.toLocaleString() })} />
+          </>}
+          {data.stats.bgv && <>
+            <StatusChip tone="brand" emoji="shield" label={t("ag21.st.cases", { n: data.stats.bgv.cases, open: data.stats.bgv.open })} />
+            <StatusChip tone="muted" emoji="hourglass" label={data.stats.bgv.average_turnaround_days != null ? t("ag21.st.turnaround", { n: data.stats.bgv.average_turnaround_days }) : t("ag21.st.turnaround_none")} />
+            <StatusChip tone={data.stats.bgv.overdue ? "coral" : "ok"} emoji="alarm_clock" label={t("ag21.st.overdue", { n: data.stats.bgv.overdue })} />
+            <StatusChip tone="sun" emoji="money" label={t("ag21.st.cost", { amount: data.stats.bgv.cost_so_far.toLocaleString() })} />
+          </>}
+        </Stack>
+      )}
 
       <Box>
         <Stack direction="row" alignItems="center" sx={{ mb: 1 }}>
@@ -273,6 +263,8 @@ function AgencyPanel({ id, canEdit, onChanged, onToast }: { id: string; canEdit:
         )}
       </Box>
 
+      <AgencyFormDialog open={editing} agency={data} onClose={() => setEditing(false)}
+        onSaved={() => { setEditing(false); onToast(t("ag21.saved")); refresh(); }} />
       <JobsDialog agency={jobsFor} onClose={() => setJobsFor(null)} onSaved={() => { setJobsFor(null); onToast(t("agencies.jobs.saved")); refresh(); }} />
       <InviteDialog agency={inviteFor} onClose={() => setInviteFor(null)}
         onInvited={(r) => { setInviteFor(null); setLink(r.link); onToast(r.email_sent ? t("agencies.invite.sent") : t("agencies.invite.no_mail"), r.email_sent ? "success" : "warning"); refresh(); }} />
@@ -290,20 +282,52 @@ export default function AgenciesPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [toast, show] = useToast();
+  const [type, setType] = useState<"all" | "recruitment" | "bgv">("all");  // Part 21.5
 
   const load = useCallback(() => {
     setError(null);
-    agencyApi.list().then((list) => {
+    agencyApi.list(type === "all" ? undefined : type).then((list) => {
       setRows(list);
       setSelected((cur) => cur && list.some((a) => a.id === cur) ? cur : list[0]?.id ?? null);
     }).catch(setError);
-  }, []);
+  }, [type]);
   useEffect(load, [load]);
+  const downloadSample = async () => {
+    const blob = await agencyApi.importSample();
+    if (!blob) return;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "agencies-import-sample.xlsx";
+    a.click();
+  };
+  const importFile = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const r = await agencyApi.importFile(file);
+      const ok = r.results.filter((x) => x.result !== "error").length;
+      const bad = r.results.filter((x) => x.result === "error");
+      show(bad.length ? t("ag21.import_partly", { ok, bad: bad.length, first: `${bad[0].name}: ${bad[0].error}` }) : t("ag21.import_done", { ok }), bad.length ? "warning" : "success");
+      load();
+    } catch (e) {
+      setError(e);
+    }
+  };
 
   return (
     <Box>
       <PageHeader emoji="handshake" title={t("agencies.title")} purpose={t("agencies.purpose")}
-        primary={canEdit ? <Button variant="contained" onClick={() => setAdding(true)} startIcon={<Emoji name="handshake" size={16} />}>{t("agencies.add.button")}</Button> : undefined} />
+        primary={canEdit ? <Button variant="contained" onClick={() => setAdding(true)} startIcon={<Emoji name="handshake" size={16} />}>{t("agencies.add.button")}</Button> : undefined}
+        extra={canEdit ? (
+          <Stack direction="row" spacing={1}>
+            <Button onClick={downloadSample}>{t("ag21.sample")}</Button>
+            <Button component="label" variant="outlined">{t("ag21.import")}<input hidden type="file" accept=".xlsx" onChange={(e) => importFile(e.target.files?.[0])} /></Button>
+          </Stack>
+        ) : undefined} />
+      <Tabs value={type} onChange={(_, v) => setType(v)} sx={{ mb: 2 }} aria-label={t("ag21.type")}>
+        <Tab value="all" label={t("ag21.filter.all")} />
+        <Tab value="recruitment" label={t("ag21.filter.recruitment")} />
+        <Tab value="bgv" label={t("ag21.filter.bgv")} />
+      </Tabs>
       {error ? <FriendlyError error={error} onRetry={load} /> : rows === null ? (
         <Box sx={{ display: "grid", placeItems: "center", py: 6 }}><CircularProgress aria-label={t("agency.common.loading")} /></Box>
       ) : rows.length === 0 ? (
@@ -321,6 +345,7 @@ export default function AgenciesPage() {
                         border: `2px solid ${a.id === selected ? f.brand : f.line}`, bgcolor: a.id === selected ? f.brandSoft : f.surface2 }}>
                       <Typography sx={{ fontWeight: 700 }}>{a.name}</Typography>
                       <Stack direction="row" spacing={0.75} sx={{ mt: 0.75 }} flexWrap="wrap" useFlexGap>
+                        <StatusChip tone="sky" emoji={a.agency_type === "recruitment" ? "briefcase" : "shield"} label={t(`ag21.type.${a.agency_type}`)} />
                         {!a.active && <StatusChip tone="muted" emoji="pause" label={t("agencies.inactive")} />}
                         <StatusChip tone="brand" emoji="briefcase" label={t("agencies.chip.jobs", { count: a.jobs })} />
                         <StatusChip tone="sky" emoji="people" label={t("agencies.chip.members", { count: a.members })} />
@@ -339,8 +364,8 @@ export default function AgenciesPage() {
           </Cell>
         </PageGrid>
       )}
-      <AddAgencyDialog open={adding} onClose={() => setAdding(false)}
-        onAdded={(a) => { setAdding(false); show(t("agencies.add.done", { agency: a.name })); setSelected(a.id); load(); }} />
+      <AgencyFormDialog open={adding} onClose={() => setAdding(false)}
+        onSaved={(a) => { setAdding(false); show(t("agencies.add.done", { agency: a.name })); setSelected(a.id); load(); }} />
       {toast}
     </Box>
   );
