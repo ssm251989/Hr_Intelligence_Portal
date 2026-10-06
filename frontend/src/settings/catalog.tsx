@@ -4,6 +4,7 @@ import { integrationsApi } from "../api/client";
 import AccessControlPanel from "../components/AccessControlPanel";
 import CommunicationsPanel from "../components/CommunicationsPanel";
 import ConnectionsPanel from "../components/ConnectionsPanel";
+import TestEmailProviderPage from "../components/employees/TestEmailProviderPage";
 import CoreHrPanel from "../components/CoreHrPanel";
 import HrMailboxSettingsCard from "../components/HrMailboxSettingsCard";
 import MediaSettingsPanel from "../components/MediaSettingsPanel";
@@ -205,6 +206,9 @@ export const CATEGORIES: SettingsCategory[] = [
   {
     id: "integrations", emoji: "link", pages: [
       { id: "connections", emoji: "link", keywords: "connections services accounts", visible: ADMIN, render: () => <ConnectionsPanel /> },
+      // Part 20.2b: dummy company mailboxes until Google Workspace / Microsoft 365 is connected
+      { id: "test-email", emoji: "mail", keywords: "test email provider dummy mailboxes company email test inbox mailpit google workspace microsoft 365 move real",
+        visible: ADMIN, render: () => <TestEmailProviderPage /> },
       // Part 18.23: GenAI settings -- provider, key, models, features, prices, limits (+ the older AI/copilot settings below)
       { id: "ai", emoji: "robot", keywords: "ai genai claude model provider api key assistant copilot limits tokens usage", prefixes: ["ai.", "copilot."], visible: ADMIN,
         render: () => (<><GenAISettingsPage />{scoped(["copilot."], "settingsHome.page.integrations.ai")()}</>) },

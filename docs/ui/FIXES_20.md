@@ -363,3 +363,23 @@ The star rating in the proof reads 1/5 because the test clicked the first star; 
 - The owner's live exit (Kishore Gunda, last day 11 Nov) already has the new items. Nothing was changed on it.
 - For demo employees, owner emails go only to @example.com addresses, so "assigned" / "returned" emails to IT/Admin/Finance don't appear in mailpit. For real exits they go to the item's owner, or to the HR admins when no person is named.
 - Revoking before the last day also stops the employee answering the exit interview (expected). "On the last working day" is the softer option.
+
+## part-20.2b (UI) -- Settings > Integrations > Test email provider (2026-10-06)
+
+`components/employees/TestEmailProviderPage.tsx` (backend from bf0de57: `/api/v1/ui/employees/test-provider*`):
+- **On / off switch.** On makes the TEST provider the email-admin connection (first in line); off sends new employees through the real connection, or to IT as a to-do. Shows the domain.
+  - On this computer, a note that mail is also copied to mailpit.
+  - A red warning on the live system while the test provider is still on (the same check is on Configuration health).
+- **Test mailboxes table:** address + grey TEST chip, person + Employee ID + created date, Active / Suspended, **Open inbox (n)**. Under the table: "Each mailbox: 15 GB (dummy). Password: none - each person sets their app password from the invite link."
+- **Test inbox:** list of emails the app sent to that address; the body is shown as text, or as HTML in a sandboxed frame.
+- **Move test mailboxes to a real provider:** **Show who would move** (dry run) lists active / on-notice employees. Without Google Workspace / Microsoft 365 it says "would move once ... is connected" and blocks. With one connected, **Create the real mailboxes now**; first passwords are shown once and never stored. Never automatic.
+- The TEST chip in employee screens and the Employees-page banner were already in place (20.1 / 20.2).
+
+**Proof** (live app, temporary admin, removed afterwards):
+| Check | Result | Screenshot |
+|---|---|---|
+| Page | switch ON, domain ctdtechs.com, 8 demo mailboxes (Vikram's Suspended - the demo exited employee) | fix-tp-01 |
+| Inbox | a sample message delivered through `test_inbox.deliver` appears in Aarav's inbox and opens (sample removed afterwards) | fix-tp-02 |
+| Dry run | 7 would move (the suspended one not included); blocked: "Connect Google Workspace or Microsoft 365 first" | fix-tp-03 |
+
+Fixed while taking the proof: the table was too wide for the settings panel (Inbox column cut off), so quota and password moved into one line under the table. The dry run said "would move to -" when no provider was connected; it now says "once Google Workspace or Microsoft 365 is connected".

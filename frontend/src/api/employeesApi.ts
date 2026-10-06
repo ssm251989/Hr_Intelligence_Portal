@@ -79,4 +79,23 @@ export const employeesApi = {
   itDone: (cardId: string, address?: string) => http.post<{ address: string }>(`${BASE}/it-todos/${cardId}/done`, { address }),
   idFormat: () => http.get<IdFormat>(`${BASE}/settings/id-format`),
   saveIdFormat: (prefix: string, padding: number) => http.put<IdFormat>(`${BASE}/settings/id-format`, { prefix, padding }),
+  // Part 20.2b: Settings > Integrations > Test email provider
+  testProvider: () => http.get<TestProviderStatus>(`${BASE}/test-provider`),
+  testProviderSwitch: (on: boolean) => http.post<TestProviderStatus>(`${BASE}/test-provider/switch`, { on }),
+  testMailboxMessages: (mailboxId: string) => http.get<TestMessage[]>(`${BASE}/test-provider/mailboxes/${mailboxId}/messages`),
+  moveToReal: (apply: boolean) => http.post<MoveToRealResult>(`${BASE}/test-provider/move-to-real`, { apply }),
 };
+
+export interface TestMailboxRow {
+  id: string; address: string; display_name: string | null; employee_id: string | null; employee_code: string | null; status: string; quota: string | null;
+  provider: string; password: string; created_at: string | null; created_by: string | null; messages: number;
+}
+export interface TestProviderStatus {
+  exists: boolean; active: boolean; routed: boolean; connection_id: string | null; domain: string; mailboxes: TestMailboxRow[];
+  real_connections: { id: string; name: string; provider: string; status: string }[]; production: boolean; dev_capture: boolean;
+}
+export interface TestMessage { id: string; to: string; from: string | null; subject: string; text: string | null; html: string | null; template_key: string | null; received_at: string | null }
+export interface MoveToRealResult {
+  dry_run: boolean; would_move?: { employee_id: string; code: string; name: string; address: string }[]; real_provider?: string | null; blocked?: string | null;
+  results?: { code: string; address: string; ok: boolean; one_time_password?: string | null; error?: string }[];
+}

@@ -2761,3 +2761,6 @@ NEXT: exit checklist frontend (clickable items with owner actions on HR exit dia
     - default relieving/experience templates are created the first time they are needed (kept for CTD Techs).
 
 NEXT: part-20.2b Test email provider settings page (UI), then 20.3 employee self-service + exit (rest), 20.4 interviewer, 20.5 settings, 20.6 end-to-end proof.
+- part-20.2b (UI): Settings > Integrations > Test email provider -- switch, test mailboxes + test inbox, move-to-real dry run / apply. Proof in FIXES_20.md (fix-tp-01..03). Decision: the switch lives on its own page next to Connections rather than inside the Connections panel, so the test inbox has room.
+
+NEXT: part-20.3 employee self-service (employee home: My profile + change requests -> HR approves, My documents/letters, My assets, Raise exit; resign form early-release + resignation letter upload; Manager -> HR approval; HR starts exit from the Employee list), then 20.4, 20.5, 20.6.
