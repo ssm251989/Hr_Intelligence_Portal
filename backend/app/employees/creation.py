@@ -60,6 +60,10 @@ def role_rules(db: Session, tenant, designation: Optional[str], department: Opti
         value = {"designation": designation, "department": department}.get(rule.get("field") or "designation") or ""
         if rule.get("contains") and rule["contains"].lower() in value.lower() and rule.get("role"):
             roles.append(rule["role"])
+    from app.employees.interviewers import auto_rule_matches  # Part 20.4: Settings > interviewer auto rule
+
+    if auto_rule_matches(db, tenant, designation, department):
+        roles.append("Interviewer")
     return list(dict.fromkeys(["Employee", *roles]))
 
 
@@ -278,6 +282,10 @@ def approve(db: Session, tenant, s: AgentSuggestion, *, edits: Optional[dict], a
     # 4. app account + invite
     def _account():
         user = accounts.ensure_account(db, tenant, e, actor=actor, extra_roles=[r for r in (plan.get("roles") or []) if r != "Employee"])
+        if "Interviewer" in (plan.get("roles") or []):  # Part 20.4: ready to be picked for interviews (default hours; they edit them)
+            from app.employees.interviewers import ensure_availability
+
+            ensure_availability(db, tenant, e, actor=actor)
         inv = accounts.send_invite(db, tenant, e, actor=actor)
         if (inv.get("email_status") or "").startswith("failed"):
             raise ValueError(f"Account {user.email} created, but the invite email failed: {inv['email_status'][8:]}")

@@ -192,3 +192,70 @@ def start_exit(employee_id: UUID, body: StartExitIn, db: Session = Depends(get_d
     except ss.SelfServiceError as exc:
         raise _bad(exc) from exc
     return {"separation_id": str(s.id), "status": s.status}
+
+
+# ---- Part 20.4: employee as interviewer (app/employees/interviewers.py) ----
+
+
+@router.get("/employees/{employee_id}/interviewer")
+def interviewer_setup(employee_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(require("core_hr.employee.view"))):
+    from app.employees import interviewers as iv
+
+    tenant = require_current_tenant()
+    e = db.get(Employee, employee_id)
+    if e is None or e.tenant_id != tenant.tenant_id:
+        raise HTTPException(status_code=404, detail="That employee doesn't exist.")
+    return iv.pools_view(db, tenant, e)
+
+
+class MakeInterviewerIn(BaseModel):
+    pool_ids: list[UUID] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
+    max_per_day: Optional[int] = None
+
+
+@router.post("/employees/{employee_id}/make-interviewer")
+def make_interviewer(employee_id: UUID, body: MakeInterviewerIn, db: Session = Depends(get_db), current_user: User = Depends(require("core_hr.employee.edit"))):
+    from app.employees import interviewers as iv
+
+    tenant = require_current_tenant()
+    e = db.get(Employee, employee_id)
+    if e is None or e.tenant_id != tenant.tenant_id:
+        raise HTTPException(status_code=404, detail="That employee doesn't exist.")
+    try:
+        return iv.make_interviewer(db, tenant, e, pool_ids=body.pool_ids, skills=[s.strip()[:60] for s in body.skills if s.strip()][:20],
+                                   max_per_day=body.max_per_day, actor=current_user.email)
+    except iv.InterviewerError as exc:
+        raise _bad(exc) from exc
+
+
+@router.post("/employees/{employee_id}/remove-interviewer")
+def remove_interviewer(employee_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(require("core_hr.employee.edit"))):
+    from app.employees import interviewers as iv
+
+    tenant = require_current_tenant()
+    e = db.get(Employee, employee_id)
+    if e is None or e.tenant_id != tenant.tenant_id:
+        raise HTTPException(status_code=404, detail="That employee doesn't exist.")
+    return iv.remove_interviewer(db, tenant, e, actor=current_user.email)
+
+
+@router.post("/interviewers/link")
+def link_interviewers(db: Session = Depends(get_db), current_user: User = Depends(require("core_hr.employee.edit"))):
+    from app.employees import interviewers as iv
+
+    return iv.link_existing(db, require_current_tenant(), actor=current_user.email)
+
+
+class LinkIn(BaseModel):
+    employee_id: UUID
+
+
+@router.post("/interviewers/{availability_id}/link")
+def link_interviewer(availability_id: UUID, body: LinkIn, db: Session = Depends(get_db), current_user: User = Depends(require("core_hr.employee.edit"))):
+    from app.employees import interviewers as iv
+
+    try:
+        return iv.link_to(db, require_current_tenant(), availability_id, body.employee_id, actor=current_user.email)
+    except iv.InterviewerError as exc:
+        raise _bad(exc, 404) from exc

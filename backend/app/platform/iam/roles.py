@@ -73,8 +73,12 @@ _SYSTEM_ROLE_TEMPLATES: dict[str, str | list[tuple[str, set[str]]]] = {
         ("recruitment", {"view", "approve"}),
         ("workflow", {"view", "approve"}),
     ],
+    # Part 20.4: their own interviews + availability only -- no candidate list, salary, offers or settings
+    # (it used to be ("recruitment", {"view"}), i.e. every hiring page). Assigned candidates are opened
+    # through the interview (app/experience/ui_interviews_router.py), checked per interview.
     "Interviewer": [
-        ("recruitment", {"view"}),
+        ("recruitment.availability", {"view"}),
+        ("workflow", {"view"}),
     ],
     "Helpdesk Agent": [
         ("recruitment", {"view"}),

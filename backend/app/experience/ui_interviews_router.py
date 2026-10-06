@@ -66,6 +66,11 @@ class MyInterviewRow(BaseModel):
     match_score: Optional[float] = None
     composite_score: Optional[float] = None  # Part 17.4: the one Match score
     feedback_submitted: bool = False
+    # Part 20.4: open the assigned candidate (resume, AI questions) + the interviewer's own answer after booking
+    candidate_id: Optional[str] = None
+    application_id: Optional[str] = None
+    has_resume: bool = False
+    interviewer_response: Optional[dict] = None
 
 
 @router.get("/interviews/mine", response_model=list[MyInterviewRow])
@@ -79,9 +84,9 @@ def my_interviews(
     interviewer email the negotiation flow records when no user id was attached."""
     now = datetime.now(timezone.utc)
     status_expr = stats.interview_status_case(now)
-    mine = Interview.interviewer_id == current_user.id
-    if current_user.email:
-        mine = or_(mine, func.lower(Interview.interviewer_email) == current_user.email.strip().lower())
+    from app.scheduling.access import mine_filter  # Part 20.4: also the employee's company / personal email
+
+    mine = mine_filter(db, current_user)
     query = (
         db.query(Interview, Application, Candidate, JobRole.title, User, status_expr.label("computed_status"))
         .join(Application, Application.id == Interview.application_id)
@@ -108,9 +113,63 @@ def my_interviews(
                 match_score=float(application.match_score) if application.match_score is not None else None,
                 composite_score=float(application.composite_score) if application.composite_score is not None else None,
                 feedback_submitted=_feedback_submitted(interview),
+                candidate_id=str(candidate.id), application_id=str(application.id), has_resume=bool(candidate.resume_path),
+                interviewer_response=interview.interviewer_response_json,
             )
         )
     return out
+
+
+# ---- Part 20.4: the interviewer can't make a booked interview -> decline with a reason, or propose another time ----
+
+
+class InterviewerAnswer(BaseModel):
+    reason: Optional[str] = None
+    proposed: Optional[str] = None  # free text, e.g. "Thu 9 Oct after 3 pm"
+
+
+def _answer(db: Session, interview_id: uuid.UUID, user: User, kind: str, body: InterviewerAnswer) -> dict:
+    from app.models.intelligence import AgentSuggestion
+    from app.platform.tenancy.context import require_current_tenant
+    from app.scheduling.access import is_assigned_interview
+
+    tenant = require_current_tenant()
+    iv = db.get(Interview, interview_id)
+    if iv is None or iv.tenant_id != tenant.tenant_id or not is_assigned_interview(db, user, iv):
+        raise HTTPException(status_code=404, detail="Interview not found")
+    if iv.decision is not None or _feedback_submitted(iv):
+        raise HTTPException(status_code=409, detail="Feedback is already in for this interview.")
+    if iv.scheduled_at is not None and iv.scheduled_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=409, detail="This interview time has passed - give feedback, or tell HR it didn't happen.")
+    reason = (body.reason or "").strip()
+    if kind == "declined" and len(reason) < 3:
+        raise HTTPException(status_code=400, detail="Please give a reason.")
+    if kind == "reschedule" and not (body.proposed or "").strip():
+        raise HTTPException(status_code=400, detail="Say which time would work instead.")
+    iv.interviewer_response_json = {"kind": kind, "reason": reason or None, "proposed": (body.proposed or "").strip() or None,
+                                    "at": datetime.now(timezone.utc).isoformat(), "by": user.email}
+    app_ = db.get(Application, iv.application_id) if iv.application_id else None
+    cand = db.get(Candidate, app_.candidate_id) if app_ is not None else None
+    who = iv.interviewer_name or user.email
+    when = iv.scheduled_at.strftime("%d %b %H:%M") if iv.scheduled_at else "the booked time"
+    title = (f"{who} can't take the interview with {cand.full_name if cand else 'a candidate'} ({when}) - find another interviewer"
+             if kind == "declined" else f"{who} asks to move the interview with {cand.full_name if cand else 'a candidate'} ({when}) to: {body.proposed}")
+    db.add(AgentSuggestion(tenant_id=tenant.tenant_id, agent="recruiter", kind=f"interview_{kind}", title=title[:300], entity_type="interview",
+                           entity_id=iv.id, reviewer_permission="recruitment.interview.edit",
+                           payload_json={"interview_id": str(iv.id), "application_id": str(iv.application_id), "reason": reason or None, "proposed": body.proposed}))
+    db.commit()
+    log_action(db, "interview", iv.id, f"interviewer_{kind}", user.email[:50], {"reason": reason or None, "proposed": body.proposed})
+    return {"ok": True, "interviewer_response": iv.interviewer_response_json}
+
+
+@router.post("/interviews/{interview_id}/decline")
+def interviewer_decline(interview_id: uuid.UUID, body: InterviewerAnswer, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return _answer(db, interview_id, current_user, "declined", body)
+
+
+@router.post("/interviews/{interview_id}/propose-time")
+def interviewer_propose(interview_id: uuid.UUID, body: InterviewerAnswer, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return _answer(db, interview_id, current_user, "reschedule", body)
 
 
 class PanelEntry(BaseModel):

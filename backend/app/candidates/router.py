@@ -242,6 +242,9 @@ async def upload_resume(
 
 @router.get("", response_model=list[CandidateRead])
 def list_candidates(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from app.scheduling.access import require_staff  # Part 20.4: interviewers see only their own candidates
+
+    require_staff(db, current_user)
     # Part 19.1: the talent pool (Candidates without the Jobs module) -- Recycle bin left out
     candidates = db.query(Candidate).filter(Candidate.deleted_at.is_(None)).order_by(Candidate.created_at.desc()).all()
     return [_with_inferred_gender(c) for c in candidates]
@@ -433,6 +436,9 @@ def list_candidate_applications(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    from app.scheduling.access import require_staff  # Part 20.4
+
+    require_staff(db, current_user)
     """One row per (candidate, application) pairing -- the data source for both the
     Candidates List page and the Screening List page. A candidate who applied to multiple
     jobs appears once per job, since Job Applied/Stage/Match Score are all per-application
@@ -492,6 +498,9 @@ def export_candidate_applications(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    from app.scheduling.access import require_staff  # Part 20.4
+
+    require_staff(db, current_user)
     """Unpaginated -- returns every matching row (or, if application_ids is given, exactly
     those rows and nothing else), for the List page's CSV export button. Deliberately a
     separate endpoint from GET /applications above rather than that endpoint with a raised
@@ -538,6 +547,9 @@ def export_candidate_applications(
 def get_candidate(
     candidate_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
+    from app.scheduling.access import require_staff_or_candidate  # Part 20.4
+
+    require_staff_or_candidate(db, current_user, candidate_id)
     return _with_inferred_gender(_get_candidate_or_404(db, candidate_id))
 
 
@@ -582,6 +594,9 @@ def update_candidate(
 def download_resume(
     candidate_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
+    from app.scheduling.access import require_staff_or_candidate  # Part 20.4
+
+    require_staff_or_candidate(db, current_user, candidate_id)
     candidate = _get_candidate_or_404(db, candidate_id)
     if not candidate.resume_path:
         raise HTTPException(status_code=404, detail="No resume uploaded for this candidate")
@@ -597,6 +612,9 @@ def download_resume(
 def download_photo(
     candidate_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
+    from app.scheduling.access import require_staff_or_candidate  # Part 20.4
+
+    require_staff_or_candidate(db, current_user, candidate_id)
     candidate = _get_candidate_or_404(db, candidate_id)
     if not candidate.photo_path:
         raise HTTPException(status_code=404, detail="No photo available for this candidate")

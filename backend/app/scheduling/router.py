@@ -184,6 +184,9 @@ def list_all_interviews(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    from app.scheduling.access import require_staff  # Part 20.4: interviewers use My interviews
+
+    require_staff(db, current_user)
     """One row per interview, across every job -- the data source for the Interview List
     page. Mirrors GET /candidates/applications's page/page_size/filter shape."""
     query = filtered_interviews_query(
@@ -289,9 +292,12 @@ def submit_interview_feedback(
     interview_id: uuid.UUID,
     payload: InterviewFeedbackUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("recruiter", "interviewer", "hiring_manager", "admin")),
+    current_user: User = Depends(get_current_user),
 ):
+    from app.scheduling.access import require_staff_or_interview  # Part 20.4: the assigned interviewer (or the hiring team)
+
     interview = _get_interview_or_404(db, interview_id)
+    require_staff_or_interview(db, current_user, interview)
     application = _get_application_or_404(db, interview.application_id)
     assert_application_not_on_hold(application)
     updates = payload.model_dump(exclude_unset=True)
@@ -355,8 +361,11 @@ def submit_interview_feedback(
 def generate_questions(
     application_id: uuid.UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("recruiter", "interviewer", "hiring_manager", "admin")),
+    current_user: User = Depends(get_current_user),
 ):
+    from app.scheduling.access import require_staff_or_application  # Part 20.4
+
+    require_staff_or_application(db, current_user, application_id)
     application = _get_application_or_404(db, application_id)
     assert_application_not_on_hold(application)
     job = db.get(JobRole, application.job_role_id)

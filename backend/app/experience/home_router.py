@@ -433,13 +433,14 @@ def my_feedback_due(db: Session = Depends(get_db), current_user: User = Depends(
     from app.models.application import Application
     from app.models.candidate import Candidate
     from app.models.interview import Interview
+    from app.scheduling.access import mine_filter
 
     tenant = require_current_tenant()
     rows = (
         db.query(Interview, Candidate.full_name)
         .outerjoin(Application, Application.id == Interview.application_id)
         .outerjoin(Candidate, Candidate.id == Application.candidate_id)
-        .filter(Interview.tenant_id == tenant.tenant_id, Interview.interviewer_id == current_user.id,
+        .filter(Interview.tenant_id == tenant.tenant_id, mine_filter(db, current_user),  # Part 20.4: by email too
                 Interview.decision.is_(None), Interview.overall_rating.is_(None), Interview.scheduled_at.isnot(None))
         .order_by(Interview.scheduled_at.asc()).limit(20).all()
     )

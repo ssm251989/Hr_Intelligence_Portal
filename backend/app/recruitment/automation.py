@@ -182,7 +182,8 @@ def send_reminders(db: Session, tenant) -> dict:
                    f"An approval has been waiting for you for more than {hours} hours.", "/approvals", "workflow_step"):
             sent["approvals"] += 1
 
-    hours = int(_setting(db, tenant, "recruitment.reminders.scorecard_hours") or 24)
+    # Part 20.4/20.5: Settings > Onboarding & employees > interviewers decides the hours (the older recruitment setting is the fallback)
+    hours = int(_setting(db, tenant, "employees.interviewer.scorecard_reminder_hours") or _setting(db, tenant, "recruitment.reminders.scorecard_hours") or 24)
     for iv in db.query(Interview).filter(Interview.tenant_id == tenant.tenant_id, Interview.decision.is_(None), Interview.overall_rating.is_(None),
                                          Interview.scheduled_at < now - timedelta(hours=hours), Interview.scheduled_at > now - timedelta(days=30)).limit(200):
         if _remind(db, tenant, "scorecard", iv.id, [iv.interviewer_email], "Please give your interview feedback - the candidate is waiting for a decision.",

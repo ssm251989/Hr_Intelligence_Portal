@@ -33,6 +33,8 @@ class NavItem:
     # Fluent emoji name shown beside the label.
     group: str = "today"
     icon: str = "house"
+    # Part 20.4: hidden when the user holds this permission (e.g. "My interviews" for people without the full Interviews menu)
+    unless: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -47,7 +49,10 @@ MODULES: tuple[ModuleDef, ...] = (
     ModuleDef("home", (NavItem("nav.overview", "/", group="today", icon="house"),
                        NavItem("nav.approvals", "/approvals", group="today", icon="check"),
                        # Part 20.3: the employee's own profile, documents, assets, change requests
-                       NavItem("nav.my_profile", "/me", any_of=("separation.self.view", "assets.self.view", "performance.self.view"), group="today", icon="id_card")),
+                       NavItem("nav.my_profile", "/me", any_of=("separation.self.view", "assets.self.view", "performance.self.view"), group="today", icon="id_card"),
+                       # Part 20.4: an employee who interviews -- their interviews + availability only (HR has them under Interviews)
+                       NavItem("nav.my_interviews", "/interviews/my", "recruitment.availability.view", group="today", icon="calendar",
+                               unless="recruitment.interview.view")),
              always_on=True),
     # Part 20.3: every hiring item needs its own recruitment permission -- an Employee-only login saw them all before
     ModuleDef("recruitment", (
@@ -141,6 +146,8 @@ def nav_for(db, tenant, user, permissions: set[str]) -> list[dict]:
             if (item.only_flat_role or getattr(user, "role", None) == "agency") and item.only_flat_role != getattr(user, "role", None):
                 continue
             allowed = any(p in permissions for p in item.any_of) if item.any_of else (item.permission is None or item.permission in permissions)
+            if item.unless and item.unless in permissions:
+                allowed = False
             key = module_registry.module_for_page(item.path)  # Part 19.1: hidden when its module isn't active
             if allowed and (key is None or key in active):
                 items.append({"label_key": item.label_key, "path": item.path, "module": module.code, "group": item.group, "icon": item.icon,

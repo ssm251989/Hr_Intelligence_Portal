@@ -1,5 +1,5 @@
 from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Integer, String, Text, text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from app.core.database import Base
 from app.platform.tenancy.mixins import TenantOwned
@@ -44,4 +44,6 @@ class Interview(Base, TenantOwned):
     # to "manual" so every row created before this column existed backfills correctly --
     # the auto flow is new and didn't exist when any of those rows were created.
     scheduling_method = Column(String(20), nullable=False, server_default=text("'manual'"))
+    # Part 20.4: the interviewer declined (reason) or proposed another time after booking -- HR acts on it
+    interviewer_response_json = Column(JSONB)
     created_at = Column(DateTime(timezone=True), server_default=text("now()"))

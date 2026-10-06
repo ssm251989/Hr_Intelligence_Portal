@@ -145,7 +145,15 @@ def _exit_checklist(db, tenant):
     return run_reminders(db, tenant)
 
 
+def _interviewer_links(db, tenant):
+    """Part 20.4: interviewers from the old Excel (availability rows) -> linked to employees by email, or an HR to-do."""
+    from app.employees.interviewers import link_existing
+
+    return link_existing(db, tenant)
+
+
 JOBS = {
+    "interviewer_links": _interviewer_links,
     "exit_checklist": _exit_checklist,
     "exit_interview_reminders": _exit_interview_reminders,
     "joiner_exits": _joiner_exits,
@@ -243,5 +251,6 @@ celery_app.conf.beat_schedule = {
     "joiner-exits": {"task": "hrms.fan_out", "schedule": 3600.0, "args": ("joiner_exits",)},
     "exit-interview-reminders": {"task": "hrms.fan_out", "schedule": 3600.0, "args": ("exit_interview_reminders",)},
     "exit-checklist": {"task": "hrms.fan_out", "schedule": 3600.0, "args": ("exit_checklist",)},
+    "interviewer-links": {"task": "hrms.fan_out", "schedule": 86400.0, "args": ("interviewer_links",)},
 }
 celery_app.conf.timezone = "UTC"
