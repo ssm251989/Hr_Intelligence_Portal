@@ -274,6 +274,12 @@ class Separation(Base, TenantOwned):
     completion_note = Column(Text)  # feat 2026-10-06: closed with items still open -> HR's reason
     letters_emailed_at = Column(DateTime(timezone=True))  # feat 2026-10-06: relieving + experience letters emailed on completion
     rehire_eligible = Column(Boolean)
+    # Part 20.3: resignation form + Manager -> HR approval (status stays "submitted" until HR confirms the last day)
+    early_release_requested = Column(Boolean, nullable=False, server_default=text("false"))
+    resignation_letter_ref = Column(Text)
+    manager_approved_at = Column(DateTime(timezone=True))
+    manager_approved_by = Column(Text)
+    manager_note = Column(Text)
     alumni_opt_in = Column(Boolean, nullable=False, server_default=text("false"))
     absconding_notices_json = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
     relieving_letter_id = Column(UUID(as_uuid=True), ForeignKey("letter_records.id"))

@@ -45,21 +45,25 @@ class ModuleDef:
 
 MODULES: tuple[ModuleDef, ...] = (
     ModuleDef("home", (NavItem("nav.overview", "/", group="today", icon="house"),
-                       NavItem("nav.approvals", "/approvals", group="today", icon="check")), always_on=True),
+                       NavItem("nav.approvals", "/approvals", group="today", icon="check"),
+                       # Part 20.3: the employee's own profile, documents, assets, change requests
+                       NavItem("nav.my_profile", "/me", any_of=("separation.self.view", "assets.self.view", "performance.self.view"), group="today", icon="id_card")),
+             always_on=True),
+    # Part 20.3: every hiring item needs its own recruitment permission -- an Employee-only login saw them all before
     ModuleDef("recruitment", (
-        NavItem("nav.jobs", "/jobs", group="hiring", icon="briefcase"),
-        NavItem("nav.candidates", "/candidates/dashboard", group="hiring", icon="technologist"),
-        NavItem("nav.screening", "/screening/dashboard", group="hiring", icon="magnifier"),
-        NavItem("nav.shortlisting", "/shortlisting/dashboard", group="hiring", icon="star"),
-        NavItem("nav.interviews", "/interviews/dashboard", group="hiring", icon="calendar"),
-        NavItem("nav.hr_inbox", "/hr-inbox", group="hiring", icon="inbox"),
-        NavItem("nav.salary", "/salary", group="hiring", icon="money"),
-        NavItem("nav.bgv", "/bgv", group="hiring", icon="shield"),
-        NavItem("nav.offers", "/offers", group="hiring", icon="envelope"),
+        NavItem("nav.jobs", "/jobs", "recruitment.job.view", group="hiring", icon="briefcase"),
+        NavItem("nav.candidates", "/candidates/dashboard", "recruitment.candidate.view", group="hiring", icon="technologist"),
+        NavItem("nav.screening", "/screening/dashboard", "recruitment.screening.view", group="hiring", icon="magnifier"),
+        NavItem("nav.shortlisting", "/shortlisting/dashboard", "recruitment.shortlisting.view", group="hiring", icon="star"),
+        NavItem("nav.interviews", "/interviews/dashboard", "recruitment.interview.view", group="hiring", icon="calendar"),
+        NavItem("nav.hr_inbox", "/hr-inbox", "recruitment.candidate.view", group="hiring", icon="inbox"),
+        NavItem("nav.salary", "/salary", "recruitment.salary.view", group="hiring", icon="money"),
+        NavItem("nav.bgv", "/bgv", "recruitment.bgv.view", group="hiring", icon="shield"),
+        NavItem("nav.offers", "/offers", "recruitment.offer.view", group="hiring", icon="envelope"),
         NavItem("nav.agencies", "/agencies", "recruitment.agency.view", group="hiring", icon="handshake"),
         NavItem("nav.agency_portal", "/agency", "agency.portal.view", group="today", icon="handshake", only_flat_role="agency"),
         # the original Reports page (13-module parity); the builder lives on it too
-        NavItem("nav.reports", "/reports", group="insights", icon="bar_chart"),
+        NavItem("nav.reports", "/reports", any_of=("recruitment.job.view", "analytics.report.view"), group="insights", icon="bar_chart"),
     ), always_on=True),
     # Part 20.1: the Employees list -- always on (first in People; not the older People module below, which a company can hide)
     ModuleDef("employees", (NavItem("nav.employees", "/employees", "core_hr.employee.view", group="people", icon="id_card"),), always_on=True),

@@ -526,6 +526,7 @@ class ResignationCreate(BaseModel):
     requested_lwd: Optional[date] = None
     reason_code: Optional[str] = None
     reason_text: Optional[str] = None
+    early_release_requested: bool = False  # Part 20.3
 
 
 @router.post("/me/resignation", status_code=201)
@@ -533,9 +534,15 @@ def resign(payload: ResignationCreate, db: Session = Depends(get_db), current_us
     me = _my_employee(db, current_user)
     try:
         row = separations.initiate(db, require_current_tenant(), employee_id=me.id, separation_type="resignation", actor=current_user.email,
-                                   actor_user_id=current_user.id, **payload.model_dump())
+                                   actor_user_id=current_user.id, **payload.model_dump(exclude={"early_release_requested"}))
     except separations.SeparationError as exc:
         raise _bad(exc)
+    # Part 20.3: early release asked for; the manager approves first (employees.exit.approval_steps)
+    from app.employees import self_service
+
+    row.early_release_requested = bool(payload.early_release_requested)
+    db.commit()
+    self_service.notify_manager(db, require_current_tenant(), row)
     return separations.exit_summary(db, row)
 
 

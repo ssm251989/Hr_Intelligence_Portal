@@ -92,6 +92,24 @@ DEFAULTS: dict[str, tuple[str, str, list[str]]] = {
         ["candidate_first_name", "last_seen", "respond_by"],
     ),
     # Part 20: employees (app/employees/*)
+    "employee.profile_change_result": (  # Part 20.3: employee self-service
+        "Your profile change was {{ result }}",
+        "Hi {{ first_name }},\n\nYour request to change your profile details was {{ result }}.\nHR's note: {{ note }}\n\nSee your profile: {{ link }}\n\n{{ company_name }} HR",
+        ["first_name", "result", "link"],
+    ),
+    "employee.absconding_notice": (
+        "Absence from work since {{ last_seen }}",
+        "Hi {{ first_name }},\n\nYou have not come to work since {{ last_seen }} and we have not been able to reach you. Your employment is being "
+        "closed as absconding (leaving without notice).\n\nPlease contact HR as soon as possible, and return any company property you have "
+        "(laptop, ID card, access card).\n\n{{ company_name }} HR",
+        ["first_name", "last_seen"],
+    ),
+    "employee.resignation_to_manager": (
+        "{{ name }} has resigned - your approval is needed",
+        "Hi,\n\n{{ name }} has sent their resignation.\nRequested last working day: {{ requested }}\nAsked for early release: {{ early }}\n\n"
+        "Please talk to them, add a note if you discussed staying, and approve so HR can confirm the last working day: {{ link }}\n\n{{ company_name }} HR",
+        ["name", "link"],
+    ),
     "employee.exit_task_assigned": (  # feat 2026-10-06: actionable exit checklist
         "Exit checklist: {{ item }} for {{ name }}",
         "Hi,\n\n{{ name }} is leaving {{ company_name }}; their last working day is {{ last_day }}.\n\nYou own this exit checklist item: "

@@ -151,6 +151,7 @@ from app.models.agency import AgencyJobAssignment, AgencyMember, AgencySubmissio
 from app.models.setting_value import SettingValue, SettingValueHistory
 from app.models.user import User
 from app.models.test_mailbox import TestMailbox, TestMailboxMessage  # Part 20.2b
+from app.models.change_request import EmployeeChangeRequest  # Part 20.3
 from app.models.user_integration import UserIntegration
 from app.models.workflow import WorkflowDefinition, WorkflowInstance, WorkflowStep, WorkflowTimer
 

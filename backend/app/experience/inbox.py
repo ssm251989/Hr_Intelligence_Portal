@@ -52,6 +52,18 @@ def items_for(db: Session, tenant: TenantContext, user: User) -> list[dict]:
         out.append({"kind": "ai_suggestion", "id": str(s.id), "title": s.title, "subtitle": f"{s.agent} suggestion -- review before it takes effect",
                     "due_at": None, "path": f"/approvals?suggestion={s.id}", "actions": ["approve", "edit", "reject"]})
 
+    # Part 20.3: resignations waiting for this manager; profile change requests waiting for HR
+    from app.employees import self_service
+    from app.platform.iam.authz import has_permission
+
+    for x in self_service.team_exits(db, tenant, user):
+        out.append({"kind": "todo", "id": x["id"], "title": f"Approve the resignation of {x['employee_name']}", "subtitle": "your team - then HR confirms the last day",
+                    "due_at": None, "path": f"/exits?approve={x['id']}", "actions": ["open"]})
+    if has_permission(db, tenant, user, "core_hr.employee.edit"):
+        for r in self_service.pending_requests(db, tenant):
+            out.append({"kind": "todo", "id": r["id"], "title": f"Profile change: {r['employee_name']}", "subtitle": ", ".join(k.replace("_", " ") for k in r["changes"]),
+                        "due_at": None, "path": f"/employees/{r['employee_id']}?change={r['id']}", "actions": ["open"]})
+
     me = my_employee_id(db, tenant, user)
     if me is not None:
         from app.models.performance import Review

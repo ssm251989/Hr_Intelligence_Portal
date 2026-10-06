@@ -407,6 +407,7 @@ def _separation_row(db: Session, s: Separation, *, with_items: bool, interview: 
         "blocking_pending": sum(1 for i in items if i.get("status") not in ("done", "not_applicable") and i.get("blocks_relieving")),
         "exit_interview_done": bool((s.exit_interview_json or {}).get("submitted_at")),
         "exit_interview_status": status_of(s),
+        **_approval_info(db, s),  # Part 20.3
         **({"exit_interview": s.exit_interview_json, "exit_interview_ai_summary": s.exit_interview_ai_summary_json} if interview else {}),
         "letters": _letters(db, s), "rehire_eligible": s.rehire_eligible,
     }
@@ -469,3 +470,14 @@ def separation_letters(separation_id: UUID, db: Session = Depends(get_db), curre
         return {"id": str(rec.id), "generated_at": _iso(rec.generated_at), "html": rec.rendered_html} if rec else None
 
     return {"relieving": one(s.relieving_letter_id), "experience": one(s.experience_letter_id)}
+
+
+def _approval_info(db: Session, s: Separation) -> dict:
+    """Part 20.3: the Manager -> HR step, early release, resignation letter."""
+    from app.employees import self_service
+
+    boss = self_service.needs_manager(db, require_current_tenant(), s)
+    return {"early_release_requested": bool(s.early_release_requested), "has_resignation_letter": bool(s.resignation_letter_ref),
+            "manager_approved_at": _iso(s.manager_approved_at), "manager_approved_by": s.manager_approved_by, "manager_note": s.manager_note,
+            "waiting_for_manager": (boss.full_name or boss.email) if boss is not None else None,
+            "status_label": (self_service.status_label(s) or {}).get("key")}

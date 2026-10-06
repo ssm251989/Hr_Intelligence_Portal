@@ -163,6 +163,11 @@ def approve_lwd(db: Session, tenant: TenantContext, separation: Separation, *, l
         raise SeparationError(f"cannot approve the LWD of a {separation.status} separation")
     if lwd < separation.submitted_on:
         raise SeparationError("last working day cannot be before the submission date")
+    from app.employees.self_service import needs_manager  # Part 20.3: Manager -> HR (employees.exit.approval_steps)
+
+    boss = needs_manager(db, tenant, separation)
+    if boss is not None:
+        raise SeparationError(f"waiting for the manager's approval first ({boss.full_name or boss.email})")
     if waived_days < 0 or buyout_days < 0:
         raise SeparationError("waiver/buyout days cannot be negative")
     shortfall = max(0, (standard_lwd(separation) - lwd).days)

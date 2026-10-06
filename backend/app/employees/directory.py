@@ -262,7 +262,7 @@ def profile(db: Session, tenant, e: Employee) -> dict:
     docs = [{"kind": "document", "id": str(d.id), "label": d.type.replace("_", " ").capitalize(), "date": d.created_at.isoformat() if d.created_at else None,
              "expiry": d.expiry_date.isoformat() if d.expiry_date else None}
             for d in db.query(EmployeeDocument).filter(EmployeeDocument.employee_id == e.id).all()]
-    docs += [{"kind": "letter", "id": str(x.id), "label": x.template_key.replace("_", " ").capitalize(), "date": x.created_at.isoformat() if getattr(x, "created_at", None) else None}
+    docs += [{"kind": "letter", "id": str(x.id), "label": x.template_key.replace("_", " ").capitalize(), "date": x.generated_at.isoformat() if x.generated_at else None}
              for x in db.query(LetterRecord).filter(LetterRecord.employee_id == e.id).all()]
     if case is not None:
         docs += [{"kind": "joining", "id": str(d.id), "label": d.document_type_code.replace("_", " ").capitalize(), "status": d.verification_status,
