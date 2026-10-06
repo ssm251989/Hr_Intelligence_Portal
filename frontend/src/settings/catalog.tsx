@@ -19,6 +19,7 @@ import RequiredDocumentsPage from "../components/documents/RequiredDocumentsPage
 import ContactsSettingsPage from "../components/offers/ContactsSettingsPage";
 import OfficesPage from "../components/people/OfficesPage";
 import PoliciesPage from "../components/policies/PoliciesPage";
+import CategoryListPage from "../components/servicedesk/CategoryListPage";
 import JoiningFormSettingsPage from "../components/onboarding/JoiningFormSettingsPage";
 import UsersPage from "../components/people/UsersPage";
 import GenAISettingsPage from "../components/genai/GenAISettingsPage";
@@ -86,6 +87,7 @@ export const LEGACY: Record<string, string> = {
   all: "advanced/all", modules: "company/modules", "module-lock": "company/modules", "advanced/modules": "company/modules", platform: "advanced/all", "all-settings": "advanced/all",
   health: "data/health", "system-health": "data/health",
   "joining-form": "onboarding/joining-form", "joining-details": "onboarding/joining-form",
+  "asset-types": "helpdesk/asset-types", "asset-categories": "helpdesk/asset-types", "exit-reasons": "helpdesk/exit-reasons",
   policies: "company/policies", handbook: "company/policies", knowledge: "company/policies",
 };
 
@@ -171,6 +173,9 @@ export const CATEGORIES: SettingsCategory[] = [
   {
     id: "helpdesk", emoji: "ring_buoy", pages: [
       { id: "main", emoji: "ring_buoy", keywords: "tickets categories response times assets exits", visible: ADMIN, render: () => <ServiceDeskPanel /> },
+      // Part 20.0-D: the lists behind the asset-type / exit-reason dropdowns (they were never seeded -> empty dropdowns)
+      { id: "asset-types", emoji: "laptop", keywords: "asset categories types laptop monitor phone sim id card", visible: ADMIN, render: () => <CategoryListPage kind="asset" /> },
+      { id: "exit-reasons", emoji: "door", keywords: "exit reasons resignation leaving", visible: ADMIN, render: () => <CategoryListPage kind="exit_reason" /> },
       { id: "rules", emoji: "gear", prefixes: ["helpdesk.", "assets.", "separation."], visible: ADMIN,
         render: scoped(["helpdesk.", "assets.", "separation."], "settingsHome.page.helpdesk.rules") },
     ],

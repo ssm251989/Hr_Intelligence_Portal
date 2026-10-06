@@ -230,7 +230,7 @@ function Register({ initialSearch, canEdit, canCreate, reloadKey, onToast }: {
       <AllocateDialog asset={allocate} onClose={() => setAllocate(null)} onDone={done} />
       <ReturnDialog asset={giveBack} meta={giveBack ? meta[giveBack.id] : undefined} onClose={() => setGiveBack(null)} onDone={done} />
       <MaintenanceDialog asset={repair} onClose={() => setRepair(null)} onDone={done} />
-      <NewAssetDialog open={adding} onClose={() => setAdding(false)} onDone={done} categories={cats.list ?? []} />
+      <NewAssetDialog open={adding} onClose={() => setAdding(false)} onDone={done} categories={cats.list ?? []} onCategoriesChanged={cats.reload} />
     </>
   );
 }
@@ -567,7 +567,7 @@ export default function AssetsPage() {
           {tab === "catalogue" && <Catalogue onSent={(m) => { show(m); setReloadKey((k) => k + 1); }} />}
         </>
       )}
-      <NewAssetDialog open={adding} onClose={() => setAdding(false)} categories={cats.list ?? []}
+      <NewAssetDialog open={adding} onClose={() => setAdding(false)} categories={cats.list ?? []} onCategoriesChanged={cats.reload}
         onDone={(m) => { setAdding(false); if (m) show(m); setReloadKey((k) => k + 1); }} />
       {toast}
     </Box>

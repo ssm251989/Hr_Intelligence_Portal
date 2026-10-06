@@ -114,7 +114,7 @@ Each link was opened by Playwright as an admin on the live app (`fix22-link-01..
 - Current and expected CTC are locked to Required, because the salary check is calculated from them.
 - Defaults keep today's behaviour: notice period required; relocate and joining date optional; offers and payslip follow the older on/off switches (`recruitment.salary.ask_offers` / `ask_payslip`).
 - The public form (`/salary-details/:token`) shows, hides and requires fields from it.
-- `POST /api/v1/public/ui/salary-form/{token}` checks Required ones ("Please fill in: Notice period.") and drops Hidden ones.
+- `POST /api/v1/public/salary-details/{token}` checks Required ones ("Please fill in: Notice period.") and drops Hidden ones.
 - `salary_auto.missing_fields` only counts a missing notice period while it is Required, so an optional notice period no longer makes the app ask again.
 - The hiring **documents form** already had Required/Optional per document (Settings > Hiring > Required documents; removing a document = hidden). No change needed.
 
@@ -126,3 +126,45 @@ Each link was opened by Playwright as an admin on the live app (`fix22-link-01..
   - a Hidden field disappears
   - history + revert work
 - The salary-form card is in the 20.6 screenshots.
+
+---
+
+## 20.0-D Asset type dropdown not working
+
+**Investigation (2026-10-06, CTD Techs):**
+1. *Does the list load?* `GET /api/v1/ui/service-desk/categories?kind=asset` read `master_values` with `type_code='asset_category'`. The DB had **0 rows** for it:
+   ```
+   select type_code, count(*) from master_values group by type_code
+   -> blood_group 8, document_type 5, education_level 5, notice_period 5, relationship 4, source_of_hire 8
+      (no asset_category, no exit_reason, no ticket_category)
+   ```
+   So the API answered `[]`, and the dropdown opened an empty menu.
+2. *Why empty?* `hrctl/seed_masters.py` seeds only those 6 lists and **never seeded `asset_category`, `exit_reason` or `ticket_category`**. The only asset type that ever existed was the demo data's "Demo - Laptops" (`hrctl/demo_data.py` `DEMO_CATEGORIES`), which went with the demo clean-up. The data reset never touches `master_values` (it is in its `NEVER` list), so nothing was "lost": the lists were simply never filled.
+3. *Menu behind the dialog?* No. No component sets `disablePortal`, and no theme override changes `MuiMenu` / `MuiPopover` / `MuiDialog` z-index. MUI's menu portal opens above the dialog (screenshot in 20.6).
+4. *Second bug in the same dialog:* `NewAssetDialog` picked the default type only at the moment the dialog opened (`categories[0]?.code ?? ""`). If the list arrived a moment later the field stayed empty, and **Save stayed disabled** (`canSubmit` needs a category).
+
+**Fix:**
+- **Defaults for a list that has never had a value**, the first time it is read (`ensure_defaults` in `ui_servicedesk_router.py`, audited `default_values_added`). Seeded for CTD Techs now:
+  - asset types: Laptop, Desktop, Monitor, Mobile phone, SIM card, ID card, Access card, Headset, Keyboard/Mouse, Other
+  - 10 exit reasons
+  - 5 helpdesk topics
+- Inside the dropdown: **"+ Add asset type"** (inline name + Add; the new type is selected straight away). When the list is empty: "No asset types yet - add one below." The default type is now picked when the list arrives.
+- **Settings > Helpdesk & assets > Asset categories** and **> Exit reasons**: add, rename, switch off. Never delete, because assets and exits keep pointing at the item. New endpoints: `POST /categories`, `PATCH /categories/{kind}/{code}`, `GET ?include_inactive=true`. Permission: assets / separation edit, or settings admin.
+
+**Every dropdown inside a dialog/drawer that gets its options from the server** (fixed lists such as status or work mode can't be empty):
+| Dialog | Dropdown | Options from | Was | Now |
+|---|---|---|---|---|
+| Assets > Add asset | Asset type | `asset_category` list | **empty (0)** | 10 types + "Add asset type" |
+| Assets > filter / request an asset (self-service) | Asset type | same list | **empty** | fixed by the same list |
+| Exits > start exit / Resign | Reason | `exit_reason` list | **empty (0)** | 10 reasons, editable |
+| Helpdesk > new ticket (module hidden for CTD) | Topic | `ticket_category` list | **empty (0)** | 5 topics |
+| Assets > Fulfil request | Asset in stock | assets in stock | always has "Pick automatically" | ok |
+| Assets > Allocate | Person (search) | employees | ok | ok |
+| People > Documents | Document type | `document_type` (5 seeded) | ok | ok |
+| People > Job change | Department / Location | departments, offices | ok | ok |
+| Schedule interview | Candidate / interviewer | candidates, interviewers | ok | ok |
+| Interviewers > Pools | People | users | ok | ok |
+| Onboarding > Start onboarding | Signed offer | ready offers | shows an empty-state line when none | ok |
+| Joiner actions (withdraw / declined / no-show / exits) | Reason | fixed lists in `joiner_actions.py` | ok | ok |
+
+**Assets with the Assets module hidden:** assigning from the Employee list and profile is part of **20.1** (it uses its own endpoint, not the module-gated `/service-desk/assets`). Assets already appear in the exit clearance checklist (`joiner_actions.record_exit` -> clearance "Return <asset>").

@@ -23,8 +23,10 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.audit.service import log_action
 from app.auth.dependencies import get_current_user
 from app.core.database import get_db
 from app.models.core_hr import Employee, LetterRecord
@@ -102,20 +104,124 @@ def _my_employee(db: Session, user: User) -> Optional[Employee]:
 # ---- shared ----
 
 
+# Part 20.0-D: hrctl seed-masters never seeded these three lists, so a company had NO asset types /
+# ticket topics / exit reasons and every dropdown fed by them was empty. A list that has never had a
+# single value gets these defaults the first time it is read (editable in Settings > Helpdesk & assets).
+DEFAULT_CATEGORIES = {
+    "asset_category": (("laptop", "Laptop", "laptop"), ("desktop", "Desktop", "desktop"), ("monitor", "Monitor", "desktop"),
+                       ("mobile_phone", "Mobile phone", "phone"), ("sim_card", "SIM card", "phone"), ("id_card", "ID card", "id_card"),
+                       ("access_card", "Access card", "key"), ("headset", "Headset", "headphone"), ("keyboard_mouse", "Keyboard/Mouse", "keyboard"),
+                       ("other", "Other", "package")),
+    "exit_reason": (("better_offer", "Better offer elsewhere", None), ("personal", "Personal reasons", None), ("relocation", "Moving to another city", None),
+                    ("higher_studies", "Higher studies", None), ("health", "Health", None), ("role_fit", "Role or work not a good fit", None),
+                    ("manager_team", "Manager or team", None), ("pay", "Pay", None), ("performance", "Performance (company decision)", None),
+                    ("other", "Other", None)),
+    "ticket_category": (("it", "IT & devices", "laptop"), ("payroll", "Pay & payslips", "money"), ("leave", "Leave & attendance", "calendar"),
+                        ("policy", "Policies", "page"), ("other", "Something else", "speech")),
+}
+
+
+def ensure_defaults(db: Session, tenant, type_code: str) -> int:
+    """Seeds a list that has never had any value (active or not). Returns how many were added."""
+    if db.query(MasterValue.id).filter(MasterValue.tenant_id == tenant.tenant_id, MasterValue.type_code == type_code).first() is not None:
+        return 0
+    from app.platform.metadata.masters import register_master_types
+
+    register_master_types(db)
+    for i, (code, label, emoji) in enumerate(DEFAULT_CATEGORIES.get(type_code, ()), start=1):
+        db.add(MasterValue(tenant_id=tenant.tenant_id, type_code=type_code, code=code, label_i18n={"en": label}, sort=i,
+                           attributes_json={"emoji": emoji} if emoji else {}))
+    db.commit()
+    log_action(db, "master_list", None, "default_values_added", "system", {"type": type_code, "count": len(DEFAULT_CATEGORIES.get(type_code, ()))})
+    return len(DEFAULT_CATEGORIES.get(type_code, ()))
+
+
+def _category_row(v: MasterValue, locale: str) -> dict:
+    return {"code": v.code, "label": _label(v, locale), "parent_code": None, "emoji": (v.attributes_json or {}).get("emoji"),
+            "hint": (v.attributes_json or {}).get("hint"), "active": bool(v.is_active), "label_i18n": v.label_i18n or {}}
+
+
 @router.get("/categories")
-def categories(kind: str = "ticket", locale: str = "en", db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def categories(kind: str = "ticket", locale: str = "en", include_inactive: bool = False, db: Session = Depends(get_db),
+               current_user: User = Depends(get_current_user)):
     type_code = CATEGORY_TYPES.get(kind)
     if type_code is None:
         raise HTTPException(status_code=400, detail="kind is ticket, asset or exit_reason")
     tenant = require_current_tenant()
-    rows = (
-        db.query(MasterValue)
-        .filter(MasterValue.tenant_id == tenant.tenant_id, MasterValue.type_code == type_code, MasterValue.is_active.is_(True))
-        .order_by(MasterValue.sort, MasterValue.code)
-        .all()
-    )
-    return [{"code": v.code, "label": _label(v, locale), "parent_code": None, "emoji": (v.attributes_json or {}).get("emoji"),
-             "hint": (v.attributes_json or {}).get("hint")} for v in rows]
+    ensure_defaults(db, tenant, type_code)
+    query = db.query(MasterValue).filter(MasterValue.tenant_id == tenant.tenant_id, MasterValue.type_code == type_code)
+    if not include_inactive:
+        query = query.filter(MasterValue.is_active.is_(True))
+    return [_category_row(v, locale) for v in query.order_by(MasterValue.sort, MasterValue.code).all()]
+
+
+class CategoryIn(BaseModel):
+    kind: str
+    label: str = Field(..., min_length=1, max_length=80)
+
+
+def _can_edit_categories(db: Session, user: User, kind: str) -> None:
+    from app.platform.iam.authz import has_permission
+
+    tenant = require_current_tenant()
+    needed = {"asset": ("assets.asset.edit", "assets.asset.create"), "exit_reason": ("separation.case.edit",), "ticket": ("helpdesk.ticket.edit",)}
+    if not any(has_permission(db, tenant, user, p) for p in (*needed.get(kind, ()), "platform.settings.configure")):
+        raise HTTPException(status_code=403, detail="You don't have permission to change this list.")
+
+
+@router.post("/categories", status_code=201)
+def add_category(body: CategoryIn, locale: str = "en", db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Part 20.0-D: "Add asset type" right inside the dropdown (and the Settings list)."""
+    import re as _re
+
+    type_code = CATEGORY_TYPES.get(body.kind)
+    if type_code is None:
+        raise HTTPException(status_code=400, detail="kind is ticket, asset or exit_reason")
+    _can_edit_categories(db, current_user, body.kind)
+    tenant = require_current_tenant()
+    ensure_defaults(db, tenant, type_code)
+    label = body.label.strip()
+    rows = db.query(MasterValue).filter(MasterValue.tenant_id == tenant.tenant_id, MasterValue.type_code == type_code).all()
+    same = next((v for v in rows if (_label(v, "en") or "").strip().lower() == label.lower()), None)
+    if same is not None:
+        if not same.is_active:
+            same.is_active = True
+            db.commit()
+        return _category_row(same, locale)
+    base = _re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")[:40] or "type"
+    code, n = base, 2
+    while any(v.code == code for v in rows):
+        code, n = f"{base}_{n}", n + 1
+    value = MasterValue(tenant_id=tenant.tenant_id, type_code=type_code, code=code, label_i18n={"en": label}, sort=len(rows) + 1, attributes_json={})
+    db.add(value)
+    db.commit()
+    log_action(db, "master_list", value.id, "list_value_added", current_user.email, {"type": type_code, "label": label})
+    return _category_row(value, locale)
+
+
+class CategoryPatch(BaseModel):
+    label: Optional[str] = Field(None, max_length=80)
+    active: Optional[bool] = None
+
+
+@router.patch("/categories/{kind}/{code}")
+def edit_category(kind: str, code: str, body: CategoryPatch, locale: str = "en", db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Rename or switch off (never delete: assets / exits / tickets keep pointing at the code)."""
+    type_code = CATEGORY_TYPES.get(kind)
+    if type_code is None:
+        raise HTTPException(status_code=400, detail="kind is ticket, asset or exit_reason")
+    _can_edit_categories(db, current_user, kind)
+    tenant = require_current_tenant()
+    value = db.query(MasterValue).filter(MasterValue.tenant_id == tenant.tenant_id, MasterValue.type_code == type_code, MasterValue.code == code).first()
+    if value is None:
+        raise HTTPException(status_code=404, detail="That item isn't on the list.")
+    if body.label is not None and body.label.strip():
+        value.label_i18n = {**(value.label_i18n or {}), locale if locale in ("en", "hi", "ta") else "en": body.label.strip()}
+    if body.active is not None:
+        value.is_active = body.active
+    db.commit()
+    log_action(db, "master_list", value.id, "list_value_changed", current_user.email, {"type": type_code, "code": code, "active": value.is_active})
+    return _category_row(value, locale)
 
 
 @router.get("/people")

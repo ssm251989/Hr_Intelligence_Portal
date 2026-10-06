@@ -2727,3 +2727,6 @@ NEXT: part-20.0C joining details fields (add the hiring salary form to the same 
 - part-20.0C: joining details already built 2026-10-05 (3613c9c). Added the hiring salary form to the same versioned settings (Required/Optional/Hidden per question; current/expected CTC locked Required; defaults = old behaviour); `missing_fields` follows it. Decision: salary rules live in `onboarding.joining_form` ("salary" key) so one page, one history.
 
 NEXT: part-20.0D asset type dropdown (investigate cause first).
+- part-20.0D: cause = `asset_category` / `exit_reason` / `ticket_category` were never seeded (hrctl seed_masters skips them), so the dropdowns had 0 options; plus the dialog chose its default only on open. Fix: defaults seeded the first time an empty list is read (seeded for CTD now); "+ Add asset type" inside the dropdown; Settings > Helpdesk & assets > Asset categories / Exit reasons. No z-index/portal problem found anywhere (table in FIXES_20.md). Decision: never delete list items (switch off), because assets and exits point at the codes.
+
+NEXT: part-20.1 Employees tab (list, profile, Employee ID format, assign asset without the Assets module).

@@ -14,6 +14,7 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
+import { extractErrorMessage } from "../../api/client";
 import { serviceDeskExtra, type Asset, type AssetMeta, type AssetRequestRow, type Category, type PersonLite } from "../../api/serviceDeskExtra";
 import { useT } from "../../i18n";
 import { FriendlyError } from "../../ui-kit";
@@ -58,17 +59,45 @@ function useAction(onDone: (msg?: string) => void) {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-export function NewAssetDialog({ open, onClose, onDone, categories }: { open: boolean; onClose: () => void; onDone: (msg?: string) => void; categories: Category[] }) {
+export function NewAssetDialog({ open, onClose, onDone, categories, onCategoriesChanged }: {
+  open: boolean; onClose: () => void; onDone: (msg?: string) => void; categories: Category[]; onCategoriesChanged?: () => void;
+}) {
   const t = useT();
   const a = useAction(onDone);
   const [form, setForm] = useState({ asset_tag: "", name: "", category_code: "", serial_number: "", vendor: "", purchase_date: "", warranty_until: "" });
+  // Part 20.0-D: "Add asset type" inside the dropdown (also the way out when the list is empty)
+  const [adding, setAdding] = useState(false);
+  const [newType, setNewType] = useState("");
+  const [extra, setExtra] = useState<Category[]>([]);
+  const [addError, setAddError] = useState<string | null>(null);
+  const options = [...categories, ...extra.filter((x) => !categories.some((c) => c.code === x.code))];
   useEffect(() => {
     if (open) {
       setForm({ asset_tag: "", name: "", category_code: categories[0]?.code ?? "", serial_number: "", vendor: "", purchase_date: "", warranty_until: "" });
+      setAdding(false);
+      setNewType("");
+      setAddError(null);
       a.reset();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+  // the list may arrive after the dialog opened: pick the first type then (it used to stay empty)
+  useEffect(() => {
+    if (open && !form.category_code && categories.length) setForm((s) => ({ ...s, category_code: categories[0].code }));
+  }, [open, categories, form.category_code]);
+  const addType = async () => {
+    setAddError(null);
+    try {
+      const c = await serviceDeskExtra.addCategory("asset", newType.trim());
+      setExtra((x) => [...x, c]);
+      setForm((s) => ({ ...s, category_code: c.code }));
+      setAdding(false);
+      setNewType("");
+      onCategoriesChanged?.();
+    } catch (e) {
+      setAddError(extractErrorMessage(e, t("assets.types.add_failed")));
+    }
+  };
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((s) => ({ ...s, [k]: e.target.value }));
   return (
     <Shell open={open} title={t("assets.new.title")} onClose={onClose} busy={a.busy} error={a.error} submitLabel={t("assets.add")}
@@ -83,9 +112,22 @@ export function NewAssetDialog({ open, onClose, onDone, categories }: { open: bo
       })}>
       <TextField required label={t("assets.new.tag")} placeholder={t("assets.new.tag_ph")} helperText={t("assets.new.tag_hint")} value={form.asset_tag} onChange={set("asset_tag")} />
       <TextField required label={t("assets.new.name")} placeholder={t("assets.new.name_ph")} value={form.name} onChange={set("name")} />
-      <TextField required select label={t("assets.new.category")} value={form.category_code} onChange={set("category_code")}>
-        {categories.map((c) => <MenuItem key={c.code} value={c.code}>{c.label}</MenuItem>)}
+      <TextField required select label={t("assets.new.category")} value={options.some((c) => c.code === form.category_code) ? form.category_code : ""}
+        onChange={(e) => { if (e.target.value === "__add") { setAdding(true); return; } setForm((s) => ({ ...s, category_code: e.target.value })); }}
+        helperText={options.length ? undefined : t("assets.types.none")}>
+        {options.length === 0 && <MenuItem disabled value="">{t("assets.types.none")}</MenuItem>}
+        {options.map((c) => <MenuItem key={c.code} value={c.code}>{c.label}</MenuItem>)}
+        <MenuItem value="__add" sx={{ fontWeight: 700, color: "primary.main" }}>{t("assets.types.add")}</MenuItem>
       </TextField>
+      {adding && (
+        <Stack direction="row" spacing={1} alignItems="flex-start">
+          <TextField autoFocus size="small" fullWidth label={t("assets.types.new_label")} placeholder={t("assets.types.new_ph")} value={newType}
+            onChange={(e) => setNewType(e.target.value)} error={Boolean(addError)} helperText={addError ?? undefined}
+            onKeyDown={(e) => { if (e.key === "Enter" && newType.trim()) { e.preventDefault(); void addType(); } }} />
+          <Button variant="contained" onClick={addType} disabled={!newType.trim()}>{t("assets.types.add_button")}</Button>
+          <Button onClick={() => setAdding(false)}>{t("action.cancel")}</Button>
+        </Stack>
+      )}
       <TextField label={t("assets.new.serial")} placeholder={t("assets.new.serial_ph")} value={form.serial_number} onChange={set("serial_number")} />
       <TextField label={t("assets.new.vendor")} placeholder={t("assets.new.vendor_ph")} value={form.vendor} onChange={set("vendor")} />
       <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>

@@ -17,6 +17,9 @@ const qs = (params: Record<string, string | number | boolean | undefined | null>
 export interface Category {
   code: string;
   label: string;
+  /** Part 20.0-D: Settings list editor */
+  active?: boolean;
+  label_i18n?: Record<string, string>;
   emoji?: string | null;
   hint?: string | null;
 }
@@ -210,6 +213,11 @@ export interface LetterHtml {
 export const serviceDeskExtra = {
   // shared
   categories: (kind: "ticket" | "asset" | "exit_reason", locale = "en") => http.get<Category[]>(`${UI}/categories${qs({ kind, locale })}`),
+  // Part 20.0-D: add / rename / switch off list items (asset types, exit reasons, ticket topics)
+  allCategories: (kind: "ticket" | "asset" | "exit_reason", locale = "en") => http.get<Category[]>(`${UI}/categories${qs({ kind, locale, include_inactive: "true" })}`),
+  addCategory: (kind: "ticket" | "asset" | "exit_reason", label: string, locale = "en") => http.post<Category>(`${UI}/categories${qs({ locale })}`, { kind, label }),
+  editCategory: (kind: "ticket" | "asset" | "exit_reason", code: string, body: { label?: string; active?: boolean }, locale = "en") =>
+    http.patch<Category>(`${UI}/categories/${kind}/${encodeURIComponent(code)}${qs({ locale })}`, body),
   people: (params: { q?: string; ids?: string[] }) => http.get<PersonLite[]>(`${UI}/people${qs({ q: params.q, ids: params.ids?.join(",") })}`),
 
   // helpdesk -- employee
