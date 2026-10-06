@@ -174,6 +174,8 @@ def register_all() -> None:
     # Part 17.15: removed candidates stay in the Recycle bin this many days, then are deleted permanently
     register(SettingDef("recruitment.candidates.recycle_days", "int", 30, module="recruitment", group="Candidates",
                         json_schema={"type": "integer", "minimum": 1, "maximum": 365}))
+    # Part 21.4: how long a BGV vendor's secure link works
+    register(SettingDef("recruitment.bgv.vendor_link_days", "int", 14, module="recruitment", group="Background checks", json_schema={"type": "integer", "minimum": 1, "maximum": 90}))
     # Part 21.1: Settings > Hiring > Closed jobs
     register(SettingDef("recruitment.jobs.recycle_enabled", "bool", True, module="recruitment", group="Jobs"))
     register(SettingDef("recruitment.jobs.recycle_after_days", "int", 30, module="recruitment", group="Jobs",

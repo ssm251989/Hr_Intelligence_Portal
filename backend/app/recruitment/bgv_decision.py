@@ -63,6 +63,17 @@ def decide(db: Session, tenant, application: Application, *, decision: str, acto
             after_bgv_passed(db, tenant, application, actor=actor)
         except Exception:  # noqa: BLE001
             pass
+    elif decision == "discrepancy":  # Part 21.4: clear, but something didn't match -- HR notes what
+        if not (note or "").strip():
+            raise ValueError("Write what didn't match, so it stays on the record.")
+        application.status = "bgv_cleared"
+        db.commit()
+        try:
+            from app.recruitment.joining_dates import after_bgv_passed
+
+            after_bgv_passed(db, tenant, application, actor=actor)
+        except Exception:  # noqa: BLE001
+            pass
     elif decision == "resend":
         wanted = [c for c in (codes or []) if c]
         if not wanted:
@@ -88,8 +99,14 @@ def decide(db: Session, tenant, application: Application, *, decision: str, acto
                 sent = False
         out["email_sent"] = sent
     else:
-        raise ValueError("decision must be passed, resend or failed")
+        raise ValueError("decision must be passed, discrepancy, resend or failed")
     log_action(db, "application", application.id, f"bgv_{decision}", actor[:50],
                {"previous_status": previous, "new_status": application.status, "reason": reason, "note": note, "codes": codes})
     out["status"] = application.status
+    try:  # Part 21.4: the vendor's assignment gets HR's decision
+        from app.bgv.vendors import on_decision
+
+        on_decision(db, tenant, application, decision)
+    except Exception:  # noqa: BLE001
+        db.rollback()
     return out

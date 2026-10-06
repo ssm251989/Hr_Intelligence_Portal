@@ -62,6 +62,7 @@ const SalaryDetailsFormPage = lazy(() => import("./pages/salary/SalaryDetailsFor
 const DocumentsFormPage = lazy(() => import("./pages/documents/DocumentsFormPage")); // Part 18.16
 const JoiningDatePage = lazy(() => import("./pages/joining/JoiningDatePage")); // Part 18.19
 const CandidateStatusPage = lazy(() => import("./pages/public/CandidateStatusPage"));
+const BgvVendorPage = lazy(() => import("./pages/public/BgvVendorPage"));
 const PerformancePage = lazy(() => import("./pages/performance/PerformancePage"));
 const TeamPerformancePage = lazy(() => import("./pages/performance/TeamPerformancePage"));
 const ReviewFormPage = lazy(() => import("./pages/performance/ReviewFormPage"));
@@ -113,6 +114,7 @@ export default function App() {
               <Route path="/documents/:token" element={<DocumentsFormPage />} />
               <Route path="/joining/:token" element={<JoiningDatePage />} />
               <Route path="/status/:token" element={<CandidateStatusPage />} />
+              <Route path="/bgv-vendor/:token" element={<BgvVendorPage />} />
               <Route path="/careers" element={<CareersLayout />}>
                 <Route index element={<CareersListPage />} />
                 <Route path=":id" element={<CareersJobDetailPage />} />

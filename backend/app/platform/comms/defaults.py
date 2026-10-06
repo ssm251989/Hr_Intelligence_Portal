@@ -92,6 +92,24 @@ DEFAULTS: dict[str, tuple[str, str, list[str]]] = {
         ["candidate_first_name", "last_seen", "respond_by"],
     ),
     # Part 20: employees (app/employees/*)
+    "bgv.vendor_assigned": (  # Part 21.4: BGV vendor
+        "Background check request: {{ candidate }} ({{ job_title }}) - {{ company_name }}",
+        "Hello {{ vendor }},\n\n{{ company_name }} requests a background check for {{ candidate }} ({{ job_title }}).\n\nChecks: {{ checks }}\nDue by: {{ due }}\n\n"
+        "Open the secure page to download this candidate's documents and upload your report: {{ link }}\n"
+        "The link works until {{ expires }} and shows only this candidate.\n\n{{ company_name }} HR",
+        ["candidate", "link"],
+    ),
+    "bgv.vendor_reminder": (
+        "Reminder: background check for {{ candidate }} {{ when }}",
+        "Hello,\n\nThe background check for {{ candidate }} ({{ job_title }}) {{ when }} (due {{ due }}).\nChecks: {{ checks }}\n\n"
+        "Upload the report here: {{ link }}\n\n{{ company_name }} HR",
+        ["candidate", "link"],
+    ),
+    "bgv.vendor_cancelled": (
+        "Background check for {{ candidate }} is cancelled",
+        "Hello,\n\nPlease stop the background check for {{ candidate }} ({{ job_title }}). The earlier link no longer works.\n\n{{ company_name }} HR",
+        ["candidate"],
+    ),
     "employee.profile_change_result": (  # Part 20.3: employee self-service
         "Your profile change was {{ result }}",
         "Hi {{ first_name }},\n\nYour request to change your profile details was {{ result }}.\nHR's note: {{ note }}\n\nSee your profile: {{ link }}\n\n{{ company_name }} HR",

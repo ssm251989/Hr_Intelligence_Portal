@@ -1,6 +1,8 @@
 import StageTable, { type StageRow } from "../components/stage/StageTable";
 import DocumentsReviewDrawer from "../components/documents/DocumentsReviewDrawer";
 import BgvDecisionBox from "../components/bgv/BgvDecisionBox";
+import BgvVendorCard from "../components/bgv/BgvVendorCard";
+import { bgvVendorApi, saveBlob } from "../api/bgvVendorApi";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import Alert from "@mui/material/Alert";
@@ -184,6 +186,7 @@ export default function BgvPage() {
   const [selectedJobId, setSelectedJobId] = useState("");
   const [focusApp, setFocusApp] = useState<string | null>(null); // Part 18.11
   const [reviewing, setReviewing] = useState<StageRow | null>(null); // Part 18.17
+  const [bulkExport, setBulkExport] = useState<{ id: string; count: number } | null>(null); // Part 21.4
   const [stageRefresh, setStageRefresh] = useState(0);
   const [applications, setApplications] = useState<ApplicationRead[]>([]);
   useEffect(() => setStageRefresh((k) => k + 1), [applications]);
@@ -360,12 +363,24 @@ export default function BgvPage() {
       <StageTable stage="bgv" refreshSignal={stageRefresh}
         bulkActions={canWrite ? (sel, clear) => {
           const ready = sel.filter((r) => r.status === "salary_approved");
-          return ready.length > 0 ? (
-            <Button size="small" variant="contained" onClick={async () => {
-              for (const r of ready) { try { await bgvApi.request(r.application_id); } catch { /* shown per row on reload */ } }
-              clear(); setStageRefresh((k) => k + 1); if (selectedJobId) void loadJobData(selectedJobId);
-            }}>{t("stage.bulk_request_bgv", { count: ready.length })}</Button>
-          ) : null;
+          return (
+            <>
+              {ready.length > 0 && (
+                <Button size="small" variant="contained" onClick={async () => {
+                  for (const r of ready) { try { await bgvApi.request(r.application_id); } catch { /* shown per row on reload */ } }
+                  clear(); setStageRefresh((k) => k + 1); if (selectedJobId) void loadJobData(selectedJobId);
+                }}>{t("stage.bulk_request_bgv", { count: ready.length })}</Button>
+              )}
+              {/* Part 21.4: Download all for the selected candidates (big selections are prepared in the background) */}
+              <Button size="small" variant="outlined" onClick={async () => {
+                try {
+                  const r = await bgvVendorApi.downloadAllBulk(sel.map((x) => x.application_id));
+                  if (r.blob) saveBlob(r.blob, `bgv-documents-${sel.length}-candidates.zip`);
+                  else if (r.export_id) setBulkExport({ id: r.export_id, count: sel.length });
+                } catch (err) { setError(extractErrorMessage(err, t("bv21.err"))); }
+              }}>{t("bv21.bulk", { count: sel.length })}</Button>
+            </>
+          );
         } : undefined}
         extraColumns={[
           { key: "joining", label: t("docrev.col"), render: (r) => r.status !== "salary_approved" ? "—" : !r.joining_docs ? t("docrev.none_yet") : (
@@ -381,6 +396,13 @@ export default function BgvPage() {
           if (r.status === "salary_approved") { setReviewing(r); return; }
           setFocusApp(r.application_id); if (r.job_id !== selectedJobId) handleJobChange(r.job_id);
         }} />
+      {bulkExport && (
+        <Alert severity="info" sx={{ mb: 2 }} onClose={() => setBulkExport(null)} action={
+          <Button size="small" onClick={async () => {
+            const blob = await bgvVendorApi.exportBlob(bulkExport.id);
+            if (blob) { saveBlob(blob, `bgv-documents-${bulkExport.count}-candidates.zip`); setBulkExport(null); } else setError(t("bv21.bulk_wait"));
+          }}>{t("bv21.bulk_get")}</Button>}>{t("bv21.bulk_bg", { count: bulkExport.count })}</Alert>
+      )}
       <DocumentsReviewDrawer applicationId={reviewing?.application_id ?? null} name={reviewing?.name} onClose={() => setReviewing(null)}
         onChanged={() => setStageRefresh((k) => k + 1)} />
       <JobPickerCard jobs={jobs} value={selectedJobId} onChange={handleJobChange} hint={t("bgv.pick_hint")} />
@@ -465,6 +487,10 @@ export default function BgvPage() {
                         </Inset>
                       </Grid>
                     </Grid>
+                  )}
+
+                  {showDocs && (
+                    <Box sx={{ mt: 2 }}><BgvVendorCard applicationId={app.id} name={name} canEdit={canWrite && IN_PROGRESS_STATUSES.includes(app.status)} /></Box>
                   )}
 
                   {IN_PROGRESS_STATUSES.includes(app.status) && (

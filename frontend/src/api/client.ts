@@ -242,6 +242,20 @@ async function fetchBlob(path: string): Promise<Blob | null> {
   return response.blob();
 }
 
+// Part 21.4: a POST that answers with either a file (returned as {blob}) or JSON (returned as {json}).
+async function postBlob(path: string, body: unknown): Promise<{ blob?: Blob; json?: Record<string, unknown> }> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
+  const response = await fetch(`${BASE_URL}${path}`, { method: "POST", headers, body: JSON.stringify(body) });
+  if (!response.ok) {
+    let detail: unknown;
+    try { const b = await response.json(); detail = b.detail ?? b; } catch { detail = response.statusText; }
+    throw new ApiError(response.status, detail);
+  }
+  if ((response.headers.get("content-type") ?? "").includes("json")) return { json: await response.json() };
+  return { blob: await response.blob() };
+}
+
 // Executes a "one_click" NextAction (see api/types.ts) exactly as the backend described
 // it -- the method/endpoint/body all come from app/candidates/pipeline_actions.py's
 // lookup, so this is a dispatcher, not a place that invents its own request shape.
@@ -1718,4 +1732,4 @@ export const celebrationsApi = {
 };
 
 // Part 15: per-module API files (src/api/<module>.ts) reuse the same authenticated helpers.
-export const http = { request, get, post, patch, put, del, postForm, fetchBlob };
+export const http = { request, get, post, patch, put, del, postForm, fetchBlob, postBlob };

@@ -166,7 +166,15 @@ def _hiring_data_after_exit(db, tenant):
     return run_daily(db, tenant)
 
 
+def _bgv_vendor_reminders(db, tenant):
+    """Part 21.4: remind BGV vendors the day before the due date and when overdue."""
+    from app.bgv.vendors import run_reminders
+
+    return run_reminders(db, tenant)
+
+
 JOBS = {
+    "bgv_vendor_reminders": _bgv_vendor_reminders,
     "hiring_data_after_exit": _hiring_data_after_exit,
     "closed_jobs_cleanup": _closed_jobs_cleanup,
     "interviewer_links": _interviewer_links,
@@ -270,5 +278,6 @@ celery_app.conf.beat_schedule = {
     "interviewer-links": {"task": "hrms.fan_out", "schedule": 86400.0, "args": ("interviewer_links",)},
     "closed-jobs-cleanup": {"task": "hrms.fan_out", "schedule": 86400.0, "args": ("closed_jobs_cleanup",)},
     "hiring-data-after-exit": {"task": "hrms.fan_out", "schedule": 86400.0, "args": ("hiring_data_after_exit",)},
+    "bgv-vendor-reminders": {"task": "hrms.fan_out", "schedule": 86400.0, "args": ("bgv_vendor_reminders",)},
 }
 celery_app.conf.timezone = "UTC"

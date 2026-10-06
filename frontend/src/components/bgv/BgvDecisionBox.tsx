@@ -15,7 +15,7 @@ import Typography from "@mui/material/Typography";
 import { extractErrorMessage, http } from "../../api/client";
 import { useT } from "../../i18n";
 
-type Mode = "passed" | "resend" | "failed" | null;
+type Mode = "passed" | "discrepancy" | "resend" | "failed" | null;  // Part 21.4: + clear with a discrepancy
 const DOCS = ["pan", "aadhaar", "degree", "experience"];
 
 // Part 18.18: HR decides BGV -- Passed / Resend form / Failed. Failed needs a reason and shows the
@@ -53,6 +53,7 @@ export default function BgvDecisionBox({ applicationId, notAllValid, onDone }: {
       <Typography sx={{ fontWeight: 700, mb: 1 }}>{t("bgvx.title")}</Typography>
       <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
         <Button variant="contained" color="success" onClick={() => open("passed")}>{t("bgvx.passed")}</Button>
+        <Button variant="outlined" color="warning" onClick={() => open("discrepancy")}>{t("bgvx.discrepancy")}</Button>
         <Button variant="outlined" onClick={() => open("resend")}>{t("bgvx.resend")}</Button>
         <Button variant="outlined" color="error" onClick={() => open("failed")}>{t("bgvx.failed")}</Button>
       </Stack>
@@ -61,6 +62,12 @@ export default function BgvDecisionBox({ applicationId, notAllValid, onDone }: {
         <DialogContent>
           <Stack spacing={1.5} sx={{ pt: 1 }}>
             {mode === "passed" && (notAllValid ? <Alert severity="warning">{t("bgvx.passed_warn")}</Alert> : <Alert severity="info">{t("bgvx.passed_info")}</Alert>)}
+            {mode === "discrepancy" && (
+              <>
+                <Typography variant="body2">{t("bgvx.discrepancy_info")}</Typography>
+                <TextField label={t("bgvx.discrepancy_note")} required value={note} onChange={(e) => setNote(e.target.value)} multiline minRows={3} />
+              </>
+            )}
             {mode === "resend" && (
               <>
                 <Typography variant="body2">{t("bgvx.resend_info")}</Typography>
@@ -84,7 +91,7 @@ export default function BgvDecisionBox({ applicationId, notAllValid, onDone }: {
         <DialogActions>
           <Button onClick={() => setMode(null)} disabled={busy}>{t("lock.cancel")}</Button>
           <Button variant="contained" color={mode === "failed" ? "error" : mode === "passed" ? "success" : "primary"} onClick={submit}
-            disabled={busy || (mode === "resend" && codes.size === 0) || (mode === "failed" && (!reason.trim() || !message))}>
+            disabled={busy || (mode === "resend" && codes.size === 0) || (mode === "discrepancy" && !note.trim()) || (mode === "failed" && (!reason.trim() || !message))}>
             {mode ? t(`bgvx.confirm_${mode}`) : ""}
           </Button>
         </DialogActions>

@@ -272,6 +272,10 @@ from app.experience.ui_self_service_router import router as ui_self_service_rout
 app.include_router(ui_exit_interview_router)
 app.include_router(ui_exit_checklist_router)
 app.include_router(ui_self_service_router)
+from app.experience.ui_bgv_vendor_router import public_router as bgv_vendor_public_router, router as ui_bgv_vendor_router  # noqa: E402  part 21.4
+
+app.include_router(ui_bgv_vendor_router)
+app.include_router(bgv_vendor_public_router)
 from app.experience.ui_documents_router import public_router as documents_public_router, router as ui_documents_router  # noqa: E402
 
 app.include_router(ui_documents_router)
