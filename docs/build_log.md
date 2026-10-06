@@ -2816,3 +2816,7 @@ NEXT: part-21.2 on exit completed -> the person's hiring data to the Recycle bin
 - part-21.2: hiring data -> Recycle bin on exit (After exit settings, kept HR/legal records, restore, bin time limit deletes hiring-only rows). Proof in FIXES_21.md. Note: the real completed exit EMP-00022 Jagadeesh T had its hiring data moved by the same rule (restorable).
 
 NEXT: part-21.4 BGV Download all ZIP + assign BGV vendor (secure link, report upload, reminders).
+
+- part-21.8: sidebar accordion (one group open, current page's group open, remembered per page). Proof in FIXES_21.md.
+
+NEXT: part-21.4 BGV Download all ZIP + assign BGV vendor; part-21.5 agencies (Recruitment / BGV / Both).

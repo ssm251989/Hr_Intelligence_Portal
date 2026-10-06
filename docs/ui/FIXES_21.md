@@ -120,3 +120,21 @@ Small known limit: the Jobs page "Recent activity" names a binned job "a job" (i
   - no longer listed in the bin
 
 **Note - real data:** the same daily run also moved the hiring data of the real completed exit **EMP-00022 Jagadeesh T** (exit completed in the live app at 17:05 today): candidate, application, 4 open form links stopped, portal link closed. This is exactly what the new rule does for every completed exit (the live app's own daily job would have done it within a day), and it can be restored from Recycle bin > Candidates.
+
+## 21.8 Sidebar: only one group open at a time (2026-10-06)
+
+**Before:** each group remembered its own open/closed state, so several groups (Candidates, Screening, Interviews...) could be open together.
+
+**Now** (`layout/AppLayout.tsx`): an accordion.
+- Opening a group closes the one that was open.
+- Going to a page opens that page's own group and closes the others.
+- The choice is remembered per page in the browser (`hr-automation-sidebar-open`), so a reload shows the same state.
+- The narrow icon-only menu has no sub-lists (as before); widening it again shows the current group.
+
+**Proof** (live app, temporary admin, removed afterwards):
+| Check | Screenshot |
+|---|---|
+| On Candidates: only Candidates is open | fix21-acc-01 |
+| Click Interviews: Interviews opens, Candidates closes | fix21-acc-02 |
+| Reload the Candidates page: the remembered choice (Interviews open) comes back | fix21-acc-03 |
+| Narrow icon menu, then widen again: the Interviews group shows open | fix21-acc-04, fix21-acc-05 |

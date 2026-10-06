@@ -52,6 +52,7 @@ import {
 const SIDEBAR_WIDTH = 236;
 const RAIL_WIDTH = 76;
 const SIDEBAR_STORAGE_KEY = "hr-automation-sidebar-expanded";
+const SIDEBAR_OPEN_KEY = "hr-automation-sidebar-open";  // Part 21.8: {page section: open group ("" = none)}
 const SEEN_KEY = "hr-automation-activity-last-seen";
 
 function readStorage(key: string): string | null {
@@ -118,12 +119,25 @@ function Sidebar({ items, expanded, onToggle, onNavigate }: { items: ShellItem[]
   const location = useLocation();
   const { productName, logoMark, logoUrl } = useBootstrap();
   const activeSection = sectionOf(location.pathname);
-  const [open, setOpen] = useState<Record<string, boolean>>({});
-
-  // Entering a section opens its sub-pages; a manual collapse sticks while inside it.
-  useEffect(() => {
-    if (NAV_CHILDREN[activeSection]) setOpen((prev) => (prev[activeSection] === undefined ? { ...prev, [activeSection]: true } : prev));
-  }, [activeSection]);
+  // Part 21.8: an accordion -- one group open at a time. Going to a page opens its own group and closes the others;
+  // the open/closed choice is remembered per page (also after a reload).
+  const remembered = (section: string): string | null => {
+    try {
+      const map = JSON.parse(readStorage(SIDEBAR_OPEN_KEY) ?? "{}") as Record<string, string>;
+      if (section in map) return map[section] || null;
+    } catch { /* ignore */ }
+    return NAV_CHILDREN[section] ? section : null;
+  };
+  const [openSection, setOpenSection] = useState<string | null>(() => remembered(activeSection));
+  useEffect(() => { setOpenSection(remembered(activeSection)); }, [activeSection]);
+  const toggleSection = (section: string) => {
+    const next = openSection === section ? null : section;
+    setOpenSection(next);
+    try {
+      const map = JSON.parse(readStorage(SIDEBAR_OPEN_KEY) ?? "{}") as Record<string, string>;
+      writeStorage(SIDEBAR_OPEN_KEY, JSON.stringify({ ...map, [activeSection]: next ?? "" }));
+    } catch { /* ignore */ }
+  };
 
   const itemSx = (active: boolean) => ({
     display: "flex", alignItems: "center", gap: 1.25, width: "100%", px: expanded ? 1.25 : 0, py: 1.1,
@@ -174,9 +188,9 @@ function Sidebar({ items, expanded, onToggle, onNavigate }: { items: ShellItem[]
                 const active = isActive(item, location.pathname, location.hash);
                 const section = sectionOf(item.path);
                 const hasChildren = Boolean(item.children) && expanded;
-                const isOpen = hasChildren && Boolean(open[section]);
+                const isOpen = hasChildren && openSection === section;
                 const row = hasChildren ? (
-                  <Box component="button" type="button" aria-expanded={isOpen} onClick={() => setOpen((p) => ({ ...p, [section]: !p[section] }))} sx={itemSx(active)}>
+                  <Box component="button" type="button" aria-expanded={isOpen} onClick={() => toggleSection(section)} sx={itemSx(active)}>
                     <Emoji name={item.icon} size={18} />
                     <Box component="span" sx={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.label}</Box>
                     {isOpen ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
