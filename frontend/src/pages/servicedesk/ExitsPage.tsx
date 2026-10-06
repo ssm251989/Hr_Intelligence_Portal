@@ -2,6 +2,7 @@
 // exit's progress + letter. HR: everyone leaving, the clearance board by team with owners,
 // each person's exit (last day, exit interview, relieving letter -- HR issues or holds it).
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
@@ -30,10 +31,11 @@ import ConfirmDialog from "../../components/ConfirmDialog";
 import ClearanceBoard from "../../components/servicedesk/ClearanceBoard";
 import ExitCaseDialog, { stageIndex } from "../../components/servicedesk/ExitCaseDialog";
 import { LetterChip, LetterPreviewButton, letterState } from "../../components/servicedesk/LetterStatus";
-import { ItemStatusChip, Section, SeparationStatusChip, typeLabel, useCategories, useDateFmt, useToast } from "../../components/servicedesk/shared";
+import { Section, SeparationStatusChip, typeLabel, useCategories, useDateFmt, useToast } from "../../components/servicedesk/shared";
 import { useT } from "../../i18n";
 import { MyExitInterview } from "../../components/exits/ExitInterviewCards";
-import { Cell, EmptyState, Emoji, FriendlyError, PageGrid, PageHeader, ProgressRing, StageStepper, StatTile } from "../../ui-kit";
+import ExitChecklist, { MyExitTasks } from "../../components/exits/ExitChecklist";
+import { Cell, EmptyState, Emoji, FriendlyError, PageGrid, PageHeader, StageStepper, StatTile } from "../../ui-kit";
 
 const STAGES = ["submitted", "approved", "clearance", "completed"];
 const OPEN = ["submitted", "retention", "approved", "clearance"];
@@ -108,8 +110,6 @@ function MyExit({ data, justResigned, onSkip }: { data: SeparationRow; justResig
   const t = useT();
   const f = useTheme().palette.fresh;
   const fmt = useDateFmt();
-  const items = data.items ?? [];
-  const done = items.filter((i) => i.status !== "pending").length;
   return (
     <Stack spacing={2}>
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap><SeparationStatusChip status={data.status} /></Stack>
@@ -131,26 +131,13 @@ function MyExit({ data, justResigned, onSkip }: { data: SeparationRow; justResig
         </Box>
       </Box>
       {!justResigned && data.status !== "withdrawn" && <MyExitInterview />}
-      <Box>
-        <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 1 }}>
-          {items.length > 0 && <ProgressRing value={Math.round((100 * done) / items.length)} size={44} caption={t("exits.me.progress_text", { done, total: items.length })} />}
-          <Box>
-            <Typography component="h3" sx={{ fontWeight: 800 }}>{t("exits.me.progress")}</Typography>
-            {items.length > 0 && <Typography sx={{ fontSize: 13, color: f.muted }}>{t("exits.me.progress_text", { done, total: items.length })}</Typography>}
-          </Box>
-        </Stack>
-        {items.length === 0 ? <Typography sx={{ color: f.muted }}>{t("exits.me.items_empty")}</Typography> : (
-          <Stack spacing={0.75} component="ul" sx={{ listStyle: "none", p: 0, m: 0 }}>
-            {items.map((i) => (
-              <Stack component="li" key={i.id} direction="row" spacing={1} alignItems="center" sx={{ bgcolor: f.surface2, borderRadius: "10px", px: 1.5, py: 1 }}>
-                <Typography sx={{ flex: 1, fontSize: 14 }}>{i.title}</Typography>
-                <Typography sx={{ fontSize: 12, color: f.muted }}>{t(`exits.dept.${i.department}`)}</Typography>
-                <ItemStatusChip status={i.status} />
-              </Stack>
-            ))}
-          </Stack>
-        )}
-      </Box>
+      {/* feat 2026-10-06: the employee's own checklist -- "I have returned it" on their asset lines */}
+      {data.status !== "withdrawn" && (
+        <Box>
+          <Typography component="h3" sx={{ fontWeight: 800, mb: 1 }}>{t("exits.me.progress")}</Typography>
+          <ExitChecklist />
+        </Box>
+      )}
     </Stack>
   );
 }
@@ -180,7 +167,7 @@ function EmployeeExit({ canResign, onToast, formRequested }: { canResign: boolea
 
 // ---- HR ----
 
-function HrExits({ onToast }: { onToast: (m: string) => void }) {
+function HrExits({ onToast, focusItem }: { onToast: (m: string) => void; focusItem: string | null }) {
   const t = useT();
   const f = useTheme().palette.fresh;
   const fmt = useDateFmt();
@@ -198,6 +185,11 @@ function HrExits({ onToast }: { onToast: (m: string) => void }) {
     serviceDeskExtra.separations(includeClosed).then((r) => { setRows(r.items); setToday(r.today); }).catch(setError);
   }, [includeClosed]);
   useEffect(load, [load]);
+  // feat 2026-10-06: emails link to /exits?item=<id> -> open that exit with the item expanded
+  useEffect(() => {
+    const hit = focusItem ? rows?.find((s) => (s.items ?? []).some((i) => i.id === focusItem)) : undefined;
+    if (hit) setOpenId(hit.id);
+  }, [rows, focusItem]);
 
   const open = useMemo(() => (rows ?? []).filter((s) => OPEN.includes(s.status)), [rows]);
   const itemsLeft = open.reduce((n, s) => n + s.items_pending, 0);
@@ -264,7 +256,7 @@ function HrExits({ onToast }: { onToast: (m: string) => void }) {
           </TableContainer>
         )}
       </Card>
-      <ExitCaseDialog separation={current} onClose={() => setOpenId(null)} onChanged={load} onToast={onToast} reasonLabel={reasons.label} />
+      <ExitCaseDialog separation={current} onClose={() => setOpenId(null)} onChanged={load} onToast={onToast} reasonLabel={reasons.label} focusItemId={focusItem} />
     </>
   );
 }
@@ -274,6 +266,8 @@ export default function ExitsPage() {
   const { can } = useMeBootstrap();
   const [toast, show] = useToast();
   const [formKey, setFormKey] = useState(0);
+  const [params] = useSearchParams();
+  const focusItem = params.get("item");
   const isHr = can("separation.case.view");
   const canResign = can("separation.self.create");
   const canExport = can("separation.case.export");
@@ -299,7 +293,10 @@ export default function ExitsPage() {
   return (
     <Box>
       <PageHeader emoji="door" title={t("exits.title")} purpose={t(isHr ? "exits.purpose_hr" : "exits.purpose_me")} tourKey="exits" primary={primary} />
-      {isHr && <HrExits onToast={(m) => show(m)} />}
+      {isHr && <HrExits onToast={(m) => show(m)} focusItem={focusItem} />}
+      {!isHr && (
+        <Box sx={{ mb: 2.25 }}><MyExitTasks focusItemId={focusItem} onToast={(m) => show(m)} /></Box>
+      )}
       {(canResign || !isHr) && (
         <Box sx={{ mt: isHr ? 2.25 : 0 }}>
           <EmployeeExit canResign={canResign} onToast={(m) => show(m)} formRequested={formKey} />

@@ -23,6 +23,7 @@ import CategoryListPage from "../components/servicedesk/CategoryListPage";
 import JoiningFormSettingsPage from "../components/onboarding/JoiningFormSettingsPage";
 import EmployeeIdSettings from "../components/employees/EmployeeIdSettings";
 import ExitInterviewSettingsPage from "../components/exits/ExitInterviewSettings";
+import ExitChecklistSettingsPage from "../components/exits/ExitChecklistSettings";
 import UsersPage from "../components/people/UsersPage";
 import GenAISettingsPage from "../components/genai/GenAISettingsPage";
 import PrivacyPanel from "../components/PrivacyPanel";
@@ -165,6 +166,9 @@ export const CATEGORIES: SettingsCategory[] = [
       // fix 2026-10-06: the exit interview questions the leaving employee answers
       { id: "exit-interview", emoji: "speech", keywords: "exit interview questions leaving resignation feedback stars ai summary reminder", prefixes: ["employees.exit_interview"],
         visible: ADMIN, render: () => <ExitInterviewSettingsPage /> },
+      // feat 2026-10-06: actionable exit checklist -- items, owners, due days, required, how each completes
+      { id: "exit-checklist", emoji: "clipboard", keywords: "exit checklist clearance assets return id card access revoke finance settlement handover letters owners due",
+        prefixes: ["employees.exit.clearance_items"], visible: ADMIN, render: () => <ExitChecklistSettingsPage /> },
       { id: "leavers", emoji: "door", module: "onboarding", keywords: "absconding not reporting no show early leaver notices", prefixes: ["onboarding.not_reporting"], visible: ADMIN,
         render: scoped(["onboarding.not_reporting"], "settingsHome.page.onboarding.leavers") },
       { id: "fields", emoji: "label", keywords: "employee fields custom", visible: ADMIN, render: () => <MetadataPanel only="Custom Fields" /> },

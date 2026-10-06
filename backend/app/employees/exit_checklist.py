@@ -378,7 +378,9 @@ def act(db: Session, tenant, s: Separation, item: ClearanceItem, user: User, act
         takeover = None
         if data.get("takeover_employee_id"):
             t = db.get(Employee, uuid.UUID(str(data["takeover_employee_id"])))
-            takeover = {"employee_id": str(t.id), "name": _name(t), "code": t.employee_code} if t is not None else None
+            takeover = {"employee_id": str(t.id), "name": _name(t), "code": t.employee_code} if t is not None and t.tenant_id == tenant.tenant_id else None
+        elif (data.get("takeover_name") or "").strip():  # a manager may not see the employee list -> typed name
+            takeover = {"employee_id": None, "name": data["takeover_name"].strip()[:120], "code": None}
         d["handover"] = {"at": _now().isoformat(), "by": actor, "notes": data["notes"].strip()[:4000], "takeover": takeover, "document": data.get("document")}
         item.details_json = d
         _set(item, "done", actor, "signed_off", f"Handed over to {takeover['name']}" if takeover else None)
@@ -531,6 +533,26 @@ def refresh_auto(db: Session, tenant, s: Separation) -> None:
     """Auto rules: exit docs Done when the interview is in (or not applicable) AND both letters exist; a
     scheduled revoke runs on the last working day."""
     changed = False
+    rows = items(db, s)
+    docs = next((i for i in rows if i.kind == "exit_docs" and i.status in CLEARANCE_OPEN), None)
+    if docs is not None and s.approved_lwd is not None:
+        d = dict(docs.details_json or {})
+        if not interview_done(s) and not d.get("interview_na") and s.approved_lwd < _today():  # never answered by the last day
+            d["interview_na"] = {"at": _now().isoformat(), "by": "system", "reason": "Not answered by the last working day"}
+            docs.details_json = d
+            _hist(docs, "system", "exit_interview_not_applicable", "Not answered by the last working day")
+            changed = True
+        others_done = not any(i.blocks_relieving and i.status in CLEARANCE_OPEN and i.kind != "exit_docs" for i in rows)
+        if others_done and not (s.relieving_letter_id and s.experience_letter_id) and s.status in ("approved", "clearance"):
+            if changed:
+                db.commit()
+            try:
+                generate_letters(db, tenant, s, actor="system")  # calls refresh_auto again, which closes the docs item
+                _hist(docs, "system", "letters_generated")
+                db.commit()
+                return
+            except Exception:  # noqa: BLE001 -- HR can still press Generate; the reason shows there
+                db.rollback()
     for item in items(db, s):
         d = item.details_json or {}
         if item.kind == "exit_docs" and item.status in CLEARANCE_OPEN:
@@ -559,9 +581,13 @@ def try_complete(db: Session, tenant, s: Separation, *, actor: str, force_reason
     end = s.approved_lwd
     if s.status != "clearance" or end is None:
         return False
-    open_items = pending(db, s)
+    open_items = [i for i in pending(db, s) if i.blocks_relieving]
     if force_reason is None and (open_items or end > _today()):
         return False
+    for i in pending(db, s):
+        if not i.blocks_relieving:  # optional items never hold an exit up
+            i.reason = "Optional - closed with the exit"
+            _set(i, "not_applicable", actor, "closed_with_exit", "Optional item")
     if force_reason is not None:
         if end > _today():
             raise ChecklistError("The last working day hasn't passed yet.")

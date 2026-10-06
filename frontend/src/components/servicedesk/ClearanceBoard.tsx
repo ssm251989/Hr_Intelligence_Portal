@@ -22,6 +22,7 @@ import { EmptyState, Emoji, FriendlyError, InfoTip, StatusChip } from "../../ui-
 import { ItemStatusChip, useDateFmt } from "./shared";
 
 export const DEPARTMENTS = ["it", "admin", "finance", "manager", "hr"] as const;
+const OPEN_ITEM = ["todo", "requested", "waiting_confirmation", "blocked", "pending"]; // feat 2026-10-06: actionable checklist statuses
 const DEPT_EMOJI: Record<string, string> = { it: "laptop", admin: "building", finance: "bank", manager: "people", hr: "handshake" };
 const KIND_EMOJI: Record<string, string> = { asset_recovery: "package", access_revocation: "key", knowledge_transfer: "memo", clearance: "clipboard" };
 
@@ -45,7 +46,7 @@ export default function ClearanceBoard({ separations, canClear, onChanged, onToa
   const items: BoardItem[] = useMemo(() => active
     .filter((s) => !person || s.id === person)
     .flatMap((s) => (s.items ?? []).map((i) => ({ ...i, person: s.employee_name ?? s.employee_code ?? "—", separationId: s.id, lwd: s.approved_lwd })))
-    .filter((i) => showDone || i.status === "pending"), [active, person, showDone]);
+    .filter((i) => showDone || OPEN_ITEM.includes(i.status)), [active, person, showDone]);
 
   const clear = async (item: BoardItem, payload: { waive?: boolean; notes?: string | null; amount_due?: number | null }) => {
     setBusy(item.id);
@@ -78,7 +79,7 @@ export default function ClearanceBoard({ separations, canClear, onChanged, onToa
       <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(2, minmax(0, 1fr))", lg: "repeat(5, minmax(0, 1fr))" }, gap: 1.5, alignItems: "start" }}>
         {DEPARTMENTS.map((d) => {
           const col = items.filter((i) => i.department === d);
-          const left = col.filter((i) => i.status === "pending").length;
+          const left = col.filter((i) => OPEN_ITEM.includes(i.status)).length;
           return (
             <Box key={d} component="section" aria-label={t(`exits.dept.${d}`)} sx={{ bgcolor: f.surface2, borderRadius: "16px", p: 1.25, border: `1px solid ${f.line}`, minHeight: 160 }}>
               <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1, px: 0.5 }}>
@@ -94,7 +95,7 @@ export default function ClearanceBoard({ separations, canClear, onChanged, onToa
               ) : (
                 <Stack spacing={1}>
                   {col.map((i) => (
-                    <Card key={i.id} sx={{ p: 1.25, boxShadow: "none", border: `1px solid ${f.line}`, opacity: i.status === "pending" ? 1 : 0.75 }}>
+                    <Card key={i.id} sx={{ p: 1.25, boxShadow: "none", border: `1px solid ${f.line}`, opacity: OPEN_ITEM.includes(i.status) ? 1 : 0.75 }}>
                       <Stack direction="row" spacing={0.75} alignItems="flex-start">
                         <Emoji name={KIND_EMOJI[i.kind] ?? "clipboard"} size={16} />
                         <Typography sx={{ fontWeight: 700, fontSize: 14, flex: 1, minWidth: 0 }}>{i.title}</Typography>
@@ -107,12 +108,12 @@ export default function ClearanceBoard({ separations, canClear, onChanged, onToa
                       </Typography>
                       <Stack direction="row" spacing={0.5} sx={{ mt: 0.75 }} flexWrap="wrap" useFlexGap>
                         <ItemStatusChip status={i.status} />
-                        {i.blocks_relieving && i.status === "pending" && <StatusChip tone="coral" emoji="lock" label={t("exits.board.blocks")} />}
+                        {i.blocks_relieving && OPEN_ITEM.includes(i.status) && <StatusChip tone="coral" emoji="lock" label={t("exits.board.blocks")} />}
                       </Stack>
                       {i.status !== "pending" && i.cleared_by && (
                         <Typography sx={{ fontSize: 12, color: f.muted, mt: 0.5 }}>{t("exits.board.done_by", { name: i.cleared_by })}{i.notes ? ` · ${i.notes}` : ""}</Typography>
                       )}
-                      {i.status === "pending" && canClear && (
+                      {OPEN_ITEM.includes(i.status) && canClear && (
                         <Stack direction="row" spacing={0.5} sx={{ mt: 1 }} alignItems="center">
                           <Button size="small" variant="contained" disabled={busy === i.id} onClick={() => clear(i, {})}>{t("exits.board.clear")}</Button>
                           <Button size="small" disabled={busy === i.id} onClick={() => { setReason(""); setAmount(""); setWaive(i); }}>{t("exits.board.waive")}</Button>

@@ -162,8 +162,12 @@ export function SeparationStatusChip({ status }: { status: string }) {
 
 export function ItemStatusChip({ status }: { status: string }) {
   const t = useT();
-  if (status === "cleared") return <StatusChip tone="ok" emoji="check" label={t("exits.item.cleared")} />;
-  if (status === "waived") return <StatusChip tone="muted" emoji="pause" label={t("exits.item.waived")} />;
+  // feat 2026-10-06: actionable exit checklist statuses (done / not_applicable replace cleared / waived)
+  if (status === "done" || status === "cleared") return <StatusChip tone="ok" emoji="check" label={t("exits.item.cleared")} />;
+  if (status === "not_applicable" || status === "waived") return <StatusChip tone="muted" emoji="pause" label={t("exits.item.waived")} />;
+  if (status === "requested") return <StatusChip tone="sky" emoji="envelope" label={t("xc.status.requested")} />;
+  if (status === "waiting_confirmation") return <StatusChip tone="brand" emoji="eyes" label={t("xc.status.waiting_confirmation")} />;
+  if (status === "blocked") return <StatusChip tone="coral" emoji="lock" label={t("xc.status.blocked")} />;
   return <StatusChip tone="sun" emoji="hourglass" label={t("exits.item.pending")} />;
 }
 

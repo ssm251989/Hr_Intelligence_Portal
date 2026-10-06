@@ -357,22 +357,17 @@ def complete(db: Session, tenant: TenantContext, separation: Separation, *, acto
     today = as_of or _now().date()
     if separation.approved_lwd > today:
         raise SeparationError(f"last working day {separation.approved_lwd.isoformat()} has not passed")
-    employee = db.get(Employee, separation.employee_id)
-    employee.status = "rehire_eligible" if rehire_eligible else "inactive"
-    current = lifecycle.get_current_employment(db, tenant, employee.id, as_of=separation.approved_lwd)
-    if current is not None and (current.effective_to is None or current.effective_to > separation.approved_lwd):
-        current.effective_to = separation.approved_lwd
+    # feat 2026-10-06: HR's choices, then the same completion as the automatic one (Exited, login off, mailbox
+    # suspended, letters emailed, out of interviewer pools) -- app/employees/exit_checklist.try_complete
+    from app.employees import exit_checklist
+
     separation.rehire_eligible = rehire_eligible
     separation.alumni_opt_in = alumni_opt_in
     separation.regretted = regretted
-    separation.status = "completed"
-    separation.completed_at = _now()
     db.commit()
+    if not exit_checklist.try_complete(db, tenant, separation, actor=actor):
+        raise ClearanceBlockedError("cannot complete: required checklist items are still open")
     db.refresh(separation)
-    from app.platform.comms.service import dispatch_event
-
-    dispatch_event(db, tenant, "separation.completed", {"separation_id": str(separation.id), "employee_id": str(employee.id),
-                                                        "last_working_day": separation.approved_lwd.isoformat()})
     return separation
 
 

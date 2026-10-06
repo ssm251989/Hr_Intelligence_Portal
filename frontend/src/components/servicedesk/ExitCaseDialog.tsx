@@ -22,6 +22,7 @@ import ConfirmDialog from "../ConfirmDialog";
 import { Emoji, FriendlyError, InfoTip, StageStepper, StatusChip } from "../../ui-kit";
 import { LetterChip, LetterPreviewButton, letterState } from "./LetterStatus";
 import { HrExitInterviewCard } from "../exits/ExitInterviewCards";
+import ExitChecklist from "../exits/ExitChecklist";
 import { SeparationStatusChip, typeLabel, useDateFmt } from "./shared";
 
 const STAGES = ["submitted", "approved", "clearance", "completed"];
@@ -52,8 +53,9 @@ function Block({ emoji, title, children, tip }: { emoji: string; title: string; 
 }
 
 
-export default function ExitCaseDialog({ separation, onClose, onChanged, onToast, reasonLabel }: {
+export default function ExitCaseDialog({ separation, onClose, onChanged, onToast, reasonLabel, focusItemId }: {
   separation: SeparationRow | null; onClose: () => void; onChanged: () => void; onToast: (m: string) => void; reasonLabel: (c?: string | null) => string;
+  focusItemId?: string | null;
 }) {
   const t = useT();
   const f = useTheme().palette.fresh;
@@ -158,6 +160,13 @@ export default function ExitCaseDialog({ separation, onClose, onChanged, onToast
               </Stack>
               <Button sx={{ mt: 1.5 }} variant="contained" disabled={busy || !lwd}
                 onClick={() => run(() => serviceDeskExtra.approveLwd(s.id, lwd, Number(waived) || 0, Number(buyout) || 0), t("exits.case.approved"))}>{t("exits.case.approve")}</Button>
+            </Block>
+          )}
+
+          {/* feat 2026-10-06: every checklist item opens with its owner's actions */}
+          {["approved", "clearance", "completed"].includes(s.status) && (
+            <Block emoji="clipboard" title={t("xc.title")}>
+              <ExitChecklist separationId={s.id} focusItemId={focusItemId} onChanged={onChanged} onToast={onToast} />
             </Block>
           )}
 
