@@ -1,7 +1,8 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import Button from "@mui/material/Button";
 import Stack from "@mui/material/Stack";
 
-import type { JobPipelineRow } from "../../api/jobsExtra";
+import { jobsExtraApi, type JobPipelineRow } from "../../api/jobsExtra";
 import { useT } from "../../i18n";
 import { InfoTip, StatusChip } from "../../ui-kit";
 
@@ -9,8 +10,18 @@ import { InfoTip, StatusChip } from "../../ui-kit";
 // date passes) -- or why it already did.
 export default function AutoCloseNote({ row, withTip = false }: { row: JobPipelineRow | undefined; withTip?: boolean }) {
   const t = useT();
+  const [kept, setKept] = useState(false);
   if (!row) return null;
   const chips: ReactNode[] = [];
+  // Part 21.1: from 3 days before a closed job moves to the Recycle bin
+  if (row.status === "closed" && row.recycle && !kept) {
+    chips.push(
+      <StatusChip key="bin" tone="sun" emoji="hourglass" label={t("jobs.bin.moves_on", { date: new Date(row.recycle.moves_on).toLocaleDateString() })} />,
+      <Button key="keep" size="small" onClick={(e) => { e.stopPropagation(); jobsExtraApi.keepJob(row.job_id).then(() => setKept(true)).catch(() => undefined); }}>
+        {t("jobs.bin.keep")}
+      </Button>,
+    );
+  }
   if (row.status === "closed" && row.auto_closed) {
     chips.push(
       <StatusChip key="closed" tone="muted" emoji={row.auto_closed.reason === "positions_filled" ? "party" : "alarm_clock"}

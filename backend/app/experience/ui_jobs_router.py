@@ -15,7 +15,7 @@ as app/jobs/router.py.
 """
 
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -83,6 +83,7 @@ def close_job_if_positions_filled(db: Session, job: JobRole, hired: int) -> bool
     if job.status != "published" or hired < positions:
         return False
     job.status = "closed"
+    job.closed_at = job.closed_at or datetime.now(timezone.utc)  # Part 21.1
     db.commit()
     db.refresh(job)
     log_action(
@@ -138,9 +139,16 @@ def pipeline_summary(db: Session = Depends(get_db), current_user: User = Depends
         })
     closed_ids = [job.id for job in jobs if job.status == "closed"]
     auto = _last_auto_close(db, closed_ids)
+    from app.jobs import cleanup  # Part 21.1: "Will move to the Recycle bin on <date>" from 3 days before
+    from app.platform.tenancy.context import require_current_tenant
+
+    tenant = require_current_tenant()
+    cfg = cleanup.settings(db, tenant)
+    by_id = {str(j.id): j for j in jobs}
     for item in items:
         info = auto.get(uuid.UUID(item["job_id"])) if item["status"] == "closed" else None
         item["auto_closed"] = info
+        item["recycle"] = cleanup.warning(db, tenant, by_id[item["job_id"]], cfg) if item["status"] == "closed" else None
     return {"items": items, "just_closed": just_closed, "stages": list(STAGES)}
 
 
@@ -215,3 +223,73 @@ def close_job(job_id: uuid.UUID, payload: CloseRequest, db: Session = Depends(ge
                         email_candidates=payload.email_candidates)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+
+# ---- Part 21.1: closed jobs and the Recycle bin (app/jobs/cleanup.py) ----
+
+
+def _any_job(db: Session, job_id: uuid.UUID) -> JobRole:
+    from app.platform.tenancy.context import require_current_tenant
+    from app.recruitment.removal import INCLUDE_REMOVED
+
+    job = db.query(JobRole).execution_options(**{INCLUDE_REMOVED: True}).filter(JobRole.id == job_id).first()
+    if job is None or job.tenant_id != require_current_tenant().tenant_id:
+        raise HTTPException(status_code=404, detail="Job role not found")
+    return job
+
+
+def _bin_allowed(db: Session, user: User) -> None:
+    from app.platform.iam.authz import has_permission
+    from app.platform.tenancy.context import require_current_tenant
+
+    if not (user.role == "admin" or has_permission(db, require_current_tenant(), user, "recruitment.candidate.delete")):
+        raise HTTPException(status_code=403, detail="You can't manage the Recycle bin.")
+
+
+@router.post("/{job_id}/keep")
+def keep_job(job_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(require_roles("recruiter", "admin"))):
+    """[Keep this job]: it won't move to the Recycle bin."""
+    from app.jobs import cleanup
+    from app.platform.tenancy.context import require_current_tenant
+
+    cleanup.keep(db, require_current_tenant(), _any_job(db, job_id), actor=current_user.email)
+    return {"ok": True}
+
+
+@router.get("/recycle-bin")
+def jobs_recycle_bin(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from app.jobs import cleanup
+    from app.platform.tenancy.context import require_current_tenant
+
+    _bin_allowed(db, current_user)
+    t = require_current_tenant()
+    return {"items": cleanup.bin_list(db, t), "settings": cleanup.settings(db, t)}
+
+
+@router.post("/recycle-bin/{job_id}/restore")
+def restore_job(job_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from app.jobs import cleanup
+    from app.platform.tenancy.context import require_current_tenant
+
+    _bin_allowed(db, current_user)
+    try:
+        return cleanup.restore(db, require_current_tenant(), _any_job(db, job_id), actor=current_user.email)
+    except cleanup.CleanupError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+class DeleteJobIn(BaseModel):
+    confirm: str
+
+
+@router.post("/recycle-bin/{job_id}/delete-permanently")
+def delete_job_permanently(job_id: uuid.UUID, body: DeleteJobIn, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from app.jobs import cleanup
+    from app.platform.tenancy.context import require_current_tenant
+
+    _bin_allowed(db, current_user)
+    try:
+        return cleanup.delete_permanently(db, require_current_tenant(), _any_job(db, job_id), actor=current_user.email, confirm=body.confirm)
+    except cleanup.CleanupError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc

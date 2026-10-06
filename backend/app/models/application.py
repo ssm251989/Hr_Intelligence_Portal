@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Numeric, Text, text
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Numeric, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from app.core.database import Base
@@ -60,6 +60,7 @@ class Application(Base, TenantOwned):
     ranking_rationale = Column(Text)
     status = Column(Text, server_default=text("'received'"))
     removed_at = Column(DateTime(timezone=True))  # Part 17.15: its candidate is in the Recycle bin
+    removed_reason = Column(String(30))  # Part 21: None = its candidate was removed; "job_cleanup" = its closed job went to the bin; "exit" = hiring data moved on exit
     # Set only while status == 'on_hold' -- the status to restore on resume (see
     # app/candidates/hold.py). Cleared back to null on resume; never meaningful otherwise.
     previous_status = Column(Text)

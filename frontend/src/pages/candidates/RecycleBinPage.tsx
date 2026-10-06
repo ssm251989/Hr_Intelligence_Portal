@@ -4,6 +4,8 @@ import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import Skeleton from "@mui/material/Skeleton";
 import Snackbar from "@mui/material/Snackbar";
+import Tab from "@mui/material/Tab";
+import Tabs from "@mui/material/Tabs";
 import Stack from "@mui/material/Stack";
 import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
@@ -17,6 +19,7 @@ import { extractErrorMessage } from "../../api/client";
 import { removalApi, type RecycleBinItem } from "../../api/removalApi";
 import { useMeBootstrap } from "../../bootstrap/MeBootstrapContext";
 import RemoveCandidateDialog from "../../components/candidates/RemoveCandidateDialog";
+import JobsBinTab from "../../components/candidates/JobsBinTab";
 import { useT } from "../../i18n";
 import { EmptyState, FriendlyError, PageHeader } from "../../ui-kit";
 
@@ -33,6 +36,7 @@ export default function RecycleBinPage() {
   const [deleting, setDeleting] = useState<RecycleBinItem | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<"candidates" | "jobs">("candidates");  // Part 21.1
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -72,7 +76,11 @@ export default function RecycleBinPage() {
     <>
       {header}
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
-      {loadError ? (
+      <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }} aria-label={t("bin.title")}>
+        <Tab value="candidates" label={t("jobs.bin.tab_candidates")} />
+        <Tab value="jobs" label={t("jobs.bin.tab")} />
+      </Tabs>
+      {tab === "jobs" ? <JobsBinTab onNotice={setNotice} /> : loadError ? (
         <FriendlyError error={loadError} what={t("bin.err")} onRetry={load} />
       ) : items === null ? (
         <Card sx={{ p: 2 }}><Stack spacing={1}>{[0, 1, 2].map((i) => <Skeleton key={i} height={40} />)}</Stack></Card>

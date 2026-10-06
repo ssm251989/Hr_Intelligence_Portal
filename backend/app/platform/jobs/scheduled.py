@@ -152,7 +152,15 @@ def _interviewer_links(db, tenant):
     return link_existing(db, tenant)
 
 
+def _closed_jobs_cleanup(db, tenant):
+    """Part 21.1: closed jobs -> Recycle bin after N days; binned jobs past the time limit deleted permanently."""
+    from app.jobs.cleanup import run_daily
+
+    return run_daily(db, tenant)
+
+
 JOBS = {
+    "closed_jobs_cleanup": _closed_jobs_cleanup,
     "interviewer_links": _interviewer_links,
     "exit_checklist": _exit_checklist,
     "exit_interview_reminders": _exit_interview_reminders,
@@ -252,5 +260,6 @@ celery_app.conf.beat_schedule = {
     "exit-interview-reminders": {"task": "hrms.fan_out", "schedule": 3600.0, "args": ("exit_interview_reminders",)},
     "exit-checklist": {"task": "hrms.fan_out", "schedule": 3600.0, "args": ("exit_checklist",)},
     "interviewer-links": {"task": "hrms.fan_out", "schedule": 86400.0, "args": ("interviewer_links",)},
+    "closed-jobs-cleanup": {"task": "hrms.fan_out", "schedule": 86400.0, "args": ("closed_jobs_cleanup",)},
 }
 celery_app.conf.timezone = "UTC"

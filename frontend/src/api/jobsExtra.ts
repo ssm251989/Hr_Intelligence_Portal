@@ -18,6 +18,7 @@ export interface JobPipelineRow {
   closes_on: string | null;
   days_to_close: number | null;
   auto_closed: { reason: "deadline" | "positions_filled"; at: string | null } | null;
+  recycle?: { moves_on: string } | null;  // Part 21.1
 }
 
 export interface JobPipelineSummary {
@@ -26,7 +27,15 @@ export interface JobPipelineSummary {
   stages: JobStage[];
 }
 
+// Part 21.1: closed jobs and the Recycle bin
+export interface BinnedJob { id: string; title: string; department: string | null; closed_on: string; moved_on: string; by: string | null;
+  applications: number; deleted_permanently_on: string }
+
 export const jobsExtraApi = {
+  keepJob: (jobId: string) => http.post<{ ok: boolean }>(`/api/v1/ui/jobs/${jobId}/keep`, {}),
+  jobsBin: () => http.get<{ items: BinnedJob[]; settings: { enabled: boolean; days: number; keep_in_pool: boolean; bin_days: number } }>("/api/v1/ui/jobs/recycle-bin"),
+  restoreJob: (jobId: string) => http.post<{ applications: number }>(`/api/v1/ui/jobs/recycle-bin/${jobId}/restore`, {}),
+  deleteJob: (jobId: string) => http.post<{ applications: number }>(`/api/v1/ui/jobs/recycle-bin/${jobId}/delete-permanently`, { confirm: "DELETE" }),
   pipelineSummary: () => http.get<JobPipelineSummary>("/api/v1/ui/jobs/pipeline-summary"),
   reopen: (jobId: string, payload: { application_deadline?: string | null; positions_count?: number | null }) =>
     http.post<{ job_id: string; status: string }>(`/api/v1/ui/jobs/${jobId}/reopen`, payload),

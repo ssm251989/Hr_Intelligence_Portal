@@ -147,6 +147,9 @@ export const CATEGORIES: SettingsCategory[] = [
       { id: "documents", emoji: "file_folder", module: "bgv", keywords: "required documents joining pan aadhaar payslip certificate upload", visible: ADMIN, render: () => <RequiredDocumentsPage /> },
       { id: "contacts", emoji: "id_card", module: "offers", keywords: "contacts welcome email hr department head management joining", visible: ADMIN, render: () => <ContactsSettingsPage /> },
       { id: "budgets", emoji: "bank", module: "salary", keywords: "department budget finance hiring cost money fiscal year", visible: ADMIN, render: () => <BudgetsSettingsPage /> },
+      // Part 21.1: closed jobs -> Recycle bin after N days; keep candidates in the talent pool; how long the bin keeps items
+      { id: "closed-jobs", emoji: "file_folder", keywords: "closed jobs recycle bin clean up delete after days talent pool keep candidates", prefixes: ["recruitment.jobs.recycle", "recruitment.jobs.keep_candidates", "recruitment.candidates.recycle_days"],
+        visible: ADMIN, render: scoped(["recruitment.jobs.recycle", "recruitment.jobs.keep_candidates", "recruitment.candidates.recycle_days"], "settingsHome.page.hiring.closed-jobs") },
       { id: "careers", emoji: "globe", module: "jobs", keywords: "careers site benefits faq", prefixes: ["careers."], visible: ADMIN, render: scoped(["careers."], "settingsHome.page.hiring.careers") },
       { id: "boards", emoji: "link", module: "jobs", keywords: "linkedin naukri indeed job boards posting", visible: EVERYONE,
         render: () => (

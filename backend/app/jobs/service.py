@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -60,6 +60,7 @@ def close_job_if_deadline_passed(db: Session, job: JobRole) -> bool:
 
     previous_status = job.status
     job.status = "closed"
+    job.closed_at = job.closed_at or datetime.now(timezone.utc)  # Part 21.1: the Recycle-bin countdown starts here
     db.commit()
     db.refresh(job)
     log_action(

@@ -94,6 +94,9 @@ HELP: dict[str, tuple[str, str]] = {
     # ---- platform / UX (Part 14) ----
     "platform.modules.enabled": ("Modules switched on for your organisation (within your licence).", "Menus, pages and APIs people can reach"),
     "platform.setup.skipped": ("Setup Wizard steps an admin chose to skip.", "Setup checklist on the admin home"),
+    "recruitment.jobs.recycle_enabled": ("Move closed jobs to the Recycle bin automatically (job + its applications, interviews, forms). Hired people are never touched.", "Jobs, Recycle bin"),
+    "recruitment.jobs.recycle_after_days": ("Days after a job is closed before it moves to the Recycle bin (0 = at the next daily run).", "Jobs, Recycle bin"),
+    "recruitment.jobs.keep_candidates_in_pool": ("When a closed job goes to the bin, keep its candidates' profiles and resumes in the talent pool (only the job's own data moves).", "Candidates, Recycle bin"),
     "employees.on_onboarding_complete": ("When onboarding completes: 'approve' = the agent prepares the employee and HR approves with one click; 'automatic' = created straight away.", "Onboarding > Mark as joined, Employees"),
     "employees.email.domain": ("The domain of company email addresses (e.g. ctdtechs.com). Empty = the domain your admins sign in with.", "New employees' company email"),
     "employees.email.pattern": ("How a company email address is made, e.g. {first}.{last} -> kishore.gunda.", "New employees' company email"),

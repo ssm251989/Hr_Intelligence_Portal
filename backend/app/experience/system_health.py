@@ -88,7 +88,7 @@ JOB_LABELS = {
     "activation_sweep": "Activation emails (retries, escalation)",
     "salary_form_reminders": "Salary form reminders (24 h)", "reminders": "Reminders", "documents_reminders": "Document reminders",
     "joining_reminders": "Joining reminders", "workflow_timers": "Approval timers", "report_schedules": "Scheduled reports",
-    "onboarding_chase": "Onboarding document chase", "recycle_bin_purge": "Recycle bin clean-up", "document_expiry": "Document expiry",
+    "onboarding_chase": "Onboarding document chase", "recycle_bin_purge": "Recycle bin clean-up", "closed_jobs_cleanup": "Closed jobs to Recycle bin", "document_expiry": "Document expiry",
     "privacy_overdue": "Privacy requests due", "ticket_escalations": "Helpdesk escalations", "review_reminders": "Review reminders",
 }
 

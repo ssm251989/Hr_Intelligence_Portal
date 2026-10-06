@@ -52,6 +52,11 @@ class JobRole(Base, TenantOwned):
     closed_at = Column(DateTime(timezone=True))
     close_reason = Column(String(30))
     close_note = Column(Text)
+    # Part 21.1: closed jobs go to the Recycle bin after N days (app/jobs/cleanup.py); "Keep this job" pauses it
+    deleted_at = Column(DateTime(timezone=True))
+    deleted_by = Column(Text)
+    cleanup_paused_at = Column(DateTime(timezone=True))
+    cleanup_paused_by = Column(Text)
     job_type = Column(String(50), nullable=False, server_default=text("'Full-time'"))
     benefits = Column(Text)
     additional_notes = Column(Text)

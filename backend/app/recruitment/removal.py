@@ -28,6 +28,7 @@ from app.models.application import Application
 from app.models.audit_log import AuditLog
 from app.models.candidate import Candidate
 from app.models.interview import Interview
+from app.models.job_role import JobRole
 
 _APPS = Application.__table__
 
@@ -48,6 +49,8 @@ def _hide_removed(execute_state) -> None:
     execute_state.statement = execute_state.statement.options(
         with_loader_criteria(Candidate, lambda cls: cls.deleted_at.is_(None), include_aliases=True),
         with_loader_criteria(Application, lambda cls: cls.removed_at.is_(None), include_aliases=True),
+        # Part 21.1: a closed job moved to the Recycle bin is hidden the same way
+        with_loader_criteria(JobRole, lambda cls: cls.deleted_at.is_(None), include_aliases=True),
         # Part 18.28: their interviews too -- otherwise a removed candidate's interview still
         # counted as "done / passed" on the Interviews dashboard. (Core table, so the
         # Application criteria above don't apply inside this subquery.)
