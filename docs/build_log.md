@@ -2715,3 +2715,9 @@ NEXT: owner replaces the sample handbook with the real one (Policies & handbook 
 - Tests test_joining_form.py (8). Proof: FIXES_19.md "Configurable joining details fields" (fix23-01..09). Test records and the proof's settings versions removed (company on defaults).
 
 NEXT: owner decides which joining details should be Required for CTD Techs (Settings > Onboarding & employees > Joining details form); then RESUME order -> PART16 16.3 settings reorganised.
+
+## PART 20 started (2026-10-06)
+- Spec copied from "Claude outputs/" to docs/PART20_EMPLOYEES_AND_SELF_SERVICE.txt; RESUME.txt order: PART 20 after PART 19.
+- part-20.0A: already built 2026-10-05 (a3b92ce). Checked against the spec; the only open point (exits started from the Employee list / own login) is part of 20.1/20.3. Proof quoted in FIXES_20.md.
+
+NEXT: part-20.0B configuration health links + policies (check against spec, FIXES_20 table).
