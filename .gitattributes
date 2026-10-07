@@ -3,3 +3,10 @@
 Dockerfile text eol=lf
 *.conf text eol=lf
 *.tpl text eol=lf
+*.pdf binary
+*.png binary
+*.gif binary
+*.jpg binary
+*.docx binary
+*.xlsx binary
+*.zip binary

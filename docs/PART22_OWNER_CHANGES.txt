@@ -1,0 +1,140 @@
+PART 22 - OWNER CHANGES (2026-10-07)
+(Repo hr-automation, branch hrms-platform. Do AFTER the work in progress
+(PART 20, exit interview move, actionable exit checklist, PART 21).
+22.1 (HR assistant) may be done first if PART 21.6 is already in progress -
+merge them, don't duplicate.
+STANDING RULES: no test suites (only tsc -p tsconfig.app.json, compileall,
+alembic upgrade head, npm run build). Verify with curl + Playwright
+screenshots + mailpit; proof in docs/ui/FIXES_22.md. For every BUG: find
+and quote the real cause first. Don't ask; log decisions in
+docs/build_log.md. Commit + push after each item ("part-22.N: <title>"),
+NEXT: line.)
+
+--------------------------------------------------------------------------
+22.1 BUG: HR ASSISTANT NOT WORKING
+Seen: asked "Eg1" -> "I couldn't find a reliable answer in your
+organisation's policies. I've prepared a helpdesk ticket..." -> the Raise
+ticket card shows "Something went wrong." (Category code empty.)
+1. Find the cause of "Something went wrong" on Raise ticket (likely:
+   Helpdesk module hidden/disabled, no ticket categories, category code
+   required but empty). Quote it.
+2. Handover must work even when Helpdesk is hidden: if the Helpdesk module
+   is off, "Hand over to HR" creates an HR to-do + email to the HR mailbox
+   (with the question and the user) instead of a ticket. If Helpdesk is
+   on, category is chosen automatically (default "General") and editable.
+3. Unclear / very short questions (like "Eg1"): reply "I'm not sure what you
+   mean - try asking about leave, notice period, salary dates, travel,
+   jobs or candidates" with 4 clickable suggestion chips. Do NOT offer a
+   ticket for unclear text.
+4. Policies: the owner will upload docs/samples/CTD_Techs_Employee_Handbook_SAMPLE.pdf
+   (copy it there and also make it the "HR policy handbook" sample file in
+   Settings > Data & privacy > Sample files). Check it is indexed
+   (status Ready) after upload.
+5. Answers must show the source ("Employee Handbook - 6. Notice period").
+   Data questions (jobs, candidates, interviews) use the user's permissions.
+6. VERIFY with these questions and record each answer in FIXES_22.md:
+   - How many casual leaves do I get? (12, max 3 at a time)
+   - What is the notice period for a senior employee? (90 days)
+   - Can I work from home? (2 days/week after confirmation)
+   - When is salary credited? (last working day of the month)
+   - Hotel limit for a junior employee in a metro city? (Rs 4,000/night)
+   - How long is probation? (6 months)
+   - How many open jobs do we have? (from live data)
+   - Which candidates are waiting for an interview? (live data)
+   - "Eg1" -> clarification with suggestions, no error.
+   - A question not in the handbook -> polite "not found" + Hand over to HR
+     works (to-do created, email in mailpit).
+
+22.2 CANDIDATE EMAILS: "NOT MATCHED" TAB -> "CLOSED"; SMARTER AUTO-LINK
+- Tabs become: Needs action | Linked to a candidate | Closed.
+  Closed = emails HR has finished with (Mark done) or old/no-action emails.
+  Unmatched emails are no longer a separate tab: they appear in Needs
+  action with a yellow "Not linked yet" chip and a [Link to candidate]
+  picker (search by name/email) that shows suggested matches.
+- Auto-link rules, in order (record which rule matched on the email):
+  1. sender email = candidate email (or any alternate email on the profile)
+  2. sender name or signature / subject / reply thread contains the
+     candidate's "First Last" OR "Last First" (case-insensitive, ignores
+     extra spaces, dots, initials e.g. "G. Kishore", "Kishore G")
+  3. reply to an email the app sent (thread / Message-ID)
+  If exactly one candidate matches -> link automatically. If several ->
+  stay in Needs action with the suggestions listed. Never guess between two.
+- When HR links manually, offer "Also remember this email address for
+  this candidate" (adds alternate email).
+- Linked emails also appear on the candidate timeline (existing).
+- Run the new matching once over existing unmatched emails.
+
+22.3 CANDIDATE EMAILS HIGHLIGHTED IN HR "MY APPROVALS"
+- Emails in "Needs action" also appear in HR's My approvals / inbox as
+  highlighted cards (coloured left border + envelope emoji + "Candidate
+  email" chip), showing candidate, job, one-line AI summary, received
+  time, and buttons: Open, Reply, Link to candidate, Mark done.
+- Badge count on My approvals includes them. Marking done in either place
+  updates both. Unread ones bold.
+
+22.4 EMPLOYEES: "ASSIGN ROLES" BUTTON
+- Employees list: row "..." menu + toolbar button "Assign roles" (works
+  for one or many selected employees).
+- Dialog: checkboxes of roles (Employee, Interviewer, Hiring manager,
+  Recruiter, HR, HR Admin, Finance, IT, Admin & facilities, plus custom
+  roles) with a one-line description of what each can see/do; current
+  roles pre-ticked; for Interviewer, pick skills/jobs/pools.
+- Only users with permission users.manage_roles see it (HR Admin by
+  default). Can't remove your own HR Admin role if you're the last one.
+- Changes take effect at the employee's next page load; email "Your access
+  in CTD Techs HR was updated" (optional, setting); audit-logged.
+- If the employee has no app account yet, the dialog offers "Create
+  account and send invite".
+
+22.5 AGENCIES: DELETE BUTTON
+- Agency row "..." menu + profile: [Delete agency].
+- If the agency has NO history -> confirm dialog, then removed.
+- If it has history (submitted candidates, BGV cases, fees): explain
+  "This agency has 4 candidates and 2 BGV cases. It will be deactivated and
+  hidden, history is kept." -> Deactivate instead (can be restored from an
+  "Inactive" filter). Open BGV assignments must be reassigned or cancelled
+  first (shown in the dialog).
+- Only HR Admin; audit-logged.
+
+22.6 LETTERS AND EMAILS: GRAND, CELEBRATORY DESIGN
+Upgrade ALL templates: selection / offer letter, joining letter, welcome
+email, appointment / confirmation letter, relieving letter, experience
+letter, and their emails.
+- PDF LETTERS (official documents, printed, sent to banks/next employers):
+  premium design - company logo and brand colour header band, elegant
+  serif + sans font pairing, subtle watermark of the logo, signature block
+  with name/designation/digital signature image, reference number and
+  date, QR code to verify the letter (opens a public "verify letter" page
+  showing it is genuine), page footer with company address and CIN.
+  Celebration accents ONLY on selection/offer and joining letters (small
+  confetti/ribbon illustration in the header, "Congratulations!" ribbon).
+  Relieving and experience letters stay formal and elegant - no emoji, no
+  confetti (they go to future employers).
+- EMAILS (HTML, mobile friendly, tested in Gmail/Outlook):
+  * Selection / offer email: animated celebration GIF banner (confetti,
+    stored locally, < 300 KB, with a static fallback image), emoji in the
+    subject and headings (e.g. "[party popper emoji] Congratulations, Kishore! You're
+    selected"), big "Review & sign your offer" button, brand colours.
+  * Welcome / joining email: "[waving hand emoji] Welcome to CTD Techs!" animated welcome
+    GIF, first-day card (date, time, address with map link, who to meet,
+    what to bring), team contacts with photos/initials, buddy card.
+  * Relieving / experience email: warm, professional, "[folded hands emoji] Thank you for
+    your contributions", no confetti; letters attached as PDF.
+  * Plain-text version included with every email.
+- Settings > Communication > Email templates and Settings > Onboarding &
+  employees > Letters: each template has a live preview with sample data,
+  "Send test to me", choice of banner GIF (gallery of 6 bundled
+  celebration/welcome GIFs + upload own), emoji on/off, brand colours from
+  company branding, logo, signatory (name, designation, signature upload).
+- Keep all variables working ({{first_name}}, job, CTC, dates...);
+  preview never shows raw {{ }}.
+- Sample outputs: generate one PDF of each letter + screenshot of each email
+  (Gmail-size preview) into docs/ui/letters/ for the owner to review.
+
+--------------------------------------------------------------------------
+22.7 PROOF + HAND-OVER
+FIXES_22.md with the HR assistant Q&A table, email matching examples
+(email match, "First Last", "Last First", ambiguous case), My approvals
+screenshot with highlighted emails, assign roles (single + bulk), agency
+delete vs deactivate, and the letters/emails samples in docs/ui/letters/.
+Then tell me in short points what changed and anything not finished.
