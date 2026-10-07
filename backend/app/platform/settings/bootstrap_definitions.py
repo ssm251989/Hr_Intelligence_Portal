@@ -44,6 +44,11 @@ def register_all() -> None:
     register(SettingDef("letters.watermark", "bool", True, module="onboarding", group="Letters"))
     register(SettingDef("letters.celebration", "bool", True, module="onboarding", group="Letters"))
     register(SettingDef("letters.brand_colour", "str", "", module="onboarding", group="Letters"))
+    # Part 22.6: designed emails (Settings > Communication > Email templates)
+    register(SettingDef("emails.emoji", "bool", True, module="platform", group="Email design"))
+    register(SettingDef("emails.animated", "bool", True, module="platform", group="Email design"))
+    register(SettingDef("emails.banner_offer", "str", "confetti", module="platform", group="Email design"))
+    register(SettingDef("emails.banner_welcome", "str", "welcome-wave", module="platform", group="Email design"))
     # Part 6 section 6 -- scopes_allowed widened to ("user","tenant") on these two
     # (originally tenant-only, Part 2): a user's own locale/timezone preference is now a
     # real per-user override layered above the tenant-wide default -- SCOPE_ORDER already

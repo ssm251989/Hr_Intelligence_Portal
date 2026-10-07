@@ -213,3 +213,22 @@ One designer now draws every official letter: the offer (and each revised versio
 **Samples** (live CTD Techs logo and colour, sample people; the address, CIN and signatory are marked "(sample)" because they are not set yet):
 `docs/ui/letters/offer-letter-sample.pdf`, `joining-letter-sample.pdf`, `appointment-letter-sample.pdf`, `confirmation-letter-sample.pdf`, `relieving-letter-sample.pdf`, `experience-letter-sample.pdf`.
 Real offer check: the latest live offer `d9d1533a...` renders through `build_pdf(..., db, tenant)` (90 KB PDF); the token round-trip passes and a tampered token returns None.
+
+### 22.6b Designed emails (`app/platform/comms/celebrate.py`)
+`comms.send` now hands the offer emails (`recruitment.offer_letter_auto` / `offer_resend` / `offer_revised`), the welcome email (`recruitment.welcome_selected`) and the exit-letters email (`employee.exit_letters`) to the designer. Every other email keeps the normal company header. If the design ever fails, the normal header is used.
+- **Layout:** table-based, 600px, inline styles, `role="presentation"`, and a padded table-cell button, so it works in Gmail and Outlook and on phones (390px screenshot).
+- **Banners:** 6 bundled banners, drawn with Pillow by `backend/scripts/make_email_banners.py`: confetti, fireworks, balloons, welcome-wave, welcome-sparkle, welcome-confetti. Each GIF is 96-124 KB (under 300 KB) and has a still PNG.
+  - Outlook desktop shows the first frame, which carries the full title, so that is the static fallback. `emails.animated = off` sends the PNG instead.
+  - They are served publicly at `GET /api/v1/public/email-banners/{key}.gif|.png`, and the gallery list is at `/api/v1/public/email-banners`.
+  - A company's own banner is media `email.banner.<name>`, chosen as `custom:<name>`.
+- **Emoji** in the subject and heading (setting `emails.emoji`):
+  - offer: "🎉 Congratulations, Priya! You're selected"
+  - welcome: "👋 Welcome to CTD Techs, Priya!"
+  - exit: "🙏 Thank you for your contributions"
+- **Offer email:** an "at a glance" card (role, joining date, sign-by date), a big **Review & sign your offer** button, then the template text.
+- **Welcome email:** a first-day card (date, time, address with an *Open map* link, who to meet, what to bring), from `welcome_steps.day_one_info` (Settings > Day one + the office location). Then the **Open your welcome portal** button, next steps, team contacts with initials avatars, and the buddy card (from the onboarding case's welcome content).
+- **Exit letters email:** warm, no banner and no confetti, with a "Your letters" note (the PDFs are attached and carry the QR code).
+- **Plain-text part:** the template's own text is always sent with the HTML (`docs/ui/letters/*.txt`).
+- **Variables:** all existing variables still work. The designer only adds context; company edits to the template text still win.
+
+**Samples:** `docs/ui/letters/offer-email-gmail.png` / `-phone.png`, `welcome-email-gmail.png` / `-phone.png`, `exit-letters-email-gmail.png` / `-phone.png`, plus the `.html` and `.txt` of each.

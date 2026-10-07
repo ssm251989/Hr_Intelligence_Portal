@@ -2867,3 +2867,8 @@ NEXT: part-22.6 grand letters + emails (PDF letters with brand header, watermark
   - offer verify tokens are HMAC-signed, so there is no new column.
 
 NEXT: part-22.6b celebration emails (bundled GIF banners + static fallback, emoji subjects, CTA button, first-day / team / buddy cards, warm exit email, plain-text part) + 22.6c Settings preview / send test / GIF gallery / signatory upload.
+
+- part-22.6b: designed offer / welcome / exit-letter emails (banner GIF + still fallback, emoji subject + heading, CTA, first-day / team / buddy cards, warm exit email, plain-text kept); 6 bundled banners (Pillow-drawn, under 125 KB); public banner route; settings emails.emoji / animated / banner_offer / banner_welcome. Samples and screenshots in docs/ui/letters/.
+  Decision: banners are loaded by URL (APP_BASE_URL) rather than CID attachments, so the GIF is shared and cached; the first frame is the Outlook fallback.
+
+NEXT: part-22.6c Settings - Email templates + Letters: live preview with sample data, Send test to me, banner gallery + upload, emoji / animation toggles, signatory (name, designation, signature upload), address / CIN.

@@ -136,6 +136,22 @@ def contact_people(db: Session, tenant, job: Optional[JobRole]) -> list[dict]:
     return [p for p in people if p.get("name") and (p.get("email") or p.get("phone"))]
 
 
+def _welcome_extras(db: Session, tenant, case, job) -> dict:
+    """Part 22.6: what the designed welcome email shows -- first day, team contacts, buddy (all optional)."""
+    out: dict = {"people": [{k: p.get(k) for k in ("name", "role", "email", "phone")} for p in contact_people(db, tenant, job)]}
+    if case is not None:
+        try:
+            from app.onboarding.welcome_steps import day_one_info
+
+            out["day_one"] = day_one_info(db, tenant, case)
+        except Exception:  # noqa: BLE001
+            pass
+        buddy = (case.welcome_content_json or {}).get("buddy")
+        if isinstance(buddy, dict) and buddy.get("name"):
+            out["buddy"] = {k: buddy.get(k) for k in ("name", "role", "email")}
+    return out
+
+
 def _contact_lines(people: list[dict]) -> str:
     if not people:
         return ""
@@ -194,7 +210,8 @@ def after_joining_date_chosen(db: Session, tenant, application: Application) -> 
         try:
             m = send_default(db, tenant, "recruitment.offer_letter_auto", to=[cand.email], related_entity_type="application", related_entity_id=application.id,
                              ctx={"candidate_first_name": greeting_name(db, cand), "job_title": job.title if job else "", "letter": _text(letter),
-                                  "sign_link": esign.sign_url(db, offer), "expiry_date": offer.expiry_date.strftime("%d %B %Y")})
+                                  "sign_link": esign.sign_url(db, offer), "expiry_date": offer.expiry_date.strftime("%d %B %Y"),
+                                  "joining_date": offer.joining_date.strftime("%A, %d %B %Y") if offer.joining_date else ""})
             result["offer_emailed"] = m.status in ("sent", "queued")
             result["sign_link"] = True
         except Exception:  # noqa: BLE001
@@ -248,7 +265,8 @@ def send_welcome(db: Session, tenant, application: Application, offer: Offer) ->
                          ctx={"candidate_first_name": greeting_name(db, cand, case), "job_title": job.title if job else "",
                               "joining_date": joining.strftime("%A, %d %B %Y") if joining else "",
                               "steps": "\n".join(f"{i}. {s}" for i, s in enumerate(steps, 1)),
-                              "contacts": _contact_lines(contact_people(db, tenant, job)), "portal_link": portal_link})
+                              "contacts": _contact_lines(contact_people(db, tenant, job)), "portal_link": portal_link,
+                              **_welcome_extras(db, tenant, case, job)})  # Part 22.6: first-day / team / buddy cards
         out["welcome_emailed"] = m.status in ("sent", "queued")
     except Exception:  # noqa: BLE001
         pass
