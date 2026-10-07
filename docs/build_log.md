@@ -2820,3 +2820,8 @@ NEXT: part-21.4 BGV Download all ZIP + assign BGV vendor (secure link, report up
 - part-21.8: sidebar accordion (one group open, current page's group open, remembered per page). Proof in FIXES_21.md.
 
 NEXT: part-21.4 BGV Download all ZIP + assign BGV vendor; part-21.5 agencies (Recruitment / BGV / Both).
+
+- part-21.5 (code): agencies typed Recruitment / BGV / Both with all fields, edit, type filter, stats, Excel import (commit 971e4a8). Proof pending.
+- part-21.4 (code): BGV Download all (one candidate ZIP + "BGV summary.xlsx"; bulk from the BGV table, >20 prepared in the background), assign a BGV vendor (secure link /bgv-vendor/:token, opening = In progress, report upload notifies HR, daily reminders, reassign/cancel with emails), new HR decision "Discrepancy - clear with a note". Decision: a discrepancy clears BGV (note required) rather than failing it. Proof pending: the proof stack (mailpit, API :8010, web :5174) was stopped by the system for low memory on 2026-10-07 and is waiting for the owner's go-ahead to restart.
+
+NEXT: prove 21.4 + 21.5 on the proof stack (FIXES_21.md), then 21.6 HR assistant (quote the cause first), 21.7 budget released on exit, 21.9 proof + hand-over.
