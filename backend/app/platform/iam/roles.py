@@ -110,6 +110,30 @@ _SYSTEM_ROLE_TEMPLATES: dict[str, str | list[tuple[str, set[str]]]] = {
         ("separation.self", {"view", "create"}),
         ("copilot.chat", {"view"}),
     ],
+    # Part 22.4: roles HR can give from Employees > Assign roles
+    "Finance": [
+        ("compensation", {"view", "export"}),
+        ("separation", {"view", "edit"}),  # full & final settlement on the exit checklist
+        ("workflow", {"view", "approve"}),
+        ("analytics.report", {"view", "export"}),
+        ("analytics.metrics", {"view"}),
+        ("copilot.chat", {"view"}),
+    ],
+    "IT": [
+        ("assets", {"view", "create", "edit"}),
+        ("helpdesk", {"view", "edit"}),
+        ("separation", {"view", "edit"}),  # access removal on the exit checklist
+        ("core_hr.employee", {"view"}),
+        ("workflow", {"view"}),
+        ("copilot.chat", {"view"}),
+    ],
+    "Admin & facilities": [
+        ("assets", {"view", "create", "edit"}),
+        ("separation", {"view", "edit"}),  # ID card / access card returns
+        ("core_hr.employee", {"view"}),
+        ("workflow", {"view"}),
+        ("copilot.chat", {"view"}),
+    ],
     "Candidate": [],
     # Part 15.6: an outside recruitment agency's login -- nothing internal, only the portal.
     "Agency Recruiter": [

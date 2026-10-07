@@ -2848,3 +2848,11 @@ NEXT: part-22.3 candidate emails in HR "My approvals" (highlighted cards, Open/R
 - part-22.3: candidate emails in My approvals (highlighted cards: blue left border, envelope, "Candidate email" chip, summary, time; Open / Reply / Link / Mark done; unread bold via new read_at, migration f8e17c8d9eaf); My approvals badge (GET /api/v1/inbox/count) in the sidebar. Decision: "read" = first time HR opens the thread; emails already done count as read.
 
 NEXT: part-22.4 Employees "Assign roles" (one or many, role descriptions, interviewer skills/jobs, last-HR-Admin guard, invite when no account, optional email, audit).
+
+- part-22.4: Employees > Assign roles. Toolbar, bulk and row menu; role list with descriptions; new system roles Finance / IT / Admin & facilities; tri-state for bulk; Interviewer skills and pools; Create account and send invite; last-HR-Admin guard; legacy users.role kept in step; optional "access updated" email (setting employees.roles.notify_on_change); audit roles_changed.
+  Decisions:
+  - "users.manage_roles" = the existing iam.role_assignments.configure (the registry only allows fixed actions);
+  - "HR" = the HRBP template;
+  - roles outside the list are never touched.
+
+NEXT: part-22.5 Agencies - Delete agency (no history -> delete; with history -> deactivate + Inactive filter + restore; open BGV assignments first), HR Admin only, audit.

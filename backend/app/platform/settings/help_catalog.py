@@ -98,6 +98,7 @@ HELP: dict[str, tuple[str, str]] = {
     "recruitment.jobs.recycle_enabled": ("Move closed jobs to the Recycle bin automatically (job + its applications, interviews, forms). Hired people are never touched.", "Jobs, Recycle bin"),
     "recruitment.jobs.recycle_after_days": ("Days after a job is closed before it moves to the Recycle bin (0 = at the next daily run).", "Jobs, Recycle bin"),
     "recruitment.jobs.keep_candidates_in_pool": ("When a closed job goes to the bin, keep its candidates' profiles and resumes in the talent pool (only the job's own data moves).", "Candidates, Recycle bin"),
+    "employees.roles.notify_on_change": ("When HR changes someone's app roles (Employees > Assign roles), email them \"Your access was updated\" with their roles now.", "Employees, Assign roles"),
     "employees.after_exit.move_hiring_data": ("When an exit is completed, move the person's hiring data (candidate record, applications, interviews, links, inbox emails, portal) to the Recycle bin. Employee record, signed offer, joining documents, BGV, letters and the exit record are kept.", "Exits, Recycle bin"),
     "employees.after_exit.days": ("Days after the exit is completed before the hiring data moves (0 = straight away).", "Exits, Recycle bin"),
     "employees.after_exit.categories": ("Which hiring data moves to the Recycle bin on exit.", "Exits, Recycle bin"),

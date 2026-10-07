@@ -149,6 +149,7 @@ def register_all() -> None:
     register(SettingDef("employees.interviewer.auto_rules", "json", [], module="onboarding", group=G))
     # Part 21.2: Settings > Onboarding & employees > After exit
     register(SettingDef("employees.after_exit.move_hiring_data", "bool", True, module="onboarding", group=G))
+    register(SettingDef("employees.roles.notify_on_change", "bool", True, module="onboarding", group=G))  # Part 22.4
     register(SettingDef("employees.after_exit.days", "int", 0, module="onboarding", group=G, json_schema={"type": "integer", "minimum": 0, "maximum": 365}))
     register(SettingDef("employees.after_exit.categories", "json", ["candidate_profile", "applications_interviews", "links_forms", "inbox_emails", "portal_access"],
                         module="onboarding", group=G))

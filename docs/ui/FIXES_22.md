@@ -141,3 +141,29 @@ Linked emails still appear on the candidate timeline (`inbound_email_received` /
 - **Deep link:** Open/Reply/Link go to `/candidate-emails?email=<id>` (`&reply=1` opens the reply box, `&link=1` scrolls to the link picker).
 
 **Still to prove on screen:** a My approvals screenshot with a highlighted (unread + read) candidate email. Needs a proof email in the proof setup.
+
+## 22.4 Employees: "Assign roles"
+
+- **Where:** the Employees list has a toolbar button **Assign roles** (works on the ticked rows) and a bulk-bar button "Assign roles (n)". Each row's "..." menu also has **Assign roles**.
+- **Who sees it:** only people with `iam.role_assignments.configure`, which is HR Admin and Super Admin by default. This is the spec's "users.manage_roles"; the permission registry only allows the fixed actions, so the existing permission is used.
+- **Dialog:** a checkbox for each role with a one-line description of what it can see and do. The roles are Employee, Interviewer, Hiring manager, Recruiter, HR (the HRBP template), HR Admin, Finance, IT, and Admin & facilities, plus the company's custom roles (live: Plant HR, Shift supervisor panel, Store manager, Technical panel).
+  - **Finance, IT and Admin & facilities** are new system role templates.
+  - **One employee:** their current roles are pre-ticked; you tick exactly what they should have.
+  - **Many employees:** tick = give to all, untick = take from all, dash (mixed) = leave as it is.
+  - **Interviewer:** when it is being given, the dialog asks for skills and interviewer pools (`interviewers.make_interviewer`). Removing it also takes them out of the pools.
+  - **Other roles:** roles not in the list (Super Admin, Manager, Auditor...) are shown read-only and never changed.
+- **No app account:** the dialog lists who has none and offers **Create account and send invite** (ticked by default, `accounts.send_invite`).
+- **Last HR Admin guard:** removing HR Admin is refused when nobody else would hold HR Admin or Super Admin, including when you remove it from yourself.
+- **Takes effect:** at the employee's next page load (permissions are read per request). The legacy `users.role` follows the ticked roles (admin / recruiter / hiring_manager / interviewer / employee), so older role-gated pages such as Candidate emails agree.
+- **Email:** "Your access in {company} HR was updated" (template `access.updated`). Setting `employees.roles.notify_on_change`, default on.
+- **Audit:** `roles_changed` with added, removed and legacy role.
+
+**Dry run** (2 temporary employees, rolled back, emails stubbed):
+```
+state before: [('Proof Roleone', ['Employee']), ('Proof Roletwo', ['Employee'])]
+single: set Employee+Recruiter+HR Admin -> result changed, added ['HR Admin','Recruiter'] | legacy role: admin
+bulk (2): add Finance, remove Recruiter -> Proof Roleone changed +Finance -Recruiter; Proof Roletwo changed +Finance
+last admin removes own HR Admin -> result last_admin: "This is the last HR Admin. Give HR Admin to someone else first."
+state after: Proof Roleone ['Employee','HR Admin','Finance']; Proof Roletwo ['Employee','Finance']
+```
+**Still to prove on screen:** the single and bulk dialog screenshots and the mailpit email (proof setup stopped for low memory).

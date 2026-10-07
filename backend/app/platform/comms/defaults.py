@@ -92,6 +92,12 @@ DEFAULTS: dict[str, tuple[str, str, list[str]]] = {
         ["candidate_first_name", "last_seen", "respond_by"],
     ),
     # Part 20: employees (app/employees/*)
+    "access.updated": (  # Part 22.4: Employees > Assign roles
+        "Your access in {{ company_name }} HR was updated",
+        "Hello {{ name }},\n\nHR updated what you can see and do in the {{ company_name }} HR app.\n\nYour roles now: {{ roles }}\nAdded: {{ added }}\nRemoved: {{ removed }}\n\n"
+        "The change shows the next time you open or refresh the app: {{ link }}\n\nIf this looks wrong, reply to HR.\n\n{{ company_name }} HR",
+        ["name", "roles"],
+    ),
     "copilot.hr_handover": (  # Part 22.1: the HR assistant hands a question to HR (Helpdesk off)
         "HR assistant: a question from {{ user_name }}",
         "Hello HR team,\n\n{{ user_name }} ({{ user_email }}) asked the HR assistant a question it could not answer from the company policies:\n\n"

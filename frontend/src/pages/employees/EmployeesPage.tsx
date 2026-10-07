@@ -28,6 +28,8 @@ import ListToolbar, { type ListColumn, type ListViewState } from "../../componen
 import { AccountChip, CompanyEmail, EditEmployeeDialog, EmpStatusChip, GiveAssetDialog } from "../../components/employees/EmployeeDialogs";
 import { employeeActionsRegistry } from "../../components/employees/registry";
 import { useT } from "../../i18n";
+import { useMeBootstrap } from "../../bootstrap/MeBootstrapContext";
+import AssignRolesDialog from "../../components/employees/AssignRolesDialog";
 import { EmptyState, FriendlyError, PageHeader, UserAvatar } from "../../ui-kit";
 
 // Part 20.1: Employees -- everyone who has finished onboarding. Column chooser, saved views, filters,
@@ -54,6 +56,10 @@ export default function EmployeesPage() {
   const [q, setQ] = useState("");
   const [view, setView] = useState<ListViewState>({ columns: DEFAULT_COLUMNS, filters: {} });
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Part 22.4: Assign roles (HR Admin by default: iam.role_assignments.configure)
+  const { can } = useMeBootstrap();
+  const canRoles = can("iam.role_assignments.configure");
+  const [rolesFor, setRolesFor] = useState<string[] | null>(null);
   const [menu, setMenu] = useState<{ anchor: HTMLElement; row: EmployeeRow } | null>(null);
   const [editing, setEditing] = useState<EmployeeProfile | null>(null);
   const [giving, setGiving] = useState<EmployeeRow | null>(null);
@@ -159,8 +165,16 @@ export default function EmployeesPage() {
           <Box sx={{ flex: 1 }}>
             <ListToolbar listKey="employees.list" columns={columns} state={view} onStateChange={setView} rows={exportRows} loading={loading} onRefresh={load}
               selectedCount={selected.size}
-              bulkActions={data?.can_edit ? <Button size="small" variant="outlined" onClick={() => invite([...selected])}>{t("emp.invite.bulk", { n: selected.size })}</Button> : undefined} />
+              bulkActions={data?.can_edit || canRoles ? (
+                <Stack direction="row" spacing={1}>
+                  {data?.can_edit && <Button size="small" variant="outlined" onClick={() => invite([...selected])}>{t("emp.invite.bulk", { n: selected.size })}</Button>}
+                  {canRoles && <Button size="small" variant="contained" onClick={() => setRolesFor([...selected])}>{t("roles22.button_many", { n: selected.size })}</Button>}
+                </Stack>
+              ) : undefined} />
           </Box>
+          {canRoles && (
+            <Button size="small" variant="outlined" disabled={!selected.size} onClick={() => setRolesFor([...selected])}>{t("roles22.button")}</Button>
+          )}
           <Button size="small" variant="outlined" onClick={exportXlsx} disabled={!items.length}>{t("emp.export")}</Button>
         </Stack>
         {loading && <LinearProgress sx={{ mb: 1 }} />}
@@ -222,6 +236,7 @@ export default function EmployeesPage() {
       <Menu anchorEl={menu?.anchor} open={Boolean(menu)} onClose={() => setMenu(null)}>
         {menu && <MenuItem onClick={() => { navigate(`/employees/${menu.row.id}`); setMenu(null); }}>{t("emp.menu.view")}</MenuItem>}
         {menu && data?.can_edit && <MenuItem onClick={() => { void openEdit(menu.row); setMenu(null); }}>{t("emp.menu.edit")}</MenuItem>}
+        {menu && canRoles && <MenuItem onClick={() => { setRolesFor([menu.row.id]); setMenu(null); }}>{t("roles22.button")}</MenuItem>}
         {menu && data?.can_edit && menu.row.status !== "exited" && <MenuItem onClick={() => { setGiving(menu.row); setMenu(null); }}>{t("emp.menu.asset")}</MenuItem>}
         {menu && data?.can_edit && actions.filter((a) => a.visible(menu.row)).map((a) => (
           <MenuItem key={a.key} onClick={() => { const row = menu.row; setMenu(null); setExtra(a.render(row, () => { setExtra(null); load(); }, setToast)); }}>{t(a.labelKey)}</MenuItem>
@@ -235,6 +250,8 @@ export default function EmployeesPage() {
         onSaved={() => { setEditing(null); setToast(t("emp.saved")); load(); }} />
       <GiveAssetDialog employee={giving} onClose={() => setGiving(null)} onDone={(m) => { setGiving(null); setToast(m); load(); }} />
       {extra}
+      {rolesFor && <AssignRolesDialog employeeIds={rolesFor} onClose={() => setRolesFor(null)}
+        onDone={(m) => { setRolesFor(null); setToast(m); load(); }} />}
       <Snackbar open={Boolean(toast)} autoHideDuration={6000} onClose={() => setToast(null)} message={toast} anchorOrigin={{ vertical: "bottom", horizontal: "center" }} />
     </Box>
   );
