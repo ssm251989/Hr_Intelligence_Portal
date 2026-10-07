@@ -91,3 +91,39 @@ Extra checks: "hi" gives the clarification. "leave" and "salary?" (one topic wor
 
 **Still to prove on screen** (proof setup: mailpit + API :8010 + web :5174, stopped by the system for low memory on 2026-10-07):
 screenshots of the widget (clarify chips, sources, Hand over to HR) and the HR to-do in My approvals, and the hand-over email in mailpit.
+
+## 22.2 Candidate emails: "Not matched" -> "Closed"; smarter auto-link
+
+**Tabs:** Needs action | Linked to a candidate | Closed.
+- Closed = status `done`: HR pressed Mark done, or automatic mail (bounces / no-reply) that triage closes by itself.
+- Unlinked mail stays in Needs action. It has a yellow **Not linked yet** chip, suggested candidates ("Link to <name>") and the Link-to-candidate picker.
+- Old `?tab=not_matched` links open Needs action.
+
+**Auto-link rules** (`app/hr_inbox/matching.py`, in order; the rule is saved on the email as `match_rule` and shown as a chip):
+1. the sender's address = the candidate's email, or one of the extra addresses on the profile (`candidates.alt_emails`, new)
+2. the sender name / subject / body (signature, quoted reply) contains "First Last" or "Last First". This ignores case, dots and extra spaces, and allows initials ("G. Kishore", "Kishore G").
+3. a reply to an email the app sent. The SMTP sender now sets its own Message-ID and stores it on the outbound row; In-Reply-To / References are matched against it.
+
+Exactly one candidate -> linked. Several -> not linked, and the candidates are kept as suggestions. The app never guesses between two.
+
+**Manual link** has a new tick box, "Also remember <address> for this candidate" (on by default). It adds the address to `alt_emails` (audit `candidate_alt_email_added`), so the next email from it links by rule 1. Picking a suggestion remembers the address too.
+
+**Examples** (dry run on temporary candidates, rolled back):
+
+| Case | Email | Result |
+|---|---|---|
+| sender email | from PROOFA.R@example.com | linked: Proofa Ravikumar, rule `email` |
+| extra email on profile | from meena.home@example.com (alt email of Meena Sundar) | linked: Meena Sundar, rule `alt_email` |
+| "First Last" | sender name "Proofa Ravikumar", from someone@gmail.com | linked: Proofa Ravikumar, rule `name` |
+| "Last First" | signature "Regards, Ravikumar Proofa", from x123@yahoo.com | linked: Proofa Ravikumar, rule `name` |
+| initials | signature "M. Sundar" / subject "Re: BGV - Sundar M" | linked: Meena Sundar, rule `name` |
+| ambiguous | "Regards, Arun Prakash" with candidates "Arun Prakash" and "Prakash Arun" | **not linked**; suggestions: both |
+| no match | noreply@bank.com "Your statement" | not linked, no suggestions |
+
+**One-time re-match on live data** (`rematch_unmatched`, audit `candidate_emails_rematched`):
+`{'checked': 68, 'linked': 0, 'ambiguous': 0}`. All 68 stored emails are `mailer-daemon@googlemail.com` "Delivery Status Notification (Failure)",
+already `status=done, topic=automated`, so they now sit in **Closed**. HR can run it again: `POST /api/v1/ui/candidate-emails/rematch`.
+
+Linked emails still appear on the candidate timeline (`inbound_email_received` / `inbound_email_linked` audit entries).
+
+**Still to prove on screen:** screenshots of the three tabs, the Not-linked chip with suggestions, and the remember-address tick box (proof setup stopped for low memory).

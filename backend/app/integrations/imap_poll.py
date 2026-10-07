@@ -90,7 +90,8 @@ def test_imap_connection(hr_integration: HrIntegration) -> None:
 
 def _parse_message(raw: bytes) -> dict:
     parsed = email.message_from_bytes(raw, policy=email.policy.default)
-    from_address = email.utils.parseaddr(parsed.get("From", ""))[1].strip().lower()
+    from_name, from_address = email.utils.parseaddr(parsed.get("From", ""))
+    from_address = from_address.strip().lower()
     to_address = email.utils.parseaddr(parsed.get("To", ""))[1].strip() or None
     subject = parsed.get("Subject")
     message_id = parsed.get("Message-ID")
@@ -115,6 +116,9 @@ def _parse_message(raw: bytes) -> dict:
         "body": body,
         "received_at": received_at,
         "message_id": message_id,
+        "from_name": (from_name or "").strip() or None,  # Part 22.2: for name / thread matching
+        "in_reply_to": parsed.get("In-Reply-To"),
+        "references": parsed.get("References"),
     }
 
 
@@ -161,22 +165,16 @@ def poll_hr_inbox(db: Session, hr_integration: Optional[HrIntegration] = None) -
                 max_uid_seen = uid if max_uid_seen is None else max(max_uid_seen, uid)
                 continue
 
-            candidate = None
-            if parsed["from_address"]:
-                candidate = (
-                    db.query(Candidate)
-                    .filter(Candidate.email.isnot(None))
-                    .filter(Candidate.email.ilike(parsed["from_address"]))
-                    .first()
-                )
-            matched_application = (
-                db.query(Application)
-                .filter(Application.candidate_id == candidate.id)
-                .order_by(Application.created_at.desc())
-                .first()
-                if candidate
-                else None
-            )
+            # Part 22.2: email / extra email -> "First Last" or "Last First" -> reply to our email; never guesses between two
+            from app.hr_inbox import matching
+            from app.platform.tenancy.context import get_current_tenant
+
+            tenant_ctx = get_current_tenant()
+            found = matching.match(db, tenant_ctx.tenant_id, from_address=parsed["from_address"], from_name=parsed.get("from_name"),
+                                   subject=parsed["subject"], body=parsed["body"], in_reply_to=parsed.get("in_reply_to"),
+                                   references=parsed.get("references")) if tenant_ctx is not None else {"candidate_id": None, "suggestions": []}
+            candidate = db.get(Candidate, found["candidate_id"]) if found.get("candidate_id") else None
+            matched_application = db.get(Application, found["application_id"]) if found.get("application_id") else None
 
             row = HrInboundEmail(
                 from_address=parsed["from_address"],
@@ -187,6 +185,8 @@ def poll_hr_inbox(db: Session, hr_integration: Optional[HrIntegration] = None) -
                 message_id=parsed["message_id"],
                 matched_candidate_id=candidate.id if candidate else None,
                 matched_application_id=matched_application.id if matched_application else None,
+                from_name=parsed.get("from_name"), in_reply_to=parsed.get("in_reply_to"), references_header=parsed.get("references"),
+                match_rule=found.get("rule"), match_suggestions_json=[str(x) for x in found.get("suggestions") or []] or None,
             )
             db.add(row)
             db.commit()

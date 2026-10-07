@@ -30,7 +30,7 @@ import { downloadCsv } from "../utils/csv";
 
 const PAGE_SIZE = 25;
 const SEARCH_DEBOUNCE_MS = 300;
-const TABS: CandidateEmailTab[] = ["needs_action", "linked", "not_matched"];
+const TABS: CandidateEmailTab[] = ["needs_action", "linked", "closed"];
 // Settings -> Communication -> Mailboxes (settings/catalog.tsx).
 const MAILBOX_SETTINGS_PATH = "/settings/communication/mailboxes";
 
@@ -161,7 +161,7 @@ export default function HrInboxListPage() {
         }
       />
 
-      {data && !data.mailbox_connected && (counts?.linked || counts?.not_matched || counts?.needs_action) ? (
+      {data && !data.mailbox_connected && (counts?.linked || counts?.closed || counts?.needs_action) ? (
         <Card sx={{ p: 1.5, mb: 2, bgcolor: f.sunSoft }}>
           <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ xs: "flex-start", sm: "center" }} justifyContent="space-between">
             <Stack direction="row" spacing={1} alignItems="center">
@@ -219,6 +219,7 @@ export default function HrInboxListPage() {
                     onReply={() => reply(email)}
                     onToggleDone={(done) => toggleDone(email, done)}
                     onAssign={() => assign(email)}
+                    onLinked={refresh}
                   />
                 </Box>
               ))}

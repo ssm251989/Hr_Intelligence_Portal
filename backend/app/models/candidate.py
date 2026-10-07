@@ -28,6 +28,7 @@ class Candidate(Base, TenantOwned):
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
     full_name = Column(String(255))
     email = Column(String(255))
+    alt_emails = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list)  # Part 22.2: other addresses they write from
     phone = Column(String(50))
     location = Column(String(255))
     resume_path = Column(Text)

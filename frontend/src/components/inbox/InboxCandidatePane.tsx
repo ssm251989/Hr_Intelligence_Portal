@@ -141,6 +141,7 @@ function AssignToCandidate({ email, onAssigned }: { email: HrInboundEmailRead; o
   const [loading, setLoading] = useState(false);
   const [choice, setChoice] = useState<CandidateApplicationRow | null>(null);
   const [sameSender, setSameSender] = useState(true);
+  const [remember, setRemember] = useState(true);  // Part 22.2: also save this address on the candidate
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
@@ -173,7 +174,7 @@ function AssignToCandidate({ email, onAssigned }: { email: HrInboundEmailRead; o
     setSaving(true);
     setError(null);
     inboxExtraApi
-      .assign(email.id, choice.application_id, sameSender)
+      .assign(email.id, choice.application_id, sameSender, remember)
       .then(onAssigned)
       .catch(setError)
       .finally(() => setSaving(false));
@@ -211,6 +212,8 @@ function AssignToCandidate({ email, onAssigned }: { email: HrInboundEmailRead; o
           renderInput={(params) => <TextField {...params} size="small" label={t("inbox.assign.search")} />}
         />
         <FormControlLabel control={<Checkbox checked={sameSender} onChange={(e) => setSameSender(e.target.checked)} />} label={t("inbox.assign.same_sender")} />
+        <FormControlLabel control={<Checkbox checked={remember} onChange={(e) => setRemember(e.target.checked)} />}
+          label={t("candidateEmails.remember", { email: email.from_address })} />
         {error ? <FriendlyError error={error} compact /> : null}
         <Button variant="contained" onClick={assign} disabled={!choice || saving}>
           {saving ? t("inbox.assign.saving") : t("inbox.assign.button")}

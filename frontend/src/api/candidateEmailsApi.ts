@@ -2,7 +2,9 @@
 import { http } from "./client";
 import type { HrInboundEmailRead, UUID } from "./types";
 
-export type CandidateEmailTab = "needs_action" | "linked" | "not_matched";
+// Part 22.2: "Not matched" became "Closed" -- unlinked mail is in Needs action with suggested candidates
+export type CandidateEmailTab = "needs_action" | "linked" | "closed";
+export interface EmailSuggestion { candidate_id: UUID; application_id: UUID | null; name: string | null; email: string | null; job_title: string | null }
 export type CandidateEmailTopic = "interview_time" | "documents" | "question" | "offer" | "withdrawal" | "automated" | "other";
 
 export interface CandidateEmailItem {
@@ -20,6 +22,9 @@ export interface CandidateEmailItem {
   status?: "needs_action" | "done" | string | null;
   done_at?: string | null;
   done_by?: string | null;
+  from_name?: string | null;
+  match_rule?: "email" | "alt_email" | "name" | "thread" | "manual" | string | null;
+  suggestions?: EmailSuggestion[];
 }
 
 export interface CandidateEmailPage {
@@ -41,6 +46,9 @@ export const candidateEmailsApi = {
     return http.get<CandidateEmailPage>(`${BASE}?${q.toString()}`);
   },
   setDone: (id: UUID, done: boolean) => http.post<{ id: UUID; status: string }>(`${BASE}/${id}/done`, { done }),
+  rematch: () => http.post<{ checked: number; linked: number; ambiguous: number }>(`${BASE}/rematch`),
+  link: (emailId: UUID, applicationId: UUID, rememberEmail: boolean) =>
+    http.post<{ assigned: number }>(`/api/v1/ui/hr-inbox/${emailId}/assign`, { application_id: applicationId, include_same_sender: true, remember_email: rememberEmail }),
 };
 
 // The thread / candidate panes (components/inbox) still take the older HR-inbox row shape.

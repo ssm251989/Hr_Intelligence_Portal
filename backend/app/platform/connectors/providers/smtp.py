@@ -48,6 +48,11 @@ class SmtpAdapter:
         message["Subject"] = msg.subject
         message["From"] = self.config.get("from_address") or self.config["username"]
         message["To"] = ", ".join(msg.to)
+        # Part 22.2: our own Message-ID, stored on the outbound row, so a reply can be traced back to this email
+        from email.utils import make_msgid
+
+        sender = str(message["From"])
+        message["Message-ID"] = make_msgid(domain=sender.split("@")[-1].strip("> ") if "@" in sender else None)
         if msg.cc:
             message["Cc"] = ", ".join(msg.cc)
         if msg.reply_to:
@@ -62,7 +67,7 @@ class SmtpAdapter:
         try:
             with self._client() as client:
                 client.send_message(message, to_addrs=recipients)
-            return ProviderResult(success=True)
+            return ProviderResult(success=True, provider_message_id=str(message["Message-ID"]))
         except (smtplib.SMTPException, OSError) as exc:
             return ProviderResult(success=False, error=str(exc) or "SMTP send failed")
 

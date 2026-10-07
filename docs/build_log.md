@@ -2840,3 +2840,7 @@ NEXT: prove 21.4 + 21.5 on the proof stack (FIXES_21.md), then 21.6 HR assistant
   10 verification questions answered (dry run, rolled back). Screenshots and the mailpit email are pending the proof setup (stopped for low memory).
 
 NEXT: part-22.2 candidate emails - Closed tab + smarter auto-link (email/alt email, "First Last"/"Last First", reply thread), manual link remembers the address, re-run over unmatched.
+
+- part-22.2: candidate emails - tabs Needs action | Linked | Closed (Closed = done, incl. automatic mail); unlinked mail in Needs action with "Not linked yet" + suggestions; matching rules email/alt email -> First Last / Last First (initials) -> reply thread (SMTP now sets + stores Message-ID); manual link can remember the address (candidates.alt_emails); migration e7d06b7c8d9e; one-time live re-match: 68 checked, 0 linked (all bounces, already closed). Decision: "remember this address" is ticked by default; the ambiguous case keeps every match as a suggestion and links none.
+
+NEXT: part-22.3 candidate emails in HR "My approvals" (highlighted cards, Open/Reply/Link/Mark done, badge count).

@@ -7,7 +7,7 @@ import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
 import { Link as RouterLink } from "react-router-dom";
 
-import type { CandidateEmailItem } from "../../api/candidateEmailsApi";
+import { candidateEmailsApi, type CandidateEmailItem } from "../../api/candidateEmailsApi";
 import { useI18n } from "../../i18n";
 import { localeTag } from "../interviews/weekDates";
 import Emoji from "../../ui-kit/Emoji";
@@ -33,7 +33,7 @@ export function TopicChip({ topic }: { topic?: string | null }) {
 
 // One email = one card: who, which job, what it's about (one line), when, and the next step.
 export default function CandidateEmailCard({
-  email, selected, busy, onSelect, onReply, onToggleDone, onAssign,
+  email, selected, busy, onSelect, onReply, onToggleDone, onAssign, onLinked,
 }: {
   email: CandidateEmailItem;
   selected: boolean;
@@ -42,6 +42,7 @@ export default function CandidateEmailCard({
   onReply: () => void;
   onToggleDone: (done: boolean) => void;
   onAssign: () => void;
+  onLinked?: () => void;
 }) {
   const f = useTheme().palette.fresh;
   const { t, locale } = useI18n();
@@ -94,10 +95,25 @@ export default function CandidateEmailCard({
             ) : (
               <StatusChip tone="sun" emoji="hourglass" label={t("candidateEmails.card.needs_action")} />
             )}
-            {!linked && <StatusChip tone="coral" emoji="question" label={t("candidateEmails.card.not_matched")} />}
+            {!linked && <StatusChip tone="sun" emoji="question" label={t("candidateEmails.card.not_linked")} />}
+            {linked && email.match_rule && <StatusChip tone="muted" emoji="link" label={t(`candidateEmails.rule.${email.match_rule}`)} />}
           </Stack>
         </Box>
       </ButtonBase>
+      {/* Part 22.2: several candidates matched -- HR picks; the app never guesses between two */}
+      {!linked && (email.suggestions?.length ?? 0) > 0 && (
+        <Box sx={{ px: 1.5, pb: 1, pl: { sm: 7.5 } }}>
+          <Typography sx={{ fontSize: 12, fontWeight: 700, color: f.muted, mb: 0.5 }}>{t("candidateEmails.suggested")}</Typography>
+          <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
+            {email.suggestions!.filter((s) => s.application_id).map((s) => (
+              <Button key={s.candidate_id} size="small" variant="outlined" disabled={busy}
+                onClick={() => candidateEmailsApi.link(email.id, s.application_id!, true).then(() => onLinked?.())}>
+                {t("candidateEmails.link_to", { name: s.name ?? s.email ?? "?" })}{s.job_title ? ` (${s.job_title})` : ""}
+              </Button>
+            ))}
+          </Stack>
+        </Box>
+      )}
       <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ px: 1.5, pb: 1.5, pl: { sm: 7.5 } }}>
         {linked && email.application_id && (
           <Button size="small" variant="outlined" component={RouterLink} to={`/candidates/${email.application_id}`} startIcon={<Emoji name="technologist" size={16} />}>

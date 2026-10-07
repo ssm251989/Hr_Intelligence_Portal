@@ -77,7 +77,7 @@ export const interviewsExtraApi = {
 
 export const inboxExtraApi = {
   thread: (emailId: UUID) => http.get<{ messages: ThreadMessage[] }>(`/api/v1/ui/hr-inbox/${emailId}/thread`),
-  assign: (emailId: UUID, applicationId: UUID, includeSameSender = true) =>
-    http.post<AssignResult>(`/api/v1/ui/hr-inbox/${emailId}/assign`, { application_id: applicationId, include_same_sender: includeSameSender }),
+  assign: (emailId: UUID, applicationId: UUID, includeSameSender = true, rememberEmail = false) =>
+    http.post<AssignResult>(`/api/v1/ui/hr-inbox/${emailId}/assign`, { application_id: applicationId, include_same_sender: includeSameSender, remember_email: rememberEmail }),
   snippets: () => http.get<ReplySnippet[]>("/api/v1/ui/hr-inbox/snippets"),
 };

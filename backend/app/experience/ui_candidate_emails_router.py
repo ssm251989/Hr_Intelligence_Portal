@@ -1,7 +1,10 @@
 """Part 17.7: "Candidate emails" (was HR Inbox) -- replies from candidates to the company's
 emails, each linked to the right candidate automatically where possible.
 
-- GET  /api/v1/ui/candidate-emails?tab=needs_action|linked|not_matched&search=&page=&page_size=
+- GET  /api/v1/ui/candidate-emails?tab=needs_action|linked|closed&search=&page=&page_size=
+       (Part 22.2: "Not matched" is gone -- unlinked mail is in Needs action with a "Not linked yet" chip
+       and suggested candidates; Closed = what HR marked done, or automatic / no-action mail)
+- POST /api/v1/ui/candidate-emails/rematch     run the matching rules over every unlinked email
        rows with candidate, job, what it's about (topic + one-line summary), status; tab counts;
        whether a mailbox is connected (for the empty state)
 - POST /api/v1/ui/candidate-emails/{id}/done   {"done": true|false}
@@ -21,6 +24,7 @@ from sqlalchemy.orm import Session
 from app.audit.service import log_action
 from app.auth.dependencies import require_roles
 from app.core.database import get_db
+from app.hr_inbox import matching
 from app.hr_inbox.triage import triage
 from app.models.application import Application
 from app.models.candidate import Candidate
@@ -56,19 +60,23 @@ def _base(db: Session, tenant, search: Optional[str]):
     return q
 
 
+TABS = ("needs_action", "linked", "closed")
+
+
 def _tab(q, tab: str):
     if tab == "needs_action":
         return q.filter(HrInboundEmail.status != "done")
     if tab == "linked":
         return q.filter(HrInboundEmail.matched_candidate_id.isnot(None))
-    return q.filter(HrInboundEmail.matched_candidate_id.is_(None))
+    return q.filter(HrInboundEmail.status == "done")
 
 
 @router.get("")
-def list_candidate_emails(tab: Literal["needs_action", "linked", "not_matched"] = "needs_action", search: Optional[str] = None,
+def list_candidate_emails(tab: Literal["needs_action", "linked", "closed", "not_matched"] = "needs_action", search: Optional[str] = None,
                           page: int = Query(1, ge=1), page_size: int = Query(25, ge=1, le=100), db: Session = Depends(get_db),
                           current_user: User = Depends(require_roles(*_ROLES))):
     tenant = require_current_tenant()
+    tab = "needs_action" if tab == "not_matched" else tab  # old links
     base = _base(db, tenant, search)
     rows = _tab(base, tab).order_by(func.coalesce(HrInboundEmail.received_at, HrInboundEmail.created_at).desc()) \
         .offset((page - 1) * page_size).limit(page_size).all()
@@ -91,8 +99,10 @@ def list_candidate_emails(tab: Literal["needs_action", "linked", "not_matched"] 
             "candidate_name": names.get(r.matched_candidate_id), "application_id": str(r.matched_application_id) if r.matched_application_id else None,
             "job_title": jobs.get(r.matched_application_id), "topic": r.topic, "summary": r.summary, "summary_source": r.summary_source,
             "status": r.status, "done_at": r.done_at.isoformat() if r.done_at else None, "done_by": r.done_by,
+            "from_name": r.from_name, "match_rule": r.match_rule,
+            "suggestions": matching.suggestion_rows(db, r.match_suggestions_json) if not r.matched_candidate_id else [],
         })
-    counts = {t: _tab(base, t).count() for t in ("needs_action", "linked", "not_matched")}  # after triage (automatic mail -> done)
+    counts = {t: _tab(base, t).count() for t in TABS}  # after triage (automatic mail -> done)
     return {"tab": tab, "items": items, "counts": counts, "page": page, "page_size": page_size,
             "total": counts[tab], "mailbox_connected": _mailbox_connected(db)}
 
@@ -115,3 +125,9 @@ def mark_done(email_id: UUID, payload: DoneIn, db: Session = Depends(get_db), cu
         log_action(db, "candidate", row.matched_candidate_id, "candidate_email_done" if payload.done else "candidate_email_reopened",
                    current_user.email[:50], {"hr_inbound_email_id": str(row.id), "subject": row.subject})
     return {"id": str(row.id), "status": row.status}
+
+
+@router.post("/rematch")
+def rematch(db: Session = Depends(get_db), current_user: User = Depends(require_roles(*_ROLES))):
+    """Part 22.2: run the matching rules over every email that isn't linked yet."""
+    return matching.rematch_unmatched(db, require_current_tenant(), actor=current_user.email)

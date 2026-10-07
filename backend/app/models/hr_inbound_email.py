@@ -1,4 +1,5 @@
 from sqlalchemy import Column, DateTime, ForeignKey, Text, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.core.database import Base
@@ -31,6 +32,12 @@ class HrInboundEmail(Base, TenantOwned):
     message_id = Column(Text, nullable=True, unique=True)
     matched_candidate_id = Column(UUID(as_uuid=True), ForeignKey("candidates.id"), nullable=True)
     matched_application_id = Column(UUID(as_uuid=True), ForeignKey("applications.id"), nullable=True)
+    # Part 22.2: sender name + reply headers (for matching), which rule linked it, candidates when several match
+    from_name = Column(Text)
+    in_reply_to = Column(Text)
+    references_header = Column(Text)
+    match_rule = Column(Text)  # email | alt_email | name | thread | manual
+    match_suggestions_json = Column(JSONB)
     # Part 17.7: what the reply is about + whether someone still has to act on it
     topic = Column(Text)  # interview_time | documents | question | offer | withdrawal | other
     summary = Column(Text)  # one line (AI when switched on, else taken from the email)

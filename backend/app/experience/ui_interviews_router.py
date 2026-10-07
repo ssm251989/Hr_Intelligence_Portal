@@ -285,6 +285,7 @@ def inbox_thread(
 class AssignRequest(BaseModel):
     application_id: uuid.UUID
     include_same_sender: bool = True
+    remember_email: bool = False  # Part 22.2: also save this sender address on the candidate's profile
 
 
 class AssignResult(BaseModel):
@@ -326,7 +327,19 @@ def assign_inbox_email(
     for row in targets:
         row.matched_candidate_id = application.candidate_id
         row.matched_application_id = application.id
+        row.match_rule, row.match_suggestions_json = "manual", None
+    remembered = None
+    if payload.remember_email:
+        from app.models.candidate import Candidate
+
+        cand = db.get(Candidate, application.candidate_id)
+        addr = (email.from_address or "").strip().lower()
+        if cand is not None and addr and addr != (cand.email or "").strip().lower() and addr not in (cand.alt_emails or []):
+            cand.alt_emails = [*(cand.alt_emails or []), addr]
+            remembered = addr
     db.commit()
+    if remembered:
+        log_action(db, "candidate", application.candidate_id, "candidate_alt_email_added", current_user.email, {"email": remembered})
     log_action(
         db,
         "application",
