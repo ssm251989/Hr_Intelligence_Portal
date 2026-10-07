@@ -30,7 +30,7 @@ router = APIRouter(tags=["media"])
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent
 MEDIA_DIR = BACKEND_ROOT / "uploads" / "media"
-KEY_RE = re.compile(r"^(welcome|tour)\.[a-z0-9_-]+(\.gif)?$|^welcome\.video$|^brand\.logo$")
+KEY_RE = re.compile(r"^(welcome|tour)\.[a-z0-9_-]+(\.gif)?$|^welcome\.video$|^brand\.logo$|^letters\.signature$|^email\.banner\.[a-z0-9_-]+$")  # 22.6: signatory signature, own email banners
 ALLOWED_TYPES = {"video/mp4": "mp4", "video/webm": "webm", "image/gif": "gif", "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
 MAX_BYTES = 50 * 1024 * 1024
 # Part 17.11: the company logo (sidebar, login, careers site, emails, letters)
@@ -92,7 +92,7 @@ def list_media(db: Session = Depends(get_db), current_user: User = Depends(get_c
 async def upload_media(key: str, file: UploadFile = File(...), title: Optional[str] = Form(None), db: Session = Depends(get_db),
                        current_user: User = Depends(require("platform.settings.configure"))):
     _check_key(key)
-    is_logo = key == LOGO_KEY
+    is_logo = key in (LOGO_KEY, "letters.signature")  # 22.6: the signature is an image too
     ext = (LOGO_TYPES if is_logo else ALLOWED_TYPES).get(file.content_type or "")
     if ext is None:
         raise HTTPException(status_code=400, detail="Please upload a PNG, JPG, WebP or SVG image." if is_logo

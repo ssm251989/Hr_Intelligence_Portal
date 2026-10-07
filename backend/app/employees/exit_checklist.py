@@ -706,6 +706,12 @@ def letter_pdf(db: Session, letter_id) -> Optional[bytes]:
     rec = db.get(LetterRecord, letter_id)
     if rec is None:
         return None
+    try:  # Part 22.6: the designed letter (formal for relieving / experience)
+        from app.platform.letters.design import letter_record_pdf
+
+        return letter_record_pdf(db, rec)
+    except Exception:  # noqa: BLE001
+        pass
     text = re.sub(r"<br\s*/?>|</p>|</h\d>|</div>", "\n", rec.rendered_html or "", flags=re.I)
     text = _html.unescape(re.sub(r"<[^>]+>", "", text))
     text = re.sub(r"\n{3,}", "\n\n", text).strip()

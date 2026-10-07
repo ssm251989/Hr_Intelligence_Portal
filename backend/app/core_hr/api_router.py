@@ -556,3 +556,42 @@ def rollback_import_batch(batch_id: UUID, db: Session = Depends(get_db), current
         raise HTTPException(status_code=400, detail=str(exc))
     log_action(db, "import_batch", batch_id, "import_rolled_back", current_user.email, {"deleted": deleted})
     return {"deleted": deleted}
+
+
+@public_router.get("/letters/check/{token}")
+def check_letter(token: str, db: Session = Depends(get_db)):
+    """Part 22.6: what the QR code on a letter opens (frontend /verify-letter/<token>) -- is this letter genuine,
+    who it was issued to, when, and its reference. Works for letter records and offer letters."""
+    from app.employees import directory
+    from app.models.core_hr import Employee, LetterRecord
+    from app.platform.letters import design
+
+    tenant = require_current_tenant()
+    brand = design.brand_for(db, tenant)
+    record = db.query(LetterRecord).filter(LetterRecord.tenant_id == tenant.tenant_id, LetterRecord.verification_token == token).first()
+    if record is not None:
+        e = db.get(Employee, record.employee_id)
+        kind = design._kind(record.template_key)
+        issued = record.generated_at.date() if record.generated_at else None
+        return {"genuine": True, "valid": True, "company": brand.legal_name or brand.company, "title": design.TITLES.get(kind, "Letter"),
+                "issued_to": directory.name_of(e) if e else None, "employee_code": e.employee_code if e else None,
+                "issued_on": issued.isoformat() if issued else None,
+                "reference": design.reference(brand, kind, record.id.hex, issued) if issued else None}
+    parsed = design.check_offer_token(token)
+    if parsed is not None:
+        from app.models.application import Application
+        from app.models.candidate import Candidate
+        from app.models.offer import Offer
+
+        offer = db.get(Offer, parsed[0])
+        if offer is not None and offer.tenant_id == tenant.tenant_id:
+            app_row = db.get(Application, offer.application_id)
+            cand = db.get(Candidate, app_row.candidate_id) if app_row else None
+            current = parsed[1] == int(offer.version_no or 1)
+            withdrawn = bool(offer.declined_at) or (offer.onboarding_status or "") == "withdrawn"                 or (app_row is not None and app_row.status in ("offer_withdrawn", "offer_declined"))
+            issued = (offer.sent_at or offer.created_at)
+            return {"genuine": True, "valid": current and not withdrawn, "company": brand.legal_name or brand.company, "title": "Offer Letter",
+                    "issued_to": cand.full_name if cand else None, "issued_on": issued.date().isoformat() if issued else None,
+                    "version": parsed[1], "signed": bool(offer.signed_at) if current else None,
+                    "note": None if current and not withdrawn else ("This offer is no longer open (withdrawn or declined)." if withdrawn else "A newer version of this offer replaced it.")}
+    return {"genuine": False, "valid": False, "company": brand.legal_name or brand.company}

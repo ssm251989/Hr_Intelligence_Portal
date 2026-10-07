@@ -188,3 +188,28 @@ Inactive filter lists: ['Proof Agency History']; restore -> active True
 ```
 Live check (read-only): the only live agency, "Bright talent partners" (paused, 0 candidates, 0 cases), would be a clean delete. It was not touched.
 **Still to prove on screen:** the delete and deactivate dialog screenshots.
+
+## 22.6 Letters and emails - grand, celebratory design
+
+### 22.6a PDF letters (`app/platform/letters/design.py`)
+One designer now draws every official letter: the offer (and each revised version), joining, appointment, confirmation, relieving and experience letters, and any HR letter.
+- **Header band** in the brand colour, with the company logo on a white tile and the company name in serif. Times is used for headings and Helvetica for the body; these are PDF core fonts, so nothing has to be installed.
+- **Watermark:** a faint copy of the logo (company initials when there is no raster logo) behind the text.
+- **Reference and date:** e.g. `CTD/HR/OFR/2026/D9D153`.
+- **Signature block:** "For <company>", the signatory's signature image, name and designation, and "Digitally issued".
+- **QR code** with "Scan to verify this letter". It opens the new public page `/verify-letter/<token>`, which shows "This letter is genuine", the company, letter, issued to, date and reference.
+  - Letter records use their existing `verification_token`.
+  - Offers use a keyed token (offer id + version + HMAC), so nothing new is stored. A newer version or a withdrawn/declined offer shows "Genuine, but no longer current". A tampered token is rejected.
+- **Footer** on every page: legal name, registered address and CIN, plus the reference and page x of y.
+- **Celebration only on offer/selection and joining letters:** confetti in the band and a "Congratulations!" ribbon. Relieving and experience letters stay formal, with no confetti.
+- **New settings:**
+  - `org.address`, `org.cin`
+  - `letters.signatory_name`, `letters.signatory_designation`, `letters.watermark`, `letters.celebration`, `letters.brand_colour`
+  - media key `letters.signature` (signature image upload)
+- **Characters:** core fonts are Latin-1, so the rupee sign is printed as "Rs." and smart quotes become plain quotes.
+- **Wired in:** the offer PDF (sign page, stored signed PDF, version PDFs) and the exit/relieving/experience PDFs (`letter_pdf`). If the design ever fails, the old plain PDF is the fallback.
+- **New dependency:** `segno` (pure-Python QR, no system libraries).
+
+**Samples** (live CTD Techs logo and colour, sample people; the address, CIN and signatory are marked "(sample)" because they are not set yet):
+`docs/ui/letters/offer-letter-sample.pdf`, `joining-letter-sample.pdf`, `appointment-letter-sample.pdf`, `confirmation-letter-sample.pdf`, `relieving-letter-sample.pdf`, `experience-letter-sample.pdf`.
+Real offer check: the latest live offer `d9d1533a...` renders through `build_pdf(..., db, tenant)` (90 KB PDF); the token round-trip passes and a tampered token returns None.

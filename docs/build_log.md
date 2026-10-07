@@ -2860,3 +2860,10 @@ NEXT: part-22.5 Agencies - Delete agency (no history -> delete; with history -> 
 - part-22.5: Agencies - Delete agency (card "..." menu + profile). No history -> delete; history -> deactivate (Inactive filter, Restore); open BGV cases block it; portal logins switched off/on; new permission recruitment.agency.delete (HR Admin); audit agency_deleted / agency_deactivated / agency_restored. Decision: the agency list defaults to Status = Active (paused agencies are under Inactive).
 
 NEXT: part-22.6 grand letters + emails (PDF letters with brand header, watermark, signatory, QR verify page; celebration GIF emails with plain-text; template preview / send test / GIF gallery; samples into docs/ui/letters/).
+
+- part-22.6a: designed letter PDFs (brand band, serif/sans, logo watermark, ref + date, signatory block, QR -> public /verify-letter page, address/CIN footer; confetti + Congratulations ribbon only on offer/joining). Wired into the offer PDFs and the exit letter PDFs. New settings org.address / org.cin / letters.*; segno added. Samples in docs/ui/letters/.
+  Decisions:
+  - core PDF fonts (Times + Helvetica) instead of bundled TTFs, so the rupee sign is printed as "Rs.";
+  - offer verify tokens are HMAC-signed, so there is no new column.
+
+NEXT: part-22.6b celebration emails (bundled GIF banners + static fallback, emoji subjects, CTA button, first-day / team / buddy cards, warm exit email, plain-text part) + 22.6c Settings preview / send test / GIF gallery / signatory upload.

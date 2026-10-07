@@ -35,6 +35,15 @@ def register_all() -> None:
     # otherwise inherit.
     register(SettingDef("org.display_name", "str", "", module="org", group="Organisation"))
     register(SettingDef("org.legal_name", "str", "", module="org", group="Organisation"))
+    # Part 22.6: printed on every letter's footer
+    register(SettingDef("org.address", "str", "", module="org", group="Organisation"))
+    register(SettingDef("org.cin", "str", "", module="org", group="Organisation"))
+    # Part 22.6: letters (Settings > Onboarding & employees > Letters)
+    register(SettingDef("letters.signatory_name", "str", "", module="onboarding", group="Letters"))
+    register(SettingDef("letters.signatory_designation", "str", "", module="onboarding", group="Letters"))
+    register(SettingDef("letters.watermark", "bool", True, module="onboarding", group="Letters"))
+    register(SettingDef("letters.celebration", "bool", True, module="onboarding", group="Letters"))
+    register(SettingDef("letters.brand_colour", "str", "", module="onboarding", group="Letters"))
     # Part 6 section 6 -- scopes_allowed widened to ("user","tenant") on these two
     # (originally tenant-only, Part 2): a user's own locale/timezone preference is now a
     # real per-user override layered above the tenant-wide default -- SCOPE_ORDER already

@@ -207,6 +207,16 @@ export const en = {
   "ag22.status.active": "Active",
   "ag22.status.inactive": "Inactive",
   "ag22.status.all": "All",
+  "verify22.genuine": "This letter is genuine",
+  "verify22.not_current": "Genuine, but no longer current",
+  "verify22.not_found": "We couldn't verify this letter",
+  "verify22.issued_by": "Issued by {company}",
+  "verify22.letter": "Letter",
+  "verify22.issued_to": "Issued to",
+  "verify22.date": "Date",
+  "verify22.reference": "Reference",
+  "verify22.version": "Version",
+  "verify22.privacy": "Only the details needed to check the letter are shown. Contact the company's HR for anything else.",
 };
 
 export const hi: Partial<typeof en> = {
@@ -417,6 +427,16 @@ export const hi: Partial<typeof en> = {
   "ag22.status.active": "सक्रिय",
   "ag22.status.inactive": "निष्क्रिय",
   "ag22.status.all": "सभी",
+  "verify22.genuine": "यह पत्र असली है",
+  "verify22.not_current": "असली, पर अब मान्य नहीं",
+  "verify22.not_found": "हम इस पत्र की पुष्टि नहीं कर सके",
+  "verify22.issued_by": "{company} द्वारा जारी",
+  "verify22.letter": "पत्र",
+  "verify22.issued_to": "किसे जारी",
+  "verify22.date": "तारीख",
+  "verify22.reference": "संदर्भ",
+  "verify22.version": "संस्करण",
+  "verify22.privacy": "पत्र जाँचने के लिए ज़रूरी विवरण ही दिखाए गए हैं। बाकी के लिए कंपनी के HR से संपर्क करें।",
 };
 
 export const ta: Partial<typeof en> = {
@@ -627,4 +647,14 @@ export const ta: Partial<typeof en> = {
   "ag22.status.active": "செயலில்",
   "ag22.status.inactive": "செயலற்றவை",
   "ag22.status.all": "அனைத்தும்",
+  "verify22.genuine": "இந்தக் கடிதம் உண்மையானது",
+  "verify22.not_current": "உண்மையானது, ஆனால் இப்போது செல்லாது",
+  "verify22.not_found": "இந்தக் கடிதத்தைச் சரிபார்க்க முடியவில்லை",
+  "verify22.issued_by": "{company} வழங்கியது",
+  "verify22.letter": "கடிதம்",
+  "verify22.issued_to": "யாருக்கு",
+  "verify22.date": "தேதி",
+  "verify22.reference": "குறிப்பு எண்",
+  "verify22.version": "பதிப்பு",
+  "verify22.privacy": "கடிதத்தைச் சரிபார்க்கத் தேவையான விவரங்கள் மட்டுமே காட்டப்படுகின்றன. மற்றவற்றுக்கு நிறுவனத்தின் HR ஐத் தொடர்பு கொள்ளவும்.",
 };

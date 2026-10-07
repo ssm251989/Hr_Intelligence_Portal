@@ -526,15 +526,16 @@ def version_pdf(db: Session, tenant, offer: Offer, version_no: int) -> Optional[
     if version_no == (offer.version_no or 1):
         if offer.signed and offer.signed_pdf_path and Path(offer.signed_pdf_path).exists():
             return Path(offer.signed_pdf_path).read_bytes()
-        return build_pdf(offer, _company(db, tenant))
+        return build_pdf(offer, _company(db, tenant), db, tenant)
     r = db.query(OfferVersion).filter(OfferVersion.offer_id == offer.id, OfferVersion.version_no == version_no).first()
     if r is None or not r.letter_html:  # a revision still waiting for approval has no letter yet
         return None
     if r.signed_pdf_path and Path(r.signed_pdf_path).exists():
         return Path(r.signed_pdf_path).read_bytes()
     shim = type("V", (), {"offer_letter_text": r.letter_html or "", "signed_at": r.signed_at, "signed_name": r.signed_name,
-                          "sign_method": r.sign_method, "signed_ip": r.signed_ip, "id": f"{offer.id} v{r.version_no}"})()
-    return build_pdf(shim, _company(db, tenant))
+                          "sign_method": r.sign_method, "signed_ip": r.signed_ip, "id": f"{offer.id} v{r.version_no}",
+                          "version_no": r.version_no, "created_at": getattr(r, "created_at", None)})()
+    return build_pdf(shim, _company(db, tenant), db, tenant)
 
 
 def replaced_by_token(db: Session, token: str) -> Optional[tuple[OfferVersion, Offer]]:

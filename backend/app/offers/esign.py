@@ -63,8 +63,14 @@ def _ist(dt: datetime) -> str:
     return format_ist_datetime(dt)
 
 
-def build_pdf(offer: Offer, company: str) -> bytes:
-    """The letter as a PDF; once signed, with the signature stamp at the end."""
+def build_pdf(offer: Offer, company: str, db: Optional[Session] = None, tenant=None) -> bytes:
+    """The letter as a PDF; once signed, with the signature stamp at the end.
+    Part 22.6: with db + tenant, the designed letter (brand band, celebration, signatory, QR verify)."""
+    if db is not None and tenant is not None:
+        try:
+            return designed_pdf(db, tenant, offer)
+        except Exception:  # noqa: BLE001 -- never lose the offer PDF over the design
+            log.exception("designed offer PDF failed; plain PDF instead")
     from fpdf import FPDF
 
     def safe(s: str) -> str:  # core PDF fonts are Latin-1
@@ -91,6 +97,26 @@ def build_pdf(offer: Offer, company: str) -> bytes:
         pdf.multi_cell(0, 6, safe(f"On {_ist(offer.signed_at)} {how}" + (f" from IP {offer.signed_ip}" if offer.signed_ip else "")
                                   + f"\nReference: {offer.id}"), border="LBR", fill=True, **nl)
     return bytes(pdf.output())
+
+
+def designed_pdf(db: Session, tenant, offer) -> bytes:
+    from datetime import date as _date
+
+    from app.platform.letters import design
+
+    brand = design.brand_for(db, tenant)
+    version = int(getattr(offer, "version_no", None) or 1)
+    oid = str(getattr(offer, "id", "")).split(" ")[0]
+    token = design.offer_token(oid, version)
+    issued = getattr(offer, "sent_at", None) or getattr(offer, "created_at", None)
+    issued = issued.date() if issued else _date.today()
+    stamp = None
+    if offer.signed_at:
+        how = {"in_app": "in the offer page", "docusign": "with DocuSign", "manual": "(recorded by HR)"}.get(offer.sign_method or "", "")
+        stamp = [f"Signed electronically by {offer.signed_name}", f"On {_ist(offer.signed_at)} {how}" + (f" from IP {offer.signed_ip}" if offer.signed_ip else ""),
+                 f"Reference: {offer.id}"]
+    return design.render(brand, design.Letter(kind="offer", body=_letter_text(offer), reference=design.reference(brand, "offer", oid.replace("-", ""), issued),
+                                              issued_on=issued, verify_token=token, verify_link=design.verify_url(db, token), signed_stamp=stamp))
 
 
 def _company(db: Session, tenant) -> str:
@@ -321,7 +347,7 @@ def offer_sign(token: str, request: Request, full_name: str = Form(""), accept: 
     try:
         PDF_DIR.mkdir(parents=True, exist_ok=True)
         path = PDF_DIR / f"{offer.id}-v{offer.version_no or 1}-signed.pdf"
-        path.write_bytes(build_pdf(offer, _company(db, tenant)))
+        path.write_bytes(build_pdf(offer, _company(db, tenant), db, tenant))
         offer.signed_pdf_path = str(path)
         db.commit()
     except Exception:  # noqa: BLE001 -- the PDF link then builds it on demand
@@ -347,6 +373,6 @@ def offer_pdf(token: str, db: Session = Depends(get_db)):
     if offer.signed and offer.signed_pdf_path and Path(offer.signed_pdf_path).exists():
         data = Path(offer.signed_pdf_path).read_bytes()
     else:
-        data = build_pdf(offer, _company(db, require_current_tenant()))
+        data = build_pdf(offer, _company(db, require_current_tenant()), db, require_current_tenant())
     name = "offer-letter-signed.pdf" if offer.signed else "offer-letter.pdf"
     return Response(content=data, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{name}"'})
