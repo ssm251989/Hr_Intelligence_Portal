@@ -271,6 +271,9 @@ app.include_router(ui_employee_roles_router)
 from app.experience.email_banners_router import router as email_banners_router  # noqa: E402  Part 22.6: email banners
 
 app.include_router(email_banners_router)
+from app.experience.ui_design_router import router as ui_design_router  # noqa: E402  Part 22.6c: email / letter design settings
+
+app.include_router(ui_design_router)
 from app.experience.ui_employees_router import router as ui_employees_router  # noqa: E402  part 20.1
 
 app.include_router(ui_employees_router)

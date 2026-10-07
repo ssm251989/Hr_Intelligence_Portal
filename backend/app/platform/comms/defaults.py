@@ -92,6 +92,11 @@ DEFAULTS: dict[str, tuple[str, str, list[str]]] = {
         ["candidate_first_name", "last_seen", "respond_by"],
     ),
     # Part 20: employees (app/employees/*)
+    "letters.test_copy": (  # Part 22.6c: Settings > Letters > Send test to me
+        "Sample {{ letter }} letter from {{ company_name }} (test)",
+        "This is a test copy of the {{ letter }} letter design with sample details. It is attached as a PDF.\n\n{{ company_name }} HR app",
+        ["letter"],
+    ),
     "access.updated": (  # Part 22.4: Employees > Assign roles
         "Your access in {{ company_name }} HR was updated",
         "Hello {{ name }},\n\nHR updated what you can see and do in the {{ company_name }} HR app.\n\nYour roles now: {{ roles }}\nAdded: {{ added }}\nRemoved: {{ removed }}\n\n"

@@ -27,6 +27,7 @@ import ExitInterviewSettingsPage from "../components/exits/ExitInterviewSettings
 import ExitChecklistSettingsPage from "../components/exits/ExitChecklistSettings";
 import EmployeeRulesSettings from "../components/employees/EmployeeRulesSettings";
 import AfterExitSettings from "../components/exits/AfterExitSettings";
+import DesignSettings from "../components/settings/DesignSettings";
 import UsersPage from "../components/people/UsersPage";
 import GenAISettingsPage from "../components/genai/GenAISettingsPage";
 import PrivacyPanel from "../components/PrivacyPanel";
@@ -182,6 +183,9 @@ export const CATEGORIES: SettingsCategory[] = [
       // Part 21.2: hiring data -> Recycle bin when an exit is completed
       { id: "after-exit", emoji: "file_folder", keywords: "after exit hiring data recycle bin candidate applications interviews delete retention", prefixes: ["employees.after_exit"],
         visible: ADMIN, render: () => <AfterExitSettings /> },
+      // Part 22.6c: the letter design -- signatory, signature, address / CIN, watermark, celebration, live PDF preview
+      { id: "letters", emoji: "page", keywords: "letters pdf design offer joining appointment confirmation relieving experience signatory signature watermark qr verify address cin logo colour celebration",
+        prefixes: ["letters.", "org.address", "org.cin"], visible: ADMIN, render: () => <DesignSettings mode="letters" /> },
       { id: "leavers", emoji: "door", module: "onboarding", keywords: "absconding not reporting no show early leaver notices", prefixes: ["onboarding.not_reporting"], visible: ADMIN,
         render: scoped(["onboarding.not_reporting"], "settingsHome.page.onboarding.leavers") },
       { id: "fields", emoji: "label", keywords: "employee fields custom", visible: ADMIN, render: () => <MetadataPanel only="Custom Fields" /> },
@@ -210,6 +214,9 @@ export const CATEGORIES: SettingsCategory[] = [
       { id: "mailboxes", emoji: "inbox", keywords: "smtp imap gmail outlook mailbox", visible: (p) => p.mailbox || p.admin,
         render: () => <HrMailboxSettingsCard /> },
       { id: "templates", emoji: "mail", keywords: "email templates wording", visible: ADMIN, render: () => <CommunicationsPanel only="templates" /> },
+      // Part 22.6c: offer / welcome / exit email design -- banner GIFs, emoji, live preview, send test
+      { id: "email-design", emoji: "party", keywords: "email design banner gif celebration emoji offer welcome joining relieving preview send test",
+        prefixes: ["emails."], visible: ADMIN, render: () => <DesignSettings mode="emails" /> },
       { id: "rules", emoji: "bell", keywords: "notification rules when emails are sent", visible: ADMIN, render: () => <CommunicationsPanel only="rules" /> },
       { id: "log", emoji: "memo", keywords: "message log sent emails resend", visible: ADMIN, render: () => <CommunicationsPanel only="log" /> },
       { id: "unsubscribed", emoji: "pause", advanced: true, visible: ADMIN, render: () => <CommunicationsPanel only="suppression" /> },

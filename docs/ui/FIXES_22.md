@@ -232,3 +232,24 @@ Real offer check: the latest live offer `d9d1533a...` renders through `build_pdf
 - **Variables:** all existing variables still work. The designer only adds context; company edits to the template text still win.
 
 **Samples:** `docs/ui/letters/offer-email-gmail.png` / `-phone.png`, `welcome-email-gmail.png` / `-phone.png`, `exit-letters-email-gmail.png` / `-phone.png`, plus the `.html` and `.txt` of each.
+
+### 22.6c Settings: Email design + Letters
+- **Settings > Communication > Email design** (`DesignSettings mode="emails"`):
+  - tabs: Selection / offer, Welcome / joining, Relieving / experience;
+  - switches: emoji on/off and animated on/off;
+  - a **banner gallery**: the 6 bundled banners, No banner, and **Upload your own** (media `email.banner.<name>`, chosen as `custom:<name>`);
+  - a **live preview** (an iframe of the real designed HTML, refreshed 0.4 s after any change, even before saving), the subject line, and a **Plain-text version** toggle;
+  - **Send test to me**.
+- **Settings > Onboarding & employees > Letters** (`mode="letters"`):
+  - fields: signatory name and designation, **signature image upload** (media `letters.signature`), registered address, CIN, header colour (or the brand colour), logo watermark on/off, celebration on/off;
+  - a live **PDF preview** for Offer / Joining / Appointment / Confirmation / Relieving / Experience;
+  - **Send test to me**, which emails the sample PDF with template `letters.test_copy`.
+- **Backend** `app/experience/ui_design_router.py` (permission platform.settings.configure):
+  - `GET /api/v1/ui/design/emails`
+  - `POST /emails/{key}/preview` and `/emails/{key}/test`
+  - `POST /letters/{kind}/preview` and `/letters/{kind}/test`
+  - Previews accept unsaved `overrides`. Previews render the company's **own published template text** with sample data.
+- **No raw `{{ }}` in previews:** any variable the sample doesn't know is shown as `[variable name]`.
+  Dry check: all 3 email previews have no `{{` left; emoji off removes the emoji, and choosing "welcome-sparkle" changes the banner. A relieving PDF preview with an override signatory renders (68 KB).
+
+**Still to prove on screen:** screenshots of the two settings pages and a "Send test to me" email in mailpit. The web app (:5173) and the proof setup (:5174 / :8010 / mailpit) are not running after the low-memory stop.

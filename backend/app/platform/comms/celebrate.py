@@ -36,7 +36,7 @@ def _e(v) -> str:
     return _html.escape(str(v if v is not None else ""), quote=True)
 
 
-def _setting(db: Session, tenant, key: str, default=None):
+def _saved(db: Session, tenant, key: str, default=None):
     from app.platform.settings.resolver import SettingContext, SettingsService
 
     try:
@@ -111,9 +111,15 @@ def _shell(db: Session, tenant, *, colour: str, banner: Optional[str], banner_al
     )
 
 
-def apply(db: Session, tenant, template_key: str, ctx: dict, rendered: dict) -> dict:
-    """Subject with emoji + the designed HTML. The text part (rendered["text"]) is left as it is."""
+def apply(db: Session, tenant, template_key: str, ctx: dict, rendered: dict, overrides: Optional[dict] = None) -> dict:
+    """Subject with emoji + the designed HTML. The text part (rendered["text"]) is left as it is.
+    `overrides` (Settings preview): unsaved values for the emails.* settings."""
     from app.platform.comms.theme import get_theme_and_org_context
+
+    def _setting(db_, tenant_, key, default=None):  # noqa: ANN001 -- preview values win over saved settings
+        if overrides and key in overrides and overrides[key] is not None:
+            return overrides[key]
+        return _saved(db_, tenant_, key, default)
 
     emoji = bool(_setting(db, tenant, "emails.emoji", True))
     animated = bool(_setting(db, tenant, "emails.animated", True))

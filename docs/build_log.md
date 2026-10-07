@@ -2872,3 +2872,7 @@ NEXT: part-22.6b celebration emails (bundled GIF banners + static fallback, emoj
   Decision: banners are loaded by URL (APP_BASE_URL) rather than CID attachments, so the GIF is shared and cached; the first frame is the Outlook fallback.
 
 NEXT: part-22.6c Settings - Email templates + Letters: live preview with sample data, Send test to me, banner gallery + upload, emoji / animation toggles, signatory (name, designation, signature upload), address / CIN.
+
+- part-22.6c: Settings - Email design (banner gallery + own upload, emoji / animation, live HTML preview + plain text, Send test to me) and Letters (signatory, signature upload, address, CIN, colour, watermark, celebration, live PDF preview, Send test to me). Backend ui_design_router with preview overrides; leftover {{ }} shown as [variable].
+
+NEXT: part-22.7 proof + hand-over (FIXES_22.md summary; the on-screen proofs for 21.4 / 21.5 / 22.x wait for the proof setup).
