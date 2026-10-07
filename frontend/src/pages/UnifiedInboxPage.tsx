@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import Box from "@mui/material/Box";
+import Chip from "@mui/material/Chip";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import Dialog from "@mui/material/Dialog";
@@ -14,6 +15,7 @@ import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
 import { Link as RouterLink } from "react-router-dom";
 
+import { candidateEmailsApi } from "../api/candidateEmailsApi";
 import { experienceApi, intelligenceApi, workflowApi, type InboxItem, type InboxRow } from "../api/client";
 import { t as tr, useT, type TFunction } from "../i18n";
 import RefreshButton from "../components/RefreshButton";
@@ -99,7 +101,7 @@ function ActDialog({ row, action, onClose, onDone, onError }: {
   );
 }
 
-const KIND_EMOJI: Record<string, string> = { ai_suggestion: "robot", review: "memo", clearance: "door", copilot_question: "speech" };
+const KIND_EMOJI: Record<string, string> = { ai_suggestion: "robot", review: "memo", clearance: "door", copilot_question: "speech", candidate_email: "envelope" };
 
 export default function UnifiedInboxPage() {
   const t = useT();
@@ -206,18 +208,40 @@ export default function UnifiedInboxPage() {
         ) : (
           <Stack spacing={1}>
             {others.map((item) => (
-              <Box key={`${item.kind}-${item.id}`}
-                sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.5, p: "12px 14px", borderRadius: "12px", bgcolor: f.surface2, border: `1px solid ${f.line}` }}>
+              <Box key={`${item.kind}-${item.id}`} data-testid={item.kind === "candidate_email" ? `ce-${item.id}` : undefined}
+                sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.5, p: "12px 14px", borderRadius: "12px", bgcolor: f.surface2, border: `1px solid ${f.line}`,
+                  // Part 22.3: candidate emails stand out -- coloured left border, envelope, "Candidate email" chip, unread = bold
+                  ...(item.kind === "candidate_email" ? { borderLeft: `5px solid ${f.sky}`, bgcolor: f.skySoft } : {}) }}>
                 <Emoji name={KIND_EMOJI[item.kind] ?? "label"} size={20} />
                 <Box sx={{ flex: "1 1 240px", minWidth: 0 }}>
-                  <Typography sx={{ fontWeight: 700 }}>{item.title}</Typography>
+                  {item.kind === "candidate_email" && (
+                    <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mb: 0.25 }}>
+                      <Chip size="small" color="info" label={t("approvalsPage.kind.candidate_email")} />
+                      {!item.linked && <Chip size="small" color="warning" variant="outlined" label={t("candidateEmails.card.not_linked")} />}
+                      {item.received_at && <Typography sx={{ fontSize: 12, color: f.muted }}>{new Date(item.received_at).toLocaleString()}</Typography>}
+                    </Stack>
+                  )}
+                  <Typography sx={{ fontWeight: item.kind === "candidate_email" && !item.unread ? 500 : 700 }}>{item.title}</Typography>
+                  {item.kind === "candidate_email" && item.summary && (
+                    <Typography sx={{ fontSize: 14, fontWeight: item.unread ? 700 : 400 }}>{item.summary}</Typography>
+                  )}
                   <Typography sx={{ color: f.muted, fontSize: 13 }}>
                     {(() => { const k = `approvalsPage.kind.${item.kind}`; const x = t(k); return x !== k ? x : humanise(item.kind); })()}
                     {item.subtitle ? ` · ${item.subtitle}` : ""}
                   </Typography>
                 </Box>
                 {item.due_at && <DueChip due={item.due_at} />}
-                {item.kind === "copilot_question" ? (
+                {item.kind === "candidate_email" ? (
+                  <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                    <Button size="small" variant="outlined" component={RouterLink} to={item.path}>{t("approvalsPage.open")}</Button>
+                    <Button size="small" variant="outlined" component={RouterLink} to={`${item.path}&reply=1`}>{t("approvalsPage.reply")}</Button>
+                    {!item.linked && <Button size="small" variant="outlined" component={RouterLink} to={`${item.path}&link=1`}>{t("approvalsPage.link")}</Button>}
+                    <Button size="small" variant="contained" onClick={() => candidateEmailsApi.setDone(item.id, true)
+                      .then(() => { setToast(t("approvalsPage.done_marked")); load(); window.dispatchEvent(new Event("approvals-changed")); }).catch(setError)}>
+                      {t("approvalsPage.mark_done")}
+                    </Button>
+                  </Stack>
+                ) : item.kind === "copilot_question" ? (
                   <Stack direction="row" spacing={1}>
                     {/* Part 22.1: a question the HR assistant handed to HR -- reply by email, then mark done */}
                     <Button size="small" variant="outlined" component="a" href={item.path}>{t("approvalsPage.reply")}</Button>

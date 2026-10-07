@@ -38,6 +38,8 @@ class HrInboundEmail(Base, TenantOwned):
     references_header = Column(Text)
     match_rule = Column(Text)  # email | alt_email | name | thread | manual
     match_suggestions_json = Column(JSONB)
+    read_at = Column(DateTime(timezone=True))  # Part 22.3: first opened by HR (unread = bold)
+    read_by = Column(Text)
     # Part 17.7: what the reply is about + whether someone still has to act on it
     topic = Column(Text)  # interview_time | documents | question | offer | withdrawal | other
     summary = Column(Text)  # one line (AI when switched on, else taken from the email)

@@ -1665,6 +1665,12 @@ export interface InboxItem {
   due_at: string | null;
   path: string;
   actions: string[];
+  // Part 22.3: candidate emails
+  summary?: string | null;
+  received_at?: string | null;
+  unread?: boolean;
+  linked?: boolean;
+  from_address?: string;
 }
 
 export interface SavedViewRow {
@@ -1691,6 +1697,7 @@ export const experienceApi = {
     post<{ healthy: boolean; issues: HealthIssue[]; counts: Record<string, number>; checked_at: string; tested: { connection: string; provider: string; ok: boolean; error: string | null }[] }>(
       "/api/v1/setup/config-health/recheck", {}),
   inbox: () => get<InboxItem[]>("/api/v1/inbox/all"),
+  inboxCount: () => get<{ total: number; candidate_emails: number; unread_emails: number }>("/api/v1/inbox/count"),
   views: (listKey: string) => get<SavedViewRow[]>(`/api/v1/views/${listKey}`),
   saveView: (listKey: string, payload: { name: string; config: Record<string, unknown>; is_default?: boolean }) => put<SavedViewRow>(`/api/v1/views/${listKey}`, payload),
   deleteView: (listKey: string, id: UUID) => request<void>(`/api/v1/views/${listKey}/${id}`, { method: "DELETE" }),

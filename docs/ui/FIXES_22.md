@@ -127,3 +127,17 @@ already `status=done, topic=automated`, so they now sit in **Closed**. HR can ru
 Linked emails still appear on the candidate timeline (`inbound_email_received` / `inbound_email_linked` audit entries).
 
 **Still to prove on screen:** screenshots of the three tabs, the Not-linked chip with suggestions, and the remember-address tick box (proof setup stopped for low memory).
+
+## 22.3 Candidate emails highlighted in HR "My approvals"
+
+- Every candidate email in **Needs action** is also a card in My approvals (`inbox.candidate_email_items`, for the roles that see Candidate emails: recruiter, hiring manager, admin). Each card shows:
+  - a coloured left border with a light blue background, the envelope emoji and a **Candidate email** chip ("Not linked yet" when unlinked);
+  - the candidate (or sender), the job, the one-line summary and the received time;
+  - buttons **Open**, **Reply**, **Link to candidate** (only when unlinked) and **Mark done**.
+- **Unread is bold.** New column `hr_inbound_emails.read_at`/`read_by` (migration f8e17c8d9eaf). It is set the first time HR opens the email's thread; emails already done count as read.
+- **One flag, two places:** Mark done in My approvals and on Candidate emails set the same `status=done`. Both pages fire an `approvals-changed` event so the badge refreshes straight away.
+- **Badge:** new `GET /api/v1/inbox/count` (workflow approvals + every My approvals item, candidate emails included). The sidebar shows the number next to My approvals (a dot on the icon when collapsed), refreshed every minute and on focus.
+  Live check for kg@ctdtechs.com: `{'total': 5, 'candidate_emails': 0, 'unread_emails': 0}`, which is 5 to-dos (position open again + 4 interviewer link to-dos) and 0 candidate emails needing action (all 68 are closed bounces).
+- **Deep link:** Open/Reply/Link go to `/candidate-emails?email=<id>` (`&reply=1` opens the reply box, `&link=1` scrolls to the link picker).
+
+**Still to prove on screen:** a My approvals screenshot with a highlighted (unread + read) candidate email. Needs a proof email in the proof setup.

@@ -2844,3 +2844,7 @@ NEXT: part-22.2 candidate emails - Closed tab + smarter auto-link (email/alt ema
 - part-22.2: candidate emails - tabs Needs action | Linked | Closed (Closed = done, incl. automatic mail); unlinked mail in Needs action with "Not linked yet" + suggestions; matching rules email/alt email -> First Last / Last First (initials) -> reply thread (SMTP now sets + stores Message-ID); manual link can remember the address (candidates.alt_emails); migration e7d06b7c8d9e; one-time live re-match: 68 checked, 0 linked (all bounces, already closed). Decision: "remember this address" is ticked by default; the ambiguous case keeps every match as a suggestion and links none.
 
 NEXT: part-22.3 candidate emails in HR "My approvals" (highlighted cards, Open/Reply/Link/Mark done, badge count).
+
+- part-22.3: candidate emails in My approvals (highlighted cards: blue left border, envelope, "Candidate email" chip, summary, time; Open / Reply / Link / Mark done; unread bold via new read_at, migration f8e17c8d9eaf); My approvals badge (GET /api/v1/inbox/count) in the sidebar. Decision: "read" = first time HR opens the thread; emails already done count as read.
+
+NEXT: part-22.4 Employees "Assign roles" (one or many, role descriptions, interviewer skills/jobs, last-HR-Admin guard, invite when no account, optional email, audit).

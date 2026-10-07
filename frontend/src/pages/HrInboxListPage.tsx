@@ -14,7 +14,7 @@ import Tabs from "@mui/material/Tabs";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
-import { Link as RouterLink } from "react-router-dom";
+import { Link as RouterLink, useSearchParams } from "react-router-dom";
 
 import { candidateEmailsApi, toInboundEmail, type CandidateEmailItem, type CandidateEmailPage, type CandidateEmailTab } from "../api/candidateEmailsApi";
 import { hrInboxApi } from "../api/client";
@@ -55,6 +55,9 @@ export default function HrInboxListPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [focusReply, setFocusReply] = useState(0);
   const assignRef = useRef<HTMLDivElement | null>(null);
+  // Part 22.3: opened from My approvals -- select that email (and open the reply box / link picker)
+  const [params, setParams] = useSearchParams();
+  const wanted = params.get("email");
 
   useEffect(() => {
     const handle = setTimeout(() => setSearch(searchInput.trim()), SEARCH_DEBOUNCE_MS);
@@ -72,7 +75,14 @@ export default function HrInboxListPage() {
       .list({ tab, search: search || undefined, page, pageSize: PAGE_SIZE })
       .then((r) => {
         setData(r);
-        setSelectedId((cur) => (cur && r.items.some((i) => i.id === cur) ? cur : r.items[0]?.id ?? null));
+        if (wanted && r.items.some((i) => i.id === wanted)) {
+          setSelectedId(wanted);
+          if (params.get("reply")) setFocusReply((n) => n + 1);
+          if (params.get("link")) setTimeout(() => assignRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 300);
+          setParams({}, { replace: true });
+        } else {
+          setSelectedId((cur) => (cur && r.items.some((i) => i.id === cur) ? cur : r.items[0]?.id ?? null));
+        }
       })
       .catch(setError)
       .finally(() => setLoading(false));
@@ -100,7 +110,7 @@ export default function HrInboxListPage() {
     setActionError(null);
     candidateEmailsApi
       .setDone(email.id, done)
-      .then(refresh)
+      .then(() => { refresh(); window.dispatchEvent(new Event("approvals-changed")); })
       .catch(setActionError)
       .finally(() => setBusyId(null));
   };

@@ -201,6 +201,12 @@ def global_search(q: str, db: Session = Depends(get_db), current_user: User = De
     return search.search(db, require_current_tenant(), current_user, q)
 
 
+@router.get("/inbox/count")
+def unified_inbox_count(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Part 22.3: the My approvals badge."""
+    return inbox.count_for(db, require_current_tenant(), current_user)
+
+
 @router.get("/inbox/all")
 def unified_inbox_all(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return inbox.items_for(db, require_current_tenant(), current_user)

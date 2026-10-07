@@ -113,6 +113,17 @@ function isActive(item: ShellItem, pathname: string, hash: string): boolean {
 }
 
 function Sidebar({ items, expanded, onToggle, onNavigate }: { items: ShellItem[]; expanded: boolean; onToggle?: () => void; onNavigate?: () => void }) {
+  // Part 22.3: the My approvals badge (refreshed every minute and when the tab gets focus)
+  const [approvalsCount, setApprovalsCount] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    const load = () => experienceApi.inboxCount().then((r) => alive && setApprovalsCount(r.total)).catch(() => undefined);
+    load();
+    const timer = window.setInterval(load, 60000);
+    window.addEventListener("focus", load);
+    window.addEventListener("approvals-changed", load);
+    return () => { alive = false; window.clearInterval(timer); window.removeEventListener("focus", load); window.removeEventListener("approvals-changed", load); };
+  }, []);
   const theme = useTheme();
   const t = theme.palette.fresh;
   const tr = useT();
@@ -197,8 +208,17 @@ function Sidebar({ items, expanded, onToggle, onNavigate }: { items: ShellItem[]
                   </Box>
                 ) : (
                   <Box component={NavLink} to={item.path} end={item.path === "/"} onClick={onNavigate} aria-current={active ? "page" : undefined} sx={itemSx(active)}>
-                    <Emoji name={item.icon} size={18} />
+                    {/* Part 22.3: My approvals shows how much is waiting (candidate emails included) */}
+                    {item.path === "/approvals" && !expanded && approvalsCount > 0
+                      ? <Badge badgeContent={approvalsCount} color="secondary" max={99}><Emoji name={item.icon} size={18} /></Badge>
+                      : <Emoji name={item.icon} size={18} />}
                     {expanded && <Box component="span" sx={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.label}</Box>}
+                    {expanded && item.path === "/approvals" && approvalsCount > 0 && (
+                      <Box component="span" aria-label={tr("approvalsPage.badge", { count: approvalsCount })}
+                        sx={{ minWidth: 22, px: 0.75, borderRadius: 999, bgcolor: "secondary.main", color: "secondary.contrastText", fontSize: 12, fontWeight: 800, textAlign: "center" }}>
+                        {approvalsCount > 99 ? "99+" : approvalsCount}
+                      </Box>
+                    )}
                   </Box>
                 );
                 return (

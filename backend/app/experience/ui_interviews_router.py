@@ -269,6 +269,9 @@ def inbox_thread(
     email = db.get(HrInboundEmail, email_id)
     if not email:
         raise HTTPException(status_code=404, detail="Message not found")
+    if email.read_at is None:  # Part 22.3: opening it marks it read (My approvals shows unread ones bold)
+        email.read_at, email.read_by = datetime.now(timezone.utc), current_user.email
+        db.commit()
     rows = (
         db.query(HrInboundEmail)
         .filter(func.lower(HrInboundEmail.from_address) == email.from_address.strip().lower())

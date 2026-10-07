@@ -110,6 +110,9 @@ export const en = {
   "approvalsPage.reply": "Reply",
   "approvalsPage.mark_done": "Mark done",
   "approvalsPage.done_marked": "Marked done.",
+  "approvalsPage.kind.candidate_email": "Candidate email",
+  "approvalsPage.link": "Link to candidate",
+  "approvalsPage.badge": "{count} waiting",
 };
 
 export const hi: Partial<Record<keyof typeof en, string>> = {
@@ -221,6 +224,9 @@ export const hi: Partial<Record<keyof typeof en, string>> = {
   "approvalsPage.reply": "जवाब दें",
   "approvalsPage.mark_done": "पूरा हुआ",
   "approvalsPage.done_marked": "पूरा मार्क किया।",
+  "approvalsPage.kind.candidate_email": "उम्मीदवार का ईमेल",
+  "approvalsPage.link": "उम्मीदवार से जोड़ें",
+  "approvalsPage.badge": "{count} इंतज़ार में",
 };
 
 export const ta: Partial<Record<keyof typeof en, string>> = {
@@ -332,4 +338,7 @@ export const ta: Partial<Record<keyof typeof en, string>> = {
   "approvalsPage.reply": "பதில்",
   "approvalsPage.mark_done": "முடிந்தது",
   "approvalsPage.done_marked": "முடிந்ததாகக் குறிக்கப்பட்டது.",
+  "approvalsPage.kind.candidate_email": "விண்ணப்பதாரர் மின்னஞ்சல்",
+  "approvalsPage.link": "விண்ணப்பதாரருடன் இணை",
+  "approvalsPage.badge": "{count} காத்திருக்கின்றன",
 };

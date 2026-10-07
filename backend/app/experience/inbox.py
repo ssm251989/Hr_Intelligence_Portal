@@ -63,6 +63,8 @@ def items_for(db: Session, tenant: TenantContext, user: User) -> list[dict]:
         out.append({"kind": "ai_suggestion", "id": str(s.id), "title": s.title, "subtitle": f"{s.agent} suggestion -- review before it takes effect",
                     "due_at": None, "path": f"/approvals?suggestion={s.id}", "actions": ["approve", "edit", "reject"]})
 
+    out += candidate_email_items(db, tenant, user)
+
     # Part 20.3: resignations waiting for this manager; profile change requests waiting for HR
     from app.employees import self_service
     from app.platform.iam.authz import has_permission
@@ -90,3 +92,46 @@ def items_for(db: Session, tenant: TenantContext, user: User) -> list[dict]:
 
     far = datetime.max.replace(tzinfo=timezone.utc).isoformat()
     return sorted(out, key=lambda i: (i["due_at"] or far, i["kind"]))
+
+
+CANDIDATE_EMAIL_ROLES = ("recruiter", "hiring_manager", "admin")  # who sees Candidate emails (ui_candidate_emails_router)
+
+
+def candidate_email_items(db: Session, tenant: TenantContext, user: User, *, limit: int = 50) -> list[dict]:
+    """Part 22.3: candidate emails in Needs action, as highlighted cards in My approvals (newest first).
+    Marking done here or on Candidate emails is the same flag, so both lists agree."""
+    if user.role not in CANDIDATE_EMAIL_ROLES:
+        return []
+    from app.models.application import Application
+    from app.models.candidate import Candidate
+    from app.models.hr_inbound_email import HrInboundEmail
+    from app.models.job_role import JobRole
+    from sqlalchemy import func
+
+    rows = (db.query(HrInboundEmail).filter(HrInboundEmail.tenant_id == tenant.tenant_id, HrInboundEmail.status != "done")
+            .order_by(func.coalesce(HrInboundEmail.received_at, HrInboundEmail.created_at).desc()).limit(limit).all())
+    out = []
+    for r in rows:
+        cand = db.get(Candidate, r.matched_candidate_id) if r.matched_candidate_id else None
+        app = db.get(Application, r.matched_application_id) if r.matched_application_id else None
+        job = db.get(JobRole, app.job_role_id) if app else None
+        out.append({
+            "kind": "candidate_email", "id": str(r.id), "title": cand.full_name if cand else (r.from_name or r.from_address),
+            "subtitle": job.title if job else (r.from_address if cand else "not linked yet"),
+            "summary": r.summary or r.subject, "received_at": _iso(r.received_at or r.created_at), "unread": r.read_at is None,
+            "linked": cand is not None, "from_address": r.from_address, "due_at": None,
+            "path": f"/candidate-emails?email={r.id}", "actions": ["open", "reply", "link", "done"],
+        })
+    return out
+
+
+def count_for(db: Session, tenant: TenantContext, user: User) -> dict:
+    """Part 22.3: the My approvals badge -- workflow approvals + everything items_for() lists (candidate emails included)."""
+    from app.models.workflow import WorkflowStep
+
+    approvals = db.query(WorkflowStep).filter(WorkflowStep.tenant_id == tenant.tenant_id, WorkflowStep.assignee_user_id == user.id,
+                                              WorkflowStep.status == "pending").count()
+    items = items_for(db, tenant, user)
+    others = [i for i in items if i["kind"] != "approval"]
+    return {"total": approvals + len(others), "candidate_emails": sum(1 for i in others if i["kind"] == "candidate_email"),
+            "unread_emails": sum(1 for i in others if i["kind"] == "candidate_email" and i.get("unread"))}
