@@ -213,8 +213,11 @@ def _stats(db: Session, agency: RecruitmentAgency) -> dict:
 
 
 @router.get("")
-def list_agencies(agency_type: Optional[str] = None, db: Session = Depends(get_db), current_user: User = Depends(require("recruitment.agency.view"))):
+def list_agencies(agency_type: Optional[str] = None, status: Optional[str] = None, db: Session = Depends(get_db),
+                  current_user: User = Depends(require("recruitment.agency.view"))):
     q = db.query(RecruitmentAgency).filter(RecruitmentAgency.tenant_id == _tid())
+    if status in ("active", "inactive"):  # Part 22.5: deactivated agencies live under the "Inactive" filter
+        q = q.filter(RecruitmentAgency.active.is_(status == "active"))
     if agency_type in ("recruitment", "bgv"):  # Part 21.5: "Both" counts for either
         q = q.filter(RecruitmentAgency.agency_type.in_((agency_type, "both")))
     agencies = q.order_by(RecruitmentAgency.name).all()
@@ -570,3 +573,76 @@ async def portal_submit(
     notify_job_owner_of_new_application(db, job, candidate)
     background_tasks.add_task(_parse_resume_in_background, candidate.id)
     return {"id": str(submission.id), "application_id": str(application.id), "stage": "received"}
+
+
+
+# ---- Part 22.5: delete an agency (no history) or deactivate it (history kept) ----
+
+def _delete_check(db: Session, agency: RecruitmentAgency) -> dict:
+    from app.models.agency import BgvAssignment
+    from app.models.candidate import Candidate
+
+    tid = _tid()
+    submissions = db.query(AgencySubmission).filter(AgencySubmission.tenant_id == tid, AgencySubmission.agency_id == agency.id).count()
+    cases = db.query(BgvAssignment).filter(BgvAssignment.tenant_id == tid, BgvAssignment.agency_id == agency.id).all()
+    open_cases = []
+    for c in cases:
+        if c.status in ("assigned", "in_progress", "report_received"):
+            app = db.get(Application, c.application_id)
+            cand = db.get(Candidate, app.candidate_id) if app else None
+            open_cases.append({"id": str(c.id), "application_id": str(c.application_id), "candidate": cand.full_name if cand else None, "status": c.status})
+    members = db.query(AgencyMember).filter(AgencyMember.tenant_id == tid, AgencyMember.agency_id == agency.id).count()
+    history = submissions > 0 or len(cases) > 0
+    return {"candidates": submissions, "bgv_cases": len(cases), "open_bgv": open_cases, "members": members,
+            "mode": "deactivate" if history else "delete", "active": agency.active}
+
+
+def _stop_logins(db: Session, agency: RecruitmentAgency) -> int:
+    """The agency's portal logins stop working (accounts are kept for the audit trail)."""
+    n = 0
+    for m in db.query(AgencyMember).filter(AgencyMember.tenant_id == _tid(), AgencyMember.agency_id == agency.id).all():
+        u = db.get(User, m.user_id)
+        if u is not None and u.deactivated_at is None and u.role == "agency":
+            u.deactivated_at = datetime.now(timezone.utc)
+            n += 1
+    return n
+
+
+@router.get("/{agency_id}/delete-check")
+def delete_check(agency_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(require("recruitment.agency.delete"))):
+    return _delete_check(db, _agency_or_404(db, agency_id))
+
+
+@router.delete("/{agency_id}")
+def delete_agency(agency_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(require("recruitment.agency.delete"))):
+    agency = _agency_or_404(db, agency_id)
+    check = _delete_check(db, agency)
+    if check["open_bgv"]:
+        raise HTTPException(status_code=409, detail={"message": "Reassign or cancel the open BGV cases first.", "open_bgv": check["open_bgv"]})
+    stopped = _stop_logins(db, agency)
+    if check["mode"] == "deactivate":
+        agency.active = False
+        db.commit()
+        log_action(db, "recruitment_agency", agency.id, "agency_deactivated", current_user.email,
+                   {"name": agency.name, "candidates": check["candidates"], "bgv_cases": check["bgv_cases"], "logins_stopped": stopped})
+        return {"result": "deactivated", **check}
+    name = agency.name
+    db.query(AgencyJobAssignment).filter(AgencyJobAssignment.agency_id == agency.id).delete(synchronize_session=False)
+    db.query(AgencyMember).filter(AgencyMember.agency_id == agency.id).delete(synchronize_session=False)
+    db.delete(agency)
+    db.commit()
+    log_action(db, "recruitment_agency", agency_id, "agency_deleted", current_user.email, {"name": name, "logins_stopped": stopped})
+    return {"result": "deleted", **check}
+
+
+@router.post("/{agency_id}/restore")
+def restore_agency(agency_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(require("recruitment.agency.delete"))):
+    agency = _agency_or_404(db, agency_id)
+    agency.active = True
+    for m in db.query(AgencyMember).filter(AgencyMember.tenant_id == _tid(), AgencyMember.agency_id == agency.id).all():
+        u = db.get(User, m.user_id)
+        if u is not None and u.role == "agency":
+            u.deactivated_at = None
+    db.commit()
+    log_action(db, "recruitment_agency", agency.id, "agency_restored", current_user.email, {"name": agency.name})
+    return _agency_row(agency)

@@ -167,6 +167,7 @@ def register_all() -> None:
     # users only ever get agency.portal.* (their assigned jobs + their own submissions).
     register_permission("recruitment", "agency", "view")
     register_permission("recruitment", "agency", "edit")
+    register_permission("recruitment", "agency", "delete")  # Part 22.5: HR Admin (recruitment delete) only
     register_permission("agency", "portal", "view")
     register_permission("agency", "portal", "create")
     register_permission("separation", "self", "view")

@@ -167,3 +167,24 @@ last admin removes own HR Admin -> result last_admin: "This is the last HR Admin
 state after: Proof Roleone ['Employee','HR Admin','Finance']; Proof Roletwo ['Employee','Finance']
 ```
 **Still to prove on screen:** the single and bulk dialog screenshots and the mailpit email (proof setup stopped for low memory).
+
+## 22.5 Agencies: Delete button
+
+- **Where:** a "..." menu on each agency card shows **Delete agency**, and the agency profile has a **Delete agency** button. Inactive agencies also get **Restore** on the profile.
+- **Who:** HR Admin only, via the new permission `recruitment.agency.delete`. HR Admin and Super Admin get it through "recruitment delete"; Recruiter does not.
+- **`GET /{id}/delete-check`** works out what will happen:
+  - **No history** (no submitted candidates, no BGV cases): confirm "It will be removed. This can't be undone.", then the agency, its job links and member links are deleted. Audit `agency_deleted`.
+  - **History:** "This agency has 4 candidates and 2 BGV cases. It will be deactivated and hidden, history is kept." Then the agency is set `active=false` and is listed only under the new **Status: Inactive** filter. Audit `agency_deactivated`. **Restore** sets it active again (audit `agency_restored`).
+  - **Open BGV assignments** (assigned / in progress / report received) are listed in the dialog, and Delete stays disabled. The API answers 409 "Reassign or cancel the open BGV cases first."
+- **Portal logins:** the agency's logins (role `agency`) are switched off (`deactivated_at`) on delete or deactivate, and switched back on by Restore. The accounts are kept for the audit trail.
+- **Agency list:** now has a Status filter (Active / Inactive / All). It defaults to **Active**, so the live paused "Bright talent partners" is under Inactive.
+
+**Dry run** (temporary agencies, rolled back):
+```
+Proof Agency Empty     mode=delete     candidates=0 bgv_cases=0          -> deleted (gone from DB)
+Proof Agency History   mode=deactivate candidates=4 bgv_cases=2          -> deactivated (kept, active=False)
+Proof Agency Open BGV  open_bgv=['Proof Open Case']                      -> HTTP 409 "Reassign or cancel the open BGV cases first."
+Inactive filter lists: ['Proof Agency History']; restore -> active True
+```
+Live check (read-only): the only live agency, "Bright talent partners" (paused, 0 candidates, 0 cases), would be a clean delete. It was not touched.
+**Still to prove on screen:** the delete and deactivate dialog screenshots.

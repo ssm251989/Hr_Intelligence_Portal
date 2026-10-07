@@ -28,6 +28,10 @@ import { Section, useDateFmt, useToast } from "../../components/servicedesk/shar
 import { useT } from "../../i18n";
 import { Cell, EmptyState, Emoji, FriendlyError, PageGrid, PageHeader, StatusChip } from "../../ui-kit";
 import AgencyFormDialog from "../../components/agency/AgencyFormDialog";
+import DeleteAgencyDialog from "../../components/agency/DeleteAgencyDialog";
+import Menu from "@mui/material/Menu";
+import MenuItem from "@mui/material/MenuItem";
+import MoreVertIcon from "@mui/icons-material/MoreVert";
 import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
 
@@ -131,7 +135,8 @@ function InviteDialog({ agency, onClose, onInvited }: { agency: AgencyDetail | n
   );
 }
 
-function AgencyPanel({ id, canEdit, onChanged, onToast }: { id: string; canEdit: boolean; onChanged: () => void; onToast: (m: string, s?: "success" | "info" | "warning" | "error") => void }) {
+function AgencyPanel({ id, canEdit, canDelete, onChanged, onToast, onDelete }: { id: string; canEdit: boolean; canDelete: boolean; onChanged: () => void;
+  onToast: (m: string, s?: "success" | "info" | "warning" | "error") => void; onDelete: (a: { id: string; name: string }) => void }) {
   const t = useT();
   const f = useTheme().palette.fresh;
   const fmt = useDateFmt();
@@ -180,6 +185,12 @@ function AgencyPanel({ id, canEdit, onChanged, onToast }: { id: string; canEdit:
         <StatusChip tone="sky" emoji={data.agency_type === "recruitment" ? "briefcase" : "shield"} label={t(`ag21.type.${data.agency_type}`)} />
         {canEdit && <Button size="small" variant="outlined" onClick={() => setEditing(true)}>{t("ag21.edit")}</Button>}
         {canEdit && <FormControlLabel control={<Switch checked={data.active} onChange={toggleActive} />} label={t(data.active ? "agencies.active" : "agencies.inactive")} />}
+        {canDelete && !data.active && (
+          <Button size="small" variant="outlined" onClick={async () => { await agencyApi.restore(data.id); onToast(t("ag22.restored", { name: data.name })); onChanged(); load(); }}>
+            {t("ag22.restore")}
+          </Button>
+        )}
+        {canDelete && <Button size="small" color="error" onClick={() => onDelete({ id: data.id, name: data.name })}>{t("ag22.button")}</Button>}
       </Stack>
       <Box sx={{ display: "grid", gap: 0.5, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }} data-testid="agency-details">
         {[["ag21.contact_person", data.contact_person], ["agencies.field.contact", data.contact_email], ["ag21.phone", data.phone], ["ag21.gst_pan", data.gst_pan],
@@ -283,14 +294,18 @@ export default function AgenciesPage() {
   const [adding, setAdding] = useState(false);
   const [toast, show] = useToast();
   const [type, setType] = useState<"all" | "recruitment" | "bgv">("all");  // Part 21.5
+  const canDelete = can("recruitment.agency.delete");  // Part 22.5: HR Admin
+  const [status, setStatus] = useState<"active" | "inactive" | "all">("active");
+  const [deleting, setDeleting] = useState<{ id: string; name: string } | null>(null);
+  const [rowMenu, setRowMenu] = useState<{ anchor: HTMLElement; agency: { id: string; name: string } } | null>(null);
 
   const load = useCallback(() => {
     setError(null);
-    agencyApi.list(type === "all" ? undefined : type).then((list) => {
+    agencyApi.list(type === "all" ? undefined : type, status === "all" ? undefined : status).then((list) => {
       setRows(list);
       setSelected((cur) => cur && list.some((a) => a.id === cur) ? cur : list[0]?.id ?? null);
     }).catch(setError);
-  }, [type]);
+  }, [type, status]);
   useEffect(load, [load]);
   const downloadSample = async () => {
     const blob = await agencyApi.importSample();
@@ -323,11 +338,18 @@ export default function AgenciesPage() {
             <Button component="label" variant="outlined">{t("ag21.import")}<input hidden type="file" accept=".xlsx" onChange={(e) => importFile(e.target.files?.[0])} /></Button>
           </Stack>
         ) : undefined} />
-      <Tabs value={type} onChange={(_, v) => setType(v)} sx={{ mb: 2 }} aria-label={t("ag21.type")}>
-        <Tab value="all" label={t("ag21.filter.all")} />
-        <Tab value="recruitment" label={t("ag21.filter.recruitment")} />
-        <Tab value="bgv" label={t("ag21.filter.bgv")} />
-      </Tabs>
+      <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2 }} flexWrap="wrap" useFlexGap>
+        <Tabs value={type} onChange={(_, v) => setType(v)} aria-label={t("ag21.type")} sx={{ flex: 1 }}>
+          <Tab value="all" label={t("ag21.filter.all")} />
+          <Tab value="recruitment" label={t("ag21.filter.recruitment")} />
+          <Tab value="bgv" label={t("ag21.filter.bgv")} />
+        </Tabs>
+        <TextField select size="small" label={t("ag22.status")} value={status} onChange={(e) => setStatus(e.target.value as typeof status)} sx={{ minWidth: 150 }}>
+          <MenuItem value="active">{t("ag22.status.active")}</MenuItem>
+          <MenuItem value="inactive">{t("ag22.status.inactive")}</MenuItem>
+          <MenuItem value="all">{t("ag22.status.all")}</MenuItem>
+        </TextField>
+      </Stack>
       {error ? <FriendlyError error={error} onRetry={load} /> : rows === null ? (
         <Box sx={{ display: "grid", placeItems: "center", py: 6 }}><CircularProgress aria-label={t("agency.common.loading")} /></Box>
       ) : rows.length === 0 ? (
@@ -339,7 +361,11 @@ export default function AgenciesPage() {
             <Section emoji="handshake" title={t("agencies.list.title")}>
               <Stack spacing={1} component="ul" sx={{ listStyle: "none", p: 0, m: 0 }}>
                 {rows.map((a) => (
-                  <Box component="li" key={a.id}>
+                  <Box component="li" key={a.id} sx={{ position: "relative" }}>
+                    {canDelete && (
+                      <IconButton size="small" aria-label={t("ag22.menu", { name: a.name })} sx={{ position: "absolute", top: 6, right: 6, zIndex: 1 }}
+                        onClick={(e) => setRowMenu({ anchor: e.currentTarget, agency: { id: a.id, name: a.name } })}><MoreVertIcon fontSize="small" /></IconButton>
+                    )}
                     <ButtonBase onClick={() => setSelected(a.id)} aria-pressed={a.id === selected}
                       sx={{ display: "block", width: "100%", textAlign: "left", p: 1.5, borderRadius: "12px",
                         border: `2px solid ${a.id === selected ? f.brand : f.line}`, bgcolor: a.id === selected ? f.brandSoft : f.surface2 }}>
@@ -359,13 +385,18 @@ export default function AgenciesPage() {
           </Cell>
           <Cell span={{ md: 12, lg: 7 }}>
             <Section emoji="clipboard" title={t("agencies.detail.title")}>
-              {selected ? <AgencyPanel id={selected} canEdit={canEdit} onChanged={load} onToast={show} /> : null}
+              {selected ? <AgencyPanel key={selected} id={selected} canEdit={canEdit} canDelete={canDelete} onChanged={load} onToast={show} onDelete={setDeleting} /> : null}
             </Section>
           </Cell>
         </PageGrid>
       )}
       <AgencyFormDialog open={adding} onClose={() => setAdding(false)}
         onSaved={(a) => { setAdding(false); show(t("agencies.add.done", { agency: a.name })); setSelected(a.id); load(); }} />
+      <Menu anchorEl={rowMenu?.anchor} open={Boolean(rowMenu)} onClose={() => setRowMenu(null)}>
+        <MenuItem sx={{ color: "error.main" }} onClick={() => { setDeleting(rowMenu!.agency); setRowMenu(null); }}>{t("ag22.button")}</MenuItem>
+      </Menu>
+      <DeleteAgencyDialog agency={deleting} onClose={() => setDeleting(null)}
+        onDone={(r) => { show(t(r === "deleted" ? "ag22.deleted" : "ag22.deactivated", { name: deleting?.name ?? "" })); setDeleting(null); setSelected(null); load(); }} />
       {toast}
     </Box>
   );

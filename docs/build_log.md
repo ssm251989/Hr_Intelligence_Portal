@@ -2856,3 +2856,7 @@ NEXT: part-22.4 Employees "Assign roles" (one or many, role descriptions, interv
   - roles outside the list are never touched.
 
 NEXT: part-22.5 Agencies - Delete agency (no history -> delete; with history -> deactivate + Inactive filter + restore; open BGV assignments first), HR Admin only, audit.
+
+- part-22.5: Agencies - Delete agency (card "..." menu + profile). No history -> delete; history -> deactivate (Inactive filter, Restore); open BGV cases block it; portal logins switched off/on; new permission recruitment.agency.delete (HR Admin); audit agency_deleted / agency_deactivated / agency_restored. Decision: the agency list defaults to Status = Active (paused agencies are under Inactive).
+
+NEXT: part-22.6 grand letters + emails (PDF letters with brand header, watermark, signatory, QR verify page; celebration GIF emails with plain-text; template preview / send test / GIF gallery; samples into docs/ui/letters/).

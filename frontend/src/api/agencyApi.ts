@@ -20,6 +20,12 @@ export interface AgencyRow {
 }
 
 export type AgencyType = "recruitment" | "bgv" | "both";
+// Part 22.5: what deleting an agency would do
+export interface AgencyDeleteCheck {
+  candidates: number; bgv_cases: number; members: number; mode: "delete" | "deactivate"; active: boolean;
+  open_bgv: { id: string; application_id: string; candidate: string | null; status: string }[];
+}
+
 export const BGV_CHECKS = ["education", "employment", "address", "criminal", "identity", "reference", "drug"];
 export interface AgencyInput {
   name: string; contact_email?: string | null; notes?: string | null; agency_type: AgencyType; contact_person?: string | null; phone?: string | null;
@@ -81,7 +87,15 @@ const HR = "/api/v1/agencies";
 const PORTAL = "/api/v1/agency-portal";
 
 export const agencyApi = {
-  list: (type?: "recruitment" | "bgv") => http.get<AgencyRow[]>(`${HR}${type ? `?agency_type=${type}` : ""}`),
+  list: (type?: "recruitment" | "bgv", status?: "active" | "inactive") => {
+    const q = new URLSearchParams();
+    if (type) q.set("agency_type", type);
+    if (status) q.set("status", status);  // Part 22.5
+    return http.get<AgencyRow[]>(`${HR}${q.toString() ? `?${q}` : ""}`);
+  },
+  deleteCheck: (id: string) => http.get<AgencyDeleteCheck>(`${HR}/${id}/delete-check`),
+  remove: (id: string) => http.del<{ result: "deleted" | "deactivated" }>(`${HR}/${id}`),
+  restore: (id: string) => http.post<AgencyRow>(`${HR}/${id}/restore`),
   create: (payload: AgencyInput) => http.post<AgencyRow>(HR, payload),
   update: (id: string, payload: Partial<AgencyInput>) => http.patch<AgencyRow>(`${HR}/${id}`, payload),
   importSample: () => http.fetchBlob(`${HR}/import-sample`),
