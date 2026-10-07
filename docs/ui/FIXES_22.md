@@ -253,3 +253,15 @@ Real offer check: the latest live offer `d9d1533a...` renders through `build_pdf
   Dry check: all 3 email previews have no `{{` left; emoji off removes the emoji, and choosing "welcome-sparkle" changes the banner. A relieving PDF preview with an override signatory renders (68 KB).
 
 **Still to prove on screen:** screenshots of the two settings pages and a "Send test to me" email in mailpit. The web app (:5173) and the proof setup (:5174 / :8010 / mailpit) are not running after the low-memory stop.
+
+## 22.7 Hand-over (PART 22)
+| Item | State | Commit |
+|---|---|---|
+| 22.1 HR assistant (+ 21.6) | Built; causes quoted; 10 questions answered from the live handbook and live data | f50cf6c |
+| 22.2 Candidate emails: Closed tab + smarter auto-link | Built; matching examples recorded; live re-match 68 checked / 0 linked (all bounces) | de7cd24 |
+| 22.3 Candidate emails in My approvals + badge | Built | 7113669 |
+| 22.4 Employees > Assign roles | Built; single / bulk / last-admin guard dry run | bf03d27 |
+| 22.5 Agencies > Delete / deactivate / restore | Built; 3 paths dry run | 977a4f4 |
+| 22.6 Letters + emails design (+ settings) | Built; sample PDFs and email screenshots in docs/ui/letters/ | 9e64753, d96e0ef, 6aed67c |
+
+**Not finished:** the on-screen proofs. That means screenshots of each new screen, the mailpit captures (the HR hand-over email, the "access updated" email, Send test to me) and the 22.1 widget screenshots. They need the proof setup (mailpit, API :8010, web :5174), which the system stopped for low memory on 2026-10-07 and which has not been restarted.

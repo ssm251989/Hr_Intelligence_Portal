@@ -13,6 +13,7 @@ export interface FinanceData {
   trend: { month: string; reserved: number; committed: number }[];
   top_roles: { job_title: string; department: string; amount: number; hires: number }[];
   alerts: { department: string; kind: "near" | "exceeded"; used_pct: number | null; remaining: number | null }[];
+  history?: { department: string; job_title: string | null; amount: number; on: string; reason: string | null }[];  // Part 21.7
 }
 
 export const budgetsApi = {

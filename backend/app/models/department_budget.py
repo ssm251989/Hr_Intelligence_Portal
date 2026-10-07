@@ -41,5 +41,9 @@ class BudgetCommitment(Base, TenantOwned):
     job_title = Column(Text)
     amount = Column(Numeric, nullable=False)
     state = Column(String(20), nullable=False)  # reserved | committed | released
+    # Part 21.7: what went back to the department budget, when and why (finance dashboard history)
+    released_amount = Column(Numeric)
+    released_at = Column(DateTime(timezone=True))
+    release_reason = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=text("now()"))
     updated_at = Column(DateTime(timezone=True), server_default=text("now()"))

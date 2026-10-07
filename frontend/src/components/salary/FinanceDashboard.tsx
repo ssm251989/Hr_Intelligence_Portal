@@ -146,6 +146,21 @@ export default function FinanceDashboard() {
           </Card>
         </Grid>
       </Grid>
+      {/* Part 21.7: money that came back to the budgets (exits pro-rata / full, drop-outs) */}
+      <Card sx={{ p: 2 }} data-testid="budget-history">
+        <Typography sx={{ fontWeight: 800, mb: 1 }}>{t("budget21.history")}</Typography>
+        {(data.history ?? []).length === 0 ? <Typography variant="body2" color="text.secondary">{t("budget21.history_none")}</Typography> : (
+          <Stack spacing={0.75}>
+            {(data.history ?? []).map((h, i) => (
+              <Stack key={i} direction="row" spacing={1.5} alignItems="baseline">
+                <Typography sx={{ fontWeight: 800, color: "success.main", minWidth: 90 }}>+{lakh(h.amount)}</Typography>
+                <Typography variant="body2" sx={{ flex: 1 }}>{t("budget21.released")} - {h.reason ?? h.job_title} <Typography component="span" variant="caption" color="text.secondary">({h.department})</Typography></Typography>
+                <Typography variant="caption" color="text.secondary">{new Date(h.on).toLocaleDateString()}</Typography>
+              </Stack>
+            ))}
+          </Stack>
+        )}
+      </Card>
     </Stack>
   );
 }

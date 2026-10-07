@@ -629,6 +629,12 @@ def try_complete(db: Session, tenant, s: Separation, *, actor: str, force_reason
                {"open_items": [i.title for i in open_items], "reason": force_reason})
     _email_letters(db, tenant, s, actor=actor)
     _off_interviewer_pools(db, tenant, e, actor=actor)
+    try:  # Part 21.7: their salary goes back to the department budget (pro-rata or full, setting)
+        from app.recruitment.budgets import release_on_exit
+
+        release_on_exit(db, tenant, s, actor=actor)
+    except Exception:  # noqa: BLE001 -- the exit is complete either way
+        db.rollback()
     try:  # Part 21.2: their hiring data -> Recycle bin (now, or the daily job after N days)
         from app.employees.hiring_on_exit import on_exit_completed
 

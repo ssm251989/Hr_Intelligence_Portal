@@ -140,7 +140,7 @@ def dashboard(fiscal_year: Optional[str] = None, db: Session = Depends(get_db), 
     return {"fiscal_year": fy, "totals": totals, "departments": depts,
             "trend": [{"month": m, **v} for m, v in sorted(trend.items())],
             "top_roles": sorted(({"job_title": k[0], "department": k[1], **v} for k, v in roles.items()), key=lambda r: -r["amount"])[:10],
-            "alerts": alerts}
+            "alerts": alerts, "history": budgets.history(db, tenant, fy)}  # Part 21.7
 
 
 @router.get("/export")

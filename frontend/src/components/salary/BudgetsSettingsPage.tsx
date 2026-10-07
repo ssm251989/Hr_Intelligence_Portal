@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import BudgetReleaseSettings from "./BudgetReleaseSettings";
 import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
@@ -71,6 +72,7 @@ export default function BudgetsSettingsPage() {
           </TextField>
         </Stack>
         {msg && <Alert severity={msg.ok ? "success" : "error"} sx={{ mb: 1.5 }} onClose={() => setMsg(null)}>{msg.text}</Alert>}
+        <BudgetReleaseSettings />
         <TableContainer>
           <Table size="small">
             <TableHead>

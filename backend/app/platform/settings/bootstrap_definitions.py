@@ -164,6 +164,10 @@ def register_all() -> None:
     # Part 21.2: Settings > Onboarding & employees > After exit
     register(SettingDef("employees.after_exit.move_hiring_data", "bool", True, module="onboarding", group=G))
     register(SettingDef("employees.roles.notify_on_change", "bool", True, module="onboarding", group=G))  # Part 22.4
+    # Part 21.7: Settings > Hiring > Budgets
+    register(SettingDef("recruitment.budgets.release_on_exit", "bool", True, module="recruitment", group="Budgets"))
+    register(SettingDef("recruitment.budgets.release_mode", "str", "pro_rata", module="recruitment", group="Budgets",
+                        json_schema={"enum": ["pro_rata", "full"]}))
     register(SettingDef("employees.after_exit.days", "int", 0, module="onboarding", group=G, json_schema={"type": "integer", "minimum": 0, "maximum": 365}))
     register(SettingDef("employees.after_exit.categories", "json", ["candidate_profile", "applications_interviews", "links_forms", "inbox_emails", "portal_access"],
                         module="onboarding", group=G))

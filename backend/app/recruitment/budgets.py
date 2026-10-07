@@ -91,9 +91,84 @@ def commit(db: Session, tenant, application_id) -> None:
         db.commit()
 
 
-def release(db: Session, tenant, application_id) -> None:
+def release(db: Session, tenant, application_id, reason: Optional[str] = None) -> None:
     """Candidate dropped out (rejected, withdrew, removed, job closed) -> money back to the budget."""
     row = _row(db, tenant, application_id)
     if row is not None and row.state != "released":
-        row.state, row.updated_at = "released", datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc)
+        row.state, row.updated_at = "released", now
+        row.released_amount, row.released_at = row.amount, now  # Part 21.7: shown in the finance history
+        row.release_reason = reason or _dropout_reason(db, application_id)
         db.commit()
+
+
+def _dropout_reason(db: Session, application_id) -> str:
+    from app.models.candidate import Candidate
+
+    app = db.get(Application, application_id)
+    cand = db.get(Candidate, app.candidate_id) if app else None
+    label = {"offer_withdrawn": "offer withdrawn", "offer_declined": "offer declined", "no_show": "did not join", "bgv_rejected": "BGV failed",
+             "rejected": "rejected", "withdrawn": "withdrew"}.get(app.status if app else "", (app.status or "dropped out").replace("_", " ") if app else "dropped out")
+    return f"{cand.full_name if cand else 'A candidate'} - {label}"
+
+
+def _fy_bounds(db: Session, tenant, fy: str) -> tuple[date, date]:
+    start_month = int(_setting(db, tenant, "org.fiscal_year_start_month") or 4)
+    first = int(str(fy)[:4])
+    start = date(first, start_month, 1)
+    end = date(first + 1, start_month, 1) if start_month != 1 else date(first + 1, 1, 1)
+    return start, end
+
+
+def release_on_exit(db: Session, tenant, separation, *, actor: str) -> Optional[dict]:
+    """Part 21.7: a person exits -> their committed salary goes back to the department budget.
+    Pro-rata (default): only the months of the budget year after their last working day; or the full annual amount."""
+    from app.audit.service import log_action
+    from app.employees import directory
+    from app.models.core_hr import Employee
+    from app.models.onboarding import PreboardingCase
+
+    if _setting(db, tenant, "recruitment.budgets.release_on_exit") is False:
+        return None
+    case = (db.query(PreboardingCase).filter(PreboardingCase.tenant_id == tenant.tenant_id, PreboardingCase.employee_id == separation.employee_id,
+                                             PreboardingCase.application_id.isnot(None)).order_by(PreboardingCase.created_at.desc()).first())
+    row = _row(db, tenant, case.application_id) if case else None
+    if row is None or row.state == "released":
+        return None
+    lwd = separation.approved_lwd or date.today()
+    start, end = _fy_bounds(db, tenant, row.fiscal_year)
+    amount = float(row.amount)
+    mode = _setting(db, tenant, "recruitment.budgets.release_mode") or "pro_rata"
+    if mode == "full" or lwd < start:
+        released = amount
+    elif lwd >= end:
+        released = 0.0
+    else:
+        months_left = (end.year - lwd.year) * 12 + (end.month - lwd.month) - 1  # whole months after the LWD's month
+        released = round(amount * max(0, months_left) / 12, 2)
+    if released <= 0:
+        return {"released": 0, "reason": "the budget year is over"}
+    e = db.get(Employee, separation.employee_id)
+    name = directory.name_of(e) if e else "An employee"
+    now = datetime.now(timezone.utc)
+    row.released_amount = released
+    row.released_at = now
+    row.release_reason = f"{name} exited ({row.job_title or 'role'}) on {lwd.strftime('%d %b %Y')}"
+    if released >= amount:
+        row.state = "released"
+    else:
+        row.amount = round(amount - released, 2)  # the part already spent stays committed
+    row.updated_at = now
+    db.commit()
+    log_action(db, "budget", row.id, "budget_released_on_exit", actor[:50],
+               {"department": row.department, "fiscal_year": row.fiscal_year, "released": released, "mode": mode, "employee": name,
+                "last_working_day": lwd.isoformat(), "annual_amount": amount})
+    return {"released": released, "mode": mode, "department": row.department}
+
+
+def history(db: Session, tenant, fy: str, limit: int = 50) -> list[dict]:
+    """Part 21.7: money that came back to the budgets this year, newest first."""
+    rows = (db.query(BudgetCommitment).filter(BudgetCommitment.tenant_id == tenant.tenant_id, BudgetCommitment.fiscal_year == fy,
+                                              BudgetCommitment.released_at.isnot(None)).order_by(BudgetCommitment.released_at.desc()).limit(limit).all())
+    return [{"department": r.department, "job_title": r.job_title, "amount": float(r.released_amount or 0), "on": r.released_at.isoformat(),
+             "reason": r.release_reason} for r in rows]

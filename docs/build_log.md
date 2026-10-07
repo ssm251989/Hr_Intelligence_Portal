@@ -2876,3 +2876,7 @@ NEXT: part-22.6c Settings - Email templates + Letters: live preview with sample 
 - part-22.6c: Settings - Email design (banner gallery + own upload, emoji / animation, live HTML preview + plain text, Send test to me) and Letters (signatory, signature upload, address, CIN, colour, watermark, celebration, live PDF preview, Send test to me). Backend ui_design_router with preview overrides; leftover {{ }} shown as [variable].
 
 NEXT: part-22.7 proof + hand-over (FIXES_22.md summary; the on-screen proofs for 21.4 / 21.5 / 22.x wait for the proof setup).
+
+- part-21.7: budget released to finance on exit (pro-rata default / full, Settings > Hiring > Budgets), release history (amount, when, why) on the Finance dashboard, audit budget_released_on_exit; drop-out releases now carry a reason. Checked that withdraw / decline / no-show already released. Decision: pro-rata counts whole months after the LWD's month to the end of the commitment's budget year.
+
+NEXT: part-22.7 / 21.9 hand-over; then (when the proof setup can run) the on-screen proofs for 21.4, 21.5, 21.7, 22.1-22.6.

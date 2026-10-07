@@ -98,6 +98,8 @@ HELP: dict[str, tuple[str, str]] = {
     "recruitment.jobs.recycle_enabled": ("Move closed jobs to the Recycle bin automatically (job + its applications, interviews, forms). Hired people are never touched.", "Jobs, Recycle bin"),
     "recruitment.jobs.recycle_after_days": ("Days after a job is closed before it moves to the Recycle bin (0 = at the next daily run).", "Jobs, Recycle bin"),
     "recruitment.jobs.keep_candidates_in_pool": ("When a closed job goes to the bin, keep its candidates' profiles and resumes in the talent pool (only the job's own data moves).", "Candidates, Recycle bin"),
+    "recruitment.budgets.release_on_exit": ("When an exit is completed, the person's committed salary goes back to their department budget.", "Budgets, Finance dashboard"),
+    "recruitment.budgets.release_mode": ("pro_rata = only the months of the budget year after their last working day; full = the whole annual amount.", "Budgets, Finance dashboard"),
     "emails.emoji": ("Emoji in the subject and headings of the offer, welcome and exit-letter emails.", "Email design"),
     "emails.animated": ("Animated banner GIFs in the offer and welcome emails (off = a still image).", "Email design"),
     "emails.banner_offer": ("Banner on the selection / offer email: one of the bundled banners, custom:<name> for your own upload, or none.", "Email design"),

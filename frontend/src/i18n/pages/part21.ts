@@ -260,6 +260,15 @@ export const en = {
   "design22.letter.confirmation": "Confirmation",
   "design22.letter.relieving": "Relieving",
   "design22.letter.experience": "Experience",
+  "budget21.on": "Release budget on exit",
+  "budget21.on_hint": "When an exit is completed, the person's committed salary goes back to their department budget (shown in Finance > history).",
+  "budget21.pro_rata": "Release for the remaining months of the budget year (pro-rata)",
+  "budget21.full": "Release the full annual amount",
+  "budget21.saved": "Saved.",
+  "budget21.err": "That didn't work",
+  "budget21.history": "Budget history - money released",
+  "budget21.history_none": "Nothing released this year yet.",
+  "budget21.released": "released",
 };
 
 export const hi: Partial<typeof en> = {
@@ -523,6 +532,15 @@ export const hi: Partial<typeof en> = {
   "design22.letter.confirmation": "पुष्टि",
   "design22.letter.relieving": "रिलीविंग",
   "design22.letter.experience": "अनुभव",
+  "budget21.on": "एग्ज़िट पर बजट वापस करें",
+  "budget21.on_hint": "एग्ज़िट पूरा होने पर व्यक्ति का तय वेतन उनके विभाग के बजट में वापस जाता है (वित्त > इतिहास में दिखता है)।",
+  "budget21.pro_rata": "बजट वर्ष के बचे महीनों के लिए वापस करें (आनुपातिक)",
+  "budget21.full": "पूरी वार्षिक राशि वापस करें",
+  "budget21.saved": "सहेजा गया।",
+  "budget21.err": "यह नहीं हुआ",
+  "budget21.history": "बजट इतिहास - वापस हुई राशि",
+  "budget21.history_none": "इस साल अभी कुछ वापस नहीं हुआ।",
+  "budget21.released": "वापस हुआ",
 };
 
 export const ta: Partial<typeof en> = {
@@ -786,4 +804,13 @@ export const ta: Partial<typeof en> = {
   "design22.letter.confirmation": "உறுதிப்படுத்தல்",
   "design22.letter.relieving": "விடுவிப்பு",
   "design22.letter.experience": "அனுபவம்",
+  "budget21.on": "வெளியேறும்போது பட்ஜெட்டை விடுவி",
+  "budget21.on_hint": "வெளியேற்றம் முடிந்ததும் அவரின் உறுதிசெய்த சம்பளம் அவர் துறையின் பட்ஜெட்டுக்குத் திரும்பும் (நிதி > வரலாற்றில் தெரியும்).",
+  "budget21.pro_rata": "பட்ஜெட் ஆண்டின் மீதமுள்ள மாதங்களுக்கு விடுவி (விகிதாசாரம்)",
+  "budget21.full": "முழு ஆண்டுத் தொகையையும் விடுவி",
+  "budget21.saved": "சேமிக்கப்பட்டது.",
+  "budget21.err": "அது நடக்கவில்லை",
+  "budget21.history": "பட்ஜெட் வரலாறு - விடுவிக்கப்பட்ட தொகை",
+  "budget21.history_none": "இந்த ஆண்டு இன்னும் எதுவும் விடுவிக்கப்படவில்லை.",
+  "budget21.released": "விடுவிக்கப்பட்டது",
 };

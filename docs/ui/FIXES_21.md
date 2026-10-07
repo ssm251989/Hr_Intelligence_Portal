@@ -138,3 +138,53 @@ Small known limit: the Jobs page "Recent activity" names a binned job "a job" (i
 | Click Interviews: Interviews opens, Candidates closes | fix21-acc-02 |
 | Reload the Candidates page: the remembered choice (Interviews open) comes back | fix21-acc-03 |
 | Narrow icon menu, then widen again: the Interviews group shows open | fix21-acc-04, fix21-acc-05 |
+
+## 21.7 Budget goes back to finance when a person exits
+
+**Already working (checked in code):**
+- An offer withdrawn, declined or no-show releases the budget: `app/onboarding/joiner_actions.py:403` calls `budgets.release(db, tenant, application.id)` for every joiner action (withdraw_offer / candidate_declined / no_show / absconded / resigned).
+- These also release it: BGV failed (`bgv_decision.py:90`), candidate removed (`removal.py:198`), job closed (`jobs/cleanup.py:113`).
+- **Missing before:** nothing released anything when an **employee exit** was completed.
+
+**Built:**
+- **On exit completed** (`exit_checklist` -> `budgets.release_on_exit`), the hire's commitment (found through their joining case) goes back to the department budget.
+  - **Pro-rata** (default) releases only the whole months of the budget year after the last working day. For example, LWD 15 Oct 2026 in FY Apr 2026 - Mar 2027 = Nov-Mar = 5/12. The spent part stays committed.
+  - **Full** releases the whole annual amount.
+- **Settings > Hiring > Budgets:** "Release budget on exit" (on by default) plus the pro-rata / full choice. Settings `recruitment.budgets.release_on_exit` and `recruitment.budgets.release_mode`.
+- **History columns:** `budget_commitments.released_amount / released_at / release_reason` (migration a9f28d9eafb0). Drop-out releases now record the amount and a reason too.
+- **Finance dashboard:** a new "Budget history - money released" card, e.g. "+2.7 L released - Kishore Gunda exited (Junior AI Developer) on 15 Oct 2026 (AI)". Department totals update at once, because the used amount drops.
+- **Audit:** `budget_released_on_exit` (department, FY, released, mode, employee, LWD, annual amount).
+
+**Dry run** (temporary rows, rolled back):
+```
+pro-rata: released 270833.33 (6.5 L x 5/12) | still committed 379166.67 | state committed
+full:     released 650000.0 | state released
+drop-out: "Arun Proofthree - offer declined"
+history: +400,000 released - Arun Proofthree - offer declined
+history: +650,000 released - Meena Prooftwo exited (Junior AI Developer) on 15 Oct 2026
+history: +270,833 released - Kishore Proofone exited (Junior AI Developer) on 15 Oct 2026
+```
+**Still to prove on screen:** the Finance dashboard history card and the Budgets settings (proof setup stopped).
+
+## 21.4 BGV Download all + BGV vendor (code: 2617428)
+- **Download all:** each candidate's BGV card gives one ZIP of all BGV and joining documents plus "BGV summary.xlsx". The BGV table's bulk bar has "Download all (n)"; more than 20 candidates are prepared in the background and then offered from a notice.
+- **BGV vendor:** an agency of type BGV or Both. Assigning one (checks, due date) emails the vendor a secure link `/bgv-vendor/<token>`.
+  - Statuses: Assigned -> In progress (when the link is opened) -> Report received (the vendor uploads; HR gets an in-app notice) -> Decided / Cancelled. An overdue flag shows past the due date.
+  - Daily reminders go to the vendor; reassign and cancel both email the vendor.
+  - New HR decision "Discrepancy - clear with a note" (the note is required).
+- **Proof:** not yet on screen (the proof setup was stopped for low memory). Backend checked: a bad token returns 410.
+
+## 21.5 Agencies for Recruitment / BGV / Both (code: 971e4a8)
+All fields (contact, phone, address, GST/PAN, contract dates, fee type/value, payment terms, BGV checks with prices, turnaround, report format), edit, type filter, stats chips, and an Excel import with a sample file. **Proof:** not yet on screen.
+
+## 21.6 Bug: HR assistant
+Merged with 22.1, as PART 22 asked. The causes are quoted and the fix and verification answers are in **docs/ui/FIXES_22.md, section 22.1**.
+
+## 21.9 Hand-over (PART 21)
+- **Done and proved:** 21.1, 21.2, 21.3, 21.8.
+- **Built, proof pending:** 21.4, 21.5, 21.7 (logic dry runs recorded above).
+- **Done through 22.1:** 21.6.
+- **Notes:**
+  - The real completed exit EMP-00022 had its hiring data moved by the 21.2 rule. It was later removed completely at the owner's request (Gunda Kishore, 2026-10-07).
+  - The interviewer link to-dos for kg/si/jr and the Priya Verify interviewer are still open in My approvals.
+  - In 21.1, the activity log names a binned job only as "a job".
