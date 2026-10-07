@@ -92,6 +92,12 @@ DEFAULTS: dict[str, tuple[str, str, list[str]]] = {
         ["candidate_first_name", "last_seen", "respond_by"],
     ),
     # Part 20: employees (app/employees/*)
+    "copilot.hr_handover": (  # Part 22.1: the HR assistant hands a question to HR (Helpdesk off)
+        "HR assistant: a question from {{ user_name }}",
+        "Hello HR team,\n\n{{ user_name }} ({{ user_email }}) asked the HR assistant a question it could not answer from the company policies:\n\n"
+        "\"{{ question }}\"\n\nPlease reply to them. It is also on your to-do list in My approvals: {{ link }}\n\n{{ company_name }} HR assistant",
+        ["user_name", "question"],
+    ),
     "bgv.vendor_assigned": (  # Part 21.4: BGV vendor
         "Background check request: {{ candidate }} ({{ job_title }}) - {{ company_name }}",
         "Hello {{ vendor }},\n\n{{ company_name }} requests a background check for {{ candidate }} ({{ job_title }}).\n\nChecks: {{ checks }}\nDue by: {{ due }}\n\n"

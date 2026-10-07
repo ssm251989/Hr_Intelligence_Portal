@@ -55,6 +55,11 @@ def items_for(db: Session, tenant: TenantContext, user: User) -> list[dict]:
                         "subtitle": f"{(s.payload_json or {}).get('person')} - {(s.payload_json or {}).get('why')}",
                         "due_at": None, "path": f"/jobs?view={(s.payload_json or {}).get('job_id')}", "actions": ["open"]})
             continue
+        if s.kind == "copilot_question":  # Part 22.1: the HR assistant handed a question to HR
+            pl = s.payload_json or {}
+            out.append({"kind": "copilot_question", "id": str(s.id), "title": s.title, "subtitle": pl.get("user_email") or "",
+                        "due_at": None, "path": f"mailto:{pl.get('user_email', '')}?subject=Re: your question to the HR assistant", "actions": ["reply", "done"]})
+            continue
         out.append({"kind": "ai_suggestion", "id": str(s.id), "title": s.title, "subtitle": f"{s.agent} suggestion -- review before it takes effect",
                     "due_at": None, "path": f"/approvals?suggestion={s.id}", "actions": ["approve", "edit", "reject"]})
 

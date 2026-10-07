@@ -41,6 +41,29 @@ _ACTIONS = (
 )
 
 
+# Part 22.1: words that make even a one-word question clear enough to try ("salary?", "leave")
+_TOPIC_WORDS = {
+    "leave", "leaves", "holiday", "holidays", "salary", "payslip", "payslips", "pay", "notice", "resign", "resignation", "travel", "hotel",
+    "probation", "confirmation", "wfh", "remote", "home", "policy", "policies", "handbook", "bonus", "reimbursement", "reimbursements",
+    "insurance", "attendance", "hours", "timing", "posh", "grievance", "assets", "laptop", "jobs", "job", "candidates", "candidate",
+    "interview", "interviews", "openings", "vacancies", "hiring", "offer", "joining", "exit", "relieving", "conduct", "security",
+}
+
+
+def is_unclear(question: str) -> bool:
+    """Too short / not a question we can work with ("Eg1", "hi", "asdf") -> ask what they mean instead of
+    searching the policies and offering a ticket for it."""
+    q = question.strip().lower()
+    if re.fullmatch(r"(e\.?g\.?|example|test|hi|hello|hey|ok|okay|yes|no|thanks|thank you)\s*\d*[.!?]*", q):
+        return True
+    if any(ord(ch) > 0x2FF for ch in q):  # Hindi / Tamil etc.: only reject near-empty text
+        return len(re.sub(r"\s+", "", q)) < 3
+    words = re.findall(r"[a-z]{2,}", q)
+    if any(w in _TOPIC_WORDS for w in words):
+        return False
+    return len([w for w in words if len(w) >= 3]) < 2
+
+
 class CopilotError(ValueError):
     pass
 
@@ -94,8 +117,30 @@ class CopilotService:
         self.db.refresh(draft)
         return draft
 
+    def helpdesk_on(self) -> bool:
+        from app.platform.modules import enabled_modules
+
+        return "helpdesk" in enabled_modules(self.db, self.tenant)
+
+    def ticket_categories(self) -> list[dict]:
+        from app.models.metadata import MasterValue
+
+        rows = (self.db.query(MasterValue).filter(MasterValue.tenant_id == self.tenant.tenant_id, MasterValue.type_code == "ticket_category",
+                                                  MasterValue.is_active.is_(True)).order_by(MasterValue.code).all())
+        return [{"code": r.code, "name": (r.label_i18n or {}).get("en") or r.code.replace("_", " ").title()} for r in rows if r.parent_id is None]
+
+    def default_category(self) -> Optional[str]:
+        """Part 22.1: the handover ticket's category is chosen automatically -- the configured one if it is
+        an active category, else "general", else "other", else the first active one (the user can change it)."""
+        codes = [c["code"] for c in self.ticket_categories()]
+        wanted = self._settings.get("copilot.handover_category", self._ctx) or ""
+        for code in (wanted, "general", "other", "policy"):
+            if code and code in codes:
+                return code
+        return codes[0] if codes else None
+
     def _draft_payload(self, action: str, question: str) -> dict:
-        category = self._settings.get("copilot.handover_category", self._ctx) or None
+        category = self.default_category()
         if action == "request_asset":
             return {"category_code": None, "reason": question}
         if action == "request_letter":
@@ -118,11 +163,15 @@ class CopilotService:
                 from app.service_desk import tickets
 
                 if not payload.get("category_code"):
-                    raise CopilotError("choose a ticket category before confirming")
+                    payload["category_code"] = self.default_category()
+                if not payload.get("category_code"):
+                    raise CopilotError("No helpdesk categories are set up yet. Ask HR to add one in Settings > Helpdesk.")
                 ticket = tickets.create_ticket(self.db, self.tenant, category_code=payload["category_code"], subject=payload.get("subject") or "Copilot request",
                                                description=payload.get("description"), channel="copilot", requester_employee_id=employee_id,
                                                requester_user_id=self.user.id, requester_email=self.user.email)
                 draft.result_ref = f"ticket:{ticket.number}"
+            elif draft.action == "hr_handover":  # Part 22.1: Helpdesk is off -> an HR to-do + an email to the HR mailbox
+                draft.result_ref = self._hand_to_hr(payload)
             elif draft.action == "request_asset":
                 if not has_permission(self.db, self.tenant, self.user, "assets.self.create"):
                     raise tools.ToolPermissionError("assets.self.create")
@@ -142,6 +191,27 @@ class CopilotService:
         self.db.commit()
         self.db.refresh(draft)
         return draft
+
+    def _hand_to_hr(self, payload: dict) -> str:
+        from app.agents.service import suggest
+        from app.integrations.hr_email import get_hr_integration
+        from app.platform.comms.defaults import send_default
+        from app.platform.links import public_app_url
+
+        who = self.user.full_name or self.user.email
+        question = (payload.get("description") or payload.get("subject") or "").strip()
+        todo = suggest(self.db, self.tenant, agent="copilot", kind="copilot_question", title=f"Question from {who}: {question[:90]}",
+                       payload={"question": question, "user_email": self.user.email, "user_name": who}, reviewer_permission="core_hr.employee.edit")
+        hr = get_hr_integration(self.db)
+        to = hr.hr_module_email or hr.from_address or hr.smtp_username
+        if to:
+            try:
+                send_default(self.db, self.tenant, "copilot.hr_handover", to=[to], purpose="email.outbound.hr_letters",
+                             ctx={"user_name": who, "user_email": self.user.email, "question": question, "link": f"{public_app_url(self.db)}/approvals"},
+                             related_entity_type="agent_suggestion", related_entity_id=todo.id)
+            except Exception:  # noqa: BLE001 -- the to-do is the record; the email is a nudge
+                pass
+        return f"hr_todo:{todo.id}"
 
     def discard_draft(self, draft_id: UUID) -> None:
         draft = self.db.query(CopilotDraft).filter(CopilotDraft.tenant_id == self.tenant.tenant_id, CopilotDraft.id == draft_id, CopilotDraft.user_id == self.user.id).first()
@@ -165,12 +235,21 @@ class CopilotService:
         self.db.commit()
         lowered = question.lower()
 
+        # 0. Part 22.1: unclear text ("Eg1") -> ask what they mean, with suggestions; never a ticket
+        if is_unclear(question):
+            reply = self._reply(conversation, self._t(language, "copilot.clarify"), tool_calls_json=[{"clarify": True}])
+            return {**reply, "clarify": True}
+
         # 1. actions -> draft
         for action, phrases in _ACTIONS:
             if any(p in lowered for p in phrases):
-                draft = self.create_draft(action, self._draft_payload(action, question), conversation)
+                if action in ("raise_ticket", "request_letter") and not self.helpdesk_on():
+                    action = "hr_handover"  # Part 22.1: no Helpdesk -> the request goes to HR as a to-do
+                payload = {"subject": question[:120], "description": question} if action == "hr_handover" else self._draft_payload(action, question)
+                draft = self.create_draft(action, payload, conversation)
                 reply = self._reply(conversation, self._t(language, "copilot.draft_ready"), tool_calls_json=[{"draft": action}])
-                return {**reply, "draft": {"id": str(draft.id), "action": action, "payload": draft.payload_json}}
+                extra = {"categories": self.ticket_categories()} if action in ("raise_ticket", "request_letter") else {}
+                return {**reply, "draft": {"id": str(draft.id), "action": action, "payload": draft.payload_json, **extra}}
 
         # 2. personal data -> tool (caller's permissions only)
         tool = tools.match_tool(question)
@@ -179,7 +258,7 @@ class CopilotService:
                 data = tools.run_tool(self.db, self.tenant, self.user, tool)
             except tools.ToolPermissionError:
                 return self._reply(conversation, self._t(language, "copilot.no_permission"), tool_calls_json=[{"tool": tool.name, "denied": True}])
-            if not any(data.values()):
+            if not any(data.values()) and tool.name not in ("open_jobs", "waiting_for_interview"):  # 22.1: "none waiting" is an answer
                 return self._reply(conversation, self._t(language, "copilot.nothing_found"), tool_calls_json=[{"tool": tool.name}])
             answer = self._phrase_tool_answer(question, data, language)
             return self._reply(conversation, answer, tool_calls_json=[{"tool": tool.name, "result": data}])
@@ -226,7 +305,14 @@ class CopilotService:
             return "\n".join(parts)
 
     def _handover(self, conversation: CopilotConversation, question: str, language: str, conf: float, decision_log_id=None) -> dict:
-        draft = self.create_draft("raise_ticket", self._draft_payload("raise_ticket", question), conversation)
-        reply = self._reply(conversation, self._t(language, "copilot.handover"), confidence=conf, decision_log_id=decision_log_id,
-                            tool_calls_json=[{"handover": True}])
-        return {**reply, "draft": {"id": str(draft.id), "action": "raise_ticket", "payload": draft.payload_json}, "handover": True}
+        # Part 22.1: Helpdesk on -> a ticket draft (category chosen automatically, editable);
+        # Helpdesk hidden -> "Hand over to HR" (an HR to-do + an email to the HR mailbox)
+        cats = self.ticket_categories() if self.helpdesk_on() else []
+        if cats and has_permission(self.db, self.tenant, self.user, "helpdesk.self.create"):
+            action, payload, key, extra = "raise_ticket", self._draft_payload("raise_ticket", question), "copilot.handover", {"categories": cats}
+        else:
+            action, payload, key, extra = "hr_handover", {"subject": question[:120], "description": question}, "copilot.handover_hr", {}
+        draft = self.create_draft(action, payload, conversation)
+        reply = self._reply(conversation, self._t(language, key), confidence=conf, decision_log_id=decision_log_id,
+                            tool_calls_json=[{"handover": True, "action": action}])
+        return {**reply, "draft": {"id": str(draft.id), "action": action, "payload": draft.payload_json, **extra}, "handover": True}

@@ -99,7 +99,7 @@ function ActDialog({ row, action, onClose, onDone, onError }: {
   );
 }
 
-const KIND_EMOJI: Record<string, string> = { ai_suggestion: "robot", review: "memo", clearance: "door" };
+const KIND_EMOJI: Record<string, string> = { ai_suggestion: "robot", review: "memo", clearance: "door", copilot_question: "speech" };
 
 export default function UnifiedInboxPage() {
   const t = useT();
@@ -136,7 +136,7 @@ export default function UnifiedInboxPage() {
     intelligenceApi
       .decideSuggestion(item.id, action)
       .then(() => {
-        setToast(action === "approve" ? t("approvalsPage.done_approved") : t("approvalsPage.done_declined"));
+        setToast(item.kind === "copilot_question" ? t("approvalsPage.done_marked") : action === "approve" ? t("approvalsPage.done_approved") : t("approvalsPage.done_declined"));
         load();
       })
       .catch(setError);
@@ -217,7 +217,13 @@ export default function UnifiedInboxPage() {
                   </Typography>
                 </Box>
                 {item.due_at && <DueChip due={item.due_at} />}
-                {item.kind === "ai_suggestion" ? (
+                {item.kind === "copilot_question" ? (
+                  <Stack direction="row" spacing={1}>
+                    {/* Part 22.1: a question the HR assistant handed to HR -- reply by email, then mark done */}
+                    <Button size="small" variant="outlined" component="a" href={item.path}>{t("approvalsPage.reply")}</Button>
+                    <Button size="small" variant="contained" onClick={() => decide(item, "approve")}>{t("approvalsPage.mark_done")}</Button>
+                  </Stack>
+                ) : item.kind === "ai_suggestion" ? (
                   <Stack direction="row" spacing={1}>
                     <Button size="small" variant="contained" color="success" onClick={() => decide(item, "approve")}>{t("approvalsPage.approve")}</Button>
                     <Button size="small" variant="outlined" color="error" onClick={() => decide(item, "reject")}>{t("approvalsPage.decline")}</Button>

@@ -249,6 +249,8 @@ def resume_stuck(db: Session, tenant: TenantContext) -> int:
 
 
 _HEADING_NUM = re.compile(r"^(\d+(\.\d+)*\.?|[A-Z]\.)\s+\S")
+_SECTION_NUM = re.compile(r"^\d{1,2}\.(\d{1,2}\.?)*\s+[A-Z(]")  # "6. Notice period", "6.1 Grades" -- not "26 weeks" / "1 January"
+_PAGE_NO = re.compile(r"^(page\s*)?\d{1,3}(\s*(/|of)\s*\d{1,3})?$", re.I)
 
 
 def extract(data: bytes, filename: str) -> str:
@@ -275,7 +277,18 @@ def extract(data: bytes, filename: str) -> str:
         reader = PdfReader(io.BytesIO(data))
         if reader.is_encrypted:
             raise PolicyError("This PDF is password-protected. Please upload a copy without a password.")
-        lines = [ln.strip() for page in reader.pages for ln in (page.extract_text() or "").splitlines()]
+        pages = [[ln.strip() for ln in (page.extract_text() or "").splitlines()] for page in reader.pages]
+        # fix 22.1: the running page header/footer ("<title> | Version 1.0", "Page 3") is not content
+        seen_on: dict[str, int] = {}
+        for pg in pages:
+            for ln in set(pg):
+                if ln:
+                    seen_on[ln] = seen_on.get(ln, 0) + 1
+        repeated = {ln for ln, n in seen_on.items() if len(pages) > 1 and n >= max(2, len(pages) // 2 + 1) and not _SECTION_NUM.match(ln)}
+        lines = [ln for pg in pages for ln in pg if ln not in repeated and not _PAGE_NO.match(ln)]
+        # fix 22.1: a handbook with numbered sections ("6. Notice period") uses ONLY those as headings --
+        # table cells like "(EL)", "26 weeks", "1 January", "Republic Day" are not section titles
+        numbered = sum(1 for ln in lines if _SECTION_NUM.match(ln)) >= 3
         out, para = [], []
 
         def _flush():
@@ -288,7 +301,7 @@ def extract(data: bytes, filename: str) -> str:
                 _flush()
                 continue
             short = len(ln) < 70 and not ln.endswith((".", ",", ";", ":"))
-            if short and (_HEADING_NUM.match(ln) or ln.istitle() or ln.isupper()):
+            if short and ((_SECTION_NUM.match(ln) is not None) if numbered else (_HEADING_NUM.match(ln) or ln.istitle() or ln.isupper())):
                 _flush()
                 out.append(f"# {ln}")
                 continue

@@ -262,6 +262,9 @@ app.include_router(ui_budgets_router)
 from app.experience.ui_policies_router import router as ui_policies_router  # noqa: E402  fix 2026-10-05: policies & handbook
 
 app.include_router(ui_policies_router)
+from app.experience.samples_router import router as samples_router  # noqa: E402  Part 22.1: Sample files
+
+app.include_router(samples_router)
 from app.experience.ui_employees_router import router as ui_employees_router  # noqa: E402  part 20.1
 
 app.include_router(ui_employees_router)

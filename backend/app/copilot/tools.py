@@ -74,10 +74,44 @@ def _who_approves(db: Session, tenant: TenantContext, user: User) -> dict:
     return {"requests": out}
 
 
+# Part 22.1: company data questions -- answered from live data, gated by the asker's own permissions
+def _open_jobs(db: Session, tenant: TenantContext, user: User) -> dict:
+    from app.models.job_role import JobRole
+
+    rows = (db.query(JobRole).filter(JobRole.tenant_id == tenant.tenant_id, JobRole.status.in_(("published", "ready_for_publishing", "on_hold")))
+            .order_by(JobRole.created_at.desc()).all())
+    return {"open_jobs": [{"title": j.title, "status": j.status.replace("_", " "), "department": j.department} for j in rows],
+            "count": [{"open_jobs": len(rows)}]}
+
+
+def _waiting_for_interview(db: Session, tenant: TenantContext, user: User) -> dict:
+    from app.models.application import Application
+    from app.models.candidate import Candidate
+    from app.models.job_role import JobRole
+
+    now = datetime.now(timezone.utc)
+    out = []
+    rows = (db.query(Application, Candidate, JobRole).join(Candidate, Candidate.id == Application.candidate_id)
+            .join(JobRole, JobRole.id == Application.job_role_id)
+            .filter(Application.tenant_id == tenant.tenant_id, Application.status.in_(("shortlisted", "interview_scheduled")))
+            .order_by(Application.updated_at.asc()).limit(25).all())
+    for app_row, cand, job in rows:
+        nxt = (db.query(Interview).filter(Interview.application_id == app_row.id, Interview.scheduled_at >= now)
+               .order_by(Interview.scheduled_at.asc()).first())
+        out.append({"candidate": cand.full_name, "job": job.title,
+                    "interview": nxt.scheduled_at.isoformat() if nxt and nxt.scheduled_at else "not scheduled yet"})
+    return {"waiting_for_interview": out}
+
+
 TOOLS: dict[str, ToolDef] = {t.name: t for t in (
     ToolDef("my_interviews", "recruitment.interview.view", ("my interview", "interview schedule", "मेरा इंटरव्यू", "நேர்காணல்"), _my_interviews),
     ToolDef("my_assets", "assets.self.view", ("my asset", "my laptop", "assets assigned", "मेरी संपत्ति", "என் சொத்து"), _my_assets),
     ToolDef("my_tickets", "helpdesk.self.view", ("my ticket", "ticket status", "status of my", "मेरा टिकट", "என் டிக்கெட்"), _my_tickets),
+    ToolDef("open_jobs", "recruitment.job.view", ("open job", "open position", "open role", "jobs open", "jobs do we have", "how many jobs", "vacanc",
+                                                   "खुली नौकरियाँ", "திறந்த பணி"), _open_jobs),
+    ToolDef("waiting_for_interview", "recruitment.application.view", ("waiting for an interview", "waiting for interview", "awaiting interview",
+                                                                      "waiting to be interviewed", "yet to be interviewed", "need an interview",
+                                                                      "इंटरव्यू का इंतज़ार", "நேர்காணலுக்காக காத்திருக்கும்"), _waiting_for_interview),
     ToolDef("who_approves", None, ("who approves", "who will approve", "pending approval", "कौन मंजूरी", "யார் ஒப்புதல்"), _who_approves),
 )}
 

@@ -25,7 +25,7 @@
   "entity.requisition": "Requisition",
   "entity.candidate": "Candidate",
   "entity.job": "Job",
-  "copilot.handover": "I couldn't find a reliable answer in your organisation's policies. I've prepared a helpdesk ticket for you -- review and confirm it to send.",
+  "copilot.handover": "I couldn't find this in your company's policies. I've prepared a helpdesk ticket for you (category chosen for you - you can change it). Review it and confirm to send.",
   "copilot.draft_ready": "I've prepared this for you. Nothing is submitted until you confirm.",
   "copilot.no_permission": "You don't have access to that information.",
   "copilot.nothing_found": "I didn't find anything for you there.",
@@ -54,5 +54,7 @@
   "setup.step.config_pack": "Apply a configuration pack",
   "setup.step.invite_admins": "Invite admins",
   "health.title": "Configuration health",
-  "a11y.skip_to_content": "Skip to main content"
+  "a11y.skip_to_content": "Skip to main content",
+  "copilot.clarify": "I'm not sure what you mean - try asking about leave, notice period, salary dates, travel, jobs or candidates.",
+  "copilot.handover_hr": "I couldn't find this in your company's policies. You can hand your question over to HR - they get a to-do and an email, and will reply to you."
 }

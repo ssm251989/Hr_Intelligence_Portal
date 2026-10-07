@@ -2825,3 +2825,18 @@ NEXT: part-21.4 BGV Download all ZIP + assign BGV vendor; part-21.5 agencies (Re
 - part-21.4 (code): BGV Download all (one candidate ZIP + "BGV summary.xlsx"; bulk from the BGV table, >20 prepared in the background), assign a BGV vendor (secure link /bgv-vendor/:token, opening = In progress, report upload notifies HR, daily reminders, reassign/cancel with emails), new HR decision "Discrepancy - clear with a note". Decision: a discrepancy clears BGV (note required) rather than failing it. Proof pending: the proof stack (mailpit, API :8010, web :5174) was stopped by the system for low memory on 2026-10-07 and is waiting for the owner's go-ahead to restart.
 
 NEXT: prove 21.4 + 21.5 on the proof stack (FIXES_21.md), then 21.6 HR assistant (quote the cause first), 21.7 budget released on exit, 21.9 proof + hand-over.
+
+- part-22.1 (merged with 21.6): HR assistant. Causes quoted in FIXES_22.md:
+  - the example buttons had missing i18n keys and sent "Eg1";
+  - an unclear question still went to a ticket;
+  - the ticket category came from an empty setting, so confirming gave a 400 that the widget showed as "Something went wrong.";
+  - Helpdesk is hidden for ctd-techs;
+  - the PDF headings came from table cells;
+  - the /api/v1/samples endpoint was missing.
+  Fixed: clarify + 4 chips; category chosen automatically and editable; Helpdesk off -> "Hand over to HR" (HR to-do in My approvals + email to the HR mailbox, migration d6cf5a6b7c8d); real error text; numbered-section headings (live handbook re-indexed 33 -> 17 passages); data tools for open jobs and candidates waiting for an interview; Sample files "HR policy handbook".
+  Decisions:
+  - the HR to-do uses AgentSuggestion kind copilot_question (reviewer permission core_hr.employee.edit), "Mark done" = approve;
+  - the default category order is the setting, then general, other, policy, then the first active one.
+  10 verification questions answered (dry run, rolled back). Screenshots and the mailpit email are pending the proof setup (stopped for low memory).
+
+NEXT: part-22.2 candidate emails - Closed tab + smarter auto-link (email/alt email, "First Last"/"Last First", reply thread), manual link remembers the address, re-run over unmatched.

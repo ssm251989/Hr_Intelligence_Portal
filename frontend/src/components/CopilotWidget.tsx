@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
 import Drawer from "@mui/material/Drawer";
 import Fab from "@mui/material/Fab";
 import IconButton from "@mui/material/IconButton";
@@ -13,7 +14,7 @@ import { useTheme } from "@mui/material/styles";
 import CloseIcon from "@mui/icons-material/Close";
 import SendRoundedIcon from "@mui/icons-material/SendRounded";
 
-import { intelligenceApi, type CopilotAnswer } from "../api/client";
+import { extractErrorMessage, intelligenceApi, type CopilotAnswer } from "../api/client";
 import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
 import { LOCALES, useI18n } from "../i18n";
 import { Emoji, FriendlyError, humanise, StatusChip } from "../ui-kit";
@@ -34,6 +35,8 @@ interface Turn {
 }
 
 const EXAMPLES = ["assistant.eg1", "assistant.eg2", "assistant.eg3"];
+// Part 22.1: shown when a question is unclear ("Eg1")
+const SUGGESTIONS = ["assistant.sugg.leave", "assistant.sugg.notice", "assistant.sugg.salary", "assistant.sugg.jobs"];
 
 function friendlyValue(v: unknown): string {
   if (v === null || v === undefined || v === "") return "—";
@@ -57,6 +60,7 @@ export default function CopilotWidget() {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [conversationId, setConversationId] = useState<UUID | undefined>();
   const [busy, setBusy] = useState(false);
+  const [categoryOf, setCategoryOf] = useState<Record<string, string>>({});  // Part 22.1: the ticket category, editable
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => setLanguage(locale), [locale]);
@@ -87,12 +91,13 @@ export default function CopilotWidget() {
 
   const confirm = (index: number, draftId: UUID) =>
     intelligenceApi
-      .confirmDraft(draftId)
+      .confirmDraft(draftId, categoryOf[draftId] ? { category_code: categoryOf[draftId] } : {})
       .then((r) =>
         setTurn(index, r.status === "confirmed"
-          ? { draft: { state: "confirmed", text: r.result ? t("assistant.done_ref", { ref: r.result }) : t("assistant.done") } }
+          ? { draft: { state: "confirmed", text: r.result?.startsWith("hr_todo:") ? t("assistant.sent_hr") : r.result ? t("assistant.done_ref", { ref: r.result }) : t("assistant.done") } }
           : { draft: { state: "failed", text: r.error || t("assistant.failed") } }))
-      .catch(() => setTurn(index, { draft: { state: "failed", text: t("assistant.failed") } }));
+      // fix 22.1: show the server's reason, not just "Something went wrong."
+      .catch((err) => setTurn(index, { draft: { state: "failed", text: extractErrorMessage(err, t("assistant.failed")) } }));
 
   const discard = (index: number, draftId: UUID) =>
     intelligenceApi
@@ -168,8 +173,15 @@ export default function CopilotWidget() {
                   {turn.reply.handover && (
                     <Box sx={{ mt: 1 }}><StatusChip tone="sky" emoji="people" label={t("assistant.handover")} /></Box>
                   )}
+                  {turn.reply.clarify && (
+                    <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap" sx={{ mt: 1 }}>
+                      {SUGGESTIONS.map((k) => (
+                        <Chip key={k} size="small" variant="outlined" clickable label={t(k)} onClick={() => ask(t(k))} />
+                      ))}
+                    </Stack>
+                  )}
 
-                  <Box sx={{ mt: 1.25, pt: 1, borderTop: `1px dashed ${f.line}` }}>
+                  {!turn.reply.clarify && <Box sx={{ mt: 1.25, pt: 1, borderTop: `1px dashed ${f.line}` }}>
                     <Typography sx={{ fontSize: 12, fontWeight: 800, color: f.muted, mb: 0.5, display: "flex", alignItems: "center", gap: 0.5 }}>
                       <Emoji name="page" size={14} /> {t("assistant.sources")}
                     </Typography>
@@ -179,13 +191,13 @@ export default function CopilotWidget() {
                       <Stack spacing={0.75}>
                         {turn.reply.citations.map((c) => (
                           <Box key={c.n} sx={{ p: "6px 10px", borderRadius: "10px", bgcolor: f.surface2, border: `1px solid ${f.line}` }}>
-                            <Typography sx={{ fontSize: 12, fontWeight: 700 }}>[{c.n}] {c.title}{c.heading ? ` · ${c.heading}` : ""}</Typography>
+                            <Typography sx={{ fontSize: 12, fontWeight: 700 }}>[{c.n}] {c.title}{c.heading ? ` - ${c.heading}` : ""}</Typography>
                             {c.excerpt && <Typography sx={{ fontSize: 12, color: f.muted, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{c.excerpt}</Typography>}
                           </Box>
                         ))}
                       </Stack>
                     )}
-                  </Box>
+                  </Box>}
 
                   {turn.reply.draft && (
                     <Box sx={{ mt: 1.5, p: 1.5, borderRadius: "14px", bgcolor: f.sunSoft, border: `1px solid ${f.line}` }} role="group" aria-label={t("assistant.draft_title")}>
@@ -199,13 +211,20 @@ export default function CopilotWidget() {
                         )}
                       </Stack>
                       <Box component="dl" sx={{ m: 0, display: "grid", gridTemplateColumns: "auto 1fr", columnGap: 1.5, rowGap: 0.25, fontSize: 13 }}>
-                        {Object.entries(turn.reply.draft.payload).filter(([k]) => !/(^|_)id$/.test(k)).map(([k, v]) => (
+                        {Object.entries(turn.reply.draft.payload).filter(([k]) => !/(^|_)id$/.test(k) && k !== "category_code").map(([k, v]) => (
                           <Box key={k} sx={{ display: "contents" }}>
                             <Box component="dt" sx={{ color: f.muted }}>{humanise(k)}</Box>
                             <Box component="dd" sx={{ m: 0, fontWeight: 600 }}>{friendlyValue(v)}</Box>
                           </Box>
                         ))}
                       </Box>
+                      {!turn.draft && (turn.reply.draft.categories?.length ?? 0) > 0 && (
+                        <TextField select size="small" fullWidth sx={{ mt: 1 }} label={t("assistant.category")}
+                          value={categoryOf[turn.reply.draft.id] ?? String(turn.reply.draft.payload.category_code ?? "")}
+                          onChange={(e) => { const id = turn.reply!.draft!.id; setCategoryOf((m) => ({ ...m, [id]: e.target.value })); }}>
+                          {turn.reply.draft.categories!.map((c) => <MenuItem key={c.code} value={c.code}>{c.name}</MenuItem>)}
+                        </TextField>
+                      )}
                       {!turn.draft && (
                         <>
                           <Typography sx={{ fontSize: 12, color: f.muted, mt: 1 }}>{t("assistant.draft_hint")}</Typography>

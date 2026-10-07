@@ -1502,8 +1502,9 @@ export interface CopilotAnswer {
   conversation_id: UUID;
   answer: string;
   citations: { n: number; title: string; heading: string | null; excerpt: string }[];
-  draft: { id: UUID; action: string; payload: Record<string, unknown> } | null;
+  draft: { id: UUID; action: string; payload: Record<string, unknown>; categories?: { code: string; name: string }[] } | null;
   handover?: boolean;
+  clarify?: boolean;  // Part 22.1: unclear question -> suggestions, no ticket
 }
 
 export interface AgentSuggestionRow {

@@ -18,7 +18,7 @@ from app.platform.tenancy.mixins import TenantOwned
 
 REPORT_FORMATS = ("csv", "xlsx")
 SCHEDULE_FREQUENCIES = ("daily", "weekly", "monthly")
-DRAFT_ACTIONS = ("raise_ticket", "request_asset", "request_letter")
+DRAFT_ACTIONS = ("raise_ticket", "request_asset", "request_letter", "hr_handover")  # Part 22.1: + hand over to HR (Helpdesk off)
 DRAFT_STATUSES = ("draft", "confirmed", "discarded", "failed")
 AGENTS = ("recruiter", "onboarding", "helpdesk_triage", "policy_checker")
 SUGGESTION_STATUSES = ("pending", "approved", "edited", "rejected")
