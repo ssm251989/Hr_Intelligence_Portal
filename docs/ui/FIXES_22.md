@@ -267,3 +267,5 @@ Real offer check: the latest live offer `d9d1533a...` renders through `build_pdf
 **Not finished:** the on-screen proofs. That means screenshots of each new screen, the mailpit captures (the HR hand-over email, the "access updated" email, Send test to me) and the 22.1 widget screenshots. They need the proof setup (mailpit, API :8010, web :5174), which the system stopped for low memory on 2026-10-07 and which has not been restarted.
 
 **On-screen proof (2026-11-02):** the 10 questions with screenshots, the HR to-do and the hand-over email are in **docs/ui/FIXES_23.md, 23.3d**. The hand-over itself failed on a CHECK constraint (agent="copilot") and was fixed there.
+
+**On-screen proof of 22.2 / 22.3 (2026-11-02):** docs/ui/FIXES_23.md, 23.3e part 1 (tabs, Not linked + suggestions, remember address, rule chips, highlighted cards). Fixed there: summary "Vikas" (greeting line dropped whole) and the contradictory empty card on My approvals.

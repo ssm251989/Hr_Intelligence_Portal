@@ -27,6 +27,8 @@ _AUTOMATED = re.compile(r"(no-?reply|do-?not-?reply|mailer-daemon|postmaster|not
 AUTOMATED_SUMMARY = "Automatic email - not from a candidate"
 _QUOTE = re.compile(r"^(>|On .+wrote:|From: |Sent: |-{2,}\s*Original Message)", re.I)
 _SIGN = re.compile(r"^(thanks|thank you|regards|best regards|warm regards|cheers|sincerely)[,!.\s]*$", re.I)
+# "Hi," / "Hello Priya," / "Dear HR team," / "Good morning!" - and what follows it on the same line
+_GREETING = re.compile(r"^(?:hi|hello|dear|good (?:morning|afternoon|evening))\b(?:[^,!.?]{0,25}[,!.])?\s*(?P<rest>.*)$", re.I)
 
 
 def topic_of(subject: Optional[str], body: Optional[str]) -> str:
@@ -45,8 +47,16 @@ def first_sentence(subject: Optional[str], body: Optional[str], limit: int = 140
             continue
         if _QUOTE.match(line):
             break  # everything below is the quoted earlier message
-        if _SIGN.match(line) or re.match(r"^(hi|hello|dear|good (morning|afternoon|evening))\b", line, re.I) and len(line) < 40:
+        if _SIGN.match(line):
             continue
+        greet = _GREETING.match(line)
+        if greet and len(line) < 40:
+            # Part 23.3e: "Hello, can I reschedule my call?" was dropped whole as a greeting line, so the summary
+            # became the sign-off ("Vikas"); only the greeting itself is dropped now
+            rest = greet.group("rest").strip()
+            if len(rest) < 12:
+                continue
+            line = rest[0].upper() + rest[1:]
         lines.append(line)
     text = re.sub(r"\s+", " ", " ".join(lines)).strip() or (subject or "").strip()
     m = re.match(r"(.+?[.!?])(\s|$)", text)

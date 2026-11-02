@@ -2914,3 +2914,7 @@ NEXT: part-23.3d proof 22.1 HR assistant (10 questions + hand-over email in mail
   Decisions: the proof API ran the committed code from a HEAD worktree, because uncommitted PART 25 changes sit in the same file; only the fix hunk of copilot/service.py is committed. Used an existing agent value instead of widening the CHECK, so there is no migration while PART 25 may add its own.
 
 NEXT: part-23.3e proof 22.2-22.5 (email matching examples, My approvals cards, Assign roles single + bulk, agency delete vs deactivate).
+
+- part-23.3e (1): proof 22.2 + 22.3 (FIXES_23.md 23.3e part 1, screens p23-3e-*): 7 raw emails through the real parser / matcher / triage - email, alt_email, name (First Last, Last First), ambiguous -> 2 suggestions, no match, automated -> Closed; manual link with "remember this address" (on by default), suggestion link; highlighted cards in My approvals (unread bold, badge). Fixes: summary dropped a short "Hello, ..." line whole (summary became the sign-off); My approvals showed "Nothing waiting on you" under "11 waiting on you". 5 new tests. Proof rows removed.
+
+NEXT: part-23.3e (2) proof 22.4 Assign roles (single + bulk, email) and 22.5 agency delete vs deactivate.

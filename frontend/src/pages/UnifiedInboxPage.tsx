@@ -157,6 +157,10 @@ export default function UnifiedInboxPage() {
 
       {loading && rows.length === 0 ? (
         <Stack spacing={1.5}>{[0, 1, 2].map((i) => <Skeleton key={i} variant="rounded" height={88} />)}</Stack>
+      ) : groups.length === 0 && others.length > 0 ? (
+        // Part 23.3e: the header said "11 waiting on you" right above "Nothing waiting on you" - with only
+        // "Also for you" items (candidate emails, to-dos) the big empty card is left out
+        null
       ) : groups.length === 0 ? (
         <Card sx={{ mb: 2.5 }}>
           <EmptyState illustration="completed-tasks" title={t("approvalsPage.empty")} hint={t("approvalsPage.empty_hint")} />

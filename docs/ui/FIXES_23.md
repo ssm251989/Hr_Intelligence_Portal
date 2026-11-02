@@ -296,3 +296,47 @@ installed, a task-like question from an HR user would fail rather than fall back
 
 **Clean-up (done):** 2 conversations, 22 messages, 2 drafts, 8 decision logs, 8 usage rows, the HR to-do, the
 email row. Scan: nothing left.
+
+### 23.3e (part 1) Candidate emails + My approvals cards (22.2, 22.3)
+
+Data: job "Proof - Inbox Analyst (P23)", candidates Proofa Ravikumar, Meena Sundar (other email
+`meena.home.p23@example.com`), Arun Prakash and Prakash Arun. 7 raw emails (RFC 822) were stored the way the
+IMAP poll does: `imap_poll._parse_message` -> `matching.match` -> row -> `triage` (AI summary off, so the
+summaries are the email's own first sentence). Script: `frontend/scripts/p23_3e_inbox_shots.mjs`.
+
+| Email | Matching result (DB) |
+|---|---|
+| from `PROOFA.R.P23@example.com` "Interview time for Thursday" | linked Proofa Ravikumar, rule **email** (case ignored) |
+| from `meena.home.p23@example.com` "Documents attached" | linked Meena Sundar, rule **alt_email** |
+| sender name "Proofa Ravikumar" from `someone.p23@gmail.example` | linked Proofa, rule **name** (First Last) |
+| signature "Regards, Ravikumar Proofa" from `x123.p23@yahoo.example` | linked Proofa, rule **name** (Last First) |
+| "Regards, Arun Prakash" from an unknown address | **not linked**, suggestions: Arun Prakash + Prakash Arun |
+| "Can I reschedule?" from `vikas.unknown.p23@example.org` | not linked, no suggestions |
+| `noreply@bank.p23.example` "Your statement is ready" | status `done`, topic `automated` -> **Closed** |
+
+| On screen | Screenshot |
+|---|---|
+| Tabs "Needs action (6) / Linked to a candidate (4) / Closed (100)" | `p23-3e-emails-needs-action.png` |
+| The ambiguous email: "Not linked yet", "Could be one of these" + **Link to Arun Prakash** / **Link to Prakash Arun** | `p23-3e-emails-not-linked-suggestions.png` |
+| Manual link of Vikas's email to Meena Sundar; the tick box "Also remember vikas.unknown.p23@example.org for this candidate" is **on by default** | `p23-3e-emails-manual-link-remember.png`, `-emails-manual-linked.png` |
+| "Link to Arun Prakash" pressed on the suggestion | `p23-3e-emails-linked-from-suggestion.png` |
+| Linked tab with the rule chips; Closed tab | `p23-3e-emails-linked-tab.png`, `-emails-closed-tab.png` |
+| My approvals: 6 highlighted candidate-email cards (blue border, envelope, "Candidate email" chip, summary, time, Open / Reply / Mark done); unread in **bold**, the two opened ones normal; sidebar badge 11 | `p23-3e-approvals-candidate-emails.png`, `-fixed.png` |
+
+DB after: both manual links `match_rule = manual`; Meena's `alt_emails` = `meena.home…`, `vikas.unknown…`; Arun's
+= `ap.personal.p23@example.net` (from the suggestion link). `read_at` set only on the emails that were opened.
+
+**Fixes found on screen:**
+1. **The card summary said only "Vikas".** Cause (`hr_inbox/triage.py` `first_sentence`): any line that
+   **starts** with a greeting and is under 40 characters was dropped whole. So "Hello, can I reschedule my
+   call?" (32 characters) went, and the sign-off became the summary. Now only the greeting is dropped ("Can I
+   reschedule my call?"). Longer lines are unchanged. New `tests/test_inbox_summary_greeting.py`: 5 passed.
+   The proof row was re-triaged to show it.
+2. **My approvals said "11 waiting on you" right above "Nothing waiting on you".** The big empty card only
+   looked at approvals, not at the "Also for you" items. With only those items, it is now left out
+   (`UnifiedInboxPage.tsx`; no new text, because `shell.ts` has uncommitted PART 25 edits).
+
+Not shown: the reply-thread rule (needs an email the app sent with a stored Message-ID; covered by the 22.2 dry
+run).
+
+**Clean-up (done):** 1 job, 4 candidates, 4 applications, 7 emails, 4 audit rows. Scan: nothing left.
