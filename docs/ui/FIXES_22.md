@@ -269,3 +269,5 @@ Real offer check: the latest live offer `d9d1533a...` renders through `build_pdf
 **On-screen proof (2026-11-02):** the 10 questions with screenshots, the HR to-do and the hand-over email are in **docs/ui/FIXES_23.md, 23.3d**. The hand-over itself failed on a CHECK constraint (agent="copilot") and was fixed there.
 
 **On-screen proof of 22.2 / 22.3 (2026-11-02):** docs/ui/FIXES_23.md, 23.3e part 1 (tabs, Not linked + suggestions, remember address, rule chips, highlighted cards). Fixed there: summary "Vikas" (greeting line dropped whole) and the contradictory empty card on My approvals.
+
+**On-screen proof of 22.4 / 22.5 (2026-11-02):** docs/ui/FIXES_23.md, 23.3e part 2 (single + bulk dialogs, invite and access emails, delete / deactivate / blocked / restore). Fixed there: the single dialog dropped the Employee role for a new account.

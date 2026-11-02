@@ -340,3 +340,42 @@ Not shown: the reply-thread rule (needs an email the app sent with a stored Mess
 run).
 
 **Clean-up (done):** 1 job, 4 candidates, 4 applications, 7 emails, 4 audit rows. Scan: nothing left.
+
+### 23.3e (part 2) Assign roles (22.4) + agency delete vs deactivate (22.5)
+
+**Assign roles.** Data: employees Proof Roleone Kapoor and Proof Roletwo Iyer, with no app accounts. Script:
+`frontend/scripts/p23_3e_roles_shots.mjs`.
+
+| Step | Result | Screenshot |
+|---|---|---|
+| Row menu > Assign roles (Roleone): "No app account yet", tick **Create account and send invite** + **HR Admin** | account created, invite sent | `p23-3e-roles-employees.png`, `-roles-single-dialog.png`, `-roles-single-result.png` |
+| Select both > **Assign roles (2)**: tri-state (HR Admin shows a dash = leave as it is), tick **Finance** = give to all | Roleone +Finance; Roletwo account created (Create account is on by default) + Finance | `p23-3e-roles-bulk-dialog-before.png`, `-roles-bulk-dialog.png`, `-roles-bulk-result.png`, `-roles-employees-after.png` |
+| Mailpit | 2 x "Welcome to CTD Techs - set your password for the HR app" (company + personal email), 3 x "Your access in CTD Techs HR was updated" | `p23-3e-roles-mail-1..3.png` |
+
+Audit: `employee_account_created` x2, `app_invite_sent` x2, `roles_changed` x3.
+
+**Bug found and fixed:** after the single dialog, Roleone had **HR Admin + Finance but no Employee role**, while
+Roletwo (bulk) had Employee + Finance. Cause (`AssignRolesDialog.tsx`): in the single dialog "untick = take
+away", and someone without an account started with **nothing** ticked. So "Create account" + HR Admin gave HR
+Admin only: no own profile, leave or HR assistant through the Employee role. Bulk keeps the Employee default for
+a new account. Fix: the single dialog starts with **Employee ticked** for someone with no account and no roles.
+Checked on a third proof employee: "Employee ticked at start: true", and the new account has Employee + HR Admin
+(`p23-3e-roles-single-fixed-dialog.png`).
+
+**Agency delete vs deactivate.** Data:
+- "Proof Empty Agency (P23)": nothing;
+- "Proof History Agency (P23)": 2 candidates sent;
+- "Proof OpenBGV Agency (P23)": 1 BGV case in progress.
+
+Script: `frontend/scripts/p23_3e_agency_delete_shots.mjs`.
+
+| Case | Dialog (quoted) | Result | Screenshot |
+|---|---|---|---|
+| Open BGV case | "Reassign or cancel these open BGV cases first (on the BGV page): Proof Open Case - In progress" | Deactivate is **disabled** | `p23-3e-agdel-list.png`, `-agdel-open-bgv-blocked.png` |
+| No history | "This agency has no candidates, BGV cases or fees. It will be removed. This can't be undone." -> Delete | gone from the DB (`status=all` list no longer has it) | `p23-3e-agdel-empty-dialog.png`, `-agdel-empty-deleted.png` |
+| With history | "This agency has 2 candidates and 0 BGV cases. It will be deactivated and hidden, history is kept. You can restore it from the Inactive filter." -> Deactivate | `active=false` | `p23-3e-agdel-history-dialog.png`, `-agdel-history-deactivated.png` |
+| Status = Inactive, Restore | listed under Inactive; Restore | `active=true` | `p23-3e-agdel-inactive-filter.png`, `-agdel-restored.png` |
+
+**Clean-up (done):** 3 employees, 3 accounts (+6 role assignments, 3 invite tokens), 7 emails, 3 agencies,
+1 job, 3 candidates / applications, 2 submissions, 1 BGV case, 13 audit rows. Scan: nothing left. Back to 9
+employees and the one real agency.

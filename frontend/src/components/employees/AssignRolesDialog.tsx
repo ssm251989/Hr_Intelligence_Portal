@@ -42,7 +42,17 @@ export default function AssignRolesDialog({ employeeIds, onClose, onDone }: { em
 
   useEffect(() => {
     Promise.all([employeeRolesApi.catalog(), employeeRolesApi.state(employeeIds)])
-      .then(([c, s]) => { setRoles(c.roles); setPeople(s.items); if (s.items.length === 1) setChosen(new Set(s.items[0].role_ids)); })
+      .then(([c, s]) => {
+        setRoles(c.roles); setPeople(s.items);
+        if (s.items.length === 1) {
+          // Part 23.3e: someone without an account started with nothing ticked, so "Create account" + HR Admin gave
+          // them HR Admin only - no Employee role (own profile, leave, the HR assistant). Bulk keeps Employee for a
+          // new account; the single dialog now starts with Employee ticked too.
+          const p = s.items[0];
+          const employeeRole = c.roles.find((r) => r.key === "employee")?.id;
+          setChosen(new Set(!p.has_account && p.role_ids.length === 0 && employeeRole ? [employeeRole] : p.role_ids));
+        }
+      })
       .catch((err) => setError(extractErrorMessage(err, t("roles22.err"))));
     interviewersApi.pools().then((p) => setPools(p.filter((x) => x.active))).catch(() => setPools([]));
   }, [employeeIds, t]);

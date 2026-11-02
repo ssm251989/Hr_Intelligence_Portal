@@ -2918,3 +2918,8 @@ NEXT: part-23.3e proof 22.2-22.5 (email matching examples, My approvals cards, A
 - part-23.3e (1): proof 22.2 + 22.3 (FIXES_23.md 23.3e part 1, screens p23-3e-*): 7 raw emails through the real parser / matcher / triage - email, alt_email, name (First Last, Last First), ambiguous -> 2 suggestions, no match, automated -> Closed; manual link with "remember this address" (on by default), suggestion link; highlighted cards in My approvals (unread bold, badge). Fixes: summary dropped a short "Hello, ..." line whole (summary became the sign-off); My approvals showed "Nothing waiting on you" under "11 waiting on you". 5 new tests. Proof rows removed.
 
 NEXT: part-23.3e (2) proof 22.4 Assign roles (single + bulk, email) and 22.5 agency delete vs deactivate.
+
+- part-23.3e (2): proof 22.4 + 22.5 (FIXES_23.md 23.3e part 2): Assign roles single (create account + invite + HR Admin) and bulk (tri-state, Finance to 2), invite + "access updated" emails in mailpit; agency delete (no history), deactivate (history) -> Inactive -> Restore, blocked by an open BGV case (Deactivate disabled). Bug fixed: the single dialog started with nothing ticked for someone with no account, so a new HR Admin got no Employee role; now Employee is pre-ticked (bulk already kept it). Proof rows removed.
+  Note: the working tree now also has uncommitted PART 26 "autopilot" files (incl. a migration c6a8e2f4b1d3, tsc errors in AutopilotPage.tsx) - not touched; the proof API keeps running the committed code from the HEAD worktree.
+
+NEXT: part-23.3f proof 22.6 letters (PDF each) + emails (Gmail-size screenshot each) into docs/ui/letters/.
