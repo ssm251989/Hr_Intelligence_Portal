@@ -108,7 +108,9 @@ def _dropout_reason(db: Session, application_id) -> str:
     app = db.get(Application, application_id)
     cand = db.get(Candidate, app.candidate_id) if app else None
     label = {"offer_withdrawn": "offer withdrawn", "offer_declined": "offer declined", "no_show": "did not join", "bgv_rejected": "BGV failed",
-             "rejected": "rejected", "withdrawn": "withdrew"}.get(app.status if app else "", (app.status or "dropped out").replace("_", " ") if app else "dropped out")
+             "rejected": "rejected", "withdrawn": "withdrew", "hr_rejected": "rejected", "interview_rejected": "not selected after the interview",
+             "salary_rejected": "salary not agreed", "left_after_joining": "left after joining"}.get(app.status if app else "", "dropped out")
+    # (Part 23.3c: an unknown status no longer becomes the reason - "Gunda Kishore - salary approved" was a removal)
     return f"{cand.full_name if cand else 'A candidate'} - {label}"
 
 

@@ -164,7 +164,7 @@ history: +400,000 released - Arun Proofthree - offer declined
 history: +650,000 released - Meena Prooftwo exited (Junior AI Developer) on 15 Oct 2026
 history: +270,833 released - Kishore Proofone exited (Junior AI Developer) on 15 Oct 2026
 ```
-**Still to prove on screen:** the Finance dashboard history card and the Budgets settings (proof setup stopped).
+**Proved on screen 2026-11-02:** see **docs/ui/FIXES_23.md, 23.3c** (pro-rata 270,833.33 and full 650,000 on two proof exits; history card; settings). The removal reason bug ("- salary approved") was fixed there.
 
 ## 21.4 BGV Download all + BGV vendor (code: 2617428)
 - **Download all:** each candidate's BGV card gives one ZIP of all BGV and joining documents plus "BGV summary.xlsx". The BGV table's bulk bar has "Download all (n)"; more than 20 candidates are prepared in the background and then offered from a notice.

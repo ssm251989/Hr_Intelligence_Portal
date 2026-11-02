@@ -110,7 +110,7 @@ def move_to_bin(db: Session, tenant, job: JobRole, *, actor: str) -> dict:
         cand = _q(db, Candidate).filter(Candidate.id == app.candidate_id).first()
         if cand is not None:
             _cancel_pending(db, tenant, cand, [app.id])
-        budgets.release(db, tenant, app.id)
+        budgets.release(db, tenant, app.id, reason=f"{(cand.full_name if cand else None) or 'A candidate'} - job closed ({job.title})")
         app.removed_at, app.removed_reason = now, REASON
         moved += 1
         if cand is not None and not cfg["keep_in_pool"] and cand.deleted_at is None:

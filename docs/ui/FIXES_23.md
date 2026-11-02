@@ -218,3 +218,38 @@ the test set-up that would also roll back the test's own transaction, so the row
 **Clean-up (done):** 5 proof agencies (3 from the form, 2 imported; the 3 from the first import were deleted
 before the re-run), 1 job, 4 candidates, 4 applications, 1 offer, 2 submissions, 2 BGV assignments, 6 audit
 rows. Scan afterwards: nothing left. Only the real "Bright talent partners" agency remains.
+
+### 23.3c Budget released on exit - pro-rata and full (21.7)
+
+Data: budget "Proof Dept (P23)" FY 2026-27 = 20 L; two hires **Proof Karan Mehta** and **Proof Divya Nair**, each
+with 6.5 L committed, joined 1 Jun 2026, resignation in clearance, last working day **15 Oct 2026**, nothing open.
+HR's **Complete** (`POST /ui/exit-checklist/separations/{id}/complete`, the button's endpoint) was used for both.
+Script: `frontend/scripts/p23_3c_budget_shots.mjs`.
+
+| Step | Result | Screenshot |
+|---|---|---|
+| Finance dashboard before; Settings > Hiring > Department budgets: "Release budget on exit" on, **pro-rata** (default, no company override) | | `p23-3c-finance-before.png`, `-settings-pro-rata-default.png` |
+| Complete Karan's exit (pro-rata) | HTTP 200 `completed`; commitment **379,166.67 still committed, 270,833.33 released** (6.5 L x 5/12: Nov-Mar after the October LWD); history "+2.7 L released - Proof Karan Mehta exited (Proof - Data Engineer 1 (P23)) on 15 Oct 2026 (Proof Dept (P23))" | `p23-3c-finance-after-pro-rata.png` |
+| Switch to **Release the full annual amount** | "Saved." | `p23-3c-settings-full.png` |
+| Complete Divya's exit (full) | commitment `released`, **650,000** released; history "+6.5 L released - Proof Divya Nair exited ..."; Proof Dept bar "3.8 L of 20 L used - 16.2 L left" (only Karan's spent part stays) | `p23-3c-finance-after-full.png`, `-finance-after-full-page.png` |
+| Back to pro-rata | | `p23-3c-settings-back-to-pro-rata.png` |
+
+**Bug found and fixed:** the history's existing real line said "+4 L released - Gunda Kishore - **salary
+approved** (AI)". "Salary approved" is a stage, not why money came back. Evidence: the release `released_at
+2026-10-07 12:51:33.692` and the audit row `candidate_removed` by kg@ctdtechs.com at `12:51:33.714`. So it was
+a **removal**. Cause: `removal.py` and `jobs/cleanup.py` (job closed) called `budgets.release()` without a
+reason, and `_dropout_reason` fell back to the application's current status. Fix:
+- removal now says "<name> - removed";
+- job clean-up says "<name> - job closed (<job>)";
+- an unknown status reads "dropped out" (with labels for hr / interview / salary rejected and left after
+  joining).
+
+New `tests/test_budget_release_reason.py`: 2 passed. The real 7 Oct row keeps its old text (history data was not
+rewritten).
+
+**Observation (real data, not changed):** Department budgets AI and RPA have a quarter split of 10,000 each
+(40,000 in total) against a yearly budget of 40,00,000.
+
+**Clean-up (done):** the proof budget, 2 jobs, candidates, applications, commitments, employees, employment
+records, joining cases, exits, 6 audit rows; the `recruitment.budgets.release_mode` company override + 2 history
+rows (there was none before). Scan: nothing left. Budgets back to AI + RPA, 9 employees.

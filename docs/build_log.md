@@ -2904,3 +2904,8 @@ NEXT: part-23.3b proof 21.5 agencies (Recruitment / BGV / Both, edit, filter, st
   Decision: blank type in the import still means Recruitment (as before); "Recruitment + BGV" (the label the app itself shows) is accepted as Both.
 
 NEXT: part-23.3c proof 21.7 budget released on exit (pro-rata and full, release history on the Finance dashboard).
+
+- part-23.3c: proof 21.7 budget released on exit (FIXES_23.md 23.3c, screens p23-3c-*): two proof exits completed through HR's Complete endpoint, pro-rata released 270,833.33 of 6.5 L (379,166.67 stays committed), full released 650,000; history card + department bar on the Finance dashboard; setting switched pro-rata -> full -> back. Bug fixed: a removed candidate's release read "<name> - salary approved" (the stage); removal / job clean-up now pass their reason, unknown stages read "dropped out". New test, 2 passed. Proof rows + setting override removed, scan clean.
+  Decision: the real 7 Oct history row keeps its old text (no history rewrite); noted the AI / RPA quarter split (10,000 each vs 40 L a year) for the owner.
+
+NEXT: part-23.3d proof 22.1 HR assistant (10 questions + hand-over email in mailpit).
