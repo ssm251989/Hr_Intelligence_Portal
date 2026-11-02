@@ -172,7 +172,7 @@ history: +270,833 released - Kishore Proofone exited (Junior AI Developer) on 15
   - Statuses: Assigned -> In progress (when the link is opened) -> Report received (the vendor uploads; HR gets an in-app notice) -> Decided / Cancelled. An overdue flag shows past the due date.
   - Daily reminders go to the vendor; reassign and cancel both email the vendor.
   - New HR decision "Discrepancy - clear with a note" (the note is required).
-- **Proof:** not yet on screen (the proof setup was stopped for low memory). Backend checked: a bad token returns 410.
+- **Proof:** on screen 2026-11-02 - see **docs/ui/FIXES_23.md, 23.3a** (Download all card + bulk, assign, vendor link -> In progress, report upload -> HR notice, reminder, reassign / cancel emails, discrepancy). Backend checked earlier: a bad token returns 410.
 
 ## 21.5 Agencies for Recruitment / BGV / Both (code: 971e4a8)
 All fields (contact, phone, address, GST/PAN, contract dates, fee type/value, payment terms, BGV checks with prices, turnaround, report format), edit, type filter, stats chips, and an Excel import with a sample file. **Proof:** not yet on screen.

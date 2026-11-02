@@ -277,8 +277,13 @@ def get_job_status_overview(
     return JobStatusOverviewResponse(period=period, total=sum(row.count for row in by_status), by_status=by_status)
 
 
+_ACRONYMS = {"bgv": "BGV", "hr": "HR", "ai": "AI", "jd": "JD", "ctc": "CTC", "id": "ID", "lwd": "LWD", "pdf": "PDF"}
+
+
 def _humanize_action(action: Optional[str]) -> str:
-    text = (action or "").replace("_", " ").strip()
+    # Part 23.3a: "bgv_vendor_assigned" read "Bgv vendor assigned" -- acronyms keep their capitals
+    words = [_ACRONYMS.get(w, w) for w in (action or "").replace("_", " ").split()]
+    text = " ".join(words)
     return text[:1].upper() + text[1:] if text else "Activity"
 
 

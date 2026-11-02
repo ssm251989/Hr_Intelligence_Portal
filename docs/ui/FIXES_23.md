@@ -143,3 +143,47 @@ run); the "Amazon Bedrock" connection created by the Test deleted (back to "not 
 override + 6 history rows deleted (there was no override before); 3 `platform.genai_test` error usage rows
 deleted. `GET /ui/genai/settings` after: provider `anthropic`, bedrock `last_tested_at` None, key last test
 2026-10-05 passed.
+
+## 23.3 On-screen proofs (proof stack restarted 2026-11-02)
+
+Proof stack: mailpit (fresh `mailpit-p23.db`), API :8010 from `backend/.venv` with `DEV_MAIL_CAPTURE`, web :5174,
+temporary admin `proof.admin.p23@example.com` (role copied from kg@ctdtechs.com). Free memory was about 1.4 GB,
+so only one API process ran. Proof data comes from one fixture script (`Proof ...` names, `@example.com`
+addresses). The clean-up deletes every recorded row plus rows the app made for them (found by scanning every uuid
+column for the proof ids, and audit rows by actor / details text), then scans again.
+
+### 23.3a BGV - Download all + BGV vendor (21.4)
+
+Data: job "Proof - BGV Analyst (P23)", candidates **Proof Ananya Rao** and **Proof Vikram Sethi** at "BGV
+requested", with 3 generated PDFs each (Aadhaar, degree, experience). BGV vendors **Proof Verify Co (P23)**
+(type BGV; education 800, employment 900, address 600, criminal 1200; 5 days) and **Proof Second Checks (P23)**
+(type Both). Script: `frontend/scripts/p23_3a_bgv_shots.mjs` (phases A / B / C).
+
+| Step | Result | Screenshot |
+|---|---|---|
+| BGV page with both proof candidates | stage table + job picker | `p23-3a-bgv-page.png` |
+| **Download all** on a candidate card | `Proof Ananya Rao - BGV documents.zip`: `Aadhaar/…pdf`, `Degree/…pdf`, `Experience/…pdf` + **`BGV summary.xlsx`** (candidate, job, BGV status, document, type, document status, "In the ZIP" = yes) | `p23-3a-vendor-card-empty.png` |
+| **Download all (2)** from the table's bulk bar | `bgv-documents-2-candidates.zip`: one folder per candidate (6 PDFs) + one `BGV summary.xlsx` with 6 rows | `p23-3a-bulk-bar.png` |
+| **Assign BGV vendor** (Proof Verify Co, Education + Employment, due = today + 5 days) | assignment `assigned`, due 2026-11-07, cost 1700; mailpit: "Background check request: Proof Ananya Rao (Proof - BGV Analyst (P23)) - CTD Techs" to the vendor with the secure link `http://127.0.0.1:5174/bgv-vendor/<token>` | `p23-3a-assign-dialog.png`, `-assigned.png`, `-mail-assigned.png` |
+| Vendor opens the link | page shows company, vendor, candidate, role, due date, the 2 checks, 3 documents to download; status -> **`in_progress`** | `p23-3a-vendor-page.png` |
+| Vendor uploads the report with a note | "Report received. Thank you - HR has been told."; status -> **`report_received`** | `p23-3a-vendor-upload.png`, `-vendor-uploaded.png` |
+| HR is notified | card: "Report received Nov 2, 2026 - Proof Verify Co - BGV report - Ananya Rao.pdf" + vendor's note + **Download report**; bell: "BGV report received for Proof Ananya Rao … from Proof Verify Co (P23) - decide now" | `p23-3a-report-received.png`, `-hr-notice.png` |
+| **Discrepancy - clear with a note** (note required) | application **`bgv_cleared`**, assignment `decided / discrepancy`; card moves it to "Earlier assignments" | `p23-3a-discrepancy-dialog.png`, `-discrepancy-done.png` |
+| **Reminder**: Vikram assigned with due date tomorrow, daily job `vendors.run_reminders` run once | `{'reminders': 1}`; mailpit: "Reminder: background check for Proof Vikram Sethi tomorrow"; listed on the card | `p23-3a-reminder-on-card.png`, `-mail-reminder.png` |
+| **Reassign** to Proof Second Checks | old assignment `cancelled (reassigned to Proof Second Checks (P23))`; mailpit: "…is cancelled" to vendor 1 + a new request to vendor 2 | `p23-3a-reassign-dialog.png`, `-reassigned.png` |
+| **Cancel assignment** with a reason | `cancelled (Candidate withdrew - no checks needed.)`; mailpit: "Background check for Proof Vikram Sethi is cancelled" to vendor 2 | `p23-3a-cancelled.png`, `-mail-latest-vikram.png` |
+
+Mailpit had exactly the 6 vendor emails (`p23-3a-mailpit-inbox.png`): request (Ananya), request (Vikram),
+reminder, cancelled (vendor 1, from the reassign), request (vendor 2), cancelled (vendor 2).
+
+**Fix found on screen:** the bell's "Hiring activity" said "**Bgv** vendor assigned / opened / report received".
+Cause: `reports/router.py` `_humanize_action` only upper-cased the first letter of the raw action. Acronyms
+(BGV, HR, AI, JD, CTC, ID, LWD, PDF) now keep their capitals ("BGV vendor assigned"); `test_reports -k activity`
+7 passed.
+
+**Note (by design, not changed):** while a vendor works on a case the application stays "BGV requested"
+(the vendor status lives on the assignment), so the table chip "BGV in progress" stays 0.
+
+**Clean-up (done):** 1 job, 2 candidates, 2 applications, 6 BGV documents, 2 agencies, 3 assignments,
+9 messages (incl. the in-app notice to kg@ctdtechs.com), 9 audit rows, 7 files (6 PDFs + the vendor report).
+Scan of every uuid column afterwards: nothing left.

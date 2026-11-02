@@ -2894,3 +2894,8 @@ NEXT: part-23.2 live Bedrock smoke test - waiting for AWS access (credentials + 
 - part-23.2: waiting for AWS access (credentials + Bedrock model access in ap-south-1). Nothing run.
 
 NEXT: part-23.3a proof 21.4 BGV on the proof stack (mailpit, API :8010, web :5174), then 21.5, 21.7, 22.1-22.6.
+
+- part-23.3a: proof 21.4 BGV on the proof stack (FIXES_23.md 23.3a, screens p23-3a-*): Download all (candidate ZIP + "BGV summary.xlsx", bulk ZIP for 2), assign vendor -> secure link email -> In progress -> report upload -> HR notice, reminder (run_reminders once), reassign + cancel emails, "Discrepancy - clear with a note" -> bgv_cleared. Fix: activity titles kept acronyms ("BGV vendor assigned", was "Bgv"). All proof rows + files removed, scan clean.
+  Decision: proof data is inserted by one fixture script (not through the hiring steps) so each 23.3 item starts on clean data; the full hiring path is covered by 23.4.
+
+NEXT: part-23.3b proof 21.5 agencies (Recruitment / BGV / Both, edit, filter, stats, Excel import).
