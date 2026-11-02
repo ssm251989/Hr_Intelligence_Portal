@@ -253,3 +253,46 @@ rewritten).
 **Clean-up (done):** the proof budget, 2 jobs, candidates, applications, commitments, employees, employment
 records, joining cases, exits, 6 audit rows; the `recruitment.budgets.release_mode` company override + 2 history
 rows (there was none before). Scan: nothing left. Budgets back to AI + RPA, 9 employees.
+
+### 23.3d HR assistant - the 10 questions (22.1)
+
+**Code under test.** The working tree had uncommitted PART 25 changes in this same code (`copilot/service.py`
+step 0.5 "agent team", `CopilotWidget.tsx`, LangGraph not installed), written outside this session. So the proof
+API ran the **committed** code from a clean git worktree at HEAD `82c3e7d` (same `.venv`, same DB, `uploads`
+linked). The real model was used (provider `anthropic`). Script: `frontend/scripts/p23_3d_assistant_shots.mjs`.
+
+| # | Question (expected) | Answer on screen | Source shown | Screenshot |
+|---|---|---|---|---|
+| 1 | How many casual leaves do I get? (12, max 3 at a time) | "You get 12 casual leaves a year, with a maximum of 3 days at a time [1]." | CTD Techs Employee Handbook - 14. Frequently asked questions | `p23-3d-01-casual-leave.png` |
+| 2 | Notice period for a senior employee? (90 days) | "The notice period for Senior, Lead and Manager (L5 and above) employees is 90 days after confirmation [1][4]." | Handbook - 6. Notice period and resignation; 14. FAQ | `p23-3d-02-notice-senior.png` |
+| 3 | Can I work from home? (2 days/week after confirmation) | "Yes. After confirmation, employees may work from home up to 2 days a week, with manager approval ... During probation ... only in exceptional cases with HR approval" | Handbook | `p23-3d-03-wfh.png` |
+| 4 | When is salary credited? (last working day) | "Salary is credited to the employee's bank account on the last working day of each month [1][2]." | Handbook | `p23-3d-04-salary-date.png` |
+| 5 | Hotel limit, junior, metro? (Rs 4,000/night) | "Up to Rs 4,000 per night [1][2]" | Handbook | `p23-3d-05-hotel-junior-metro.png` |
+| 6 | How long is probation? (6 months) | "Probation is 6 months, extendable once by up to 3 months [1][2]." | Handbook | `p23-3d-06-probation.png` |
+| 7 | How many open jobs do we have? (live) | "You currently have 0 open jobs." (live: all 3 jobs are closed) | live data | `p23-3d-07-open-jobs.png` |
+| 8 | Which candidates are waiting for an interview? (live) | "There are currently no candidates waiting for an interview." (live: 2 applications, neither at interview) | live data | `p23-3d-08-waiting-interview.png` |
+| 9 | "Eg1" (clarify, no error) | "I'm not sure what you mean - try asking about leave, notice period, salary dates, travel, jobs or candidates." + chips | - | `p23-3d-09-eg1.png` |
+| 10 | Not in the handbook: "Is there a company policy on bringing pets to the office?" | "I couldn't find this in your company's policies. You can hand your question over to HR ..." -> **Hand over to HR** | - | `p23-3d-10-not-in-handbook.png`, `-handed-over.png` |
+
+After the hand-over: My approvals > "Also for you" shows **"Question from Proof Admin P23: Is there a company
+policy on bringing pets to the office?"** with Reply / Mark done (`p23-3d-11-hr-todo-in-approvals.png`).
+Mailpit: **"HR assistant: a question from Proof Admin P23"** to the HR mailbox `hradmin65@gmail.com`
+(`p23-3d-12-handover-email.png`). 8 model calls, INR 1.43 in total (6,684 in / 289 out tokens).
+
+**Bug found and fixed:** pressing **Hand over to HR** showed "Something went wrong - This Session's transaction
+has been rolled back ...". The real cause, from the API log:
+`psycopg2.errors.CheckViolation: new row for relation "agent_suggestions" violates check constraint
+"agent_suggestions_agent_check"`. The HR to-do was saved with `agent="copilot"`, but the constraint (and the
+model's `AGENTS`) only allow recruiter / onboarding / helpdesk_triage / policy_checker. So **no hand-over could
+ever be saved**; the 22.1 dry run stopped before the confirm step. Fix: the to-do is saved as
+`helpdesk_triage` (a question routed to HR). My approvals picks the card by `kind = copilot_question`, so nothing
+else changes, and no schema change was needed. New `tests/test_copilot_hr_handover.py` fails on the old code
+with the same CheckViolation and passes now. The commit has only this hunk of `copilot/service.py`; the PART 25
+lines in that file stay uncommitted.
+
+**For PART 25 (not changed here):** in the working tree, `CopilotService._agent_team` imports
+`app.hr_agents.graph` **outside** its try block, and `copilot.agents.enabled` defaults to on. Until `langgraph` is
+installed, a task-like question from an HR user would fail rather than fall back to the normal assistant.
+
+**Clean-up (done):** 2 conversations, 22 messages, 2 drafts, 8 decision logs, 8 usage rows, the HR to-do, the
+email row. Scan: nothing left.

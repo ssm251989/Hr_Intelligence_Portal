@@ -2909,3 +2909,8 @@ NEXT: part-23.3c proof 21.7 budget released on exit (pro-rata and full, release 
   Decision: the real 7 Oct history row keeps its old text (no history rewrite); noted the AI / RPA quarter split (10,000 each vs 40 L a year) for the owner.
 
 NEXT: part-23.3d proof 22.1 HR assistant (10 questions + hand-over email in mailpit).
+
+- part-23.3d: proof 22.1 HR assistant (FIXES_23.md 23.3d, screens p23-3d-*): all 10 questions answered correctly with handbook sources / live data / clarify. Bug fixed: "Hand over to HR" never saved - the HR to-do used agent="copilot", refused by CHECK agent_suggestions_agent_check; now helpdesk_triage. New test (fails on the old code, passes now). To-do in My approvals + email to the HR mailbox in mailpit. Proof rows removed.
+  Decisions: the proof API ran the committed code from a HEAD worktree, because uncommitted PART 25 changes sit in the same file; only the fix hunk of copilot/service.py is committed. Used an existing agent value instead of widening the CHECK, so there is no migration while PART 25 may add its own.
+
+NEXT: part-23.3e proof 22.2-22.5 (email matching examples, My approvals cards, Assign roles single + bulk, agency delete vs deactivate).

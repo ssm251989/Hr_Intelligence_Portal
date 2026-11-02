@@ -265,3 +265,5 @@ Real offer check: the latest live offer `d9d1533a...` renders through `build_pdf
 | 22.6 Letters + emails design (+ settings) | Built; sample PDFs and email screenshots in docs/ui/letters/ | 9e64753, d96e0ef, 6aed67c |
 
 **Not finished:** the on-screen proofs. That means screenshots of each new screen, the mailpit captures (the HR hand-over email, the "access updated" email, Send test to me) and the 22.1 widget screenshots. They need the proof setup (mailpit, API :8010, web :5174), which the system stopped for low memory on 2026-10-07 and which has not been restarted.
+
+**On-screen proof (2026-11-02):** the 10 questions with screenshots, the HR to-do and the hand-over email are in **docs/ui/FIXES_23.md, 23.3d**. The hand-over itself failed on a CHECK constraint (agent="copilot") and was fixed there.

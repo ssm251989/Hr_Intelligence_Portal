@@ -200,7 +200,9 @@ class CopilotService:
 
         who = self.user.full_name or self.user.email
         question = (payload.get("description") or payload.get("subject") or "").strip()
-        todo = suggest(self.db, self.tenant, agent="copilot", kind="copilot_question", title=f"Question from {who}: {question[:90]}",
+        # Part 23.3d: agent="copilot" broke the CHECK agent_suggestions_agent_check (only recruiter / onboarding /
+        # helpdesk_triage / policy_checker), so every hand-over failed; a question routed to HR is helpdesk triage
+        todo = suggest(self.db, self.tenant, agent="helpdesk_triage", kind="copilot_question", title=f"Question from {who}: {question[:90]}",
                        payload={"question": question, "user_email": self.user.email, "user_name": who}, reviewer_permission="core_hr.employee.edit")
         hr = get_hr_integration(self.db)
         to = hr.hr_module_email or hr.from_address or hr.smtp_username
