@@ -22,6 +22,7 @@ already knew. Agencies only ever see a plain stage, never scores or notes.
 Every query filters on the current company's tenant_id explicitly.
 """
 
+import re
 import secrets
 import uuid
 from datetime import date, datetime, timezone
@@ -116,6 +117,19 @@ class AgencyPatch(AgencyFields):
     contact_email: Optional[str] = Field(None, max_length=255)
     notes: Optional[str] = None
     active: Optional[bool] = None
+
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# Part 23.3b: words the import accepts for the type column (blank = Recruitment); anything else is refused
+_TYPE_WORDS = {"recruitment": "recruitment", "bgv": "bgv", "both": "both", "recruitment + bgv": "both", "recruitment+bgv": "both", "": "recruitment"}
+
+
+def _clean_email(value: Optional[str]) -> Optional[str]:
+    """Part 23.3b: the API never checked the address (only the browser form did) - an import could store "not-an-email"."""
+    email = (value or "").strip().lower() or None
+    if email and not _EMAIL_RE.match(email):
+        raise HTTPException(status_code=400, detail=f"The email \"{email}\" doesn't look right.")
+    return email
 
 
 def _apply_fields(agency: RecruitmentAgency, data: dict) -> None:
@@ -231,7 +245,7 @@ def create_agency(payload: AgencyIn, db: Session = Depends(get_db), current_user
     name = payload.name.strip()
     if db.query(RecruitmentAgency).filter(RecruitmentAgency.tenant_id == _tid(), func.lower(RecruitmentAgency.name) == name.lower()).first():
         raise HTTPException(status_code=409, detail="An agency with this name already exists")
-    agency = RecruitmentAgency(tenant_id=_tid(), name=name, contact_email=(payload.contact_email or "").strip().lower() or None, notes=payload.notes)
+    agency = RecruitmentAgency(tenant_id=_tid(), name=name, contact_email=_clean_email(payload.contact_email), notes=payload.notes)
     _apply_fields(agency, payload.model_dump(exclude_unset=True))
     db.add(agency)
     db.commit()
@@ -282,7 +296,6 @@ async def import_agencies(file: UploadFile = File(...), db: Session = Depends(ge
     except Exception:  # noqa: BLE001
         raise HTTPException(status_code=400, detail="That isn't an Excel file - use the sample.")
     results = []
-    types = {"recruitment": "recruitment", "bgv": "bgv", "both": "both"}
     for n, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
         vals = [(str(v).strip() if v is not None else "") for v in (list(row) + [None] * 16)[:16]]
         name = vals[0]
@@ -293,7 +306,7 @@ async def import_agencies(file: UploadFile = File(...), db: Session = Depends(ge
             for part in [x for x in vals[12].split(";") if x.strip()]:
                 code, _, price = part.partition(":")
                 checks.append({"check": code.strip().lower(), "price": price.strip() or None})
-            data = {"agency_type": types.get(vals[1].lower(), "recruitment"), "contact_person": vals[2], "phone": vals[4], "address": vals[5],
+            data = {"agency_type": _TYPE_WORDS.get(" ".join(vals[1].lower().split()), vals[1]), "contact_person": vals[2], "phone": vals[4], "address": vals[5],
                     "gst_pan": vals[6], "contract_start": date.fromisoformat(vals[7][:10]) if vals[7] else None,
                     "contract_end": date.fromisoformat(vals[8][:10]) if vals[8] else None, "fee_type": vals[9].lower() or None,
                     "fee_value": float(vals[10]) if vals[10] else None, "payment_terms": vals[11], "bgv_checks": checks,
@@ -303,7 +316,7 @@ async def import_agencies(file: UploadFile = File(...), db: Session = Depends(ge
             if created:
                 agency = RecruitmentAgency(tenant_id=_tid(), name=name)
                 db.add(agency)
-            agency.contact_email = vals[3].lower() or agency.contact_email
+            agency.contact_email = _clean_email(vals[3]) or agency.contact_email
             agency.notes = vals[15] or agency.notes
             _apply_fields(agency, data)
             db.commit()
@@ -326,7 +339,7 @@ def update_agency(agency_id: uuid.UUID, payload: AgencyPatch, db: Session = Depe
     if "name" in changes:
         changes["name"] = changes["name"].strip()
     if "contact_email" in changes:
-        changes["contact_email"] = (changes["contact_email"] or "").strip().lower() or None
+        changes["contact_email"] = _clean_email(changes["contact_email"])
     _apply_fields(agency, changes)
     for key, value in changes.items():
         if key in ("name", "contact_email", "notes", "active"):

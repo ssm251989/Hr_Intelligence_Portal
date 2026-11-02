@@ -2899,3 +2899,8 @@ NEXT: part-23.3a proof 21.4 BGV on the proof stack (mailpit, API :8010, web :517
   Decision: proof data is inserted by one fixture script (not through the hiring steps) so each 23.3 item starts on clean data; the full hiring path is covered by 23.4.
 
 NEXT: part-23.3b proof 21.5 agencies (Recruitment / BGV / Both, edit, filter, stats, Excel import).
+
+- part-23.3b: proof 21.5 agencies (FIXES_23.md 23.3b, screens p23-3b-*): add Recruitment / BGV / Both through the form, edit, type filter, stats (fees due 74,970 = 8.33 % of 900000; BGV avg 3 days, 1 overdue, cost 1,700), sample + Excel import. Bug fixed: the import stored an unknown type as Recruitment and an invalid email; now the row is refused with the reason (shared _clean_email for add / edit / import). New test file, 3 passed. Proof rows removed, scan clean.
+  Decision: blank type in the import still means Recruitment (as before); "Recruitment + BGV" (the label the app itself shows) is accepted as Both.
+
+NEXT: part-23.3c proof 21.7 budget released on exit (pro-rata and full, release history on the Finance dashboard).

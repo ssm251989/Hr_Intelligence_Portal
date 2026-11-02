@@ -187,3 +187,34 @@ Cause: `reports/router.py` `_humanize_action` only upper-cased the first letter 
 **Clean-up (done):** 1 job, 2 candidates, 2 applications, 6 BGV documents, 2 agencies, 3 assignments,
 9 messages (incl. the in-app notice to kg@ctdtechs.com), 9 audit rows, 7 files (6 PDFs + the vendor report).
 Scan of every uuid column afterwards: nothing left.
+
+### 23.3b Agencies - Recruitment / BGV / Both (21.5)
+
+Script: `frontend/scripts/p23_3b_agency_shots.mjs` (A: add + edit through the form; B: filter, stats, sample, import).
+
+| Step | Result | Screenshot |
+|---|---|---|
+| Add **Recruitment** agency "Proof TalentReach (P23)": contact, email, phone, address, fee **8.33 % of annual CTC**, payment terms | saved `recruitment`, fee `percent / 8.33` | `p23-3b-form-recruitment.png` |
+| Add **BGV** agency "Proof SafeHire Checks (P23)": Education 800, Employment 900, Address 600, turnaround 5, report format | saved `bgv`, 3 checks with prices, turnaround 5 | `p23-3b-form-bgv.png` |
+| Add **Both** "Proof AllRound Partners (P23)": fixed fee 40000 + Education 700, Criminal record 1100, turnaround 7 | saved `both` with fee and checks | `p23-3b-form-recruitment-bgv.png` |
+| **Edit** SafeHire: turnaround 4, GST / PAN | saved (turnaround 4, GST `PROOF0000P23`) | `p23-3b-edit-dialog.png`, `-edited.png` |
+| **Type filter** tabs | All = the 3; Recruitment = TalentReach + AllRound; BGV = SafeHire + AllRound | `p23-3b-filter-all.png`, `-filter-recruitment.png`, `-filter-bgv.png` |
+| **Stats**, Recruitment (fixture: 2 candidates sent, 1 hired with annual CTC 900000) | chips "2 sent", "1 hired", "Fees due 74,970" (= 900000 x 8.33 %); the sent list shows both | `p23-3b-stats-recruitment.png` |
+| **Stats**, BGV (fixture: 1 case with the report 3 days after assigning, 1 open case 2 days overdue) | "2 BGV cases (1 open)", "Avg 3 days", "1 overdue", "Cost so far 1,700" | `p23-3b-stats-bgv.png` |
+| Stats, Both with no activity | recruitment and BGV chips all at 0 / "No reports yet" | `p23-3b-stats-both.png` |
+| **Sample import file** + **Import from Excel** (the sample's 2 rows renamed to proof names + 1 bad row: type "Payroll", email "not-an-email") | "2 imported, 1 not: Proof Import Broken (P23): The email "not-an-email" doesn't look right."; "Proof Import Verify (P23)" got its 5 checks from `education:800; employment:1000; ...` | `p23-3b-import-result.png` |
+
+**Bug found and fixed:** the first import run said "**3 agencies imported**". The bad row was stored as a
+Recruitment agency with the email `not-an-email`. Cause (`agency_router.py` `import_agencies`):
+`types.get(vals[1].lower(), "recruitment")` turned every unknown type into Recruitment, and no email was ever
+checked (only the browser form has `type="email"`). Fix:
+- blank type = Recruitment, and "Recruitment + BGV" is read as Both;
+- any other word is passed through, so the existing check refuses it ("Type must be Recruitment, BGV or Both.");
+- one `_clean_email` check is used by add, edit and import.
+
+New `tests/test_agency_import_validation.py`: 3 passed. A refused row rolls back the request's session, and in
+the test set-up that would also roll back the test's own transaction, so the row checks are tested directly.
+
+**Clean-up (done):** 5 proof agencies (3 from the form, 2 imported; the 3 from the first import were deleted
+before the re-run), 1 job, 4 candidates, 4 applications, 1 offer, 2 submissions, 2 BGV assignments, 6 audit
+rows. Scan afterwards: nothing left. Only the real "Bright talent partners" agency remains.

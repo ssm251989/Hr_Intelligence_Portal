@@ -175,7 +175,7 @@ history: +270,833 released - Kishore Proofone exited (Junior AI Developer) on 15
 - **Proof:** on screen 2026-11-02 - see **docs/ui/FIXES_23.md, 23.3a** (Download all card + bulk, assign, vendor link -> In progress, report upload -> HR notice, reminder, reassign / cancel emails, discrepancy). Backend checked earlier: a bad token returns 410.
 
 ## 21.5 Agencies for Recruitment / BGV / Both (code: 971e4a8)
-All fields (contact, phone, address, GST/PAN, contract dates, fee type/value, payment terms, BGV checks with prices, turnaround, report format), edit, type filter, stats chips, and an Excel import with a sample file. **Proof:** not yet on screen.
+All fields (contact, phone, address, GST/PAN, contract dates, fee type/value, payment terms, BGV checks with prices, turnaround, report format), edit, type filter, stats chips, and an Excel import with a sample file. **Proof:** on screen 2026-11-02 - see **docs/ui/FIXES_23.md, 23.3b** (import bug fixed there: unknown types and bad emails were accepted).
 
 ## 21.6 Bug: HR assistant
 Merged with 22.1, as PART 22 asked. The causes are quoted and the fix and verification answers are in **docs/ui/FIXES_22.md, section 22.1**.
