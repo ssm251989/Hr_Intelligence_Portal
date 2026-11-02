@@ -1,4 +1,4 @@
-"""Part 18.25: GenAI usage limits (Settings > Integrations > GenAI > Limits).
+"""Part 18.25: GenAI usage limits (Settings > Integrations > AI Intelligence > Limits).
 
 - ai.limits.module_monthly_tokens  {module: tokens}   e.g. {"recruitment": 1000000}; any number, empty = no limit
 - ai.limits.user_daily_tokens      tokens per person per day (0 = no limit)
@@ -77,7 +77,7 @@ def check(db, tenant, *, module: str, user_id: Optional[UUID]) -> None:
         if row["used"] >= row["limit"] and row["mode"] == "block":
             what = {"module": f"the {row['key']} module", "company": "the company", "user": "your account today"}[row["scope"]]
             raise AIUsageBlocked(f"The AI usage limit for {what} is reached ({row['used']:,} of {row['limit']:,} tokens). "
-                                 "It starts again at the next reset, or an admin can raise it in Settings > Integrations > GenAI > Limits.")
+                                 "It starts again at the next reset, or an admin can raise it in Settings > Integrations > AI Intelligence > Limits.")
 
 
 def after_call(db, tenant, *, module: str) -> None:

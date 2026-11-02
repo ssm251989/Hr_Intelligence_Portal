@@ -168,9 +168,23 @@ def _maybe_alert(db: Session, tenant: TenantContext) -> None:
 
 
 def _cost(db: Session, tenant: TenantContext, model: Optional[str], input_tokens: int, output_tokens: int) -> Decimal:
-    """Price table is tenant data (`ai.pricing`: {model: {"input_per_mtok", "output_per_mtok"}})."""
-    prices = (_settings(db, tenant, "ai.pricing") or {}).get(model or "", {})
-    return (Decimal(str(prices.get("input_per_mtok", 0))) * input_tokens + Decimal(str(prices.get("output_per_mtok", 0))) * output_tokens) / Decimal(1_000_000)
+    """Price table is tenant data (`ai.pricing`: {model: {"input_per_mtok", "output_per_mtok", "currency"?}}).
+    The result is always in `ai.currency`: an entry priced in another currency is converted
+    with `ai.fx_rates` ({currency: units of ai.currency per 1}); no rate = the price as given."""
+    return price_tokens(_settings(db, tenant, "ai.pricing") or {}, _settings(db, tenant, "ai.currency"), _settings(db, tenant, "ai.fx_rates") or {},
+                        model, input_tokens, output_tokens)
+
+
+def price_tokens(pricing: dict, currency: Optional[str], fx_rates: dict, model: Optional[str], input_tokens: int, output_tokens: int) -> Decimal:
+    prices = (pricing or {}).get(model or "", {}) or {}
+    amount = (Decimal(str(prices.get("input_per_mtok", 0) or 0)) * input_tokens
+              + Decimal(str(prices.get("output_per_mtok", 0) or 0)) * output_tokens) / Decimal(1_000_000)
+    price_currency = (prices.get("currency") or "").upper()
+    if price_currency and price_currency != (currency or "").upper():
+        rate = (fx_rates or {}).get(price_currency)
+        if rate:
+            amount *= Decimal(str(rate))
+    return amount
 
 
 # ---- the governed call ----

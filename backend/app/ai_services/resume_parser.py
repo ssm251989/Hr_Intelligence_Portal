@@ -55,11 +55,11 @@ def explain_ai_error(exc: Exception) -> ResumeParsingError:
     if isinstance(exc, ResumeParsingError):
         return exc
     if isinstance(exc, AIUsageBlocked):
-        return ResumeParsingError(f"{exc} (Settings > Integrations > GenAI)", "AI_LIMIT", GENAI_SETTINGS_URL)
+        return ResumeParsingError(f"{exc} (Settings > Integrations > AI Intelligence)", "AI_LIMIT", GENAI_SETTINGS_URL)
     if isinstance(exc, (anthropic.AuthenticationError, anthropic.PermissionDeniedError)):
-        return ResumeParsingError("AI key not working - fix it in Settings > Integrations > GenAI.", "AI_KEY", GENAI_SETTINGS_URL)
+        return ResumeParsingError("AI key not working - fix it in Settings > Integrations > AI Intelligence.", "AI_KEY", GENAI_SETTINGS_URL)
     if isinstance(exc, anthropic.NotFoundError):
-        return ResumeParsingError("The AI model chosen for resume parsing is not available - pick another in Settings > Integrations > GenAI.", "AI_MODEL", GENAI_SETTINGS_URL)
+        return ResumeParsingError("The AI model chosen for resume parsing is not available - pick another in Settings > Integrations > AI Intelligence.", "AI_MODEL", GENAI_SETTINGS_URL)
     if isinstance(exc, (anthropic.RateLimitError, anthropic.InternalServerError, anthropic.APIConnectionError)):
         return ResumeParsingError("The AI service is busy or unreachable - try again in a minute.", "AI_BUSY")
     if isinstance(exc, anthropic.BadRequestError):
@@ -67,7 +67,7 @@ def explain_ai_error(exc: Exception) -> ResumeParsingError:
         msg = (body.get("error") or {}).get("message") if isinstance(body, dict) else None
         msg = msg or str(exc)
         if "credit" in msg.lower() or "billing" in msg.lower():
-            return ResumeParsingError("The AI account has no credit left - top it up or change the key in Settings > Integrations > GenAI.", "AI_BILLING", GENAI_SETTINGS_URL)
+            return ResumeParsingError("The AI account has no credit left - top it up or change the key in Settings > Integrations > AI Intelligence.", "AI_BILLING", GENAI_SETTINGS_URL)
         return ResumeParsingError(f"The AI service refused the request: {msg}", "AI_REQUEST")
     return ResumeParsingError(f"Failed to parse resume: {exc}", "AI_ERROR")
 

@@ -25,12 +25,15 @@ def register_all() -> None:
     from app.platform.connectors.providers.microsoft_365 import Microsoft365Adapter
     from app.platform.connectors.providers import test_mailbox  # Part 20.2b
     from app.platform.connectors.providers.test_mailbox import TestMailboxAdapter
+    from app.platform.connectors.providers import bedrock_provider  # HR Agent Platform Phase 0
+    from app.platform.connectors.providers.bedrock_provider import BedrockAdapter
 
     for module, adapter_cls in (
         (smtp, SmtpAdapter), (imap, ImapAdapter), (ics_only, IcsOnlyAdapter),
         (anthropic_provider, AnthropicAdapter), (excel_file, ExcelFileAdapter),
         (local_disk, LocalDiskAdapter), (generic_webhook, GenericWebhookAdapter),
         (nominatim, NominatimAdapter), (google_workspace, GoogleWorkspaceAdapter), (microsoft_365, Microsoft365Adapter), (test_mailbox, TestMailboxAdapter),
+        (bedrock_provider, BedrockAdapter),
     ):
         register_provider(
             ProviderSpec(

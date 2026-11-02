@@ -2880,3 +2880,11 @@ NEXT: part-22.7 proof + hand-over (FIXES_22.md summary; the on-screen proofs for
 - part-21.7: budget released to finance on exit (pro-rata default / full, Settings > Hiring > Budgets), release history (amount, when, why) on the Finance dashboard, audit budget_released_on_exit; drop-out releases now carry a reason. Checked that withdraw / decline / no-show already released. Decision: pro-rata counts whole months after the LWD's month to the end of the commitment's budget year.
 
 NEXT: part-22.7 / 21.9 hand-over; then (when the proof setup can run) the on-screen proofs for 21.4, 21.5, 21.7, 22.1-22.6.
+
+- part-23.1: Phase 0 confirmed and committed - Claude on Amazon Bedrock (ai.provider anthropic | amazon_bedrock, ai.bedrock.region / inference_prefix / model_map, AWS identity from the server), prices in USD with ai.fx_rates, AI unit costs per resume / job / hire (GET /api/v1/ui/genai/unit-costs + card and per-job table), JD drafting counted on its job, "GenAI" renamed "AI Intelligence" (EN / HI / TA). anthropic[bedrock] installed in backend/.venv. Tests: Phase 0 + gateway routing 19 passed; full suite 1320 passed / 165 failed, and the same 165 fail on unmodified HEAD 7b342e0 (worktree run) - none caused by Phase 0; causes listed in docs/ui/FIXES_23.md. Fix found on screen: the Bedrock routing select hid its "server default" value (displayEmpty). Live proof: one JD draft priced at INR 0.684464 = (1599x$2 + 458x$10)/1M x 88; proof job, provider override and temp admin removed.
+  Decisions:
+  - the 165 drifted test failures are not Phase 0 and are left for their own clean-up item (only Phase 0 regressions were in scope);
+  - the ai.provider override created by the switch test is deleted rather than set back to "anthropic", because there was no override before (the default applies);
+  - screenshots use the already-installed Chromium 1243 (SHOT_CHROME) instead of downloading the build Playwright 1.64 expects.
+
+NEXT: part-23.2 live Bedrock smoke test - waiting for AWS access (credentials + Bedrock model access in ap-south-1); meanwhile part-23.3 on-screen proofs (21.4 BGV, 21.5 agencies, 21.7 budget release, 22.1-22.6) on the proof stack.

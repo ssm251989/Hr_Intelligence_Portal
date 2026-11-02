@@ -37,6 +37,12 @@ class Settings:
     SECRET_BACKEND: str = os.getenv("SECRET_BACKEND", "db_encrypted")
     MASTER_KEY: str = os.getenv("MASTER_KEY", "")
     ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
+    # HR Agent Platform Phase 0: AI calls can go through Amazon Bedrock (AWS SDK credential chain:
+    # AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, an AWS profile, or the server's IAM role -- no key here).
+    # AI_PROVIDER is only the fallback when no tenant setting (ai.provider) can be read.
+    AI_PROVIDER: str = os.getenv("AI_PROVIDER", "anthropic")  # anthropic | amazon_bedrock
+    AWS_REGION: str = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or "ap-south-1"
+    BEDROCK_INFERENCE_PREFIX: str = os.getenv("BEDROCK_INFERENCE_PREFIX", "global.")  # global. | in. | none
     SECRET_KEY: str = os.getenv("SECRET_KEY", "")
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "480"))

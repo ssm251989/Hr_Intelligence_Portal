@@ -1,4 +1,4 @@
-"""Part 18.23-18.25 API: GenAI settings, usage dashboard, limits.
+"""Part 18.23-18.25 API: AI Intelligence (was "GenAI") settings, usage dashboard, limits.
 
 Settings (admins):
 - GET  /api/v1/ui/genai/settings      what is in use today: provider, key (masked), models, per-feature on/off + model, limits
@@ -9,6 +9,8 @@ Usage (admins + anyone with analytics view):
 - GET  /api/v1/ui/genai/usage?period=day|week|month|custom&since&until   tokens in/out, cost, requests, errors
        by module / feature / user / day, top consumers, per-candidate cost, limits status
 - GET  /api/v1/ui/genai/usage/export  the same rows as CSV
+- GET  /api/v1/ui/genai/unit-costs?period=...   Phase 0: AI cost per resume, per job, per hire (in ai.currency)
+(The /genai/ paths stay as they are so existing links and clients keep working.)
 """
 
 import csv
@@ -93,8 +95,17 @@ def genai_settings(db: Session = Depends(get_db), current_user: User = Depends(g
         key = FEATURE_MODEL_KEY.get(code)
         features.append({"code": code, "module": module, "label": label, "enabled": governance.feature_enabled(db, tenant, code) and code not in disabled,
                          "switched_off": code in disabled, "model_key": key, "model": _s(db, tenant, f"ai.models.{key}") if key else None})
+    from app.platform.ai import bedrock
+
+    bedrock_cfg = bedrock.config_for(db, tenant)
     return {
         "enabled": bool(_s(db, tenant, "ai.enabled")), "provider": _s(db, tenant, "ai.provider") or "anthropic",
+        "providers": ["anthropic", bedrock.PROVIDER],
+        "bedrock": {"region": _s(db, tenant, "ai.bedrock.region") or "", "inference_prefix": _s(db, tenant, "ai.bedrock.inference_prefix") or "",
+                    "model_map": _s(db, tenant, "ai.bedrock.model_map") or {}, "effective_region": bedrock_cfg.region,
+                    "effective_prefix": bedrock_cfg.inference_prefix or "none", "credentials": bedrock.credential_source(bedrock_cfg),
+                    "example_model_id": bedrock.bedrock_model_id(_s(db, tenant, "ai.default_model"), bedrock_cfg)},
+        "fx_rates": _s(db, tenant, "ai.fx_rates") or {},
         "key": {"source": "company" if own else "server" if app_settings.ANTHROPIC_API_KEY else "none",
                 "masked": _mask(own or app_settings.ANTHROPIC_API_KEY),
                 "last_tested_at": conn.last_tested_at.isoformat() if conn and conn.last_tested_at else None,
@@ -270,4 +281,48 @@ def usage_export(period: str = "month", since: Optional[date] = None, until: Opt
                                             AiUsageRecord.created_at <= end).order_by(AiUsageRecord.created_at):
         w.writerow([r.created_at.isoformat(), r.module, r.feature, r.model, users.get(r.user_id, "system"), r.input_tokens, r.output_tokens,
                     float(r.cost or 0), r.status, f"{r.entity_type}:{r.entity_id}" if r.entity_type else "", r.latency_ms])
-    return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv", headers={"Content-Disposition": 'attachment; filename="genai-usage.csv"'})
+    return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv", headers={"Content-Disposition": 'attachment; filename="ai-intelligence-usage.csv"'})
+
+
+# ---------------------------------------------------------------- Phase 0 unit costs
+
+@router.get("/unit-costs")
+def unit_costs(period: str = "month", since: Optional[date] = None, until: Optional[date] = None,
+               db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """AI cost per resume, per job and per hire for the period, in ai.currency. Per hire =
+    all AI cost in the period / applications that became hires in the period."""
+    from app.models.application import Application
+    from app.models.job_role import JobRole
+    from app.platform.ai import unit_costs as uc
+
+    tenant = require_current_tenant()
+    if not (has_permission(db, tenant, current_user, "platform.settings.view") or has_permission(db, tenant, current_user, "analytics.report.view")):
+        raise HTTPException(status_code=403, detail="Missing permission: platform.settings.view")
+    start, end = _window(period, since, until)
+    records = db.query(AiUsageRecord).filter(AiUsageRecord.tenant_id == tenant.tenant_id, AiUsageRecord.created_at >= start,
+                                             AiUsageRecord.created_at <= end).all()
+    usage_rows = [uc.UsageRow(feature=r.feature, cost=float(r.cost or 0), tokens=(r.input_tokens or 0) + (r.output_tokens or 0),
+                              entity_type=r.entity_type, entity_id=r.entity_id) for r in records]
+    app_ids = {r.entity_id for r in records if r.entity_type == "application" and r.entity_id}
+    cand_ids = {r.entity_id for r in records if r.entity_type == "candidate" and r.entity_id}
+    job_ids = {r.entity_id for r in records if r.entity_type == "job" and r.entity_id}
+    apps = []
+    if app_ids or cand_ids or job_ids:
+        from sqlalchemy import or_
+
+        conds = []
+        if app_ids:
+            conds.append(Application.id.in_(app_ids))
+        if cand_ids:
+            conds.append(Application.candidate_id.in_(cand_ids))
+        if job_ids:
+            conds.append(Application.job_role_id.in_(job_ids))
+        apps = [uc.AppRow(id=a.id, job_id=a.job_role_id, candidate_id=a.candidate_id, status=a.status)
+                for a in db.query(Application).filter(Application.tenant_id == tenant.tenant_id, or_(*conds))]
+    all_job_ids = job_ids | {a.job_id for a in apps if a.job_id}
+    titles = {j.id: j.title for j in db.query(JobRole).filter(JobRole.id.in_(all_job_ids))} if all_job_ids else {}
+    hires = (db.query(func.count(Application.id)).filter(Application.tenant_id == tenant.tenant_id, Application.status.in_(uc.HIRED_STATUSES),
+                                                         Application.updated_at >= start, Application.updated_at <= end).scalar() or 0)
+    result = uc.compute(usage_rows, apps, titles, hires_in_period=int(hires))
+    return {"period": period, "since": start.isoformat(), "until": end.isoformat(), "currency": _s(db, tenant, "ai.currency"),
+            "priced": bool(_s(db, tenant, "ai.pricing")), **result}

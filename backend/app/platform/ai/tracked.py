@@ -4,7 +4,7 @@
 `.messages.create(...)` / `.messages.parse(...)` the Anthropic SDK has, so the existing AI
 services only change their `_get_client()`. For each call it:
 1. refuses if AI or this feature is switched off, or a usage limit says "block" (18.25);
-2. uses the model chosen in Settings > Integrations > GenAI (`ai.models.<key>`, else
+2. uses the model chosen in Settings > Integrations > AI Intelligence (`ai.models.<key>`, else
    `ai.default_model`), caps max_tokens (`ai.max_tokens_per_request`), applies the temperature
    when one is set, and retries ONCE with `ai.fallback_model` when the call fails;
 3. records tokens in/out, cost, feature, module, user, what it was for (application / candidate
@@ -47,10 +47,20 @@ def forget_clients() -> None:
 
 
 def _real_client(db=None, tenant=None):
-    """The company's own key (Settings > GenAI) when one is saved, else the server key."""
+    """Settings > Integrations > AI Intelligence > Provider decides the transport:
+    - "amazon_bedrock": Claude through Amazon Bedrock (AWS SDK credentials, platform/ai/bedrock.py);
+    - "anthropic" (default): the company's own key when one is saved, else the server key."""
     from anthropic import Anthropic
 
     from app.core.config import settings
+    from app.platform.ai import bedrock
+
+    if bedrock.provider_in_use(db, tenant) == bedrock.PROVIDER:
+        config = bedrock.config_for(db, tenant)
+        cache_key = (bedrock.PROVIDER, *config.cache_key(), config.inference_prefix, tuple(sorted((config.model_map or {}).items())))
+        if cache_key not in _clients:
+            _clients[cache_key] = bedrock.BedrockClient(config)
+        return _clients[cache_key]
 
     key = None
     if db is not None and tenant is not None:
@@ -100,7 +110,7 @@ class _Messages:
             module = governance.AI_FEATURES.get(self.feature, (self.feature.split(".")[0], ""))[0]
             if tenant is not None:
                 if not governance.feature_enabled(db, tenant, self.feature):
-                    raise AIUsageBlocked("This AI feature is switched off in Settings > Integrations > GenAI.")
+                    raise AIUsageBlocked("This AI feature is switched off in Settings > Integrations > AI Intelligence.")
                 limits.check(db, tenant, module=module, user_id=_ACTOR.get())
                 model = _setting(db, tenant, f"ai.models.{self.model_key}") or _setting(db, tenant, "ai.default_model") or kwargs.get("model")
                 cap = _setting(db, tenant, "ai.max_tokens_per_request")

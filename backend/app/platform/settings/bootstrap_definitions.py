@@ -283,23 +283,28 @@ def register_all() -> None:
 
     # ai.* governance -- Part 12 section D.
     register(SettingDef("ai.enabled", "bool", True, module="ai", group="AI Governance"))
-    # Part 18.23: GenAI settings -- provider, the models to choose from, default / fallback model,
+    # Part 18.23: AI Intelligence (was "GenAI") settings -- provider, the models to choose from, default / fallback model,
     # max tokens per request, temperature (empty = the model's own default)
-    register(SettingDef("ai.provider", "str", "anthropic", module="ai", group="GenAI", json_schema={"type": "string", "enum": ["anthropic"]}))
+    # HR Agent Platform Phase 0: "amazon_bedrock" sends every AI call through Amazon Bedrock (platform/ai/bedrock.py)
+    register(SettingDef("ai.provider", "str", "anthropic", module="ai", group="AI Intelligence", json_schema={"type": "string", "enum": ["anthropic", "amazon_bedrock"]}))
+    register(SettingDef("ai.bedrock.region", "str", "", module="ai", group="AI Intelligence"))  # empty = the server's AWS_REGION
+    register(SettingDef("ai.bedrock.inference_prefix", "str", "", module="ai", group="AI Intelligence",
+                        json_schema={"type": "string", "enum": ["", "global.", "in.", "apac.", "none"]}))  # empty = server default; none = in-region ids
+    register(SettingDef("ai.bedrock.model_map", "json", {}, module="ai", group="AI Intelligence"))  # {catalog model id: Bedrock model id / profile ARN}
     register(SettingDef("ai.available_models", "json", [model_catalog.CLAUDE_OPUS_5_5, model_catalog.CLAUDE_SONNET_5, model_catalog.CLAUDE_HAIKU_4_5,
-                                                        model_catalog.CLAUDE_FABLE_5_1], module="ai", group="GenAI"))
-    register(SettingDef("ai.default_model", "str", model_catalog.CLAUDE_SONNET_5, module="ai", group="GenAI"))
-    register(SettingDef("ai.fallback_model", "str", model_catalog.CLAUDE_HAIKU_4_5, module="ai", group="GenAI"))
-    register(SettingDef("ai.max_tokens_per_request", "int", 4096, module="ai", group="GenAI", json_schema={"type": "integer", "minimum": 256, "maximum": 64000}))
-    register(SettingDef("ai.temperature", "str", "", module="ai", group="GenAI"))
+                                                        model_catalog.CLAUDE_FABLE_5_1], module="ai", group="AI Intelligence"))
+    register(SettingDef("ai.default_model", "str", model_catalog.CLAUDE_SONNET_5, module="ai", group="AI Intelligence"))
+    register(SettingDef("ai.fallback_model", "str", model_catalog.CLAUDE_HAIKU_4_5, module="ai", group="AI Intelligence"))
+    register(SettingDef("ai.max_tokens_per_request", "int", 4096, module="ai", group="AI Intelligence", json_schema={"type": "integer", "minimum": 256, "maximum": 64000}))
+    register(SettingDef("ai.temperature", "str", "", module="ai", group="AI Intelligence"))
     # Part 18.25: usage limits
-    register(SettingDef("ai.limits.module_monthly_tokens", "json", {}, module="ai", group="GenAI limits"))
-    register(SettingDef("ai.limits.user_daily_tokens", "int", 0, module="ai", group="GenAI limits", json_schema={"type": "integer", "minimum": 0}))
-    register(SettingDef("ai.limits.company_monthly_tokens", "int", 0, module="ai", group="GenAI limits", json_schema={"type": "integer", "minimum": 0}))
-    register(SettingDef("ai.limits.on_limit", "json", {}, module="ai", group="GenAI limits"))
-    register(SettingDef("ai.limits.warn_pct", "int", 80, module="ai", group="GenAI limits", json_schema={"type": "integer", "minimum": 1, "maximum": 99}))
-    register(SettingDef("ai.limits.reset_day", "int", 1, module="ai", group="GenAI limits", json_schema={"type": "integer", "minimum": 1, "maximum": 28}))
-    register(SettingDef("ai.currency", "str", "INR", module="ai", group="GenAI"))
+    register(SettingDef("ai.limits.module_monthly_tokens", "json", {}, module="ai", group="AI Intelligence limits"))
+    register(SettingDef("ai.limits.user_daily_tokens", "int", 0, module="ai", group="AI Intelligence limits", json_schema={"type": "integer", "minimum": 0}))
+    register(SettingDef("ai.limits.company_monthly_tokens", "int", 0, module="ai", group="AI Intelligence limits", json_schema={"type": "integer", "minimum": 0}))
+    register(SettingDef("ai.limits.on_limit", "json", {}, module="ai", group="AI Intelligence limits"))
+    register(SettingDef("ai.limits.warn_pct", "int", 80, module="ai", group="AI Intelligence limits", json_schema={"type": "integer", "minimum": 1, "maximum": 99}))
+    register(SettingDef("ai.limits.reset_day", "int", 1, module="ai", group="AI Intelligence limits", json_schema={"type": "integer", "minimum": 1, "maximum": 28}))
+    register(SettingDef("ai.currency", "str", "INR", module="ai", group="AI Intelligence"))
     register(SettingDef("ai.features.disabled", "json", [], module="ai", group="AI Governance"))  # feature codes or "<module>.*"
     register(SettingDef("ai.redaction.enabled", "bool", True, module="ai", group="AI Governance"))
     register(SettingDef("ai.redaction.patterns", "json", {
@@ -308,7 +313,15 @@ def register_all() -> None:
         "pan": r"\b[A-Z]{5}[0-9]{4}[A-Z]\b",
         "aadhaar": r"\b\d{4}\s?\d{4}\s?\d{4}\b",
     }, module="ai", group="AI Governance"))
-    register(SettingDef("ai.pricing", "json", {}, module="ai", group="AI Governance"))  # {model: {input_per_mtok, output_per_mtok}}
+    # {model: {input_per_mtok, output_per_mtok, currency?}} -- an entry without "currency" is in ai.currency.
+    # Defaults (Phase 0 unit costs): Anthropic list prices in USD per million tokens, as published Oct 2026.
+    # Bedrock regional / India-only endpoints cost about 10% more than global -- edit these to the invoice rates.
+    register(SettingDef("ai.pricing", "json", {
+        model_catalog.CLAUDE_SONNET_5: {"input_per_mtok": 2, "output_per_mtok": 10, "currency": "USD"},
+        model_catalog.CLAUDE_HAIKU_4_5: {"input_per_mtok": 1, "output_per_mtok": 5, "currency": "USD"},
+    }, module="ai", group="AI Governance"))
+    # {currency: units of ai.currency per 1 of that currency}, used when a price is in another currency
+    register(SettingDef("ai.fx_rates", "json", {"USD": 88}, module="ai", group="AI Governance"))
     # privacy.* -- Part 13 section E (DPDP). Defaults are conservative starting points each
     # tenant's DPO confirms; ex_employee ~8 years covers common Indian statutory retention.
     register(SettingDef("privacy.dpr_sla_days", "int", 30, module="privacy", group="Privacy"))

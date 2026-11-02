@@ -34,7 +34,12 @@ HELP: dict[str, tuple[str, str]] = {
     "ai.models.resume_extraction": ("Model used to read resumes and documents.", "Resume parsing, pre-boarding document prefill"),
     "ai.models.resume_matching": ("Model used to score resumes against jobs.", "Screening scores"),
     "ai.models.shortlist_feedback": ("Model used to explain shortlist decisions.", "Shortlist feedback text"),
-    "ai.pricing": ("Price per million tokens for each model, for usage cost reports.", "AI usage costs and budget cut-offs"),
+    "ai.pricing": ("Price per million tokens for each model, for usage cost reports. An entry can name its own currency (e.g. USD); it is converted with ai.fx_rates.", "AI usage costs, cost per resume / job / hire, budget cut-offs"),
+    "ai.fx_rates": ("How many units of your AI currency one unit of another currency is worth, e.g. {\"USD\": 88}.", "AI costs for prices given in another currency"),
+    "ai.provider": ("Where AI calls go: Anthropic directly, or Claude through Amazon Bedrock (your AWS account).", "Every AI feature"),
+    "ai.bedrock.region": ("AWS region for Amazon Bedrock, e.g. ap-south-1. Empty = the server's AWS_REGION.", "Every AI feature when the provider is Amazon Bedrock"),
+    "ai.bedrock.inference_prefix": ("Bedrock routing: global. (any region), in. (India only), apac., or none (in-region model ids).", "Where AI requests are processed, price"),
+    "ai.bedrock.model_map": ("Bedrock model id or inference-profile ARN for any model whose id differs from the default naming.", "Which Bedrock model each AI feature calls"),
     "ai.redaction.enabled": ("Remove personal identifiers before text is sent to an AI model.", "Every AI request except document extraction"),
     "ai.redaction.patterns": ("Patterns that are redacted (emails, phone numbers, PAN, Aadhaar...).", "What personal data AI providers can see"),
     # ---- analytics ----

@@ -28,19 +28,25 @@ _PURPOSE_FEATURE = {"llm.judgment": "recruitment.ranking", "llm.copilot": "copil
                     "llm.resume_extraction": "recruitment.resume_parsing", "llm.embeddings": "copilot.chat"}
 
 
-def complete(
-    db: Session, tenant: TenantContext, *, purpose: str, system: str, messages: list[dict],
-    model: Optional[str] = None, **kwargs: Any,
-) -> dict:
-    """Never names a provider (docs/HRMS_COMPLETE_SPEC.txt Part 3's own "Code never names
-    a provider or address" -- the whole point of this function existing): the caller says
-    WHAT it needs (a purpose), never WHICH connection/model, exactly like every other
-    ai.gateway call site will once Part 3's own migration of ai_services/*.py actually
-    happens.
-    """
-    router = ConnectorRouter(db)
-    resolved = router.resolve(purpose)
+def _adapter_for(db: Session, tenant: TenantContext, purpose: str):
+    """purpose -> the adapter that will make the call.
+
+    HR Agent Platform Phase 0: when Settings > AI Intelligence > Provider is Amazon Bedrock, every
+    AI purpose goes through Bedrock -- the purpose's own route when it points at a Bedrock
+    connection, otherwise the company's Bedrock settings (and the server's AWS credentials).
+    One switch moves all AI traffic; no route has to be edited."""
+    from app.platform.ai import bedrock
     from app.platform.connectors.registry import NotYetImplementedProviderError, get_provider
+
+    router = ConnectorRouter(db)
+    use_bedrock = bedrock.provider_in_use(db, tenant) == bedrock.PROVIDER
+    resolved = router.try_resolve(purpose) if use_bedrock else router.resolve(purpose)
+    if use_bedrock and (resolved is None or resolved.connection.provider_code != bedrock.PROVIDER):
+        from app.platform.connectors.providers.bedrock_provider import BedrockAdapter
+
+        adapter = BedrockAdapter({}, {})
+        adapter.config = bedrock.config_for(db, tenant)
+        return adapter
 
     spec = get_provider(resolved.connection.provider_code)
     if spec.adapter_cls is None:
@@ -56,7 +62,20 @@ def complete(
         store = get_secret_store(db, Secret, SecretScope, str(tenant.tenant_id))
         secrets = json.loads(store.get(resolved.connection.secret_ref))
 
-    adapter = spec.adapter_cls(resolved.connection.config_json or {}, secrets)
+    return spec.adapter_cls(resolved.connection.config_json or {}, secrets)
+
+
+def complete(
+    db: Session, tenant: TenantContext, *, purpose: str, system: str, messages: list[dict],
+    model: Optional[str] = None, **kwargs: Any,
+) -> dict:
+    """Never names a provider (docs/HRMS_COMPLETE_SPEC.txt Part 3's own "Code never names
+    a provider or address" -- the whole point of this function existing): the caller says
+    WHAT it needs (a purpose), never WHICH connection/model, exactly like every other
+    ai.gateway call site will once Part 3's own migration of ai_services/*.py actually
+    happens.
+    """
+    adapter = _adapter_for(db, tenant, purpose)
 
     if model is None:
         setting_key = _PURPOSE_MODEL_SETTING.get(purpose, "ai.models.candidate_ranking")

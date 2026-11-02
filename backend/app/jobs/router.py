@@ -219,28 +219,31 @@ def generate_job_description(
     job = _get_job_or_404(db, job_id)
     if job.status == "on_hold":
         raise HTTPException(status_code=400, detail="Resume this job before generating a JD.")
+    from app.platform.ai.tracked import ai_subject  # Phase 0 unit costs: JD drafting counts on its job
+
     try:
-        result = generate_jd(
-            {
-                "title": job.title,
-                "department": job.department,
-                "location": job.location,
-                "experience_min_years": job.experience_min_years,
-                "experience_max_years": job.experience_max_years,
-                "technical_skills_must_have": job.technical_skills_must_have,
-                "technical_skills_good_to_have": job.technical_skills_good_to_have,
-                "soft_skills_must_have": job.soft_skills_must_have,
-                "soft_skills_good_to_have": job.soft_skills_good_to_have,
-                "key_responsibilities": job.key_responsibilities,
-                "education_degree_level": job.education_degree_level,
-                "education_field": job.education_field,
-                "preferred_certifications": job.preferred_certifications,
-                "salary_band_min": job.salary_band_min,
-                "salary_band_max": job.salary_band_max,
-                "benefits": job.benefits,
-                "additional_notes": job.additional_notes,
-            }
-        )
+        with ai_subject("job", job.id):
+            result = generate_jd(
+                {
+                    "title": job.title,
+                    "department": job.department,
+                    "location": job.location,
+                    "experience_min_years": job.experience_min_years,
+                    "experience_max_years": job.experience_max_years,
+                    "technical_skills_must_have": job.technical_skills_must_have,
+                    "technical_skills_good_to_have": job.technical_skills_good_to_have,
+                    "soft_skills_must_have": job.soft_skills_must_have,
+                    "soft_skills_good_to_have": job.soft_skills_good_to_have,
+                    "key_responsibilities": job.key_responsibilities,
+                    "education_degree_level": job.education_degree_level,
+                    "education_field": job.education_field,
+                    "preferred_certifications": job.preferred_certifications,
+                    "salary_band_min": job.salary_band_min,
+                    "salary_band_max": job.salary_band_max,
+                    "benefits": job.benefits,
+                    "additional_notes": job.additional_notes,
+                }
+            )
     except JDGenerationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     log_action(db, "job_role", job.id, "ai_jd_generator_scored", "system", result)

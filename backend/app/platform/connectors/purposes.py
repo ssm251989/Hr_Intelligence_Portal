@@ -25,7 +25,7 @@ def fallback_for(purpose: str) -> str | None:
 _PLAIN = (
     ("email.outbound.", "The company mailbox (sending email)"), ("email.inbound.", "The company mailbox (reading replies)"),
     ("calendar.", "A calendar (Google or Outlook)"), ("meeting.", "A video-meeting service (Google Meet, Teams or Zoom)"),
-    ("llm.", "The AI service (Settings > Integrations > GenAI)"), ("esign.", "E-signing (DocuSign or Leegality)"),
+    ("llm.", "The AI service (Settings > Integrations > AI Intelligence)"), ("esign.", "E-signing (DocuSign or Leegality)"),
     ("bgv.", "A background-check provider"), ("storage.", "File storage"), ("directory.", "Company email accounts (Google Workspace / Microsoft 365)"), ("geo.", "Maps"), ("chat.", "Team chat"),
     ("analytics.", "The data warehouse"),
 )

@@ -1,0 +1,110 @@
+PART 23 - FINISH, PROVE AND COMMIT (2026-10-30)
+(Repo hr-automation, branch hrms-platform. Paste this whole file into Claude Code.
+Context: the leadership-approved pivot is in the project note
+"claude/hr-agent-platform-pivot.md". All 4 items that were "In progress" on the
+7 Oct status update are BUILT (PART 20 complete; 21.4 BGV vendors, 21.5
+agencies, 21.7 budget release, 22.1-22.6 done in code). What is missing is
+proof, one full test run, and the commit of the Phase 0 changes.)
+
+STANDING RULES
+- First message: run `git log --oneline -5` and `git status` and quote the
+  literal output.
+- For every failure: find and quote the real cause first, then fix.
+- Log decisions in docs/build_log.md. Commit after each item
+  ("part-23.N: <title>") and add a NEXT: line.
+- Proof goes in docs/ui/FIXES_23.md (plus the existing FIXES_21.md /
+  FIXES_22.md where the item belongs).
+
+--------------------------------------------------------------------------
+23.1 CONFIRM AND COMMIT PHASE 0 (already written into the working tree)
+Uncommitted files from the Phase 0 change:
+  backend/.env.example, backend/requirements.txt (anthropic[bedrock]),
+  backend/app/core/config.py (AI_PROVIDER, AWS_REGION, BEDROCK_INFERENCE_PREFIX),
+  backend/app/platform/ai/bedrock.py (NEW), unit_costs.py (NEW), gateway.py,
+  governance.py (price_tokens + currency), tracked.py, limits.py,
+  backend/app/platform/connectors/providers/bedrock_provider.py (NEW) + __init__.py,
+  backend/app/platform/connectors/purposes.py,
+  backend/app/platform/settings/bootstrap_definitions.py (ai.bedrock.*,
+    ai.pricing defaults in USD, ai.fx_rates), help_catalog.py,
+  backend/app/experience/ui_genai_router.py (GET /unit-costs, bedrock block),
+  backend/app/jobs/router.py (JD drafting counted on its job),
+  backend/app/ai_services/resume_parser.py (message text rename),
+  backend/tests/test_bedrock_and_unit_costs.py (NEW, 14 tests),
+  frontend: components/genai/GenAISettingsPage.tsx, pages/genai/GenAIUsagePage.tsx,
+    i18n/pages/part18.ts, i18n/pages/modules19.ts ("GenAI" -> "AI Intelligence").
+1. Confirm every file above is present: run `git diff --stat` and `git status`,
+   and grep for `def bedrock_model_id`, `def compute(`, `def price_tokens`,
+   and `unit-costs`. Quote the output. If anything is missing, STOP and say so.
+2. `pip install "anthropic[bedrock]"` in backend/.venv.
+3. Run tests/test_bedrock_and_unit_costs.py and tests/test_llm_gateway_routing.py,
+   then the FULL backend suite exactly once. Record pass/fail counts. Compare the
+   failures with the known pre-existing list in build_log (test_reports top-skills
+   ambient-data test, flaky jobs-dashboard tie, settings_resolver
+   auto_shortlist_threshold, the hardcode guard's existing ctdtechs findings).
+   Anything new = caused by Phase 0 -> fix it.
+4. Frontend: `npx tsc -p tsconfig.app.json` and `npm run build`. Fix any error
+   in the 4 changed files.
+5. UI check (screenshots into FIXES_23.md):
+   - Settings > Integrations > AI Intelligence: the provider switch shows
+     "Anthropic Claude (direct)" and "Claude on Amazon Bedrock (AWS)". Choosing
+     Bedrock shows region, routing, AWS identity, example model id and the model
+     override box. Switch it back to Anthropic afterwards.
+   - The AI Intelligence usage page shows the "Unit costs (AI only)" card
+     (per resume / per job / per hire) and the per-job table.
+   - Labels read "AI Intelligence" in English, Hindi and Tamil.
+6. Commit: "part-23.1: Phase 0 - Bedrock gateway, unit costs, AI Intelligence rename".
+
+23.2 LIVE BEDROCK SMOKE TEST (only when AWS access is available; else log
+"waiting for AWS access" and go to 23.3)
+- Set AWS credentials in the backend environment (AWS_PROFILE or
+  AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY; never commit them). Set
+  AWS_REGION=ap-south-1.
+- In the Bedrock console, check that the Claude models are enabled. Copy their
+  exact model ids / inference profile ids. If an id differs from what the
+  settings page shows as "example model id", put it in the model id overrides.
+- Settings > AI Intelligence: provider = Amazon Bedrock -> press Test. Then
+  run each AI feature once: resume upload (parse), screening, JD draft,
+  interview questions, document check, offer letter draft, shortlist
+  feedback, HR assistant question.
+- IMPORTANT: 6 services use messages.parse(output_format=...) (structured
+  output): jd_generator, resume_matcher, interview_question_generator,
+  document_validator, offer_letter_generator, shortlist_feedback_generator.
+  If Bedrock rejects output_format for the chosen model, switch that service to
+  the forced tool-call pattern resume_parser.py already uses (one tool whose
+  input_schema = the same Pydantic model; read the tool_use block). Keep the
+  Anthropic path working the same way.
+- Check that ai_usage_records rows have the catalog model id and a cost > 0,
+  and that the usage page's unit-cost card changes.
+- Commit: "part-23.2: Bedrock live test + <fixes>".
+
+23.3 PENDING ON-SCREEN PROOFS (restart the proof stack: mailpit, API :8010,
+web :5174; it was stopped for low memory on 2026-10-07)
+Prove on clean test data. Record screenshots + mailpit emails, and remove
+all proof records afterwards (as in 20.6):
+- 21.4 BGV: Download all (one ZIP + "BGV summary.xlsx"); assign a BGV
+  vendor -> secure link opens -> "In progress" -> report upload -> HR notified;
+  reminder; reassign / cancel emails; "Discrepancy - clear with a note".
+- 21.5 Agencies: types Recruitment / BGV / Both, edit, filter, stats, Excel
+  import.
+- 21.7 Budget released on exit: pro-rata and full; release history on the
+  Finance dashboard.
+- 22.1 HR assistant: the 10 questions in PART22 22.1 step 6, with screenshots
+  and the hand-over email in mailpit.
+- 22.2-22.5: email matching examples, My approvals cards, Assign roles
+  (single + bulk), agency delete vs deactivate.
+- 22.6: letters (PDF of each) + emails (Gmail-size screenshot of each) into
+  docs/ui/letters/.
+Commit per item: "part-23.3x: proof <item>".
+
+23.4 FULL END-TO-END PASS (status update action item 6)
+Job -> applications -> AI screening -> shortlist -> interview -> salary
+check -> documents -> BGV (vendor) -> joining date -> offer signed ->
+onboarding -> employee -> self-service -> resign -> exit -> letters -> login
+disabled. One screenshot per step in FIXES_23.md, and a short table of any
+issue found + fix. Remove the proof records after.
+
+23.5 HAND-OVER (closes 21.9 / 22.7)
+FIXES_23.md: a plain-words summary of what was proven, test counts, what is
+still open, and the NEXT step = Phase 1 (public API layer: API keys, OAuth
+client credentials, rate limits, webhooks, OpenAPI docs, sandbox tenant;
+then Screening + Scheduling agents). Update docs/RESUME.txt with that order.

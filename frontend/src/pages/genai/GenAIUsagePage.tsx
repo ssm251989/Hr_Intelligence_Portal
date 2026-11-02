@@ -29,23 +29,33 @@ interface Usage {
   top_candidates: Row[]; avg_cost_per_candidate: number; priced: boolean;
   limits: { scope: string; key: string; limit: number; used: number; pct: number; mode: string }[];
 }
+interface UnitJob { job_id: string; title: string; ai_cost: number; applications: number; hires: number; cost_per_application: number | null; cost_per_hire: number | null }
+interface UnitCosts {
+  currency: string; total_cost: number; unattributed_cost: number;
+  per_resume: { resumes: number; ai_cost: number; avg: number | null };
+  per_job: { jobs: number; avg: number | null; rows: UnitJob[] };
+  per_hire: { hires: number; avg: number | null };
+}
 type Period = "day" | "week" | "month" | "quarter";
 
-// Part 18.24: GenAI usage -- like the Claude usage page: tokens in/out, cost, requests, errors,
+// Part 18.24: AI Intelligence usage (was "GenAI usage") -- like the Claude usage page: tokens in/out, cost, requests, errors,
 // by module / feature / person / model / day, top consumers, cost per candidate, export.
 export default function GenAIUsagePage() {
   const t = useT();
   const f = useTheme().palette.fresh;
   const [period, setPeriod] = useState<Period>("month");
   const [data, setData] = useState<Usage | null>(null);
+  const [units, setUnits] = useState<UnitCosts | null>(null);
   const [view, setView] = useState<"by_module" | "by_feature" | "by_user" | "by_model">("by_module");
 
   useEffect(() => { http.get<Usage>(`/api/v1/ui/genai/usage?period=${period}`).then(setData).catch(() => setData(null)); }, [period]);
+  // Phase 0: AI cost per resume / job / hire
+  useEffect(() => { http.get<UnitCosts>(`/api/v1/ui/genai/unit-costs?period=${period}`).then(setUnits).catch(() => setUnits(null)); }, [period]);
   const money = (v: number) => `${data?.currency ?? ""} ${v.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   const exportCsv = async () => {
     const blob = await http.fetchBlob(`/api/v1/ui/genai/usage/export?period=${period}`);
     if (!blob) return;
-    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "genai-usage.csv"; a.click(); URL.revokeObjectURL(a.href);
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "ai-intelligence-usage.csv"; a.click(); URL.revokeObjectURL(a.href);
   };
 
   return (
@@ -71,6 +81,43 @@ export default function GenAIUsagePage() {
               <Grid key={k} size={{ xs: 6, md: 2.4 }}><StatTile emoji={e} value={v} label={t(k)} tone={tone} /></Grid>
             ))}
           </Grid>
+          {units && (
+            <Card sx={{ p: 2 }}>
+              <Typography sx={{ fontWeight: 800 }}>{t("usage.unit_title")}</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>{t("usage.unit_intro")}</Typography>
+              <Grid container spacing={2} sx={{ mb: 1.5 }}>
+                {([["usage.unit_resume", units.per_resume.avg, t("usage.unit_resume_line", { n: units.per_resume.resumes }), "page"],
+                  ["usage.unit_job", units.per_job.avg, t("usage.unit_job_line", { n: units.per_job.jobs }), "briefcase"],
+                  ["usage.unit_hire", units.per_hire.avg, t("usage.unit_hire_line", { n: units.per_hire.hires }), "handshake"]] as const).map(([k, v, line, e]) => (
+                  <Grid key={k} size={{ xs: 12, md: 4 }}>
+                    <StatTile emoji={e} value={v == null ? "—" : money(v)} label={`${t(k)} · ${line}`} tone="sky" />
+                  </Grid>
+                ))}
+              </Grid>
+              {units.per_job.rows.length > 0 && (
+                <Table size="small">
+                  <TableHead><TableRow>
+                    <TableCell>{t("usage.unit_job_col")}</TableCell><TableCell align="right">{t("usage.unit_apps")}</TableCell>
+                    <TableCell align="right">{t("usage.unit_hires")}</TableCell><TableCell align="right">{t("usage.unit_cost")}</TableCell>
+                    <TableCell align="right">{t("usage.unit_per_app")}</TableCell><TableCell align="right">{t("usage.unit_per_hire")}</TableCell>
+                  </TableRow></TableHead>
+                  <TableBody>
+                    {units.per_job.rows.slice(0, 15).map((r) => (
+                      <TableRow key={r.job_id}>
+                        <TableCell>{r.title}</TableCell><TableCell align="right">{r.applications}</TableCell><TableCell align="right">{r.hires}</TableCell>
+                        <TableCell align="right">{money(r.ai_cost)}</TableCell>
+                        <TableCell align="right">{r.cost_per_application == null ? "—" : money(r.cost_per_application)}</TableCell>
+                        <TableCell align="right">{r.cost_per_hire == null ? "—" : money(r.cost_per_hire)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+              {units.unattributed_cost > 0 && (
+                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>{t("usage.unit_unattributed", { cost: money(units.unattributed_cost) })}</Typography>
+              )}
+            </Card>
+          )}
           <Card sx={{ p: 2 }}>
             <Typography sx={{ fontWeight: 800, mb: 1 }}>{t("usage.by_day")}</Typography>
             {data.by_day.length === 0 ? <Typography variant="body2" color="text.secondary">{t("usage.none")}</Typography> : (

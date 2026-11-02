@@ -23,16 +23,18 @@ import ConfirmDialog from "../ConfirmDialog";
 
 interface Feature { code: string; module: string; label: string; enabled: boolean; switched_off: boolean; model_key: string | null; model: string | null }
 interface LimitRow { scope: string; key: string; limit: number; used: number; pct: number; mode: string }
+interface Bedrock { region: string; inference_prefix: string; model_map: Record<string, string>; effective_region: string; effective_prefix: string; credentials: string; example_model_id: string | null }
 interface GenAI {
-  enabled: boolean; provider: string; key: { source: string; masked: string | null; last_tested_at: string | null; last_test_ok: boolean | null };
+  enabled: boolean; provider: string; providers?: string[]; bedrock?: Bedrock; fx_rates?: Record<string, number>; key: { source: string; masked: string | null; last_tested_at: string | null; last_test_ok: boolean | null };
   available_models: string[]; default_model: string; fallback_model: string; max_tokens_per_request: number; temperature: string; currency: string;
-  pricing: Record<string, { input_per_mtok?: number; output_per_mtok?: number }>; features: Feature[]; modules: string[];
+  pricing: Record<string, { input_per_mtok?: number; output_per_mtok?: number; currency?: string }>; features: Feature[]; modules: string[];
   limits: { module_monthly_tokens: Record<string, number>; user_daily_tokens: number; company_monthly_tokens: number; on_limit: Record<string, string>; warn_pct: number; reset_day: number; status: LimitRow[] };
 }
 
-// Part 18.23 + 18.25: Settings > Integrations > GenAI -- what is in use today and every knob:
-// provider + key (masked, test, disconnect), models (default / fallback / per feature), max
-// tokens, temperature, on/off per feature, prices, and the usage limits.
+// Part 18.23 + 18.25: Settings > Integrations > AI Intelligence (was "GenAI") -- what is in use
+// today and every knob: provider (Anthropic direct or Claude on Amazon Bedrock, Phase 0) + key or
+// AWS settings, models (default / fallback / per feature), max tokens, temperature, on/off per
+// feature, prices (+ exchange rates), and the usage limits.
 export default function GenAISettingsPage() {
   const t = useT();
   const [d, setD] = useState<GenAI | null>(null);
@@ -41,6 +43,7 @@ export default function GenAISettingsPage() {
   const [busy, setBusy] = useState(false);
   const [confirmOff, setConfirmOff] = useState(false);
   const [newModel, setNewModel] = useState("");
+  const [mapText, setMapText] = useState<string | null>(null);
 
   const load = useCallback(() => { http.get<GenAI>("/api/v1/ui/genai/settings").then(setD).catch((e) => setMsg({ ok: false, text: extractErrorMessage(e, t("genai.err")) })); }, [t]);
   useEffect(load, [load]);
@@ -53,6 +56,10 @@ export default function GenAISettingsPage() {
   };
   if (!d) return msg ? <Alert severity="error">{msg.text}</Alert> : null;
   const models = d.available_models;
+  const isBedrock = d.provider === "amazon_bedrock";
+  const br = d.bedrock;
+  const providers = d.providers ?? ["anthropic"];
+  const currencies = Array.from(new Set(Object.values(d.pricing).map((p) => (p.currency ?? "").toUpperCase()).filter((c) => c && c !== d.currency.toUpperCase())));
   const disabledList = d.features.filter((f) => f.switched_off).map((f) => f.code);
 
   return (
@@ -64,23 +71,55 @@ export default function GenAISettingsPage() {
           <Chip color={d.enabled ? "success" : "default"} label={d.enabled ? t("genai.on") : t("genai.off")} />
         </Stack>
         <Typography variant="body2" color="text.secondary" sx={{ my: 1 }}>
-          {t("genai.in_use", { provider: "Anthropic Claude", source: t(`genai.source.${d.key.source}`), masked: d.key.masked ?? "—" })}
+          {isBedrock && br
+            ? t("genai.in_use_bedrock", { region: br.effective_region, prefix: br.effective_prefix })
+            : t("genai.in_use", { provider: "Anthropic Claude", source: t(`genai.source.${d.key.source}`), masked: d.key.masked ?? "—" })}
           {d.key.last_tested_at && ` · ${d.key.last_test_ok ? t("conn.last_ok") : t("conn.last_failed")} ${new Date(d.key.last_tested_at).toLocaleString()}`}
         </Typography>
         <Stack direction={{ xs: "column", md: "row" }} spacing={1} alignItems={{ md: "center" }}>
-          <TextField select size="small" label={t("genai.provider")} value={d.provider} sx={{ minWidth: 200 }} disabled>
-            <MenuItem value="anthropic">Anthropic Claude</MenuItem>
+          <TextField select size="small" label={t("genai.provider")} value={d.provider} sx={{ minWidth: 260 }} disabled={providers.length < 2}
+            onChange={(e) => save("ai.provider", e.target.value)}>
+            {providers.map((p) => <MenuItem key={p} value={p}>{t(`genai.provider.${p}`)}</MenuItem>)}
           </TextField>
-          <TextField size="small" type="password" autoComplete="new-password" label={t("genai.key")} placeholder="sk-ant-api03-…" value={key}
-            onChange={(e) => setKey(e.target.value)} helperText={t("genai.key_hint")} sx={{ minWidth: 280 }} />
-          <Button variant="contained" disabled={busy || !key} onClick={() => run(() => http.put("/api/v1/ui/genai/key", { api_key: key }).then((r) => { setKey(""); return r; }), () => t("genai.key_saved"))}>{t("lock.save")}</Button>
+          {!isBedrock && <>
+            <TextField size="small" type="password" autoComplete="new-password" label={t("genai.key")} placeholder="sk-ant-api03-…" value={key}
+              onChange={(e) => setKey(e.target.value)} helperText={t("genai.key_hint")} sx={{ minWidth: 280 }} />
+            <Button variant="contained" disabled={busy || !key} onClick={() => run(() => http.put("/api/v1/ui/genai/key", { api_key: key }).then((r) => { setKey(""); return r; }), () => t("genai.key_saved"))}>{t("lock.save")}</Button>
+          </>}
           <Button disabled={busy} onClick={() => run(() => http.post<{ ok: boolean; error: string | null; model: string | null }>("/api/v1/ui/genai/test", {}),
             (r) => { const x = r as { ok: boolean; error: string | null; model: string | null }; return x.ok ? t("genai.test_ok", { model: x.model ?? "" }) : t("genai.test_bad", { error: x.error ?? "" }); })}>{t("conn.test")}</Button>
-          {d.key.source === "company" && <Button disabled={busy} onClick={() => run(() => http.put("/api/v1/ui/genai/key", { api_key: "" }), () => t("genai.key_removed"))}>{t("genai.use_server_key")}</Button>}
+          {!isBedrock && d.key.source === "company" && <Button disabled={busy} onClick={() => run(() => http.put("/api/v1/ui/genai/key", { api_key: "" }), () => t("genai.key_removed"))}>{t("genai.use_server_key")}</Button>}
           {d.enabled
             ? <Button color="error" onClick={() => setConfirmOff(true)}>{t("conn.disconnect")}</Button>
             : <Button variant="outlined" onClick={() => save("ai.enabled", true)}>{t("genai.switch_on")}</Button>}
         </Stack>
+        {isBedrock && br && (
+          <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: "divider" }}>
+            <Typography sx={{ fontWeight: 700 }}>{t("genai.bedrock_title")}</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>{t("genai.bedrock_intro")}</Typography>
+            <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
+              <TextField size="small" label={t("genai.bedrock_region")} defaultValue={br.region} placeholder={br.effective_region} sx={{ width: 220 }}
+                helperText={t("genai.bedrock_region_hint", { region: br.effective_region })} onBlur={(e) => e.target.value.trim() !== br.region && save("ai.bedrock.region", e.target.value.trim())} />
+              <TextField select size="small" label={t("genai.bedrock_routing")} value={br.inference_prefix} sx={{ minWidth: 300 }}
+                slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }} onChange={(e) => save("ai.bedrock.inference_prefix", e.target.value)}>
+                <MenuItem value="">{t("genai.bedrock_routing.default", { prefix: br.effective_prefix })}</MenuItem>
+                <MenuItem value="global.">{t("genai.bedrock_routing.global")}</MenuItem>
+                <MenuItem value="in.">{t("genai.bedrock_routing.in")}</MenuItem>
+                <MenuItem value="apac.">{t("genai.bedrock_routing.apac")}</MenuItem>
+                <MenuItem value="none">{t("genai.bedrock_routing.none")}</MenuItem>
+              </TextField>
+            </Stack>
+            <Typography variant="body2" sx={{ mt: 1.5 }}>{t("genai.bedrock_creds", { source: t(`genai.bedrock_creds.${br.credentials}`) })}</Typography>
+            {br.example_model_id && <Typography variant="body2" color="text.secondary">{t("genai.bedrock_example", { id: br.example_model_id })}</Typography>}
+            <TextField size="small" fullWidth multiline minRows={2} sx={{ mt: 1.5 }} label={t("genai.bedrock_map")} helperText={t("genai.bedrock_map_hint")}
+              value={mapText ?? (Object.keys(br.model_map).length ? JSON.stringify(br.model_map, null, 2) : "")} onChange={(e) => setMapText(e.target.value)}
+              onBlur={() => {
+                if (mapText === null) return;
+                try { const v = mapText.trim() ? JSON.parse(mapText) : {}; setMapText(null); void save("ai.bedrock.model_map", v); }
+                catch { setMsg({ ok: false, text: t("genai.bedrock_map_bad") }); }
+              }} />
+          </Box>
+        )}
       </CardContent></Card>
 
       <Card><CardContent>
@@ -144,9 +183,18 @@ export default function GenAISettingsPage() {
                 <Typography sx={{ width: 180 }}>{m}</Typography>
                 <TextField size="small" type="number" label={t("genai.price_in")} defaultValue={per1k(p.input_per_mtok)} sx={{ width: 160 }} onBlur={(e) => e.target.value && put("input_per_mtok", e.target.value)} />
                 <TextField size="small" type="number" label={t("genai.price_out")} defaultValue={per1k(p.output_per_mtok)} sx={{ width: 160 }} onBlur={(e) => e.target.value && put("output_per_mtok", e.target.value)} />
+                <Typography variant="caption" color="text.secondary">{t("genai.price_currency", { currency: p.currency ?? d.currency })}</Typography>
               </Stack>
             );
           })}
+          {currencies.length > 0 && <>
+            <Typography sx={{ fontWeight: 700, pt: 1 }}>{t("genai.fx_title")}</Typography>
+            <Typography variant="body2" color="text.secondary">{t("genai.fx_intro")}</Typography>
+            {currencies.map((c) => (
+              <TextField key={c} size="small" type="number" label={t("genai.fx_rate", { from: c, to: d.currency })} defaultValue={d.fx_rates?.[c] ?? ""} sx={{ width: 200 }}
+                onBlur={(e) => e.target.value && Number(e.target.value) !== d.fx_rates?.[c] && save("ai.fx_rates", { ...(d.fx_rates ?? {}), [c]: Number(e.target.value) })} />
+            ))}
+          </>}
         </Stack>
       </CardContent></Card>
 
