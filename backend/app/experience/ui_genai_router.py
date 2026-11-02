@@ -98,13 +98,17 @@ def genai_settings(db: Session = Depends(get_db), current_user: User = Depends(g
     from app.platform.ai import bedrock
 
     bedrock_cfg = bedrock.config_for(db, tenant)
+    bedrock_conn = bedrock.company_connection(db, tenant)
     return {
         "enabled": bool(_s(db, tenant, "ai.enabled")), "provider": _s(db, tenant, "ai.provider") or "anthropic",
         "providers": ["anthropic", bedrock.PROVIDER],
         "bedrock": {"region": _s(db, tenant, "ai.bedrock.region") or "", "inference_prefix": _s(db, tenant, "ai.bedrock.inference_prefix") or "",
                     "model_map": _s(db, tenant, "ai.bedrock.model_map") or {}, "effective_region": bedrock_cfg.region,
                     "effective_prefix": bedrock_cfg.inference_prefix or "none", "credentials": bedrock.credential_source(bedrock_cfg),
-                    "example_model_id": bedrock.bedrock_model_id(_s(db, tenant, "ai.default_model"), bedrock_cfg)},
+                    "example_model_id": bedrock.bedrock_model_id(_s(db, tenant, "ai.default_model"), bedrock_cfg),
+                    # Part 23 open item: Bedrock has its own last test, never the old Anthropic-key one
+                    "last_tested_at": bedrock_conn.last_tested_at.isoformat() if bedrock_conn and bedrock_conn.last_tested_at else None,
+                    "last_test_ok": (bedrock_conn.last_test_result or {}).get("success") if bedrock_conn else None},
         "fx_rates": _s(db, tenant, "ai.fx_rates") or {},
         "key": {"source": "company" if own else "server" if app_settings.ANTHROPIC_API_KEY else "none",
                 "masked": _mask(own or app_settings.ANTHROPIC_API_KEY),
@@ -169,15 +173,32 @@ def set_key(body: KeyIn, db: Session = Depends(get_db), current_user: User = Dep
 def test(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     from app.platform.ai.tracked import tracked_client
 
+    from app.platform.ai import bedrock
+
     tenant = _need(db, current_user, "platform.settings.configure")
     started = datetime.now(timezone.utc)
+    # decided BEFORE the call: a Bedrock test can take several seconds (AWS credential lookup), and the
+    # provider may be switched meanwhile - the result must stay with the provider that was tested
+    tested_bedrock = bedrock.provider_in_use(db, tenant) == bedrock.PROVIDER
     try:
         r = tracked_client(feature="platform.genai_test", model_key="__test__").messages.create(
             model=_s(db, tenant, "ai.default_model"), max_tokens=5, messages=[{"role": "user", "content": "Reply with OK."}])
         ok, error, model = True, None, getattr(r, "model", None)
     except Exception as exc:  # noqa: BLE001
         ok, error, model = False, str(exc)[:300], None
-    conn = _company_connection(db, tenant)
+    if tested_bedrock:
+        # the result belongs to the Bedrock set-up: kept on the company's Bedrock connection,
+        # created here the first time (empty config = use the AI Intelligence settings + server AWS identity)
+        conn = bedrock.company_connection(db, tenant)
+        if conn is None:
+            from app.models.connection import Connection
+
+            conn = Connection(tenant_id=tenant.tenant_id, name="Amazon Bedrock", provider_code=bedrock.PROVIDER, capability=["LlmProvider"],
+                              config_json={}, status="draft", owner_user_id=current_user.id, created_by=current_user.email)
+            db.add(conn)
+            db.flush()
+    else:
+        conn = _company_connection(db, tenant)
     if conn is not None:
         conn.last_tested_at, conn.last_test_result = started, {"success": ok, "error": error}
         if ok:

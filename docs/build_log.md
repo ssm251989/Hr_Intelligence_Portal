@@ -2888,3 +2888,9 @@ NEXT: part-22.7 / 21.9 hand-over; then (when the proof setup can run) the on-scr
   - screenshots use the already-installed Chromium 1243 (SHOT_CHROME) instead of downloading the build Playwright 1.64 expects.
 
 NEXT: part-23.2 live Bedrock smoke test - waiting for AWS access (credentials + Bedrock model access in ap-south-1); meanwhile part-23.3 on-screen proofs (21.4 BGV, 21.5 agencies, 21.7 budget release, 22.1-22.6) on the proof stack.
+
+- part-23.1b: Bedrock keeps its own "last test" (company Bedrock connection, created by the first Test; "not tested yet - press Test" until then) and the settings menu says "AI Intelligence & HR assistant" (changed outside the session, checked here: tsc 0, build ok, 19 Bedrock tests passed, screenshots p23-1b-*). Fix found on screen: a slow (8 s) Bedrock test saved its result on the Anthropic row when the provider was switched during the test - /test now picks the connection before the call. Integrations card hint "AI provider" -> "AI Intelligence" (EN/HI/TA). Proof rows removed, the Anthropic test status put back.
+  Decision: the Bedrock connection that Test creates is a normal company connection (draft, empty config = AI Intelligence settings + server AWS identity), so the result shows on "All connected services" too.
+- part-23.2: waiting for AWS access (credentials + Bedrock model access in ap-south-1). Nothing run.
+
+NEXT: part-23.3a proof 21.4 BGV on the proof stack (mailpit, API :8010, web :5174), then 21.5, 21.7, 22.1-22.6.

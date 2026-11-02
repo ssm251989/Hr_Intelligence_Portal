@@ -107,3 +107,39 @@ uuid/text column for the job id and the admin id finds nothing left.
 - The owner's API on :8000 runs as `Python312\python.exe -m uvicorn app.main:app --reload` (system Python),
   and that interpreter has **no** `anthropic` package (`ModuleNotFoundError: No module named 'anthropic'`).
   Bedrock (and Anthropic) calls need it started from `backend/.venv`.
+
+## 23.1b Bedrock test status + menu label (2026-11-02)
+
+Four files were changed outside the session (`ui_genai_router.py`, `GenAISettingsPage.tsx`, `part18.ts`,
+`settingsHome.ts`): Bedrock keeps its own "last test" (on the company's Bedrock connection, created by the first
+Test) and shows "not tested yet - press Test" until then; the settings menu says "AI Intelligence & HR assistant"
+(EN / HI / TA). Closes the two 23.1 open items "old Anthropic test shown on Bedrock" and "menu entry".
+
+`npx tsc -p tsconfig.app.json`: exit 0. `npm run build`: built (only the known `lottie-web` eval warning).
+`test_bedrock_and_unit_costs.py` + `test_llm_gateway_routing.py`: 19 passed.
+
+| Check | Screenshot |
+|---|---|
+| Settings > Integrations: menu entry "AI Intelligence & HR assistant"; card hint now "AI Intelligence, e-sign, ..." | `screens/p23-1b-settings-menu.png`, `p23-1b-settings-home.png` |
+| Anthropic view keeps its own test: "Last test passed 10/5/2026, 10:02:45 PM" | `screens/p23-1b-anthropic-own-test.png` |
+| Bedrock chosen: "not tested yet - press Test" | `screens/p23-1b-bedrock-not-tested.png` |
+| Test pressed with Bedrock (no AWS access here): `{"ok":false,"error":"could not resolve credentials from session"}` -> "Last test failed 11/2/2026, 3:42:50 PM"; the Anthropic row is unchanged | `screens/p23-1b-bedrock-after-test.png` |
+| Back to Anthropic: "Last test passed 10/5/2026" again | `screens/p23-1b-back-to-anthropic.png` |
+
+Script: `frontend/scripts/p23_1b_shots.mjs`.
+
+**Fix found on screen.** The first run saved the failed Bedrock test on the **Anthropic** row
+(`last_test_result = {'error': 'could not resolve credentials from session', 'success': False}` on
+"Anthropic (platform key)"), and Bedrock still said "not tested yet". Cause: the Bedrock test took **8.0 s**
+(AWS credential lookup; repro script: `before call: amazon_bedrock` / `call failed after 8.0s` / `after call:
+amazon_bedrock`), and the provider was switched back at 15:39:13 while the test that started at 15:39:08.955
+was still running; `/test` read the provider **after** the call to choose the connection. Fix: `/test` decides
+Bedrock vs Anthropic **before** the call, so the result stays with the provider that was tested (also when
+someone switches meanwhile). Also left over from the rename: the Integrations card hint said "AI provider, ..."
+-> "AI Intelligence, ..." (EN / HI / TA).
+
+**Clean-up (done):** Anthropic row's last test put back to 2026-10-05 22:02:45 / passed (the value before the
+run); the "Amazon Bedrock" connection created by the Test deleted (back to "not tested yet"); the `ai.provider`
+override + 6 history rows deleted (there was no override before); 3 `platform.genai_test` error usage rows
+deleted. `GET /ui/genai/settings` after: provider `anthropic`, bedrock `last_tested_at` None, key last test
+2026-10-05 passed.

@@ -23,7 +23,7 @@ import ConfirmDialog from "../ConfirmDialog";
 
 interface Feature { code: string; module: string; label: string; enabled: boolean; switched_off: boolean; model_key: string | null; model: string | null }
 interface LimitRow { scope: string; key: string; limit: number; used: number; pct: number; mode: string }
-interface Bedrock { region: string; inference_prefix: string; model_map: Record<string, string>; effective_region: string; effective_prefix: string; credentials: string; example_model_id: string | null }
+interface Bedrock { region: string; inference_prefix: string; model_map: Record<string, string>; effective_region: string; effective_prefix: string; credentials: string; example_model_id: string | null; last_tested_at?: string | null; last_test_ok?: boolean | null }
 interface GenAI {
   enabled: boolean; provider: string; providers?: string[]; bedrock?: Bedrock; fx_rates?: Record<string, number>; key: { source: string; masked: string | null; last_tested_at: string | null; last_test_ok: boolean | null };
   available_models: string[]; default_model: string; fallback_model: string; max_tokens_per_request: number; temperature: string; currency: string;
@@ -74,7 +74,9 @@ export default function GenAISettingsPage() {
           {isBedrock && br
             ? t("genai.in_use_bedrock", { region: br.effective_region, prefix: br.effective_prefix })
             : t("genai.in_use", { provider: "Anthropic Claude", source: t(`genai.source.${d.key.source}`), masked: d.key.masked ?? "—" })}
-          {d.key.last_tested_at && ` · ${d.key.last_test_ok ? t("conn.last_ok") : t("conn.last_failed")} ${new Date(d.key.last_tested_at).toLocaleString()}`}
+          {isBedrock && br
+            ? ` · ${br.last_tested_at ? `${br.last_test_ok ? t("conn.last_ok") : t("conn.last_failed")} ${new Date(br.last_tested_at).toLocaleString()}` : t("genai.not_tested")}`
+            : d.key.last_tested_at && ` · ${d.key.last_test_ok ? t("conn.last_ok") : t("conn.last_failed")} ${new Date(d.key.last_tested_at).toLocaleString()}`}
         </Typography>
         <Stack direction={{ xs: "column", md: "row" }} spacing={1} alignItems={{ md: "center" }}>
           <TextField select size="small" label={t("genai.provider")} value={d.provider} sx={{ minWidth: 260 }} disabled={providers.length < 2}
