@@ -9,7 +9,7 @@ Preview overrides are unsaved values (emails.* / letters.* / org.address / org.c
 """
 
 import re
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -45,18 +45,19 @@ def sample_ctx(db: Session, tenant, key: str) -> dict:
 
     base = {"company_name": _company(db, tenant)}
     app_url = public_app_url(db)
+    d = sample_dates()
     if key == "recruitment.welcome_selected":
-        return {**base, "candidate_first_name": "Priya", "job_title": "Junior AI Developer", "joining_date": "Monday, 03 November 2026",
-                "steps": f"1. Open your welcome portal and fill in your joining details: {app_url}/welcome/sample\n2. Join us on Monday, 03 November 2026",
+        return {**base, "candidate_first_name": "Priya", "job_title": "Junior AI Developer", "joining_date": d["join_long"],
+                "steps": f"1. Open your welcome portal and fill in your joining details: {app_url}/welcome/sample\n2. Join us on {d['join_long']}",
                 "contacts": "People you can reach out to:\n- Anita Rao (HR) - hr@example.com", "portal_link": f"{app_url}/welcome/sample",
                 "people": [{"name": "Anita Rao", "role": "HR", "email": "hr@example.com"}, {"name": "Kishore G", "role": "Your manager", "email": "manager@example.com"}],
                 "day_one": {"start_time": "09:30 AM", "address": "Your office address (Settings > Day one / Locations)", "map_url": None,
                             "meet": "Anita Rao at reception", "what_to_bring": ["Photo ID", "PAN card", "Bank details"]},
                 "buddy": {"name": "Rahul Menon", "role": "AI Developer", "email": "buddy@example.com"}}
     if key == "employee.exit_letters":
-        return {**base, "first_name": "Arun", "last_working_day": "30 Sep 2026"}
+        return {**base, "first_name": "Arun", "last_working_day": d["lwd_short"]}
     return {**base, "candidate_first_name": "Priya", "job_title": "Junior AI Developer", "letter": "Dear Priya Sharma,\n\nWe are delighted to offer you ...",
-            "sign_link": f"{app_url}/offer/sign/sample", "expiry_date": "14 October 2026", "joining_date": "Monday, 03 November 2026"}
+            "sign_link": f"{app_url}/offer/sign/sample", "expiry_date": d["sign_by"], "joining_date": d["join_long"]}
 
 
 def _fill_leftovers(text: Optional[str]) -> str:
@@ -121,15 +122,38 @@ def test_email(key: str, db: Session = Depends(get_db), current_user: User = Dep
 
 SAMPLE_LETTERS = {
     "offer": "Dear Priya Sharma,\n\nWe are delighted to offer you the position of Junior AI Developer at {company}.\n\nYour terms:\n\nDesignation: Junior AI Developer\n"
-             "Annual CTC: Rs. 4,00,000\nJoining date: 3 November 2026\n\nPlease sign this letter by 14 October 2026 to accept.\n\nWarm regards,",
-    "joining": "Dear Priya Sharma,\n\nWelcome to {company}! We are happy to confirm that you have joined us as Junior AI Developer on 3 November 2026.\n\nBest wishes,",
-    "appointment": "Dear Priya Sharma,\n\nYou are appointed as Junior AI Developer with effect from 3 November 2026 on the terms of your offer.\n\nYours sincerely,",
-    "confirmation": "Dear Priya Sharma,\n\nWe are pleased to confirm your employment as Junior AI Developer with effect from 3 May 2027.\n\nYours sincerely,",
-    "relieving": "Dear Arun Kumar,\n\nThis is to confirm that you have been relieved from your duties at {company} at the close of business on 30 September 2026.\n\n"
+             "Annual CTC: Rs. 4,00,000\nJoining date: {join}\n\nPlease sign this letter by {sign_by} to accept.\n\nWarm regards,",
+    "joining": "Dear Priya Sharma,\n\nWelcome to {company}! We are happy to confirm that you have joined us as Junior AI Developer on {join}.\n\nBest wishes,",
+    "appointment": "Dear Priya Sharma,\n\nYou are appointed as Junior AI Developer with effect from {join} on the terms of your offer.\n\nYours sincerely,",
+    "confirmation": "Dear Priya Sharma,\n\nWe are pleased to confirm your employment as Junior AI Developer with effect from {confirm}.\n\nYours sincerely,",
+    "relieving": "Dear Arun Kumar,\n\nThis is to confirm that you have been relieved from your duties at {company} at the close of business on {lwd}.\n\n"
                  "We thank you for your contributions and wish you success.\n\nYours sincerely,",
-    "experience": "TO WHOMSOEVER IT MAY CONCERN\n\nThis is to certify that Arun Kumar worked with {company} as Senior Software Engineer from 1 June 2023 to "
-                  "30 September 2026.\n\nWe wish him every success.\n\nYours sincerely,",
+    "experience": "TO WHOMSOEVER IT MAY CONCERN\n\nThis is to certify that Arun Kumar worked with {company} as Senior Software Engineer from {since} to "
+                  "{lwd}.\n\nWe wish Arun every success.\n\nYours sincerely,",
 }
+
+
+def _day(d: date) -> str:
+    return f"{d.day} {d:%B %Y}"
+
+
+def sample_dates(today: Optional[date] = None) -> dict:
+    """Part 23.3f: the sample data had fixed dates (written 7 Oct) and went stale - an offer dated 2 Nov said
+    "sign by 14 October". Now: sign within 7 days, join on the Monday 3+ weeks out, confirmation 6 months later,
+    last working day = the end of last month."""
+    today = today or date.today()
+    join = today + timedelta(days=21)
+    join += timedelta(days=(7 - join.weekday()) % 7)  # a Monday
+    month = join.month + 6
+    confirm = date(join.year + (month - 1) // 12, (month - 1) % 12 + 1, 1)
+    lwd = today.replace(day=1) - timedelta(days=1)
+    return {"sign_by": _day(today + timedelta(days=7)), "join": _day(join), "join_long": f"{join:%A}, {join:%d %B %Y}", "confirm": _day(confirm),
+            "lwd": _day(lwd), "lwd_short": f"{lwd.day} {lwd:%b %Y}", "since": _day(date(lwd.year - 3, 6, 1))}
+
+
+def sample_letter(kind: str, company: str) -> str:
+    d = sample_dates()
+    return SAMPLE_LETTERS[kind].replace("{company}", company).format(**{k: d[k] for k in ("sign_by", "join", "confirm", "lwd", "since")})
 
 
 def _letter_pdf(db: Session, tenant, kind: str, overrides: Optional[dict]) -> bytes:
@@ -155,7 +179,7 @@ def _letter_pdf(db: Session, tenant, kind: str, overrides: Optional[dict]) -> by
         brand.colour = design._hex(o["letters.brand_colour"])
     today = date.today()
     token = "SAMPLE"
-    return design.render(brand, design.Letter(kind=kind, body=SAMPLE_LETTERS[kind].replace("{company}", brand.company or "our company"),
+    return design.render(brand, design.Letter(kind=kind, body=sample_letter(kind, brand.company or "our company"),
                                               reference=design.reference(brand, kind, "SAMPLE", today), issued_on=today, verify_token=token,
                                               verify_link=design.verify_url(db, token)))
 

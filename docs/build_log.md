@@ -2923,3 +2923,8 @@ NEXT: part-23.3e (2) proof 22.4 Assign roles (single + bulk, email) and 22.5 age
   Note: the working tree now also has uncommitted PART 26 "autopilot" files (incl. a migration c6a8e2f4b1d3, tsc errors in AutopilotPage.tsx) - not touched; the proof API keeps running the committed code from the HEAD worktree.
 
 NEXT: part-23.3f proof 22.6 letters (PDF each) + emails (Gmail-size screenshot each) into docs/ui/letters/.
+
+- part-23.3f: proof 22.6 (FIXES_23.md 23.3f): 6 letter PDFs from the live Settings preview, letter test email with the PDF, 3 designed emails via "Send test to me" (on screen + endpoint) with Gmail-width / phone-width shots and plain text, in docs/ui/letters/*-live.*. Bug fixed: sample data had fixed dates (offer dated 2 Nov said "sign by 14 October") - now relative to today. 2 new tests.
+- 2026-11-03: the proof stack (mailpit + API :8010) was stopped by the system for low memory after 23.3f; waiting for the owner's go-ahead to restart it for 23.4.
+
+NEXT: part-23.4 full end-to-end pass (needs the proof stack restarted), then 23.5 hand-over.

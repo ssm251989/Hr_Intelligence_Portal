@@ -379,3 +379,34 @@ Script: `frontend/scripts/p23_3e_agency_delete_shots.mjs`.
 **Clean-up (done):** 3 employees, 3 accounts (+6 role assignments, 3 invite tokens), 7 emails, 3 agencies,
 1 job, 3 candidates / applications, 2 submissions, 1 BGV case, 13 audit rows. Scan: nothing left. Back to 9
 employees and the one real agency.
+
+### 23.3f Letters + designed emails (22.6)
+
+Made through the live app (proof API = committed code), not by a script that calls the renderer.
+Script: `frontend/scripts/p23_3f_letters_shots.mjs`.
+
+| What | How | Files in `docs/ui/letters/` |
+|---|---|---|
+| 6 letter PDFs: offer, joining, appointment, confirmation, relieving, experience | Settings > Onboarding & employees > Letters preview (`POST /ui/design/letters/{kind}/preview`), about 89 KB each | `<kind>-letter-live.pdf` |
+| Letter "Send test to me" | mailpit: "Sample Offer letter from CTD Techs (test)" with `sample-offer-letter.pdf` attached | - |
+| 3 designed emails: offer, welcome, exit letters | Settings > Communication > Email design: **Send test to me** pressed on screen (mailpit 14 -> 15), then the same endpoint for each email; shots of mailpit's HTML view at Gmail width (1000 px) and phone width (390 px) + the plain-text part | `<offer\|welcome\|exit-letters>-email-live-gmail.png`, `-phone.png`, `.txt` |
+
+Subjects: "🎉 Junior AI Developer: your offer letter - please review and sign", "👋 Welcome to CTD Techs, Priya!",
+"🙏 Your relieving and experience letters from CTD Techs". Each email has an HTML part and a plain-text part
+(412 / 419 / 211 characters). Settings screens: `screens/p23-3f-email-design.png`, `-email-design-test-sent.png`,
+`-letters-settings.png`. The 22.6a/b script-made samples (`*-sample.pdf`, `*-email-gmail.png`) are kept for
+comparison.
+
+**Bug found and fixed:** the sample offer letter was dated **02 November 2026** but said "Please sign this
+letter by **14 October 2026**". Cause: the sample data in `ui_design_router.py` had fixed dates typed on 7 Oct
+(sign-by 14 Oct, joining 3 Nov, last day 30 Sep). Now `sample_dates()` uses today's date:
+- sign within 7 days;
+- join on the Monday at least 3 weeks out;
+- confirmation 6 months later;
+- last working day = the end of last month.
+
+Regenerated: "sign by 9 November 2026", joining "23 November 2026", relieving "31 October 2026". The experience
+sample now says "We wish Arun every success" (it had assumed "him"). New `tests/test_design_sample_dates.py`:
+2 passed.
+
+**Clean-up (done):** 10 test-email rows in the sent-message log + 10 audit rows of the temp admin.
