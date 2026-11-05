@@ -1,0 +1,114 @@
+# Dev / demo stack (docs/HRMS_COMPLETE_SPEC.txt Part 13 section A):
+#   postgres, redis, minio, mailpit (fake SMTP + web UI), api, worker, beat, frontend,
+#   plus a one-shot `bootstrap` that migrates both databases and seeds TWO demo tenants
+#   (acme.localhost, globex.localhost) with different branding, settings and mailboxes.
+#
+#   cp deploy/compose.env.example .env   # then fill in the three secrets
+#   docker compose up --build
+#   open http://acme.localhost:8080 and http://globex.localhost:8080 ; mail at http://localhost:8025
+#
+# TENANCY_MODE=multi here (two tenants on one stack, shared DB + RLS) purely to demonstrate
+# isolation; client installations run TENANCY_MODE=single (decision A1).
+
+x-backend-env: &backend-env
+  TENANCY_MODE: multi
+  DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/hrms
+  CONTROL_PLANE_DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/hrms_control_plane
+  APP_DATABASE_URL: postgresql://hrms_app:${HRMS_APP_DB_PASSWORD:?set HRMS_APP_DB_PASSWORD in .env}@postgres:5432/hrms
+  APP_CONTROL_PLANE_DATABASE_URL: postgresql://hrms_app:${HRMS_APP_DB_PASSWORD}@postgres:5432/hrms_control_plane
+  MASTER_KEY: ${MASTER_KEY:?set MASTER_KEY in .env (Fernet key)}
+  SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
+  REDIS_URL: redis://redis:6379/0
+  CELERY_ALWAYS_EAGER: "false"
+  FRONTEND_URL: http://acme.localhost:8080
+  APP_BASE_URL: http://acme.localhost:8080/_api
+  CORS_ORIGINS: http://acme.localhost:8080,http://globex.localhost:8080
+  LOG_FORMAT: json
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      HRMS_APP_DB_PASSWORD: ${HRMS_APP_DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./deploy/postgres/init.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
+    ports: ["9001:9001"]
+    volumes: [miniodata:/data]
+
+  mailpit:
+    image: axllent/mailpit:latest
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    ports: ["8025:8025"]
+
+  bootstrap:
+    build: { context: ./backend, target: api }
+    environment: *backend-env
+    depends_on:
+      postgres: { condition: service_healthy }
+    command: >
+      sh -c "alembic -c alembic_control_plane.ini upgrade head &&
+             alembic upgrade head &&
+             python -m hrctl.demo seed-two-tenants --mail-host mailpit --mail-port 1025"
+    restart: "no"
+
+  api:
+    build: { context: ./backend, target: api }
+    environment: *backend-env
+    volumes: [uploads:/app/uploads]
+    depends_on:
+      bootstrap: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/readyz"]
+      interval: 10s
+      retries: 30
+
+  worker:
+    build: { context: ./backend, target: worker }
+    environment:
+      <<: *backend-env
+      CELERY_QUEUES: high,default,low
+      CELERY_CONCURRENCY: "4"
+      TENANT_MAX_CONCURRENT_JOBS: "2"
+    volumes: [uploads:/app/uploads]
+    depends_on:
+      api: { condition: service_healthy }
+
+  beat:
+    build: { context: ./backend, target: beat }
+    environment: *backend-env
+    depends_on:
+      api: { condition: service_healthy }
+
+  frontend:
+    build: { context: ./frontend, args: { VITE_API_BASE_URL: /_api } }
+    ports: ["8080:8080"]
+    depends_on:
+      api: { condition: service_healthy }
+
+volumes:
+  pgdata:
+  miniodata:  # object storage for the storage.* connection purposes (Part 3 local_disk/S3 providers); uploads still use the `uploads` volume -- see docs/build_log.md Part 13
+  uploads:

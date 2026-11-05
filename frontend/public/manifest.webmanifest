@@ -1,0 +1,13 @@
+{
+  "name": "HR",
+  "short_name": "HR",
+  "description": "HR self-service and administration",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1f2937",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

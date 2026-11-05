@@ -1,0 +1,19 @@
+Subject: 🎉 Junior AI Developer: your offer letter - please review and sign
+To: proof.admin.p23@example.com
+
+Hi Priya,
+
+Congratulations! Your offer letter for Junior AI Developer at CTD Techs is ready.
+
+Review & sign it here: http://127.0.0.1:5174/offer/sign/sample
+
+The page shows your letter (you can download it as a PDF). To sign, type your full name and tick "I accept". Please sign by 9 November 2026.
+
+Your letter:
+
+Dear Priya Sharma,
+
+We are delighted to offer you ...
+
+Best regards,
+CTD Techs HR

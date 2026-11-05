@@ -1,0 +1,174 @@
+PART 16 - POLISH, COMPLETENESS & SAMPLES (owner review 2026-09-26)
+(Repo: hr-automation, branch hrms-platform. Do this AFTER / together with
+PART 15 - finish any unfinished PART 15 step first.)
+
+OWNER FEEDBACK FROM SCREENSHOTS
+- Big empty space left and right; the app does not use the full screen.
+- Screens still show developer text: "(Part 4's Communication Engine)",
+  "tenant", raw keys like "recruitment.application.received",
+  "{{ job_title }}", "'email.inbound.helpdesk'", "'esign.offer_letters'",
+  "(decision C2)". Owner and HR users must never see these.
+- Home still has the old plain tiles (Active Jobs 1, Total Candidates 3).
+- Settings is one very long list.
+- Owner wants to SEE the whole end-to-end flow working.
+
+STANDING RULES (unchanged)
+No test suites (only tsc -p tsconfig.app.json, compileall, alembic upgrade,
+npm run build). Don't ask - pick the best option and log it in
+docs/build_log.md. Stop only for data deletion, overwriting main, pushing
+secrets, irreversible actions. Commit + push after each step
+("part-16.N: <title>"). Keep output short. Never merge to main.
+
+--------------------------------------------------------------------------
+16.1 FULL-SCREEN LAYOUT
+- Remove the centred max-width wrapper. Sidebar fixed on the left (collapsible
+  to icons), content area fills ALL remaining width at every screen size.
+- 12-column responsive grid inside pages; cards stretch to fill rows.
+- Only long reading text (help, letters, emails) keeps a comfortable line
+  width inside its own card.
+- Check at 1366, 1536, 1920 and 2560 px wide: no big empty side gutters
+  (max 24px page padding).
+
+16.2 PLAIN-LANGUAGE SWEEP (every screen, every message)
+- Delete all developer wording from the UI: Part numbers, "tenant",
+  "purpose", decision codes, JSON keys, template keys, Jinja braces,
+  code-style names in quotes.
+- Email templates list shows a friendly name + one-line description + channel
+  icon, e.g. "Application received - sent to the candidate after they apply".
+  Template key only visible under an "Advanced" toggle.
+- Template editor: variables inserted from a picker showing friendly names and
+  a sample value ("Job title -> Automation Architect"); preview shows real
+  sample text, never {{ }}.
+- Configuration health in plain words with a one-click fix, e.g.
+  "Helpdesk emails aren't connected yet - connect a mailbox so employees can
+  email the helpdesk. [Connect mailbox]"
+  "Offer letters can't be e-signed yet - connect DocuSign or Leegality.
+  [Connect e-sign]"
+  "21 people sign in without 2-step verification. [Invite them to set it up]"
+- Grep the frontend for these patterns and fix every hit:
+  "Part ", "tenant", "purpose", "{{", "decision ", "email.inbound",
+  "esign.", "llm.", "recruitment.", "system." (inside user-visible strings).
+
+16.3 SETTINGS REORGANISED (short, grouped, searchable)
+- Settings home = a grid of category cards (emoji + name + one line). Each
+  opens a page with a left sub-menu. Nothing is removed, only grouped;
+  rarely used items go under "Advanced" inside their category.
+  Company: profile, branding & logo, offices & locations, languages
+  People & access: users, roles & permissions, 2-step verification, sign-in
+  Hiring: jobs & hiring stages, screening rules & AI scoring, interview
+    scheduling, salary bands & offers, background checks, careers site,
+    agencies, job boards
+  Onboarding & employees: onboarding plans, documents & letters, employee
+    fields, org structure
+  Performance: review cycles, goals, rating scales, compensation planning
+  Helpdesk & assets: ticket categories & response times, asset categories
+  Communication: mailboxes, email templates, notification rules, message log
+  Integrations: AI provider, e-sign, maps, file storage, calendars & meetings
+  Automation: approval steps, workflows
+  Data & privacy: custom fields, imports & exports, sample files, data
+    retention, consent, audit log
+  Billing & licence: plan, employees counted, usage
+  Advanced: every raw platform setting (the old long list) - collapsed.
+- Search box on Settings home finds any setting by its friendly name.
+- Sidebar: sub-items collapse under their parent (e.g. Candidates >
+  Dashboard / List / Import) and only one group is open at a time.
+
+16.4 BULK RESUMES + WHERE DATA IS STORED (~1000 resumes per run)
+Today: candidate data is in PostgreSQL; resume files go to
+backend/uploads/resumes/ with random names, NOT separated per company and
+NOT using the storage connection. Fix:
+- All files (resumes, photos, BGV docs, offer letters, employee documents,
+  exports, welcome videos) go through the StorageProvider, path
+  tenants/<company-id>/<kind>/<yyyy>/<mm>/<uuid>.<ext>.
+  Dev default: local folder backend/storage/. Production: S3 in ap-south-1.
+- One-off migration command `hrctl storage migrate-local --dry-run` then
+  real run: moves existing files into the new layout and updates the DB
+  paths. Never deletes the old file until the copy is verified.
+- Bulk import screen: drag in many files or one ZIP (up to 1000 resumes),
+  shows a cost/time estimate first (AI parsing calls), then processes in the
+  background queue with a live progress bar (x of 1000, failed, duplicates),
+  pause/resume, and a downloadable result report (Excel).
+- Duplicate detection by file hash + email/phone before parsing.
+- Rate-limited AI parsing in batches; failures retry, then listed with reason.
+- Settings > Integrations > File storage page shows plainly where files are
+  kept and how much space is used.
+
+16.5 MODERN TECH UPGRADE (no risky big-bang rewrite)
+Frontend:
+- TanStack Query for all server data (caching, background refresh, no
+  manual refetch code); MUI X DataGrid (community) for every list:
+  virtual scrolling for 10k+ rows, column chooser, filters, saved views,
+  export; React Hook Form + Zod for all forms with inline validation.
+- Live updates via Server-Sent Events for bulk import progress,
+  notifications and approvals badge counts.
+- Upgrade dependencies to current stable versions; lazy-load each module.
+Backend:
+- FastAPI + Pydantic v2 current stable; background jobs for all long work
+  (bulk resumes, reports, emails) via the job queue; SSE endpoint.
+- AI model names only from settings (current Claude models selectable).
+- Keep existing behaviour; upgrade module by module.
+
+16.6 REMOVE DUPLICATES
+- First write docs/ui/DUPLICATES.md: every place the same thing appears twice
+  (menus, dashboards, stats cards, pages, components, API endpoints, settings),
+  e.g. Overview vs Home vs Candidates dashboard vs Reports stats; HR Inbox vs
+  Approvals inbox; Salary vs Offers compensation; old scheduling vs new
+  interview scheduling; old Settings cards vs new category pages; old
+  StatCard vs new StatTile.
+- Then merge each pair into ONE place (keep the better one, redirect old URLs),
+  delete dead code and unused components. Log each merge in build_log.md.
+
+16.7 UPDATE ALL HIRING MODULES (end to end, same behaviour, new look)
+Jobs, Candidates (dashboard/list/import/profile), Screening, Shortlisting,
+Interviews, HR Inbox, Salary, BGV, Offers, Reports, Careers portal - each
+restyled per PART 15 + mockup, plain language, empty states, primary button,
+and the specific decisions in section L (Kanban/table, radar, score evidence,
+slider with live count, week calendar, scorecard, band bar, BGV timeline,
+offer timeline, etc.). New home dashboards replace the old tiles.
+
+16.8 SAMPLES & EXAMPLES EVERYWHERE
+- Every input shows a placeholder example and a one-line hint, e.g.
+  API key: "sk-ant-api03-****************Dey12 - find it in your provider's
+  dashboard"; SMTP host "smtp.gmail.com", port "587", "Use an app password,
+  not your normal password"; IMAP "imap.gmail.com : 993"; domain
+  "hr.yourcompany.com"; PAN "ABCDE1234F"; phone "+91 98765 43210".
+  Secrets are always masked after saving (show last 4 characters only).
+- Every upload/import has a "Download sample" button next to it. Backend
+  generates the files (GET /api/v1/samples/<key>), each with correct column
+  headers, 2-3 example rows marked EXAMPLE, and an "Instructions" sheet
+  explaining each column and allowed values:
+  employees import (xlsx), candidates bulk import (xlsx), interviewer
+  availability / tracker (xlsx), users & roles import (xlsx), departments &
+  locations (xlsx), jobs import (xlsx), salary bands (xlsx), assets register
+  (xlsx), agency candidate submission (xlsx), custom fields import (csv),
+  offer letter template (docx), relieving / experience letter templates
+  (docx), email template example (html), HR policy handbook for the HR
+  assistant (pdf), sample resume (pdf + docx), BGV document checklist (pdf),
+  brand kit guide (logo sizes/colours, pdf), welcome video spec (pdf).
+- Settings > Data & privacy > Sample files: one page listing all samples with
+  download buttons.
+- Imports validate against the same template and show row-by-row errors in
+  plain words with a "download errors" file.
+
+16.9 SEE IT WORK END TO END (demo company)
+- `hrctl demo seed` creates a clearly labelled demo data set ("Demo -")
+  across ALL modules so every screen is populated: 5 jobs, 60 candidates at
+  every stage, interviews, offers (sent/viewed/signed), 3 joiners in
+  onboarding, 40 employees with org chart and photos (generated avatars),
+  goals and a review cycle, helpdesk tickets (some past response time),
+  assets, 2 exits in clearance, reports. `hrctl demo clear` removes only
+  demo rows (dry-run first). Never touch real data.
+- docs/ui/E2E_WALKTHROUGH.md: a click-by-click walkthrough of one person's
+  full journey: create job -> candidate applies on careers site -> AI
+  screening -> shortlist -> interview scheduled -> scorecard -> salary check
+  -> offer e-signed (confetti) -> BGV -> pre-joiner portal -> joined as
+  employee -> goals/review -> helpdesk ticket -> asset -> resignation ->
+  clearance -> relieving letter. Each step: URL, which user, what to click,
+  what you should see.
+
+16.10 HAND-OVER
+- npm run build OK, tsc clean. Screenshots of every page (1920px wide, light
+  mode) in docs/ui/screens/ via Playwright (screenshots only, no tests).
+- Update docs/ui/PAGES.md and docs/build_log.md, commit, push, then STOP and
+  tell me: start commands, demo seed command, which login shows everything,
+  and what is still not finished.

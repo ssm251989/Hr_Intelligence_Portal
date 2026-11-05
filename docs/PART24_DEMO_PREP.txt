@@ -1,0 +1,72 @@
+PART 24 - PREPARE THE WEDNESDAY DEMO (2026-11-03, finish by Tuesday evening)
+(Repo hr-automation, branch hrms-platform. Demo: Wednesday 2026-11-04, 45 min.
+The run sheet is "HR Automation - Demo Run Sheet (Nov 4).docx" in the repo root.
+This part comes BEFORE the rest of PART 23 (23.3 proofs can continue after the demo).)
+
+STANDING RULES
+- First message: `git log --oneline -5` and `git status`, quote the literal output.
+- Back up the database first (python -m hrctl.backup ...). Quote where the backup was written.
+- Never run a destructive reset without a dry run first and showing me its scope.
+- Every demo record's name starts with "Demo - " so `python -m hrctl.demo clear` can
+  remove it. Use the app's own services/APIs to create records (not raw SQL), so the
+  emails, audit rows and status history are real.
+- Provider stays "anthropic". Never switch ai.provider to amazon_bedrock (no AWS access).
+- Log decisions in docs/build_log.md; commit after each item ("part-24.N: <title>").
+
+--------------------------------------------------------------------------
+24.0 COMMIT THE 4 FILES CHANGED OUTSIDE THE SESSION (= 23.1b)
+ui_genai_router.py, GenAISettingsPage.tsx, part18.ts, settingsHome.ts:
+- Bedrock keeps its own "last test" result and shows "not tested yet - press Test"
+  until it is tested.
+- The settings menu says "AI Intelligence & HR assistant" (EN / HI / TA).
+Run tsc -p tsconfig.app.json and npm run build, check both on screen, then commit
+"part-23.1b: Bedrock test status + menu label".
+
+24.1 DEMO ENVIRONMENT
+- The API must run from backend/.venv (system Python has no anthropic package).
+  Start: backend/.venv/Scripts/python.exe -m uvicorn app.main:app --reload.
+- Check: Mailpit up; HR handbook indexed (status Ready); AI usage limits below 80%.
+- HR assistant answers: "notice period for a senior employee" -> 90 days with
+  the source; "Can I work from home?" -> 2 days/week after confirmation;
+  "Eg1" -> clarify + 4 chips.
+- The unit-cost card shows a value. One JD draft is enough.
+
+24.2 DEMO DATA (one job, six candidates staged one per scene)
+Create the job "Demo - Senior Python Developer": full form, AI-drafted JD,
+published to the careers page, interviewer pool with a demo interviewer who has
+a TEST mailbox, salary band set.
+Then create candidates from anonymised sample resumes (docs/samples). Move each
+one through the real flow to its stage:
+  A  shortlisted, interview negotiation emails sent (the demo shows the slot
+     pick + confirmation + scorecard)
+  B  interview selected, salary form submitted, hike inside the band
+  C  salary approved, documents uploaded, ready for BGV (a demo BGV vendor
+     agency of type BGV exists with a TEST mailbox)
+  D  BGV cleared, joining date offered, offer ready to send / sign
+  E  offer signed, welcome portal in progress, ready for "onboarding complete"
+  F  an employee with an app login (TEST mailbox), ready to resign
+If the shortlist undo window or a waiting step blocks staging, use the existing
+"release now" / retry actions, not data edits. Quote any step that cannot be
+staged and why.
+
+24.3 RUNBOOK
+Write docs/ui/DEMO_RUNBOOK.md with:
+- the URLs: HR app, careers page, Mailpit, employee login, vendor link, the
+  QR verify page;
+- the demo logins: HR admin, demo interviewer, employee F. Store the passwords
+  only in the runbook's local copy, NOT in git: add the file to .gitignore if it
+  holds passwords, or point to where they are;
+- which candidate goes with which scene (A-F);
+- a screenshot of each staged record (docs/ui/screens/p24-*.png) as the backup.
+
+24.4 DRY RUN + RESET
+- Do one full timed run of the run sheet's live demo script. Note anything
+  slow or broken; fix real bugs (quote the cause first).
+- Then put the data back to the staged state for Wednesday: either re-create
+  it with a script (backend/hrctl/demo_wednesday.py, idempotent, "Demo - "
+  names) or restore the backup taken after 24.2. Prefer the script, so the
+  demo can be reset again after rehearsal.
+
+24.5 AFTER THE DEMO (do not run before Wednesday)
+python -m hrctl.demo clear --tenant ctd-techs  (dry run, then --yes), then
+continue PART 23 at 23.3.

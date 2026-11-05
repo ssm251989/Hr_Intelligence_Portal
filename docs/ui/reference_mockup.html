@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HR Portal New Look</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/canvas-confetti/1.9.3/confetti.browser.min.js"></script>
+<style>
+:root{
+  --ground:#F4F6F5; --surface:#FFFFFF; --surface-2:#F9FBFA; --ink:#15211D; --muted:#5B6A65; --line:#E2E8E5;
+  --brand:#0E7C66; --brand-ink:#FFFFFF; --brand-soft:#E2F3EE; --coral:#F26B4B; --coral-soft:#FDECE7;
+  --sun:#F2B233; --sun-soft:#FDF4DF; --sky:#2F6FDE; --sky-soft:#E6EEFC; --ok:#1F8A4C; --ok-soft:#E3F4EA;
+  --shadow:0 1px 2px rgba(21,33,29,.05),0 6px 20px rgba(21,33,29,.06);
+  --f:"Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#0E1412; --surface:#16201D; --surface-2:#1B2622; --ink:#E6EEEB; --muted:#9AAAA4; --line:#26332F;
+  --brand:#3FBF9F; --brand-ink:#08110E; --brand-soft:#173A31; --coral:#FF8A6B; --coral-soft:#3A221C;
+  --sun:#F5C35A; --sun-soft:#3A3020; --sky:#6C9BF0; --sky-soft:#1C2A45; --ok:#5BCB8A; --ok-soft:#173424;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.3); color-scheme:dark;}}
+:root[data-theme="dark"]{
+  --ground:#0E1412; --surface:#16201D; --surface-2:#1B2622; --ink:#E6EEEB; --muted:#9AAAA4; --line:#26332F;
+  --brand:#3FBF9F; --brand-ink:#08110E; --brand-soft:#173A31; --coral:#FF8A6B; --coral-soft:#3A221C;
+  --sun:#F5C35A; --sun-soft:#3A3020; --sky:#6C9BF0; --sky-soft:#1C2A45; --ok:#5BCB8A; --ok-soft:#173424;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.3); color-scheme:dark;}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--f);font-size:14px;line-height:1.5;padding:0 16px}
+.app{max-width:1280px;margin:0 auto;padding-block:16px 40px;display:grid;grid-template-columns:220px 1fr;gap:20px}
+aside{position:sticky;top:calc(env(safe-area-inset-top,0px) + 16px);align-self:start;background:var(--surface);border-radius:18px;padding:16px 12px;box-shadow:var(--shadow)}
+.logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:16px;padding:4px 8px 14px}
+.logo i{width:32px;height:32px;border-radius:10px;background:var(--brand);display:grid;place-items:center;color:var(--brand-ink);font-style:normal}
+.nav a{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;color:var(--ink);text-decoration:none;font-weight:500}
+.nav a span{width:22px;text-align:center}
+.nav a.on{background:var(--brand-soft);color:var(--brand);font-weight:700}
+.nav small{display:block;margin:12px 10px 4px;color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+main{min-width:0;display:flex;flex-direction:column;gap:18px}
+.top{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
+.search{flex:1 1 280px;max-width:460px;display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:9px 14px;color:var(--muted)}
+.search kbd{margin-left:auto;font:inherit;font-size:11px;border:1px solid var(--line);border-radius:6px;padding:1px 6px}
+.tabs{display:flex;gap:6px;background:var(--surface);padding:5px;border-radius:12px;border:1px solid var(--line);flex-wrap:wrap}
+.tabs button{border:0;background:none;color:var(--muted);font:inherit;font-weight:600;padding:7px 12px;border-radius:9px;cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--brand);color:var(--brand-ink)}
+.tabs button:focus-visible,.btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.note{font-size:12px;color:var(--muted)}
+.card{background:var(--surface);border-radius:18px;padding:18px;box-shadow:var(--shadow)}
+h1{font-size:26px;line-height:1.2;margin:0;font-weight:800;text-wrap:balance}
+h2{font-size:16px;margin:0 0 12px;font-weight:700;display:flex;align-items:center;gap:8px;justify-content:space-between}
+h2 em{font-style:normal;font-size:12px;color:var(--muted);font-weight:500}
+.hero{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;background:linear-gradient(120deg,var(--brand-soft),var(--surface) 70%)}
+.hero p{margin:6px 0 14px;color:var(--muted);max-width:52ch}
+.wave{display:inline-block;animation:wave 2.4s ease-in-out infinite;transform-origin:70% 70%}
+@keyframes wave{0%,60%,100%{transform:rotate(0)}10%,30%{transform:rotate(14deg)}20%{transform:rotate(-8deg)}}
+.btn{display:inline-flex;align-items:center;gap:8px;border:0;border-radius:11px;padding:10px 16px;font:inherit;font-weight:700;cursor:pointer;background:var(--brand);color:var(--brand-ink)}
+.btn.ghost{background:var(--surface);color:var(--ink);border:1px solid var(--line)}
+.row{display:flex;flex-wrap:wrap;gap:8px}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.kpi{display:flex;flex-direction:column;gap:6px}
+.kpi .ic{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;font-size:20px}
+.kpi b{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1}
+.kpi .lbl{color:var(--muted);font-weight:500}
+.trend{font-size:12px;font-weight:700}
+.up{color:var(--ok)} .down{color:var(--coral)}
+.grid2{display:grid;grid-template-columns:1.4fr 1fr;gap:18px}
+.todo{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.todo li{display:flex;gap:12px;align-items:center;padding:10px 12px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line)}
+.todo .em{font-size:20px}
+.todo .t{flex:1;min-width:0}
+.todo .t b{display:block;font-weight:600}
+.todo .t span{color:var(--muted);font-size:12px}
+.chip{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;border-radius:999px;padding:3px 9px;white-space:nowrap}
+.c-coral{background:var(--coral-soft);color:var(--coral)} .c-sun{background:var(--sun-soft);color:#9A6A08} .c-ok{background:var(--ok-soft);color:var(--ok)} .c-sky{background:var(--sky-soft);color:var(--sky)} .c-brand{background:var(--brand-soft);color:var(--brand)}
+:root[data-theme="dark"] .c-sun{color:var(--sun)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .c-sun{color:var(--sun)}}
+.svgwrap{overflow-x:auto}
+svg text{fill:var(--ink);font-family:var(--f)}
+.mapdots circle.d{fill:var(--line)}
+.pulse{animation:pulse 2.4s ease-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes pulse{0%{opacity:.55;transform:scale(1)}100%{opacity:0;transform:scale(2.4)}}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--muted);margin-top:8px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+/* candidate */
+.prof{display:grid;grid-template-columns:320px 1fr;gap:18px}
+.avatar{width:64px;height:64px;border-radius:20px;display:grid;place-items:center;font-weight:800;font-size:22px;background:var(--sky-soft);color:var(--sky)}
+.who{display:flex;gap:14px;align-items:center}
+.who h1{font-size:20px}
+.facts{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:14px 0 0;font-size:13px}
+.facts dt{color:var(--muted)} .facts dd{margin:0;font-weight:600}
+.stepper{display:flex;gap:4px;margin-top:4px}
+.stepper div{flex:1;height:8px;border-radius:4px;background:var(--line)}
+.stepper div.done{background:var(--brand)} .stepper div.now{background:linear-gradient(90deg,var(--brand),var(--sun))}
+.steplbl{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:6px}
+.ring{--p:82;width:110px;height:110px;border-radius:50%;background:conic-gradient(var(--brand) calc(var(--p)*1%),var(--line) 0);display:grid;place-items:center}
+.ring span{width:84px;height:84px;border-radius:50%;background:var(--surface);display:grid;place-items:center;font-weight:800;font-size:26px}
+.score{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+.evidence{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;flex:1;min-width:220px}
+.evidence li{font-size:13px;padding:8px 10px;border-left:3px solid var(--brand);background:var(--surface-2);border-radius:0 8px 8px 0}
+.timeline{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:14px}
+.timeline li{display:flex;gap:12px}
+.timeline .dot{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;flex:0 0 auto;background:var(--surface-2);border:1px solid var(--line)}
+.timeline b{display:block;font-weight:600} .timeline span{font-size:12px;color:var(--muted)}
+/* portal */
+.welcome{display:grid;grid-template-columns:1.2fr 1fr;gap:18px;align-items:center;background:linear-gradient(135deg,var(--sun-soft),var(--surface) 55%,var(--brand-soft))}
+.video{aspect-ratio:16/10;max-width:100%;border-radius:16px;position:relative;overflow:hidden;display:grid;place-items:center;
+  background:linear-gradient(120deg,#0E7C66,#2F6FDE,#F26B4B,#F2B233);background-size:300% 300%;animation:flow 9s ease infinite;color:#fff;font-weight:800;text-align:center}
+@keyframes flow{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+.video .play{width:58px;height:58px;border-radius:50%;background:rgba(255,255,255,.92);color:#0E7C66;display:grid;place-items:center;font-size:22px;margin:0 auto 8px;box-shadow:0 6px 20px rgba(0,0,0,.2)}
+.big{font-size:44px}
+.checks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.chk{border:1px solid var(--line);border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:6px;background:var(--surface-2)}
+.chk .e{font-size:28px}
+.chk b{font-weight:700}
+.chk.done{background:var(--ok-soft);border-color:transparent}
+.bar{height:10px;border-radius:5px;background:var(--line);overflow:hidden}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--brand),var(--sun));width:0;transition:width 1.2s ease}
+.buddy{display:flex;gap:12px;align-items:center}
+.agenda{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:8px}
+.agenda li{display:flex;gap:10px;align-items:center;padding:8px 10px;border-radius:10px;background:var(--surface-2)}
+.agenda time{font-weight:700;min-width:62px;font-variant-numeric:tabular-nums}
+[hidden]{display:none!important}
+@media (max-width:980px){.app{grid-template-columns:1fr}aside{position:static}.nav{display:flex;overflow-x:auto;gap:4px}.nav small{display:none}.nav a{white-space:nowrap}
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.grid2,.prof,.welcome{grid-template-columns:1fr}.checks{grid-template-columns:repeat(2,minmax(0,1fr))}.hero{grid-template-columns:1fr}}
+@media (max-width:520px){.checks{grid-template-columns:1fr}.kpis{grid-template-columns:1fr 1fr}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head><body>
+
+
+<div class="app">
+  <aside>
+    <div class="logo"><i>✦</i>YourCompany HR</div>
+    <nav class="nav" aria-label="Main">
+      <small>Today</small>
+      <a class="on" href="#"><span>🏠</span>Home</a>
+      <a href="#"><span>✅</span>My approvals</a>
+      <small>Hiring</small>
+      <a href="#"><span>💼</span>Jobs</a>
+      <a href="#"><span>🧑‍💻</span>Candidates</a>
+      <a href="#"><span>📅</span>Interviews</a>
+      <a href="#"><span>📨</span>Offers</a>
+      <small>People</small>
+      <a href="#"><span>👋</span>Onboarding</a>
+      <a href="#"><span>👥</span>Employees</a>
+      <a href="#"><span>🎯</span>Performance</a>
+      <a href="#"><span>🛟</span>Helpdesk</a>
+      <a href="#"><span>💻</span>Assets</a>
+      <a href="#"><span>🚪</span>Exits</a>
+      <small>Insights</small>
+      <a href="#"><span>📊</span>Reports</a>
+      <a href="#"><span>⚙️</span>Settings</a>
+    </nav>
+  </aside>
+
+  <main>
+    <div class="top">
+      <div class="search" role="search">🔎 Search people, jobs, requests… <kbd>Ctrl K</kbd></div>
+      <div class="tabs" role="tablist" aria-label="Preview screens">
+        <button role="tab" id="t-home" aria-selected="true" data-v="home">HR home</button>
+        <button role="tab" id="t-cand" aria-selected="false" data-v="cand">Candidate profile</button>
+        <button role="tab" id="t-join" aria-selected="false" data-v="join">New joiner portal</button>
+      </div>
+    </div>
+    <p class="note">Design preview with sample data. Colours, logo and name come from each client's branding.</p>
+
+    <!-- HR HOME -->
+    <section id="v-home" role="tabpanel" aria-labelledby="t-home" style="display:flex;flex-direction:column;gap:18px">
+      <div class="card hero">
+        <div>
+          <h1>Good evening, Priya <span class="wave">👋</span></h1>
+          <p>3 things need you today. Everything else is on track.</p>
+          <div class="row"><button class="btn" type="button">✅ Review 3 approvals</button><button class="btn ghost" type="button">＋ New job</button></div>
+        </div>
+        <svg width="220" height="130" viewBox="0 0 220 130" aria-hidden="true">
+          <ellipse cx="110" cy="120" rx="100" ry="8" fill="var(--line)"/>
+          <rect x="30" y="40" width="70" height="78" rx="14" fill="var(--sky-soft)"/>
+          <circle cx="65" cy="30" r="16" fill="var(--sun)"/><rect x="45" y="50" width="40" height="8" rx="4" fill="var(--sky)"/>
+          <rect x="45" y="64" width="28" height="6" rx="3" fill="var(--sky)" opacity=".5"/>
+          <rect x="115" y="26" width="80" height="92" rx="14" fill="var(--brand-soft)"/>
+          <circle cx="155" cy="18" r="16" fill="var(--coral)"/>
+          <path d="M130 90 l14 -18 l14 10 l18 -26" stroke="var(--brand)" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="176" cy="56" r="6" fill="var(--brand)"/>
+        </svg>
+      </div>
+
+      <div class="kpis">
+        <div class="card kpi"><div class="ic c-sky">💼</div><b>12</b><span class="lbl">Open jobs</span><span class="trend up">▲ 2 this week</span></div>
+        <div class="card kpi"><div class="ic c-brand">🧑‍💻</div><b>248</b><span class="lbl">Candidates in progress</span><span class="trend up">▲ 36 new</span></div>
+        <div class="card kpi"><div class="ic c-sun">📅</div><b>31</b><span class="lbl">Interviews this week</span><span class="trend down">▼ 4 feedback late</span></div>
+        <div class="card kpi"><div class="ic c-coral">🎉</div><b>7</b><span class="lbl">Joining this month</span><span class="trend up">▲ all docs 80%+</span></div>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <h2>Where candidates go <em>last 30 days</em></h2>
+          <div class="svgwrap"><svg id="sankey" viewBox="0 0 640 230" width="100%" role="img" aria-label="Hiring flow: 248 applied, 160 screened, 64 shortlisted, 38 interviewed, 12 offered, 7 joined"></svg></div>
+          <div class="legend"><span><i style="background:var(--brand)"></i>Moved forward</span><span><i style="background:var(--coral);opacity:.5"></i>Dropped out</span></div>
+        </div>
+        <div class="card">
+          <h2>Your to-do <em>sorted by urgency</em></h2>
+          <ul class="todo">
+            <li><span class="em">✍️</span><div class="t"><b>Approve offer · Ravi Kumar</b><span>Automation Architect · above band by 6%</span></div><span class="chip c-coral">⏰ 2h left</span></li>
+            <li><span class="em">🗣️</span><div class="t"><b>2 interview scorecards missing</b><span>Suresh A · Kishore Reddy</span></div><span class="chip c-sun">Today</span></li>
+            <li><span class="em">📄</span><div class="t"><b>BGV mismatch to check</b><span>Name on PAN differs · Arjun R</span></div><span class="chip c-sky">New</span></li>
+            <li><span class="em">🎉</span><div class="t"><b>Ananya joins on Monday</b><span>Laptop ready · ID card pending</span></div><button class="btn ghost" id="celebrate" type="button" style="padding:6px 10px">Mark joined</button></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <h2>People by office <em>tap a city for details</em></h2>
+          <div class="svgwrap"><svg viewBox="0 0 520 250" width="100%" class="mapdots" id="map" role="img" aria-label="Headcount: Hyderabad 142, Bengaluru 96, Chennai 58, Pune 34"></svg></div>
+        </div>
+        <div class="card">
+          <h2>Heads-up <em>alerts</em></h2>
+          <ul class="todo">
+            <li><span class="em">🔥</span><div class="t"><b>3 helpdesk tickets past SLA</b><span>Escalated to team leads</span></div><span class="chip c-coral">SLA</span></li>
+            <li><span class="em">🧭</span><div class="t"><b>Mailbox token expires in 5 days</b><span>Settings → Connections</span></div><span class="chip c-sun">Fix</span></li>
+            <li><span class="em">🌟</span><div class="t"><b>Offer acceptance up to 83%</b><span>Best month this year</span></div><span class="chip c-ok">Good</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- CANDIDATE -->
+    <section id="v-cand" role="tabpanel" aria-labelledby="t-cand" hidden style="flex-direction:column;gap:18px">
+      <div class="prof">
+        <div class="card">
+          <div class="who"><div class="avatar">KR</div><div><h1>Kishore Reddy</h1><span class="note">Automation Anywhere Architect</span></div></div>
+          <div class="row" style="margin-top:12px"><span class="chip c-brand">⭐ Top 10%</span><span class="chip c-sky">📍 18 km · ~40 min</span><span class="chip c-sun">🏷️ RPA</span></div>
+          <dl class="facts">
+            <dt>Experience</dt><dd>9 years</dd><dt>Expected</dt><dd>₹ 28 LPA <span class="chip c-ok">In band</span></dd>
+            <dt>Notice</dt><dd>30 days</dd><dt>Source</dt><dd>LinkedIn</dd>
+          </dl>
+          <div style="margin-top:16px"><div class="stepper"><div class="done"></div><div class="done"></div><div class="done"></div><div class="now"></div><div></div><div></div></div>
+          <div class="steplbl"><span>Applied</span><span>Screened</span><span>Shortlisted</span><span>Interview</span><span>Offer</span><span>Joined</span></div></div>
+          <div class="row" style="margin-top:16px"><button class="btn" type="button">📅 Schedule interview</button><button class="btn ghost" type="button">📄 Resume</button></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:18px;min-width:0">
+          <div class="card">
+            <h2>Why this score <em>from the resume</em></h2>
+            <div class="score">
+              <div class="ring"><span>82</span></div>
+              <ul class="evidence">
+                <li>“Led migration of 40+ bots to A360 across 3 business units”</li>
+                <li>“Certified Automation Anywhere Master Professional”</li>
+                <li>Missing: hands-on Python for custom packages</li>
+              </ul>
+              <svg viewBox="-40 0 280 185" width="250" height="170" id="radar" role="img" aria-label="Skills compared with the job"></svg>
+            </div>
+            <div class="legend"><span><i style="background:var(--brand)"></i>Kishore</span><span><i style="background:var(--sun)"></i>Job needs</span></div>
+          </div>
+          <div class="card">
+            <h2>Activity</h2>
+            <ul class="timeline">
+              <li><div class="dot">🤖</div><div><b>AI score 82 · shortlisted automatically</b><span>Today 10:12 · undo until 2:12 pm</span></div></li>
+              <li><div class="dot">📨</div><div><b>Picked 2 interview slots</b><span>Yesterday 6:40 pm · Tue 11:00, Wed 3:30</span></div></li>
+              <li><div class="dot">📝</div><div><b>Note from Priya</b><span>“Strong on governance, ask about CoE setup.”</span></div></li>
+              <li><div class="dot">📥</div><div><b>Applied via LinkedIn</b><span>12 Sep</span></div></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- NEW JOINER -->
+    <section id="v-join" role="tabpanel" aria-labelledby="t-join" hidden style="flex-direction:column;gap:18px">
+      <div class="card welcome">
+        <div>
+          <div class="big" aria-hidden="true">🎉</div>
+          <h1>Welcome to the team, Ananya!</h1>
+          <p class="note" style="font-size:15px;margin:8px 0 14px">You join us on <b>Monday, 5 Oct</b>. Finish these few steps and you're all set.</p>
+          <div class="bar" aria-label="60% done"><i id="joinbar"></i></div>
+          <p class="note" style="margin-top:6px"><b style="color:var(--ink)">3 of 5 done</b> · about 10 minutes left</p>
+        </div>
+        <div class="video" role="img" aria-label="Welcome video from the team"><div><div class="play">▶</div>Watch your welcome video<br><span style="font-weight:500;font-size:12px">1 min · from your new team</span></div></div>
+      </div>
+      <div class="card">
+        <h2>Your steps <em>tap one to finish it</em></h2>
+        <div class="checks">
+          <div class="chk done"><span class="e">🪪</span><b>ID proof</b><span class="note">Uploaded ✓</span></div>
+          <div class="chk done"><span class="e">🎓</span><b>Education</b><span class="note">Uploaded ✓</span></div>
+          <div class="chk done"><span class="e">✍️</span><b>Offer signed</b><span class="note">Done ✓</span></div>
+          <div class="chk"><span class="e">🏦</span><b>Bank details</b><span class="note">2 min · for salary</span></div>
+          <div class="chk"><span class="e">📸</span><b>Your photo</b><span class="note">Use your phone camera</span></div>
+          <div class="chk"><span class="e">❓</span><b>Questions?</b><span class="note">Ask the HR assistant</span></div>
+        </div>
+      </div>
+      <div class="grid2">
+        <div class="card"><h2>Your first day</h2>
+          <ul class="agenda">
+            <li><time>9:30</time>☕ Welcome coffee with your team</li>
+            <li><time>10:30</time>💻 Collect laptop and access card</li>
+            <li><time>12:30</time>🍱 Lunch with your buddy</li>
+            <li><time>15:00</time>🧭 Meet your manager</li>
+          </ul></div>
+        <div class="card"><h2>Your buddy</h2>
+          <div class="buddy"><div class="avatar" style="background:var(--sun-soft);color:#9A6A08">MS</div><div><b>Meera S</b><div class="note">Senior Analyst · 4 years here</div><div class="note">“Can't wait to show you around! 😊”</div></div></div>
+          <div class="row" style="margin-top:14px"><button class="btn ghost" type="button">💬 Say hi</button></div></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+const NS="http://www.w3.org/2000/svg";
+const el=(t,a={},p)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);if(p)p.appendChild(e);return e};
+// Sankey-style flow
+(function(){
+  const s=document.getElementById("sankey");
+  const st=[["Applied",248],["Screened",160],["Shortlisted",64],["Interviewed",38],["Offered",12],["Joined",7]];
+  const H=150,top=30,scale=H/248,gap=640/st.length,w=18;
+  st.forEach(([n,v],i)=>{
+    const x=i*gap+20,h=Math.max(v*scale,3);
+    if(i<st.length-1){
+      const nv=st[i+1][1],nh=Math.max(nv*scale,3),nx=(i+1)*gap+20;
+      el("path",{d:`M${x+w},${top} C${x+w+45},${top} ${nx-45},${top} ${nx},${top} L${nx},${top+nh} C${nx-45},${top+nh} ${x+w+45},${top+nh} ${x+w},${top+nh} Z`,fill:"var(--brand)",opacity:.28},s);
+      const dh=h-nh; if(dh>0){el("path",{d:`M${x+w},${top+nh} C${x+w+30},${top+nh} ${x+w+40},${top+H+40} ${x+w+60},${top+H+40} L${x+w+60},${top+H+40+Math.max(dh*.25,2)} C${x+w+30},${top+H+40+Math.max(dh*.25,2)} ${x+w+10},${top+h} ${x+w},${top+h} Z`,fill:"var(--coral)",opacity:.35},s);}
+    }
+    el("rect",{x,y:top,width:w,height:h,rx:4,fill:"var(--brand)"},s);
+    const t=el("text",{x,y:top-10,"font-size":12,"font-weight":700},s);t.textContent=n;
+    const t2=el("text",{x:x+w+6,y:top+Math.min(h,150)/2+4,"font-size":13,"font-weight":800},s);t2.textContent=v;
+  });
+})();
+// Dot map
+(function(){
+  const m=document.getElementById("map");
+  for(let y=14;y<250;y+=14)for(let x=14;x<520;x+=14){
+    const dx=(x-230)/190,dy=(y-110)/120; if(dx*dx+dy*dy*1.1<1 && !(y>200&&Math.abs(x-230)>60)) el("circle",{cx:x,cy:y,r:2.4,class:"d"},m);}
+  const c=[["Hyderabad",142,245,120,1],["Bengaluru",96,205,190,-1],["Chennai",58,290,185,1],["Pune",34,150,105,-1]];
+  c.forEach(([n,v,x,y,side])=>{const r=6+v/12;
+    el("circle",{cx:x,cy:y,r,fill:"var(--brand)",class:"pulse"},m);
+    el("circle",{cx:x,cy:y,r,fill:"var(--brand)",opacity:.9},m);
+    const t=el("text",{x:x+side*(r+6),y:y+4,"font-size":12,"font-weight":700,"text-anchor":side>0?"start":"end"},m);t.textContent=`${n} · ${v}`;});
+})();
+// Radar
+(function(){
+  const r=document.getElementById("radar"),cx=100,cy=92,R=66;
+  const ax=["RPA","A360","Python","Governance","Solutioning","Stakeholders"],me=[.95,.9,.45,.85,.8,.75],job=[.9,.9,.7,.7,.8,.6];
+  const pt=(i,v)=>{const a=-Math.PI/2+i*2*Math.PI/ax.length;return[cx+Math.cos(a)*R*v,cy+Math.sin(a)*R*v]};
+  [.33,.66,1].forEach(l=>el("polygon",{points:ax.map((_,i)=>pt(i,l).join(",")).join(" "),fill:"none",stroke:"var(--line)"},r));
+  el("polygon",{points:job.map((v,i)=>pt(i,v).join(",")).join(" "),fill:"var(--sun)",opacity:.25,stroke:"var(--sun)","stroke-width":2},r);
+  el("polygon",{points:me.map((v,i)=>pt(i,v).join(",")).join(" "),fill:"var(--brand)",opacity:.3,stroke:"var(--brand)","stroke-width":2},r);
+  ax.forEach((a,i)=>{const[x,y]=pt(i,1.22);const t=el("text",{x,y:y+4,"font-size":10,"text-anchor":"middle","font-weight":600},r);t.textContent=a;});
+})();
+// Tabs
+document.querySelectorAll('[role="tab"]').forEach(b=>b.addEventListener("click",()=>{
+  document.querySelectorAll('[role="tab"]').forEach(x=>x.setAttribute("aria-selected",x===b));
+  ["home","cand","join"].forEach(v=>{const p=document.getElementById("v-"+v);p.hidden=v!==b.dataset.v;p.style.display=v===b.dataset.v?"flex":"none"});
+  if(b.dataset.v==="join")setTimeout(()=>document.getElementById("joinbar").style.width="60%",60);
+}));
+// Celebration
+document.getElementById("celebrate").addEventListener("click",e=>{
+  e.target.textContent="Joined 🎉";
+  const reduce=window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if(!reduce && window.confetti) confetti({particleCount:120,spread:75,origin:{y:.7},colors:["#0E7C66","#F2B233","#F26B4B","#2F6FDE"]});
+});
+</script>
+
+</body></html>

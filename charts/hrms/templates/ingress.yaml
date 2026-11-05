@@ -1,0 +1,28 @@
+{{- if .Values.ingress.enabled }}
+{{- $hosts := .Values.ingress.hosts }}
+{{- if .Values.ingress.wildcardHost }}{{- $hosts = append $hosts .Values.ingress.wildcardHost }}{{- end }}
+{{- $hosts = concat $hosts .Values.ingress.customDomains }}
+{{- if not $hosts }}{{- fail "ingress needs at least one of ingress.hosts, ingress.wildcardHost or ingress.customDomains" }}{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "hrms.name" . }}
+  labels: {{- include "hrms.labels" . | nindent 4 }}
+  annotations:
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.clusterIssuer | quote }}
+    nginx.ingress.kubernetes.io/proxy-body-size: "12m"
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  tls:
+    {{- range $i, $h := $hosts }}
+    - hosts: [{{ $h | quote }}]
+      secretName: {{ include "hrms.name" $ }}-tls-{{ $i }}
+    {{- end }}
+  rules:
+    {{- range $hosts }}
+    - host: {{ . | quote }}
+      http:
+        paths:
+          - { path: /, pathType: Prefix, backend: { service: { name: {{ include "hrms.name" $ }}-frontend, port: { number: 80 } } } }
+    {{- end }}
+{{- end }}

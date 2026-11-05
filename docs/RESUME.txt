@@ -1,0 +1,60 @@
+RESUME AFTER A RESTART - read this whole file, then act.
+
+1. Run and quote briefly:
+   git branch --show-current
+   git status --short
+   git log --oneline -5
+   Then read the LAST 60 lines of docs/build_log.md.
+
+2. If there are uncommitted changes from before the restart:
+   make sure `npx tsc --noEmit -p tsconfig.app.json` (frontend) and
+   `python -m compileall -q app` (backend) pass, fix if needed, then
+   commit ("wip: resume after restart") and push.
+
+3. Continue from where docs/build_log.md says you stopped, in this order:
+   a00) FIRST docs/PART19_MODULE_ACTIVATION.txt (proof in docs/ui/FIXES_19.md)
+   a01) then docs/PART20_EMPLOYEES_AND_SELF_SERVICE.txt 20.0-A -> 20.0-D,
+        20.1 -> 20.6 (employees, self-service, exits; proof in docs/ui/FIXES_20.md)
+   a02) then docs/PART21_OWNER_CHANGES.txt 21.1 -> 21.9 (closed-job cleanup, hiring data to bin on exit,
+        interviewer email bug, BGV download + vendor, agencies, HR assistant bug, budget release,
+        sidebar accordion; proof in docs/ui/FIXES_21.md)
+   a03) then docs/PART22_OWNER_CHANGES.txt 22.1 -> 22.7 (HR assistant - merged with 21.6, candidate-email
+        Closed tab + smarter auto-link, candidate emails in My approvals, Assign roles, agency delete,
+        grand letters/emails; proof in docs/ui/FIXES_22.md; handbook sample docs/samples/)
+   a0) then docs/PART18_OWNER_CHANGES.txt items 18.1 -> 18.26 (newest
+       owner changes; override everything else; proof in FIXES_18.md)
+   a) then docs/PART17_FIXES_PROMPT.txt items 17.1 -> 17.15 (17.14 hand-over last) (owner's
+      review fixes - highest priority; it overrides PART 15/16 where they
+      overlap, and each fix needs proof in docs/ui/FIXES_17.md)
+   b) then any unfinished STEP of docs/PART15_FULL_PROMPT.txt
+   c) then docs/PART16_POLISH_PROMPT.txt steps 16.1 -> 16.10
+   Re-read the prompt file for the step you are on before continuing.
+
+4. Standing rules (unchanged):
+   - NO test suites (backend or frontend). Only quick checks: tsc, compileall,
+     alembic upgrade, npm run build.
+   - Do not ask me questions: choose the best option, log it in
+     docs/build_log.md.
+   - Stop only for data deletion, overwriting main, pushing secrets or
+     anything irreversible.
+   - Commit + push after EVERY step (small commits - the machine restarts
+     often, so never keep a lot of uncommitted work).
+   - Write a one-line "NEXT:" entry at the end of docs/build_log.md after
+     each commit, saying exactly what comes next.
+   - Keep terminal output short.
+
+5. First reply: branch, last commit, and the "NEXT:" line you are resuming
+   from. Then continue without waiting.
+
+6. Starting the app (2026-10-04):
+   - Windows, one command: powershell -ExecutionPolicy Bypass -File scripts\start-dev.ps1
+     = backend:  cd backend ; .venv\Scripts\python.exe -m uvicorn app.main:app --reload
+       frontend: cd frontend ; npm run dev            (http://localhost:5173)
+   - Background jobs need NO separate process locally: the backend runs all of them (JOBS_IN_APP,
+     default when REDIS_URL isn't set) -- interview times after shortlist (undo window, retries),
+     activation email retries / escalation, reminders, the 24 h salary-form reminder, document /
+     joining reminders, approval timers, report schedules, onboarding chase, Recycle-bin clean-up.
+     Settings > Data > Health > Background jobs shows green/red and each job's last run.
+   - Optional real worker (needs Redis): set REDIS_URL in backend/.env and JOBS_IN_APP=false, then
+       cd backend ; .venv\Scripts\celery.exe -A app.platform.jobs.celery_app:celery_app worker -B --pool=solo -l info
+   - Clear test data, keep the setup: python -m hrctl.data reset --keep-setup --dry-run  (then --confirm)

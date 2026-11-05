@@ -1,0 +1,212 @@
+PART 19 - CHOOSE MODULES + ACTIVATION CODE BY EMAIL (owner request 2026-10-03)
+(Repo hr-automation, branch hrms-platform. Do this BEFORE continuing the
+remaining PART 18/17 items. Where it conflicts with 18.4 (one shared module
+passcode), PART 19 wins.)
+
+STANDING RULES: no test suites (only tsc -p tsconfig.app.json, compileall,
+alembic upgrade head, npm run build). Verify with curl + Playwright
+screenshot, proof in docs/ui/FIXES_19.md. Don't ask; log decisions in
+docs/build_log.md. Commit + push after each step ("part-19.N: <title>"),
+add a NEXT: line. Never put codes, passcodes or secrets in code or git.
+
+--------------------------------------------------------------------------
+19.1 SETUP CHECKLIST - "CHOOSE WHAT YOU USE" (module picker)
+
+Replace the current step with a card grid. One card per module:
+emoji + name + one line + "What you get" bullets + on/off switch.
+
+  Jobs           - create jobs, AI job description, post to careers site,
+                   LinkedIn, Naukri and other job boards
+  Candidates     - fetch resumes from job boards / email / bulk upload,
+                   AI resume parsing, candidate profiles, duplicates check
+  Screening      - AI match score, scoring rules, knock-out rules
+  Shortlisting   - automatic shortlisting with undo window
+  Interviews     - scheduling, interviewer availability, scorecards
+  Candidate emails - replies from candidates linked automatically
+  Salary         - salary form, auto-approval, department budgets
+  Documents & BGV- document collection, AI document review, BGV decision
+  Offers         - joining dates, offer letter, e-sign, welcome email
+  Onboarding     - pre-joining portal and checklist
+  Reports        - dashboards and exports
+  GenAI usage    - AI usage and limits (always included with any AI module)
+
+Rules:
+- Any combination is allowed. Examples that MUST work:
+  a) Jobs only (create + post jobs, no candidate pipeline).
+  b) Candidates only (fetch + parse resumes into a talent pool, no jobs:
+     candidates can exist without a job; job-related fields hidden).
+  c) Candidates + Screening (score candidates against a job description
+     pasted/uploaded on the screening page, without the Jobs module).
+- Dependencies are shown, not hidden: if a module needs another
+  (e.g. Shortlisting needs Screening, Offers needs Candidates), the card says
+  "Needs: Screening" and switching it on asks "Also switch on Screening?"
+  Define dependencies in ONE registry (backend module_registry.py), not in
+  the UI code. Keep dependencies minimal; prefer making a module work alone.
+- Settings is always on. Everything else is driven by the enabled list:
+  sidebar menu, Home widgets, search, settings categories, setup checklist
+  steps, API routes (disabled module -> 403 with a plain message
+  "This module is not active for your company"), background jobs, email
+  rules and automation steps (a pipeline step for a disabled module is
+  skipped, e.g. no Salary module -> go straight from interview to offer).
+- Same picker also in Settings > Company > Modules, showing status per
+  module: Active / Waiting for activation code / Off.
+- Store per tenant: tenant_modules(tenant_id, module_key, status
+  [off|pending|active], requested_at, requested_by, activated_at,
+  activated_by). Migration: existing CTD Techs tenant = all current modules
+  active (no change in behaviour).
+
+--------------------------------------------------------------------------
+19.2 ACTIVATION CODE SENT TO CTD TECHS (replaces the shared passcode)
+
+Flow:
+1. Client admin switches on modules and clicks "Request activation".
+   Status -> "Waiting for activation code". Page shows: "We've sent your
+   request to CTD Techs. Enter the activation code you receive here."
+2. Backend generates ONE activation code per request (e.g. 8 characters,
+   letters + digits, no look-alikes 0/O/1/I), bound to: this tenant + the
+   exact list of modules requested. Store only a bcrypt hash, expiry
+   (setting, default 7 days), single use, attempt counter.
+3. Email goes to the CTD Techs approver - NOT to the client:
+   To: the Priority 1 approver (as of now kg@ctdtechs.com; see 19.2b)
+   Subject: Activation request - <Company name> - <modules>
+   Body: company name, installation/domain, who requested (name, email),
+   modules requested, date/time, the activation code, expiry date.
+   Sent through the PLATFORM system mailbox (not the client's mailbox), so
+   the client can never read or redirect it.
+4. CTD Techs shares the code with the client (phone/email/after payment).
+5. Client enters the code -> checked against hash, tenant and module list
+   -> those modules become Active, confetti, audit entry. Wrong code:
+   "This code is not correct" (max 5 tries, then locked for 30 min and
+   CTD Techs emailed). Expired: "This code has expired - request a new one."
+6. Turning a module OFF needs no code. Turning it ON again needs a new code.
+7. Adding another module later = new request, new code, only for the new
+   modules (already active ones stay active).
+
+Where the approver email is configured (security):
+- Platform-level approver list with priorities (see 19.2b), NOT editable by
+  client admins. ACTIVATION_ALLOWED_DOMAIN=ctdtechs.com (platform config).
+- Backend refuses to send if any approver address is not @ctdtechs.com.
+- Retire the shared CTD@2026 passcode from 18.4 for module activation
+  (remove the stored hash from the activation path; keep nothing in code).
+
+Super-admin console (CTD Techs only):
+- List of activation requests across installations: company, modules,
+  requested by, status (pending / activated / expired), resend email,
+  cancel request, generate a new code.
+
+--------------------------------------------------------------------------
+19.2b APPROVER LIST WITH PRIORITY + RESEND (owner request 2026-10-03)
+
+Approver list (replaces the single ACTIVATION_APPROVER_EMAILS value):
+- Ordered list of CTD Techs approvers, each with: priority (1, 2, 3 ...),
+  name, email, active yes/no. Every email MUST end with @ctdtechs.com
+  (refuse otherwise). Owner will provide the final list; until then:
+    Priority 1: kg@ctdtechs.com
+    Priority 2: (empty - to be provided)
+    Priority 3: (empty - to be provided)
+- Stored at platform level (control plane), NOT editable by client admins.
+  Managed in the Super-admin console > Activation approvers (add, edit,
+  reorder by drag, deactivate) and by CLI:
+    hrctl activation approvers list
+    hrctl activation approvers set --priority 1 --name "KG" --email kg@ctdtechs.com
+    hrctl activation approvers remove --priority 2
+- Every change to the list is audit-logged (who, when, old -> new).
+
+Escalation by priority:
+- A new request is emailed to Priority 1 only.
+- If the code is not used within the escalation time (setting, default
+  24 hours), the request is automatically emailed to Priority 2, then
+  after another escalation period to Priority 3. Each email says
+  "Escalation: not actioned by <previous approver> since <time>".
+- Inactive or empty priorities are skipped. If nobody is left, the
+  Super-admin console shows the request as "Not actioned" in red.
+- Option per installation (super-admin): "Send to all priorities at once"
+  (off by default).
+- The SAME code is used for the whole request (escalation does not create a
+  new code), so any approver can share it.
+
+Resend option:
+- Client admin, on "Waiting for activation code":
+  [Resend request] button - resends the request email to the current
+  priority approver. Cooldown 15 minutes between resends (setting), max 5
+  resends per day; button shows "You can resend in 12 min".
+  Shows: "Request sent on <date time> - resent <n> times".
+  [Cancel request] - turns the modules back to Off.
+  If the code expired: [Request a new code] - new code, old one invalid.
+- Super-admin console, per request:
+  [Resend to priority 1/2/3] (choose who) and [Resend to all],
+  [Generate new code] (invalidates the old one), [Cancel].
+- Every send/resend/escalation is recorded in a "Request history" list on
+  the request: time, sent to, by whom (client / system escalation / CTD
+  admin), delivery status (sent / failed + reason). Failed sends retry with
+  backoff, then move to the next priority.
+
+--------------------------------------------------------------------------
+19.2c WHEN THE EMAIL TO CTD TECHS CANNOT BE SENT (owner saw this error)
+
+Seen on screen after "Request activation":
+  "Your request is saved, but the email to CTD Techs couldn't be sent yet.
+   Please call CTD Techs; they can send it again from their console."
+
+A. FIND AND FIX THE ROOT CAUSE FIRST
+- Log the real reason (SMTP auth failed / host not reachable / platform
+  mailbox not configured / approver list empty / TLS error / timeout) in the
+  request history and backend log. Quote it in FIXES_19.md.
+- The activation email must use the PLATFORM system mailbox. If it is not
+  configured, add Super-admin console > Platform mailbox (SMTP host, port,
+  user, app password in SecretStore, from name "CTD Techs HRMS",
+  from address @ctdtechs.com) with a [Send test email] button, and
+  `hrctl platform mailbox set` / `hrctl platform mailbox test --to kg@ctdtechs.com`.
+- Dev: send through mailpit so the flow works locally.
+- Configuration health (super-admin) shows red "Activation emails can't be
+  sent - <plain reason>. [Fix platform mailbox]" until fixed.
+
+B. KEEP THE CONDITION, BUT MAKE IT HELPFUL
+When the send fails, the request is still SAVED (status "Waiting for
+activation code") and the client admin sees:
+  "Your request is saved, but the email to CTD Techs couldn't be sent yet.
+   We'll keep trying automatically. You can also call CTD Techs on
+   <support phone> or email <support email> and quote request number
+   <ACT-2026-00012>; they can send it again from their console."
+  Buttons: [Try sending again] (same cooldown rules as Resend)
+           [Copy request number]
+- Support phone / email / hours = platform settings (CTD Techs only),
+  shown here; never hardcoded. Never show the reason details (SMTP etc.)
+  or the activation code to the client - only the friendly message.
+- Request number: human-readable ID (ACT-<year>-<5 digits>) shown on the
+  client screen and in the super-admin console, so phone calls can find it.
+
+C. AUTOMATIC RECOVERY
+- Failed sends go to the background queue and retry with backoff
+  (1 min, 5 min, 15 min, 1 h, then hourly up to 24 h).
+- If a priority's address fails (e.g. mailbox rejects), try the next
+  priority before giving up.
+- As soon as a retry succeeds, the client screen changes to
+  "Request sent to CTD Techs on <time>" (live update / on refresh).
+- If still failing after all retries: super-admin console shows the request
+  at the top in red "Email not delivered"; CTD Techs can [Resend], or
+  [Show code] (CTD super-admin only, audit-logged) to give it by phone.
+
+D. PROOF
+- Break the platform mailbox password in dev -> request -> friendly message
+  with request number shown, reason logged in history, retries visible.
+- Fix the mailbox -> automatic retry succeeds -> client screen updates.
+- Super-admin resend + "Show code" (audit entry created).
+
+--------------------------------------------------------------------------
+19.3 PROOF (docs/ui/FIXES_19.md)
+- Approvers: add priority 2 + 3 test addresses @ctdtechs.com; a gmail.com
+  address is refused. Escalation (use a 2-minute escalation time in dev):
+  request goes to P1, then P2, then P3 - show the mailpit emails.
+- Resend: resend works, cooldown message shows, 6th resend in a day refused;
+  super-admin "resend to priority 2" works; request history lists all sends.
+- Demo tenant A: Jobs only -> request -> show email captured (dev mailpit)
+  sent to kg@ctdtechs.com -> enter code -> only Jobs menu visible;
+  /api/v1/candidates returns 403 with friendly message.
+- Demo tenant B: Candidates + Screening -> same flow -> menu shows only
+  those two (+ Settings); resume upload + parsing + scoring works without
+  a job record.
+- Wrong code, expired code, reuse of a used code -> correct messages.
+- Attempt to set approver to a non-ctdtechs.com address -> refused.
+Screenshots of the picker, waiting state, code entry, final menu.
+Commit, push, NEXT: line, then continue with remaining PART 18 items.

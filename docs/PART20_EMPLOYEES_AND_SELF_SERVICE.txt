@@ -1,0 +1,258 @@
+PART 20 - ALL PENDING OWNER CHANGES IN ONE FILE (2026-10-06)
+  20.0 A-D  pending fixes (do these FIRST, in order)
+  20.1-20.6 employee list, auto employee creation, test email provider,
+            self-service exit, employee as interviewer
+(Repo hr-automation, branch hrms-platform. Exits start from the Employee
+list and from the employee's own login - NOT from Onboarding.)
+
+STANDING RULES: no test suites (only tsc -p tsconfig.app.json, compileall,
+alembic upgrade head, npm run build). Verify with curl + Playwright
+screenshots + mailpit, proof in docs/ui/FIXES_20.md. Don't ask; log
+decisions in docs/build_log.md. Commit + push after each step
+("part-20.N: <title>"), NEXT: line. Never put passwords/secrets in code,
+git or emails. For every BUG: investigate first and quote the real cause
+in FIXES_20.md before fixing.
+
+--------------------------------------------------------------------------
+20.0-A POST-JOINING ACTIONS + ABSCONDING (bug: "Withdraw offer" was
+       possible on a person already marked JOINED)
+1. Check what "Withdraw offer" did to my test person (offer, application,
+   onboarding case, employee, emails). Quote it and repair the record.
+2. Valid actions by stage (backend refuses invalid ones with a plain
+   message, UI shows only valid ones):
+   Before joining date: Withdraw offer (company, reason, email to
+   candidate); Candidate declined (reason list).
+   On/after joining date, not yet joined: Mark as joined; Did not join /
+   no-show (reason).
+   After JOINED (Withdraw offer NOT allowed): handled as an exit from the
+   Employee list (20.3): Absconded / Resigned / Terminated.
+3. Absconding flow (Settings > Onboarding & employees): mark "Not
+   reporting" -> template emails: reminder after 2 days, return-to-work
+   notice after 5, final notice after 10 (all configurable) -> HR confirms
+   Absconded; HR can stop the flow if the person returns. Record kept,
+   rehire eligible = No (editable), portal/app access revoked, assets ->
+   clearance, manager + HR notified.
+4. After any withdraw / no-show / exit: job opening count back up +
+   recruiter to-do "Position open again - N past candidates match";
+   department budget commitment released; pending emails, reminders,
+   links cancelled; audit log; candidate timeline shows the full story.
+5. Reports: offer dropouts, no-shows, early leavers (within 90 days),
+   absconding - by job, department, recruiter, reason.
+
+20.0-B CONFIGURATION HEALTH LINKS + POLICIES UPLOAD (bug: Home >
+       Configuration health "Upload policies" opens an unrelated page)
+1. One page Settings > Company > Policies & handbook (works with Helpdesk
+   hidden): upload PDF/DOCX (multiple, sample file), title, category,
+   version, effective date, status (Processing / Ready for HR assistant /
+   Failed + reason), replace version, delete (confirm), preview. Stored
+   via the storage connection.
+2. Health button opens exactly this page; warning clears only when at least
+   one policy is Ready; show this item only if the HR assistant feature is
+   on. Every health item gets "Ignore this" (admin, undoable in Settings).
+3. Check EVERY item on Configuration health and the Setup checklist: button
+   target exists, is visible, and fixes the item. Fix all wrong links;
+   table in FIXES_20.md (item | goes to | correct? | fixed).
+
+20.0-C JOINING DETAILS FIELDS - ALL OPTIONAL, CONFIGURABLE
+Seen: every field marked * and "Needed" (even filled ones: name on bank
+account, account number, IFSC, PAN); empty Aadhaar blocks "Send to HR".
+1. Settings > Onboarding & employees > Joining details form: every field,
+   grouped by section, with Required / Optional / Hidden, help text
+   (en/hi/ta), format check on/off (PAN, IFSC, Aadhaar, phone, pincode,
+   email). DEFAULT = ALL OPTIONAL. Versioned, history + revert. Same
+   control for the Upload documents list and the hiring salary/documents
+   forms.
+2. Optional: no *, no "Needed". Required: * and "Needed" only while empty.
+   Format check only when something is typed ("PAN looks like
+   ABCDE1234F"). Remove wrong "Needed" under filled fields. "Send to HR"
+   works when required fields are filled; drafts autosave; gentle note for
+   empty optional fields; editable until HR locks. Backend validation
+   follows the same settings. HR view lists empty fields with "Remind
+   candidate". Bank/ID stay masked (last 4), reveal audit-logged.
+
+20.0-D ASSET TYPE DROPDOWN NOT WORKING
+1. Check: list loads? (API response, count) Menu rendered behind the
+   dialog (MUI Select/Autocomplete in Dialog, z-index/portal)? Console
+   errors? Quote it, fix the cause.
+2. Empty list -> "No asset types yet" + quick "Add asset type" inside the
+   dropdown. Seed for CTD Techs if empty: Laptop, Desktop, Monitor, Mobile
+   phone, SIM card, ID card, Access card, Headset, Keyboard/Mouse, Other
+   (editable in Settings > Helpdesk & assets > Asset categories).
+3. Check every dropdown inside dialogs across the app for the same problem;
+   fix all; list them in FIXES_20.md.
+4. Assets work with the Assets module hidden: assign from the employee
+   profile / Employee list; assets appear in the exit clearance checklist.
+
+Commit after each: "part-20.0A ...", "part-20.0B ...", etc.
+
+--------------------------------------------------------------------------
+20.1 EMPLOYEES TAB (new menu item "Employees", under People group;
+     this is a simple list - NOT the old hidden People module)
+
+Table columns (column chooser, filters, search, export to Excel):
+  Employee ID | Photo + Name | Designation | Department | Manager |
+  Location | Joined on | Experience in company (auto: today - joined) |
+  Overall experience (previous experience from resume/joining form +
+  experience in company, e.g. "4 yrs 3 mths") | Company email |
+  Phone | Employment type | Status (Active / Notice period / Exited /
+  Absconded) | App account (Active / Invited / Disabled) | Roles
+  (Employee, Interviewer, Manager, HR...)
+Row click -> Employee profile (Personal / Job / Documents / Assets /
+History tabs). Row "..." menu: View profile, Edit, Assign asset,
+Make interviewer, Start exit (HR), Resend app invite.
+Filters: department, location, status, joined between, role.
+Bulk: export, resend invites.
+
+Employee ID: auto-generated, format configurable in Settings > Onboarding &
+employees > Employee ID (prefix + running number + padding, e.g.
+CTD-0001); unique; never reused; HR can't edit after creation (audit).
+
+--------------------------------------------------------------------------
+20.2 AGENT: ONBOARDING COMPLETED -> EMPLOYEE CREATED
+
+Trigger: onboarding case status = Completed (or HR clicks
+"Mark onboarding complete"). The Onboarding agent then:
+1. Checks the Employee list for an existing record (same personal email,
+   phone, PAN, or same candidate id). If found -> link, don't duplicate;
+   if a possible match -> ask HR in the to-do list ("Is this the same
+   person as CTD-0007?").
+2. Creates the employee record from candidate + offer + joining form:
+   name (first/last/preferred), designation, department, manager,
+   location, joining date, employment type, previous experience,
+   personal email/phone, emergency contact, bank/ID (masked).
+3. Generates the Employee ID.
+4. Company email:
+   - Suggests the address from a configurable pattern
+     (Settings: e.g. firstname.lastname@ctdtechs.com; fallback patterns if
+     taken: firstname.l, firstname.lastname2) and checks it is free.
+   - If an email-admin connection is set up (Google Workspace Admin API or
+     Microsoft 365 / Entra via Graph - new connection types, credentials in
+     SecretStore), creates the mailbox with a one-time password that is
+     NEVER stored or emailed in plain text: the person gets a "set your
+     password" link from the provider, or the temp password is shown once
+     to HR on screen.
+   - If no connection: creates an IT to-do "Create mailbox
+     kishore.gunda@ctdtechs.com for Kishore Gunda (joins 14 Oct)" with a
+     "Done - mailbox created" button where HR/IT confirms the address.
+5. Creates the HR Automation app account: login = company email, role
+   Employee (plus roles from rules, e.g. designation -> Interviewer),
+   sends an invite to the company email (and personal email as backup)
+   with a "Set your password" link (expires in 72h, resend option).
+6. Moves the person from Onboarding to Employees, status Active;
+   onboarding card shows "Employee created - CTD-0012".
+Human-in-the-loop: Settings > Onboarding & employees > "When onboarding
+completes": (a) agent prepares, HR approves with one click (DEFAULT),
+(b) fully automatic. The approval card shows everything the agent will
+create (ID, email, roles) and HR can edit before approving.
+Everything audit-logged; failures (e.g. mailbox API error) shown in plain
+words with Retry, never silent.
+
+--------------------------------------------------------------------------
+20.2b FOR NOW: DUMMY (TEST) COMPANY EMAIL PROVIDER (owner 2026-10-06)
+We are not connecting Google Workspace / Microsoft 365 yet. Build a
+"Test email provider (dummy)" connection type and make it the active
+email-admin connection for CTD Techs until a real one is connected.
+- Behaves exactly like a real provider to the rest of the app:
+  create mailbox, check address is free, suspend, reactivate, delete.
+- Creates DUMMY mailbox details stored in a table
+  test_mailboxes: address (from the pattern, e.g.
+  kishore.gunda@ctdtechs.com), display name, employee id, status
+  (Active / Suspended), created at/by, quota "15 GB (dummy)",
+  provider "TEST". No real mailbox is created anywhere.
+- Any email the app sends to a dummy mailbox address is delivered to
+  mailpit in dev (and in a "Test inbox" page in the app: Settings >
+  Integrations > Test email provider > open a mailbox -> see its emails),
+  so the full flow (invite, set password, interview invites) can be tested.
+- Temporary password: not used. The app invite "Set your password" link
+  is enough; the dummy mailbox shows "Password: managed by app invite".
+- Everywhere it appears, show a small grey "TEST" chip next to the email,
+  and a banner on the Employees page: "Company emails are in test mode -
+  no real mailboxes are created. Connect Google Workspace or Microsoft 365
+  in Settings > Integrations when ready."
+- Switching to a real provider later: a "Move test mailboxes to real
+  provider" action (dry-run list first) that creates the real mailboxes
+  for active employees and replaces the TEST chip. Never automatic.
+- Production guard: if ENV=production and the active provider is TEST,
+  show a red item on the admin Health page.
+
+Dummy employees for testing the list (clearly labelled, removable):
+- `hrctl demo employees --count 8` creates 8 employees named
+  "Demo - <name>" with realistic details: employee IDs (CTD-xxxx),
+  designations (Junior AI Developer, Senior AI Developer, RPA Developer,
+  QA Engineer, HR Executive, Project Manager, Data Analyst, Interviewer
+  Lead), departments, managers, locations (Hyderabad, Bengaluru, Chennai,
+  Pune), joining dates in the last 3 years, previous experience 0-10 yrs,
+  dummy company emails via the test provider, phone +91 9xxxx xxxxx,
+  2 of them with role Interviewer, 1 on notice period, 1 exited.
+- `hrctl demo clear` removes them (dry-run first) together with their
+  test mailboxes and app accounts. Never touches real records.
+
+--------------------------------------------------------------------------
+20.3 EMPLOYEE SELF-SERVICE (employee logs in)
+
+Employee home (simple): My profile (view, request changes -> HR approves),
+My documents/letters, My assets, Raise exit, and - if interviewer - My
+interviews. Only their own data (permission-scoped).
+
+Exit by the employee ("Resign"):
+- Form: reason (list + note), proposed last working day (defaults to
+  joining-rule notice period, shown in plain words "Your notice period is
+  60 days -> 5 Dec 2026"), request early release yes/no, upload
+  resignation letter (optional).
+- Approval workflow: Manager -> HR (configurable); manager can add a
+  retention discussion note; HR confirms last working day.
+- Status visible to the employee: Submitted / Manager approved / HR
+  approved - last day <date> / Withdrawn. Employee can withdraw before HR
+  approval.
+- Then clearance checklist (assets to return, access removal, handover,
+  documents) with owners; exit interview form (optional); relieving and
+  experience letters from templates when completed.
+HR can also start an exit from the Employee list (Resigned / Terminated /
+Absconded with the absconding email flow from the earlier fix).
+On exit completed (last working day passed + clearance done):
+- App account disabled; company mailbox suspended via the email-admin
+  connection (or IT to-do if not connected); removed from interviewer
+  pools; future interviews reassigned (to-do to HR); status Exited;
+  record kept (never deleted); rehire eligible flag.
+
+--------------------------------------------------------------------------
+20.4 EMPLOYEE AS INTERVIEWER
+
+- "Make interviewer" (Employee list / profile) adds role Interviewer and
+  lets HR choose skills/jobs/pools. Rule option: auto-add by designation or
+  department (Settings).
+- The employee then sees: My availability (weekly grid, block dates, max
+  interviews per day), My interviews (calendar + list), candidate profile
+  ONLY for candidates assigned to them (resume, match score, AI questions),
+  scorecard submit, propose reschedule, decline with reason.
+- Scheduling uses their availability; invites go to their company email.
+- Interviewer cannot see salary, other candidates, or settings.
+- Reminders: scorecard pending after X hours (configurable).
+- Existing interviewers (e.g. "jr") are linked to employee records by
+  email; if no match, HR gets a to-do to link or create.
+
+--------------------------------------------------------------------------
+20.5 SETTINGS (Settings > Onboarding & employees)
+Employee ID format; company email pattern + domain; email-admin connection
+(Integrations); when onboarding completes (approve / automatic); default
+roles for new employees + rules (designation -> Interviewer); notice
+period by employment type/grade; exit approval steps; clearance checklist
+items and owners; letter templates. All plain language, with help text.
+
+--------------------------------------------------------------------------
+20.6 PROOF (docs/ui/FIXES_20.md)
+First 20.0: withdraw refused after joined (UI + API); no-show; absconding
+emails in mailpit; every health button goes to the right page; sample
+handbook -> Ready -> warning gone; almost-empty joining form submits,
+Aadhaar switched to Required blocks only while empty; asset type dropdown
+works inside its dialog.
+Then:
+New test candidate -> offer signed -> joining details -> onboarding
+complete -> agent approval card -> approve -> Employee CTD-00xx in the
+list with correct experience, company email (IT to-do path in dev, or
+connection if configured), invite in mailpit -> employee sets password and
+logs in -> sees only own data -> HR makes them interviewer -> they set
+availability, get an interview, submit a scorecard -> employee resigns ->
+manager + HR approve -> clearance (laptop returned) -> exit completed ->
+login disabled. Screenshots of every step. Then tell me in plain words
+what changed and how to try it.

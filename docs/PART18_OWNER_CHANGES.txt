@@ -1,0 +1,252 @@
+PART 18 - OWNER CHANGE LIST (2026-09-28)
+(Repo hr-automation, branch hrms-platform. Do PART 18 NOW - it has the
+highest priority and overrides PART 15/16/17 and the spec wherever they
+disagree. Finish the item you are on first, commit, then start 18.1.)
+
+RULES
+- No full test suites. Every item needs PROOF that it works (API call and/or
+  Playwright screenshot) recorded in docs/ui/FIXES_18.md: item, problem,
+  change, how verified, screenshot.
+- Don't ask; choose the best option; log it in docs/build_log.md.
+- Stop only for deleting real data, overwriting main, pushing secrets,
+  irreversible actions.
+- Commit + push after each item ("part-18.N: ..."), add a "NEXT:" line.
+- Nothing client-specific or secret in code (passcodes, emails, budgets,
+  percentages all come from settings / database).
+
+==========================================================================
+A. GENERAL
+==========================================================================
+18.1 REMOVE 2-STEP VERIFICATION
+- Turn it off for everyone, hide it from Setup checklist, Home health
+  warnings and Settings menus. Keep the code but switched off by a setting
+  (Settings > Advanced) so it can return later. Nobody is asked to enrol.
+
+18.2 ONE COMPANY EMAIL FOR EVERYTHING
+- There is only ONE mailbox. Settings > Communication > Mailbox: one
+  connection used for sending AND reading replies for all modules.
+- Hide per-purpose routing (email.inbound.helpdesk etc.) from normal users;
+  auto-route every purpose to the single mailbox. Health checks must not
+  warn about other purposes when the one mailbox is connected.
+
+18.3 HEALTH CHECKS MUST READ REAL STATUS
+- Bug: DocuSign is connected but Home still says "connect e-sign". Every
+  health message must check the actual connection status (connected +
+  last test passed). Fix all such checks; add a "Re-check now" button.
+
+18.4 MODULE UNLOCK PASSCODE
+- Each main module (Jobs, Candidates, Screening, Shortlisting, Interviews,
+  Candidate emails, Salary, BGV, Offers, Onboarding, Reports, Settings,
+  GenAI usage, and any other enabled module) is LOCKED until an admin enters
+  the module passcode once on Settings > Modules (or on the locked page).
+- Passcode stored only as a bcrypt hash in the database, never in code or
+  git. Set it for this installation with a CLI command:
+    hrctl modules set-passcode --tenant <slug>   (prompts, not in history)
+  Owner will set the current value; super-admin can change it any time
+  (Settings > Modules > Change passcode, needs current passcode).
+- Options (settings): one passcode for all modules (default) or a different
+  passcode per module; unlock lasts until re-locked by admin; wrong attempts
+  limited (5, then 15-minute lock); every unlock/lock is in the audit log.
+- Locked module = menu item shows a lock icon, page shows a friendly
+  "This module is locked - enter passcode" card. APIs of locked modules
+  return 403 with a plain message.
+
+18.5 MODULES TO REMOVE FROM THE PRODUCT MENU
+- Switch OFF and hide: People (employee records + directory), Org chart,
+  Performance, Compensation, Succession, Helpdesk. (Keep code; module
+  disabled by default; can be switched on later in Settings > Modules.)
+- Setup checklist "Choose what you use": show only modules that exist and
+  are allowed; switching on/off must really work and update the menu.
+
+18.6 COLOURFUL LIGHT AND DARK MODE
+- Dark mode currently looks dull. Build a rich dark palette: deep navy/teal
+  background, bright brand accents, coloured stat tiles (each tile its own
+  soft colour), coloured chips, charts with vivid series colours, glowing
+  primary buttons, readable text (contrast checked).
+- Light mode also colourful: tinted cards per module, gradient hero, icon
+  backgrounds in module colours. Screenshot every main page in both modes.
+
+==========================================================================
+B. JOBS
+==========================================================================
+18.7 "JOBS NEED ATTENTION" MUST SCALE TO 100+ JOBS
+- Replace the long text list with:
+  a) summary chips at top: "7 need attention", "3 no applicants 7 days",
+     "4 candidates waiting too long" - click a chip to filter;
+  b) a Job health column in the jobs table (green / amber / red chip with
+     icon); hover or click shows the reasons and suggested actions;
+  c) a compact "Needs attention" table (job, issue, days, action button)
+     with sorting, search and pagination.
+
+18.8 CLOSE A JOB
+- "Close job" button (job row menu + job page) for permitted roles, with a
+  reason (filled, cancelled, on hold by business, other).
+- On close: every active application of that job moves automatically to
+  "On hold - job closed" (not rejected), scheduled emails/interview
+  requests are cancelled, recruiter notified. Setting: also email the
+  candidates yes/no (template editable).
+- "Reopen job" restores those applications to their previous stage.
+- Closed jobs leave the careers site automatically.
+
+==========================================================================
+C. CANDIDATES, SCREENING, SHORTLISTING
+==========================================================================
+18.9 LINKEDIN / NAUKRI IMPORT
+- Replace "Coming soon" with "Complete setup": explains what is needed
+  (employer account / API access), button opens Settings > Integrations >
+  Job boards with the connect form and a test button. Once connected, the
+  import button works.
+
+18.10 ONE FILTER SYSTEM, SCORING IN SETTINGS
+- Same filter bar on Candidates, Screening and Shortlisting: job, stage,
+  match score range, experience range, location, notice period, source,
+  date added, tags. Saved filters per user.
+- All scoring weights and thresholds live ONLY in Settings > Hiring >
+  Scoring rules (company default + per-job override from there). Remove
+  threshold sliders/inputs from list pages; lists only filter.
+
+18.11 ALL-CANDIDATES TABLES (no "choose a job first")
+- Salary, BGV, Offers, Shortlisting, Screening show ONE table of all
+  candidates across all jobs (job is a column + filter), with paging for
+  500+ rows, sorting, bulk actions and export.
+
+==========================================================================
+D. POST-INTERVIEW AUTOMATION (agent-driven, configurable)
+==========================================================================
+Stage flow: Interview cleared -> Salary form -> Salary decision ->
+Documents form -> Documents review -> BGV -> Joining date -> Offer letter +
+Welcome onboarding. Every automatic email uses an editable template; every
+step logs to the candidate timeline; HR can override any step.
+
+18.12 SALARY FORM (automatic)
+- When a candidate clears the interview (configurable: which round), the
+  agent emails a branded "Salary details" form automatically: current CTC,
+  expected CTC, notice period, offers in hand (optional), payslip upload
+  (optional, setting). Reminder after 24h and 48h (configurable).
+
+18.13 SALARY AUTO-DECISION
+- Settings > Hiring > Salary rules:
+  * auto-approve if expected hike over current CTC <= X% (default 20%,
+    editable, e.g. 10-20);
+  * AND expected CTC within the job's salary band;
+  * AND the department budget has enough remaining (18.15).
+- Otherwise the candidate is highlighted in the Salary table (red chip
+  "Above company range - check" / "Hike 35% > 20% limit" / "Department
+  budget short by 4 L") and needs HR approval (approve / counter-offer
+  amount / reject with reason).
+
+18.14 SALARY PAGE = TABLE + BULK
+- DataGrid of all candidates at salary stage: name, job, department,
+  current CTC, expected CTC, hike %, band min-max, budget impact, status
+  chip (Waiting for form, Auto-approved, Needs approval, Approved,
+  Rejected), days waiting. Filters, sort by hike %, bulk approve, export.
+  Row click opens a side panel with details and history - no scrolling
+  through cards.
+
+18.15 DEPARTMENT HIRING BUDGET + FINANCE DASHBOARD
+- Settings > Hiring > Department budgets: per department and financial year:
+  allocated amount (e.g. 50 L), optional per-quarter split, alert threshold
+  (e.g. 80%), what happens when exceeded (needs approval / block).
+- Money tracking: "Reserved" when salary approved, "Committed" when offer
+  accepted, released if the candidate drops out.
+  Example: department budget 50 L, hire at 10 L -> remaining 40 L.
+- Salary > Finance dashboard: per department allocated / reserved /
+  committed / remaining with coloured bars, trend by month, top roles by
+  cost, alerts. Export to Excel.
+
+18.16 DOCUMENTS FORM (automatic after salary approval)
+- As soon as salary is auto-approved or HR-approved, the agent emails a
+  "Documents upload" form. Settings > Hiring > Required documents: list
+  of document types (PAN, Aadhaar, education certificates, experience
+  letters, last 3 payslips, relieving letter, photo, etc.), each required
+  / optional, allowed file types, max size. Different lists per job type
+  allowed. Reminders configurable.
+
+18.17 DOCUMENTS REVIEW (agent highlights, HR approves)
+- When files arrive, the agent checks each one (AI): right document type,
+  readable, name/DOB match across documents, missing items, expired dates -
+  and highlights: green OK, amber check, red problem, with the reason.
+- HR sees a review table, approves all / per document, or asks for
+  re-upload of specific documents (agent emails the candidate with the
+  list). On HR approval the candidate moves to BGV automatically.
+
+18.18 BGV DECISION BY HR (no automatic "failed")
+- When BGV feedback arrives, HR decides: Passed / Resend form / Failed.
+  * Resend form: agent emails the candidate a new upload form listing
+    exactly what is needed (HR note included).
+  * Failed: HR must give a reason; agent emails the candidate a polite
+    "BGV unsuccessful" message with the HR reason (template editable,
+    HR can preview/edit before sending).
+- System never marks BGV failed by itself.
+
+18.19 JOINING DATE (3 options)
+- After BGV passed, HR picks 3 tentative joining dates. Agent emails the
+  candidate "Background verification successful" + the 3 dates to choose
+  from (one click). Reminder if no answer in 48h; HR can propose new
+  dates. Chosen date saved and shown to HR.
+
+18.20 OFFER LETTER + WELCOME (automatic after date confirmed)
+- When the candidate confirms a date, the agent sends: the offer letter
+  (generated from template with salary + joining date, e-sign via the
+  connected DocuSign), and a happy "Congratulations on your selection"
+  welcome email with onboarding steps and contact details: HR, department
+  head, management - taken from Settings > Hiring > Contacts per
+  department (name, role, email, phone), editable.
+- Candidate moves to Onboarding (pre-joining portal) automatically.
+
+==========================================================================
+E. SETUP CHECKLIST + SETTINGS (settings is the heart - everything editable)
+==========================================================================
+18.21 SETUP CHECKLIST
+- Remove "Invite another admin" and "Start from a ready-made template".
+- Every step: open form, save, reopen shows saved values, edit again.
+
+18.22 SETTINGS MUST WORK - VERIFY EVERY FIELD
+- Fix: Company branding & logo (upload, preview, save, shows in sidebar,
+  login, careers site, emails, letters); Offices & locations (add, edit,
+  delete, map position); Users & roles (invite, edit role, deactivate,
+  reset password, permissions matrix saves).
+- Hiring: "Hiring" and "Job request" show the same thing - merge into one.
+- Scoring rules: weights are editable NUMBER inputs as well as sliders;
+  total shown; if total != 100 it turns RED with "Total must be 100 (now
+  115)" and Save is disabled; exactly 100 = green.
+- Every connection (mailbox, DocuSign, GenAI, job boards, maps, storage):
+  status chip, Connect, Test, Edit, Disconnect (with confirm), last tested
+  time. Masked secrets with example placeholders.
+- Go through every settings screen and field; record each in
+  docs/ui/SETTINGS_CHECK.md: saved OK / reloads OK / used in app OK. Fix all.
+
+18.23 GENAI SETTINGS (full detail)
+- Settings > Integrations > GenAI:
+  provider (Anthropic Claude; others later), API key (masked, test button),
+  model per module (dropdown of available models, e.g. current Claude
+  Sonnet / Haiku / Opus names fetched from settings list, editable),
+  default model, max tokens per request, temperature (advanced),
+  fallback model, on/off per feature (resume parsing, scoring, JD writing,
+  document check, emails drafting, HR assistant, interview questions).
+- Show what is in use today and let admin change or disconnect it.
+
+==========================================================================
+F. NEW MODULE: GENAI USAGE
+==========================================================================
+18.24 GENAI USAGE DASHBOARD
+- Menu "GenAI usage" (like the Claude usage page): tokens in/out, cost
+  (currency setting, price per 1k tokens per model editable), requests,
+  errors - by module, by feature, by user (profile), by day/week/month;
+  charts + table + export; top consumers; per-candidate cost (e.g. resume
+  parse + score).
+18.25 USAGE LIMITS
+- Settings > GenAI > Limits: token limit per module per month (e.g. 1k,
+  2k, 1M - any number), per user per day (optional), whole-company monthly
+  cap. At 80% warn admins; at 100% choose per module: block AI features
+  with a friendly message, or allow with warning. Limits reset monthly
+  (reset day setting). All changes audited.
+
+==========================================================================
+G. HAND-OVER
+==========================================================================
+18.26 npm run build + i18n:check + tsc + compileall clean. Screenshots of
+every changed page in light AND dark mode (docs/ui/screens/). Update
+docs/ui/PAGES.md, FIXES_18.md, build_log.md. Commit, push, STOP and tell
+me: what changed, how to see it (URLs, login, how to set the module
+passcode), and anything unfinished.

@@ -1,0 +1,11 @@
+# Staging overrides for the MODE 1 smoke environment (hosts/endpoints only; secrets come
+# from the cluster's existingSecret). Replace the example hosts when staging is provisioned.
+external:
+  postgresHost: staging-single.db.internal
+  redisUrl: rediss://staging-single.cache.internal:6379/0
+config:
+  frontendUrl: https://single.staging.hrms.example
+  appBaseUrl: https://single.staging.hrms.example/_api
+  corsOrigins: https://single.staging.hrms.example
+ingress:
+  hosts: [single.staging.hrms.example]
