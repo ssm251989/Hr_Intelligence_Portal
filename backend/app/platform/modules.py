@@ -98,6 +98,9 @@ MODULES: tuple[ModuleDef, ...] = (
                "/api/v1/intelligence/dashboards", "/api/v1/intelligence/predictive", "/api/v1/intelligence/warehouse-export", "/api/v1/ui/insights")),
     ModuleDef("copilot", (), ("/api/v1/intelligence/copilot",)),
     ModuleDef("settings", (NavItem("nav.genai_usage", "/genai-usage", "platform.settings.view", group="insights", icon="robot"),  # Part 18.24
+                           # Part 26: HR Autopilot -- what the automatic agents did, their switches and rules
+                           NavItem("nav.autopilot", "/autopilot", any_of=("recruitment.job.view", "onboarding.preboarding.view", "separation.case.view"),
+                                   group="today", icon="robot"),
                            NavItem("nav.setup", "/setup", "platform.settings.configure", group="admin", icon="rocket"),
                            NavItem("nav.settings", "/settings", "platform.settings.view", group="admin", icon="gear")), always_on=True),
 )

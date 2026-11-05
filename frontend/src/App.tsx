@@ -25,6 +25,7 @@ const CandidatesDashboardPage = lazy(() => import("./pages/CandidatesDashboardPa
 const CandidatesImportPage = lazy(() => import("./pages/CandidatesImportPage"));
 const RecycleBinPage = lazy(() => import("./pages/candidates/RecycleBinPage"));
 const GenAIUsagePage = lazy(() => import("./pages/genai/GenAIUsagePage")); // Part 18.24
+const AutopilotPage = lazy(() => import("./pages/autopilot/AutopilotPage")); // Part 26 HR Autopilot
 const CandidatesListPage = lazy(() => import("./pages/CandidatesListPage"));
 const HrInboxListPage = lazy(() => import("./pages/HrInboxListPage"));
 const InterviewListPage = lazy(() => import("./pages/InterviewListPage"));
@@ -142,6 +143,7 @@ export default function App() {
                 <Route path="/candidates/import" element={<CandidatesImportPage />} />
                 <Route path="/candidates/recycle-bin" element={<RecycleBinPage />} />
                 <Route path="/genai-usage" element={<GenAIUsagePage />} />
+                <Route path="/autopilot" element={<AutopilotPage />} />
                 <Route path="/candidates/:applicationId" element={<CandidateDetailPage />} />
                 <Route path="/screening" element={<Navigate to="/screening/dashboard" replace />} />
                 <Route path="/screening/dashboard" element={<ScreeningDashboardPage />} />

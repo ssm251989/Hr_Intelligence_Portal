@@ -47,6 +47,11 @@ DEFAULTS: dict[str, tuple[str, str, list[str]]] = {
         "{{ message }}\n\nBest regards,\n{{ company_name }} HR",
         ["message"],
     ),
+    "agents.daily_briefing": (  # Part 26: HR Autopilot morning briefing (setting autopilot.briefing.email)
+        "Your HR briefing for today",
+        "Hi {{ first_name }},\n\n{{ briefing }}\n\nOpen the Autopilot page: {{ link }}\n\n{{ company_name }} HR Autopilot",
+        ["first_name", "briefing", "link"],
+    ),
     "recruitment.joining_dates": (
         "{{ job_title }}: background verification successful - choose your joining date",
         "Hi {{ candidate_first_name }},\n\nGreat news - your background verification is complete and successful.\n\n"

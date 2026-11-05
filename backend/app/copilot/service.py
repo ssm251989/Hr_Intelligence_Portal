@@ -242,6 +242,13 @@ class CopilotService:
             reply = self._reply(conversation, self._t(language, "copilot.clarify"), tool_calls_json=[{"clarify": True}])
             return {**reply, "clarify": True}
 
+        # 0.5 HR Agent Platform: a hiring task goes to the agent team (HR assistant -> Job /
+        #     Screening / Scheduling agents, LangGraph, app/hr_agents). Policy questions and
+        #     personal data keep the paths below.
+        team = self._agent_team(conversation, question)
+        if team is not None:
+            return team
+
         # 1. actions -> draft
         for action, phrases in _ACTIONS:
             if any(p in lowered for p in phrases):
@@ -288,6 +295,37 @@ class CopilotService:
         citations = [{"n": n, "document_id": hits[n - 1].document_id, "title": hits[n - 1].document_title, "heading": hits[n - 1].heading,
                       "excerpt": hits[n - 1].text[:240]} for n in cited]
         return self._reply(conversation, result.text, citations_json=citations, confidence=conf, decision_log_id=result.decision_log_id)
+
+    def _agent_team(self, conversation: CopilotConversation, question: str) -> Optional[dict]:
+        if not self._settings.get("copilot.agents.enabled", self._ctx) or not governance.feature_enabled(self.db, self.tenant, "agents.hr_assistant"):
+            return None
+        from app.hr_agents.routing import HR_PERMISSIONS, looks_like_task
+        from app.platform.iam.authz import has_permission
+
+        if not looks_like_task(question) or not any(has_permission(self.db, self.tenant, self.user, c) for c in HR_PERMISSIONS):
+            return None
+        from app.hr_agents import approvals  # noqa: F401 -- registers the approval-card appliers
+        from app.hr_agents.graph import run_team
+        from app.hr_agents.tools import AgentContext
+
+        ctx = AgentContext(db=self.db, tenant=self.tenant, user=self.user, conversation_id=conversation.id)
+        try:
+            team = run_team(ctx, question)
+        except (governance.AIDisabledError, governance.BudgetExceededError):
+            raise
+        except Exception as exc:  # noqa: BLE001 -- a team failure falls back to the normal assistant
+            from app.platform.ai.tracked import AIUsageBlocked
+
+            if isinstance(exc, AIUsageBlocked):
+                raise
+            import logging
+
+            logging.getLogger(__name__).exception("agent team failed; normal assistant path used")
+            self.db.rollback()
+            return None
+        agents = {"trace": team["trace"], "agents_used": team["agents_used"], "suggestions": team["suggestions"], "links": team["links"]}
+        reply = self._reply(conversation, team["answer"], tool_calls_json=[{"agents": agents}])
+        return {**reply, "agents": agents}
 
     def _phrase_tool_answer(self, question: str, data: dict, language: str) -> str:
         """LLM phrasing when available; a plain structured summary otherwise (the data is

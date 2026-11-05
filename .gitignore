@@ -45,3 +45,11 @@ Sample/Interview_Tracker/
 
 # Part 17.13: local database backups (hrctl backup)
 backups/
+
+# Part 23: real résumés, owner documents and Claude hand-off texts stay local (never in git)
+Sample/*.pdf
+Sample/*.doc
+Sample/*.docx
+!Sample/sample_*.docx
+/*.docx
+Claude outputs/

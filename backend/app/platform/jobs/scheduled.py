@@ -173,7 +173,31 @@ def _bgv_vendor_reminders(db, tenant):
     return run_reminders(db, tenant)
 
 
+def _autopilot_events(db, tenant):
+    """Part 26: HR Autopilot -- the automatic agents react to what just happened (audit-log events)."""
+    from app.hr_agents.autopilot.runner import run_events
+
+    return run_events(db, tenant)
+
+
+def _autopilot_hourly(db, tenant):
+    """Part 26: HR Autopilot -- watchdog, joining day, exit letters, morning briefing."""
+    from app.hr_agents.autopilot.runner import run_hourly
+
+    return run_hourly(db, tenant)
+
+
+def _autopilot_daily(db, tenant):
+    """Part 26: HR Autopilot -- sourcing for jobs with too few strong candidates."""
+    from app.hr_agents.autopilot.runner import run_daily
+
+    return run_daily(db, tenant)
+
+
 JOBS = {
+    "autopilot_events": _autopilot_events,
+    "autopilot_hourly": _autopilot_hourly,
+    "autopilot_daily": _autopilot_daily,
     "bgv_vendor_reminders": _bgv_vendor_reminders,
     "hiring_data_after_exit": _hiring_data_after_exit,
     "closed_jobs_cleanup": _closed_jobs_cleanup,
@@ -258,6 +282,9 @@ def interview_automation() -> dict:
 
 
 celery_app.conf.beat_schedule = {
+    "autopilot-events": {"task": "hrms.fan_out", "schedule": 60.0, "args": ("autopilot_events",)},
+    "autopilot-hourly": {"task": "hrms.fan_out", "schedule": 3600.0, "args": ("autopilot_hourly",)},
+    "autopilot-daily": {"task": "hrms.fan_out", "schedule": 86400.0, "args": ("autopilot_daily",)},
     "activation-sweep": {"task": "hrms.activation_sweep", "schedule": 60.0},
     "interview-automation": {"task": "hrms.interview_automation", "schedule": 60.0},
     "workflow-timers": {"task": "hrms.fan_out", "schedule": 300.0, "args": ("workflow_timers",)},

@@ -1,0 +1,64 @@
+PART 26 - CHECK AND COMMIT HR AUTOPILOT (AUTOMATIC AGENTS) (2026-11-02)
+(Repo hr-automation, branch hrms-platform. Design: docs/HR_AUTOPILOT.md. Do PART 25 first if it
+is not committed yet. The code was written outside this session; this part migrates, tests,
+checks it end to end with real data, fixes what it finds, and commits.)
+
+STANDING RULES
+- First message: run `git log --oneline -5` and `git status` and quote the literal output.
+- Quote the real cause before fixing anything. Log decisions in docs/build_log.md.
+- Keep ai.provider = anthropic (no AWS access yet).
+- Owner decision: AUTO WITHIN RULES. Routine work automatic; a decision about a person only when its
+  autopilot.rules.* setting is on (all off by default). Never make a rule default-on or remove a
+  "card instead" fallback to make a check pass.
+- Commit when done: "part-26: HR Autopilot - automatic agents (events + schedule, decide within rules)".
+
+FILES (new): backend/app/hr_agents/autopilot/{__init__,core,hiring,people,watchdog,briefing,runner}.py,
+  backend/app/hr_agents/autopilot_router.py, backend/app/models/autopilot.py,
+  backend/alembic/versions/c6a8e2f4b1d3_part26_autopilot.py, backend/tests/test_autopilot.py,
+  frontend/src/pages/autopilot/AutopilotPage.tsx, frontend/src/i18n/pages/autopilot.ts, docs/HR_AUTOPILOT.md
+FILES (changed): backend/app/models/__init__.py (import), backend/app/main.py (router),
+  backend/app/platform/jobs/scheduled.py (3 jobs + beat), backend/app/platform/modules.py (menu "Autopilot"),
+  backend/app/platform/settings/bootstrap_definitions.py + help_catalog.py (autopilot.* settings),
+  backend/app/platform/ai/governance.py (agents.bgv_reader, agents.briefing),
+  backend/app/platform/comms/defaults.py (agents.daily_briefing email),
+  backend/app/recruitment/scoring/autoshortlist.py (maybe_auto_shortlist `override=`),
+  frontend/src/App.tsx (route /autopilot)
+
+26.1 MIGRATE + TESTS
+- `alembic heads` first: the migration's down_revision is a9f28d9eafb0 (the newest one I could see).
+  If heads shows another head, point down_revision at it (one line) - quote both ids.
+- alembic upgrade head (and for every tenant DB the way hrctl does it); check RLS on agent_activity /
+  autopilot_state like the other tenant tables.
+- Run tests/test_autopilot.py (15) + tests/test_hr_agents.py (24) + test_shortlisting.py + test_intelligence.py.
+  Known failures before this part stay the same; anything new = fix.
+- Frontend: npx tsc -p tsconfig.app.json, npm run build. Fix type errors in AutopilotPage.tsx
+  (MUI Grid `size`, TextField props) the way the other pages do it.
+- Restart the backend; Health page shows jobs autopilot_events / autopilot_hourly / autopilot_daily green.
+
+26.2 END-TO-END CHECK (Mailpit on; record results + screenshots in docs/ui/FIXES_26.md)
+Open Autopilot (menu, Today group). Switch Autopilot ON. Rules all off first.
+  a. Upload a resume to a published job -> within ~1 min: "Screened ... score N" (Screening agent, event).
+  b. Rule shortlist score = 70 -> upload a strong resume -> shortlisted with the undo window, activity
+     "Decided by rule"; undo still works on the Shortlisting page.
+  c. Candidate above band: salary form answered 8% over the band, rule 10% -> salary approved by rule,
+     documents email goes out. 20% over -> card "counter at band max" in My approvals; approve it -> works.
+  d. Documents: all uploaded, no flags, rule on -> approved, BGV requested; with a red flag -> card.
+  e. BGV: rule "fastest vendor" on -> vendor email (Mailpit). Upload a clear sample report as the vendor
+     -> AI reading in the activity; rule "pass when clear" on -> BGV passed; then joining dates: rule off ->
+     card with 3 working days; rule on -> email with the dates.
+  f. A joiner with joining date today, pre-boarding 100%: rule off -> "confirm joined" card; rule on ->
+     joined + employee record. (Run now: Onboarding agent.)
+  g. An exit past its LWD with clearance done: card / letters by rule. Blocked 3+ days -> HR told.
+  h. Watchdog (Run now): an application left in salary_above_band for > stale_hours -> one bell message to
+     the approvers; Run now again -> no second message. An unsigned offer older than stale_hours ->
+     re-sent once (Mailpit), next run -> escalated.
+  i. Briefing (Run now) -> each HR user gets a bell message; the link opens the briefing text on the page.
+     autopilot.briefing.email on -> email too.
+  j. Switch one agent off -> its events do nothing; master off -> nothing at all (activity stays).
+  k. A user without platform.settings.configure sees the page read-only (no switches / Run now).
+  l. AI Intelligence usage shows agents.bgv_reader and agents.briefing costs.
+If something an agent did is wrong, fix the handler; keep the decision behind its rule.
+
+26.3 CLEAN UP + COMMIT
+Remove the test data from 26.2 (dry run first), switch Autopilot back to the owner's choice
+(ask: on or off for the demo tenant), update build_log, commit.

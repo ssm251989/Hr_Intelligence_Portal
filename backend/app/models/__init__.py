@@ -315,3 +315,4 @@ __all__ = [
     "WorkflowStep",
     "WorkflowTimer",
 ]
+from app.models.autopilot import AgentActivity, AutopilotState  # Part 26

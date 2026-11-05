@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Link as RouterLink } from "react-router-dom";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
@@ -111,6 +112,13 @@ export default function CopilotWidget() {
     return tr !== key ? tr : humanise(action.split(".").slice(-2).join(" "));
   };
 
+  // HR Agent Platform: names of the agents in the team (translated; falls back to the server's title)
+  const agentName = (name: string, fallback?: string) => {
+    const key = `assistant.agents.name.${name}`;
+    const tr = t(key);
+    return tr !== key ? tr : fallback ?? humanise(name);
+  };
+
   const bubble = { px: 1.75, py: 1.25, borderRadius: "16px", maxWidth: "88%", whiteSpace: "pre-wrap" as const, wordBreak: "break-word" as const };
 
   return (
@@ -181,7 +189,43 @@ export default function CopilotWidget() {
                     </Stack>
                   )}
 
-                  {!turn.reply.clarify && <Box sx={{ mt: 1.25, pt: 1, borderTop: `1px dashed ${f.line}` }}>
+                  {turn.reply.agents && (
+                    <Box sx={{ mt: 1.25, pt: 1, borderTop: `1px dashed ${f.line}` }} role="group" aria-label={t("assistant.agents.title")}>
+                      <Typography sx={{ fontSize: 12, fontWeight: 800, color: f.muted, mb: 0.5, display: "flex", alignItems: "center", gap: 0.5 }}>
+                        <Emoji name="people" size={14} /> {t("assistant.agents.title")}
+                      </Typography>
+                      <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap" sx={{ mb: 0.75 }}>
+                        {turn.reply.agents.agents_used.map((a) => <Chip key={a.name} size="small" label={agentName(a.name, a.title)} />)}
+                      </Stack>
+                      <Box component="details" sx={{ fontSize: 12, "& summary": { cursor: "pointer", color: f.muted, fontWeight: 700 } }}>
+                        <summary>{t("assistant.agents.how", { count: turn.reply.agents.trace.length })}</summary>
+                        <Stack spacing={0.5} sx={{ mt: 0.75 }}>
+                          {turn.reply.agents.trace.map((m) => (
+                            <Box key={m.id} sx={{ p: "6px 10px", borderRadius: "10px", bgcolor: m.kind === "task" ? f.brandSoft : f.surface2, border: `1px solid ${f.line}` }}>
+                              <Typography sx={{ fontSize: 12, fontWeight: 700 }}>
+                                {agentName(m.from)} {"\u2192"} {agentName(m.to)} · {t(`assistant.agents.kind.${m.kind}`)}
+                              </Typography>
+                              <Typography sx={{ fontSize: 12, color: f.muted, whiteSpace: "pre-wrap", display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{m.text}</Typography>
+                            </Box>
+                          ))}
+                        </Stack>
+                      </Box>
+                      {turn.reply.agents.suggestions.length > 0 && (
+                        <Box sx={{ mt: 1, p: 1.25, borderRadius: "12px", bgcolor: f.sunSoft, border: `1px solid ${f.line}` }}>
+                          <Typography sx={{ fontSize: 13, fontWeight: 700 }}>{t("assistant.agents.approve", { count: turn.reply.agents.suggestions.length })}</Typography>
+                          {turn.reply.agents.suggestions.map((s) => <Typography key={s.id} sx={{ fontSize: 12, color: f.muted }}>{s.title}</Typography>)}
+                          <Button size="small" component={RouterLink} to="/approvals" sx={{ mt: 0.5 }} onClick={() => setOpen(false)}>{t("assistant.agents.open_approvals")}</Button>
+                        </Box>
+                      )}
+                      {turn.reply.agents.links.length > 0 && (
+                        <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap" sx={{ mt: 1 }}>
+                          {turn.reply.agents.links.map((l) => <Chip key={l.path} size="small" clickable component={RouterLink} to={l.path} label={l.label} onClick={() => setOpen(false)} />)}
+                        </Stack>
+                      )}
+                    </Box>
+                  )}
+
+                  {!turn.reply.clarify && !turn.reply.agents && <Box sx={{ mt: 1.25, pt: 1, borderTop: `1px dashed ${f.line}` }}>
                     <Typography sx={{ fontSize: 12, fontWeight: 800, color: f.muted, mb: 0.5, display: "flex", alignItems: "center", gap: 0.5 }}>
                       <Emoji name="page" size={14} /> {t("assistant.sources")}
                     </Typography>

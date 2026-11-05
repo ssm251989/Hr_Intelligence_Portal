@@ -1,0 +1,69 @@
+PART 25 - CHECK AND COMMIT THE HR AGENT TEAM, HIRING TO EXIT (2026-11-02)
+(Repo hr-automation, branch hrms-platform. Design: docs/HR_AGENT_TEAM.md.
+The code was written outside this session; this part installs, checks it with the
+real model, fixes what the real model shows, and commits.)
+
+STANDING RULES
+- First message: run `git log --oneline -5` and `git status` and quote the literal output.
+- Quote the real cause before fixing anything. Log decisions in docs/build_log.md.
+- Keep ai.provider = anthropic (no AWS access yet).
+- Agents PROPOSE, HR decides. Never turn a propose_* tool into a direct action to make a check pass.
+- Commit when done: "part-25: HR agent team (LangGraph) - supervisor + 9 agents, hiring to exit".
+
+FILES (new): backend/app/hr_agents/{__init__,agents,tools,tools_e2e,graph,routing,approvals}.py,
+  backend/tests/test_hr_agents.py, docs/HR_AGENT_TEAM.md
+FILES (changed): backend/app/copilot/service.py (_agent_team, step 0.5 in ask, HR-permission gate),
+  backend/app/platform/ai/governance.py (agents.hr_assistant/job/screening/scheduling/salary/bgv/
+  offer/onboarding/exit/policy), backend/app/platform/settings/bootstrap_definitions.py
+  (copilot.agents.enabled), backend/app/platform/settings/help_catalog.py,
+  backend/requirements.txt (langgraph), frontend/src/api/client.ts (CopilotAnswer.agents),
+  frontend/src/components/CopilotWidget.tsx ("Agent team" section),
+  frontend/src/i18n/pages/shell.ts (EN/HI/TA strings, 10 agent names)
+
+25.1 INSTALL + TESTS
+- backend/.venv/Scripts/pip install langgraph  (quote the version installed)
+- Run tests/test_hr_agents.py (24 tests, scripted model) + test_intelligence.py +
+  test_llm_gateway_routing.py. Those two have 10 known failures before this part
+  (same list with and without the agent code); anything new = fix.
+- Frontend: npx tsc -p tsconfig.app.json, npm run build.
+
+25.2 REAL MODEL CHECK (API from backend/.venv; clean test data; Mailpit on; record each answer +
+the "Agent team" panel screenshot in docs/ui/FIXES_25.md). Demo data: one job with 3 screened
+candidates, one candidate at each later step (interview_selected above band, salary_approved with
+documents uploaded, bgv_pending, bgv_cleared, a joiner whose joining date is today, one open exit
+with clearance done). Ask the HR assistant:
+  a. "Create a job for a Senior Python Developer in Chennai, 4 to 7 years, Django and AWS"
+     -> Job agent: DRAFT + JD; job shows Ready for publishing; nothing published.
+  b. "Create a job for a QA engineer in Bengaluru and screen any applicants"
+     -> Job agent hands to the Screening agent (agent-to-agent); panel shows both.
+  c. "Shortlist the top 2 candidates for <demo job>" -> ONE card; approve -> Shortlisted and
+     interview scheduling starts (Mailpit).
+  d. "Who is waiting for an interview for <demo job>? Re-send the slots to <name>"
+     -> Interview agent answers and re-sends.
+  e. "Check <above-band name>'s salary" -> Salary agent explains band/expected and proposes a
+     decision card; approve -> Salary approved, documents form email (Mailpit).
+  f. "What's pending on <documents name>'s documents? Approve them if all are fine"
+     -> Documents & BGV agent reports flags and proposes approval (card); approve -> BGV requested.
+     Then "Send <name>'s BGV to <vendor>" -> vendor card; approve -> vendor email (Mailpit).
+  g. "BGV for <bgv_pending name> came back clean, and offer joining dates"
+     -> BGV agent proposes passed (card) and hands to the Offer agent; after approving the BGV
+     card ask again -> Offer agent proposes 3 dates (card); approve -> joining-dates email.
+  h. "Who joins today?" -> Onboarding agent; "Mark <joiner> as joined" -> card; approve ->
+     employee record created.
+  i. "What blocks <leaver>'s relieving letter?" -> Exit agent; if nothing blocks -> letters card.
+  j. "Take <name> from salary through to the offer" -> one request, several agents in sequence;
+     the panel shows each hand-off; only cards are created, nothing decided.
+  k. A user WITHOUT recruitment.job.create asks (a) -> polite refusal, no job.
+     An employee with no HR permission asks (c) -> normal assistant path, no agents.
+  l. "What is the notice period for a senior employee?" -> normal handbook answer with source.
+     "Show my offer letter" -> self-service path, not the team.
+  m. Settings: copilot.agents.enabled off -> (a) goes the old way; back on. Switch off
+     agents.salary in AI Intelligence > Features -> (e) says the Salary agent is not available.
+For each: AI Intelligence usage page shows the cost per agent feature (agents.*).
+If the real model does not follow the hand-off/tool protocol (answers without tools, invents
+ids, loops), tighten the instructions in app/hr_agents/agents.py; do not loosen the
+"people decide" rules.
+
+25.3 CLEAN UP + COMMIT
+Remove the test jobs/cards created in 25.2 (dry run first), update build_log (NEXT: Hindi/Tamil
+routing, scheduled agent runs that post a daily "what's pending" card), commit.

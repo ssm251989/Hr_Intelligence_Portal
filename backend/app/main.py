@@ -305,6 +305,9 @@ app.include_router(ui_users_router)
 from app.experience.ui_genai_router import router as ui_genai_router  # noqa: E402
 
 app.include_router(ui_genai_router)
+from app.hr_agents.autopilot_router import router as autopilot_router  # noqa: E402 -- Part 26 HR Autopilot
+
+app.include_router(autopilot_router)
 install_friendly_errors(app)
 
 

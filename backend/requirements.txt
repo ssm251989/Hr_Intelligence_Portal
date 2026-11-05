@@ -27,3 +27,4 @@ jinja2
 pyotp
 fpdf2==2.8.9
 segno==1.6.6
+langgraph

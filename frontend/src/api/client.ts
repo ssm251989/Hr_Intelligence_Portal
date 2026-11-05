@@ -1505,6 +1505,13 @@ export interface CopilotAnswer {
   draft: { id: UUID; action: string; payload: Record<string, unknown>; categories?: { code: string; name: string }[] } | null;
   handover?: boolean;
   clarify?: boolean;  // Part 22.1: unclear question -> suggestions, no ticket
+  // HR Agent Platform: the agent team's work for a hiring task (A2A-style messages between agents)
+  agents?: {
+    trace: { id: string; from: string; to: string; kind: "task" | "result"; text: string; at: string }[];
+    agents_used: { name: string; title: string }[];
+    suggestions: { id: string; title: string }[];
+    links: { label: string; path: string }[];
+  };
 }
 
 export interface AgentSuggestionRow {

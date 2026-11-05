@@ -333,6 +333,28 @@ def register_all() -> None:
     register(SettingDef("copilot.languages", "json", ["en", "hi", "ta"], module="copilot", group="HR Copilot"))
     register(SettingDef("copilot.min_confidence", "decimal", 0.35, module="copilot", group="HR Copilot"))
     register(SettingDef("copilot.handover_category", "str", "", module="copilot", group="HR Copilot"))  # a ticket_category code
+    register(SettingDef("copilot.agents.enabled", "bool", True, module="copilot", group="HR Copilot"))  # hiring tasks -> the agent team (app/hr_agents)
+
+    # Part 26: HR Autopilot -- automatic agents (app/hr_agents/autopilot). Routine work is on with the master
+    # switch; every DECISION rule is off until the company turns it on (0 / false = a person decides).
+    G = "Autopilot (automatic agents)"
+    pct = {"type": "integer", "minimum": 0, "maximum": 100}
+    register(SettingDef("autopilot.enabled", "bool", False, module="ai", group=G))
+    for agent in ("watchdog", "screening", "sourcing", "salary", "documents", "bgv", "offer", "onboarding", "exit", "briefing"):
+        register(SettingDef(f"autopilot.{agent}.enabled", "bool", True, module="ai", group=G))
+    register(SettingDef("autopilot.watchdog.stale_hours", "int", 48, module="ai", group=G, json_schema={"type": "integer", "minimum": 4, "maximum": 720}))
+    register(SettingDef("autopilot.sourcing.min_strong", "int", 3, module="ai", group=G, json_schema={"type": "integer", "minimum": 0, "maximum": 50}))
+    register(SettingDef("autopilot.briefing.hour", "int", 9, module="ai", group=G, json_schema={"type": "integer", "minimum": 0, "maximum": 23}))
+    register(SettingDef("autopilot.briefing.email", "bool", False, module="ai", group=G))
+    register(SettingDef("autopilot.rules.shortlist_min_score", "int", 0, module="ai", group=G, json_schema=pct))
+    register(SettingDef("autopilot.rules.salary_max_over_band_pct", "int", 0, module="ai", group=G, json_schema={"type": "integer", "minimum": 0, "maximum": 50}))
+    register(SettingDef("autopilot.rules.documents_auto_approve", "bool", False, module="ai", group=G))
+    register(SettingDef("autopilot.rules.bgv_auto_assign_vendor", "bool", False, module="ai", group=G))
+    register(SettingDef("autopilot.rules.bgv_auto_pass_clear_report", "bool", False, module="ai", group=G))
+    register(SettingDef("autopilot.rules.joining_dates_auto", "bool", False, module="ai", group=G))
+    register(SettingDef("autopilot.rules.joining_dates_after_days", "int", 14, module="ai", group=G, json_schema={"type": "integer", "minimum": 3, "maximum": 120}))
+    register(SettingDef("autopilot.rules.mark_joined_when_ready", "bool", False, module="ai", group=G))
+    register(SettingDef("autopilot.rules.exit_letters_auto", "bool", False, module="ai", group=G))
 
     # Part 14: module enablement (within the licence), setup wizard, per-user UX prefs.
     # Part 18.5: People (core_hr: employee records, directory, org chart), Performance (+ compensation,

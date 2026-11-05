@@ -70,7 +70,9 @@ def _recipients(db: Session, job: JobRole, notify: list[str]) -> list[str]:
 
 
 def maybe_auto_shortlist(db: Session, tenant, application: Application, *, job: JobRole, threshold: int,
-                         knocked_out: bool, actor: str) -> bool:
+                         knocked_out: bool, actor: str, override: Optional[dict] = None) -> bool:
+    """`override` (Part 26, HR Autopilot shortlist rule): config values that win over the company
+    defaults, e.g. {"auto_shortlist": True, "threshold": 80}. A job's own setting still wins."""
     from app.experience.ui_screening_router import _add_business_hours, _company_tz
     from app.models.comms import OutboundMessage
     from app.models.candidate import Candidate
@@ -80,6 +82,9 @@ def maybe_auto_shortlist(db: Session, tenant, application: Application, *, job: 
     if not module_status.is_active(db, tenant, "shortlisting"):
         return False  # Part 19.1: no Shortlisting module -> nothing is shortlisted automatically
     cfg = config(db, tenant, job)
+    if override:
+        own = dict(job.shortlisting_json or {})
+        cfg.update({k: v for k, v in override.items() if own.get(k) is None})
     if not cfg["auto_shortlist"] or application.status != "screened" or knocked_out:
         return False
     if cfg.get("threshold") is not None:
