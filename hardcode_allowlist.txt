@@ -1,0 +1,29 @@
+# Hardcode guard allow-list (docs/HRMS_COMPLETE_SPEC.txt, Part 1, Step 3).
+#
+# One entry per line: path:line_regex # reason
+#   - path is relative to the repo root, forward-slashed (matches
+#     backend/tests/test_no_hardcoded_tenant_values.py's own Finding.path).
+#   - line_regex is matched against the exact offending source line.
+#   - Every entry needs a real reason -- this file is reviewed at the end of Part 4, when
+#     the guard test flips from xfail(strict=True) to a hard pass.
+#   - The whole raw line is split on its FIRST '#' to strip the trailing reason, so a
+#     line_regex that itself needs a literal '#' (e.g. a hex color) must spell it \x23
+#     instead -- a bare '#' inside line_regex would truncate the regex early.
+#
+# Blank lines and lines starting with # are ignored.
+
+frontend/src/components/InterviewTrackerSettingsCard.tsx:placeholder="e\.g\. /srv # UI placeholder example text shown in an empty text field, not a real configured path or a value the app ever reads/writes -- purely illustrates the expected format for the admin.
+
+backend/app/platform/comms/theme.py:"primary_color".*\x230E7C66 # Generic no-brand-configured-yet scaffold default (Part 4 section 5) -- not any specific tenant's chosen color; only used when a tenant has no brand_theme row. Same class of exclusion as frontend/src/theme's own neutral design-system palette.
+backend/app/platform/comms/theme.py:"gradient_from".*\x230E7C66 # Generic no-brand-configured-yet scaffold default -- see the primary_color entry above.
+backend/app/platform/comms/theme.py:"gradient_to".*\x232F6FDE # Generic no-brand-configured-yet scaffold default -- see the primary_color entry above.
+backend/app/platform/comms/renderer.py:button_color = color or "\x232563eb" # Generic no-theme-passed scaffold fallback for the button() Jinja global -- not any specific tenant's brand; the real per-tenant color comes from the caller's {{ theme.primary_color }} argument.
+backend/app/platform/comms/renderer.py:color:\x23ffffff # Generic button label text color (white-on-brand-color) in the button() Jinja global -- not tenant-specific; the button's own background already comes from the caller's {{ theme.primary_color }} argument.
+frontend/src/utils/avatar.ts:jane@example\.com # Illustrative example in a docstring using the RFC 2606 reserved example.com domain -- not real or client-specific data.
+
+backend/app/interview_scheduling/confirm_router.py:\x23(1a1a1a|1b8a5a|333333|b23b3b|b8860b|eeeeee|f6f7f9|ffffff) # Generic semantic status colors (success/warning/error) and a neutral card/background palette -- this page has no brand gradient, no wordmark, no per-tenant styling of any kind, unlike negotiation_router.py. Same class of exclusion as frontend/src/theme's own already-neutral design-system palette (see this test's own scoping note above).
+backend/app/interview_scheduling/negotiation_router.py:\x23(14532d|1a1f36|1b8a5a|1d6b45|3a4257|4f9dff|5b6478|7b5cff|8a93a6|9a2b2b|adc4f5|b23b3b|b8860b|b9c8ea|bfe9d2|cbd2e0|dde2ee|e6eaf3|eafaf1|eef0f5|eef1f6|eef4ff|f3b4b4|f5f8ff|f6f8fc|fdecec|ffffff) # Generic neutral/status design-system colors -- every genuinely brand-tied color (gradient, primary accent, wordmark) is now sourced from the tenant's brand_theme via the {{PRIMARY}}/{{GRADIENT_FROM}}/{{GRADIENT_TO}} placeholders filled in by _page_css() (Part 4), not a literal. Same class of exclusion as frontend/src/theme's own already-neutral palette.
+
+backend/app/platform/comms/api_router.py:\x23(1a1f36|1b8a5a|3a4257|eef0f5|eef1f6|ffffff) # Generic neutral/status design-system colors for the candidate/employee preferences page -- the brand-tied gradient/primary accent already comes from the tenant's brand_theme via {{PRIMARY}}/{{GRADIENT_FROM}}/{{GRADIENT_TO}} placeholders (same pattern as negotiation_router.py's own entry above). Same class of exclusion as frontend/src/theme's own already-neutral palette.
+
+backend/app/platform/workflow/api_router.py:\x23(1a1a1a|333333|eef1f6|ffffff) # Generic neutral status-page colors for the action-link result page (Part 5B) -- same "no brand tie at all, same class as frontend/src/theme's own neutral palette" reasoning as confirm_router.py's own entry above; this page has no brand_theme/org.display_name context to render with (a bare token-resolution result, not a tenant-branded shell).

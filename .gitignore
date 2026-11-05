@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Node / frontend
+node_modules/
+dist/
+build/
+.vite/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Uploaded files
+uploads/
+
+# Part G: local-folder auto-import (backend/app/local_import/) -- its ready-to-upload/
+# already-uploaded root folders are now admin-configured absolute paths (local_import_
+# settings table), not fixed app-created folder names, so there's no longer a specific
+# path to list here. If you point local import at a path inside this repo for local dev,
+# gitignore that path yourself.
+
+# This repo's own local dev setup points local-import and the Interview Scheduling
+# tracker at Sample/ -- ignore the resulting runtime byproducts (moved resumes, the live
+# tracker workbook and its Excel lock file), never the sample fixtures themselves.
+Sample/Ready-to-upload/
+Sample/Already-uploaded/
+Sample/Interview_Tracker/
+~$*.xlsx
+
+# Part 17.13: local database backups (hrctl backup)
+backups/
+
+# Part 23: real résumés, owner documents and Claude hand-off texts stay local (never in git)
+Sample/*.pdf
+Sample/*.doc
+Sample/*.docx
+!Sample/sample_*.docx
+/*.docx
+Claude outputs/
