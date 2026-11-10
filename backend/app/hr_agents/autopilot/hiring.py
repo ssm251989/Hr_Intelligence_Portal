@@ -39,9 +39,11 @@ def shortlist_rule(db: Session, tenant, application, run: Run) -> Optional[str]:
     from app.models.job_role import JobRole
     from app.recruitment.scoring.autoshortlist import maybe_auto_shortlist
 
-    threshold = int(rule(db, tenant, "shortlist_min_score") or 0)
-    if threshold <= 0 or application.status != "screened":
+    if application.status != "screened":
         return None
+    threshold = int(rule(db, tenant, "shortlist_min_score") or 0)
+    if threshold <= 0:  # no rule: the agent prepares the shortlist, HR approves it (Part 29)
+        return propose_shortlist(db, tenant, application, run)
     job = db.get(JobRole, application.job_role_id)
     knocked = bool((application.score_breakdown or {}).get("knocked_out")) if isinstance(application.score_breakdown, dict) else False
     if job is None or not maybe_auto_shortlist(db, tenant, application, job=job, threshold=threshold, knocked_out=knocked, actor=ACTOR,
@@ -53,6 +55,55 @@ def shortlist_rule(db: Session, tenant, application, run: Run) -> Optional[str]:
            summary=f"Shortlisted {n['candidate']} for {n['job']} (score {round(float(application.composite_score or 0))} >= {threshold}); "
                    "the recruiter can undo it during the undo window.")
     return "decided"
+
+
+def propose_shortlist(db: Session, tenant, application, run: Run) -> Optional[str]:
+    """Part 29 ("agent prepares, HR approves"): a screened candidate at or above the job's shortlist
+    threshold gets a 'Shortlist' card. Approving it runs the Shortlisting screen's own decision, which
+    starts interview scheduling. Below the threshold the candidate simply stays in Screened for HR.
+    Jobs that use their own automatic shortlisting (with its undo window) are left to it."""
+    if not _setting(db, tenant, "autopilot.screening.propose_shortlist"):
+        return None
+    from app.models.job_role import JobRole
+    from app.recruitment.scoring.autoshortlist import config as shortlist_config
+    from app.recruitment.scoring.engine import threshold_for_job
+
+    job = db.get(JobRole, application.job_role_id)
+    if job is None or shortlist_config(db, tenant, job).get("auto_shortlist"):
+        return None
+    breakdown = application.score_breakdown if isinstance(application.score_breakdown, dict) else {}
+    if breakdown.get("knocked_out") or application.composite_score is None:
+        return None
+    cut, _ = threshold_for_job(db, tenant, job)
+    score = float(application.composite_score)
+    if score < cut or recently(db, tenant, agent="screening", action="propose_shortlist", entity_id=application.id, hours=24 * 30):
+        return None
+    n = names(db, application)
+    reason = f"Score {round(score)} is at or above the shortlist threshold {cut}."
+    c = card(db, tenant, kind="agent_shortlist", by_agent="screening", title=f"Shortlist {n['candidate']} for {n['job']}",
+             payload={**n, "candidates": [{"application_id": str(application.id), "name": n["candidate"], "score": round(score)}], "reason": reason},
+             permission="recruitment.shortlisting.edit", entity_type="application", entity_id=application.id)
+    record(db, tenant, run, agent="screening", action="propose_shortlist", outcome="proposed", entity_type="application", entity_id=application.id,
+           summary=f"{n['candidate']} ({n['job']}): {reason} Prepared the shortlist for HR to approve.", details={"card_id": str(c.id), "score": score, "threshold": cut})
+    return "proposed"
+
+
+# ---------------------------------------------------------------- Scheduling agent
+
+
+def scheduling(db: Session, tenant, application, run: Run) -> Optional[str]:
+    """Part 29: the job is set to schedule interviews by hand, so the automatic start stopped -> the agent
+    prepares 'Send interview times' for HR (approving it sends them exactly like the [Send now] button)."""
+    if not enabled(db, tenant, "scheduling", "interviews") or application.status != "hr_selected":
+        return None
+    n = names(db, application)
+    c = card(db, tenant, kind="agent_interview_send", by_agent="scheduling", title=f"Send interview times to {n['candidate']}",
+             payload={**n, "note": "This job schedules interviews by hand; approving sends the interviewer and candidate their time options now."},
+             permission="recruitment.interview.edit", entity_type="application", entity_id=application.id)
+    record(db, tenant, run, agent="scheduling", action="propose_interview_send", outcome="proposed", entity_type="application", entity_id=application.id,
+           summary=f"{n['candidate']} ({n['job']}) is shortlisted; the job schedules by hand, so the interview times are ready for HR to send.",
+           details={"card_id": str(c.id)})
+    return "proposed"
 
 
 # ---------------------------------------------------------------- Sourcing agent

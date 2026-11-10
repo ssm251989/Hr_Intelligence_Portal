@@ -36,7 +36,7 @@ TENANT_TABLES = (
     "applications", "audit_log", "bgv_documents", "candidates", "hr_inbound_emails",
     "hr_integrations", "interviews", "interview_confirmation_tokens",
     "interview_scheduling_settings", "job_roles", "local_import_settings",
-    "negotiation_tokens", "offers", "screening_settings", "users", "user_integrations",
+    "negotiation_tokens", "offers", "users", "user_integrations",  # screening_settings: dropped in part 8
 )
 
 

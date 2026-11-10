@@ -36,7 +36,9 @@ def _set_tenant_id_for_rls(session, transaction, connection) -> None:
 
     ctx = get_current_tenant()
     if ctx is not None:
-        connection.execute(text("SET LOCAL app.tenant_id = :tid"), {"tid": str(ctx.tenant_id)})
+        # set_config(..., true) == SET LOCAL, but takes a bound parameter with every driver
+        # (psycopg 3 sends parameters server-side and PostgreSQL rejects `SET LOCAL x = $1`).
+        connection.execute(text("SELECT set_config('app.tenant_id', :tid, true)"), {"tid": str(ctx.tenant_id)})
 
 
 def get_db():

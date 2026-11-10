@@ -140,3 +140,43 @@ def _apply_exit_letters(db, tenant, suggestion, payload, reviewer):
     if s is None or s.tenant_id != tenant.tenant_id:
         raise AgentError("the exit no longer exists")
     _result(payload, _service_call(db, lambda: exit_checklist.generate_letters(db, tenant, s, actor=reviewer)))
+
+
+# ---------------------------------------------------------------- Part 29: agents run hiring to exit
+
+
+@applier("agent_interview_send")
+def _apply_interview_send(db, tenant, suggestion, payload, reviewer):
+    """Same as [Send interview times now] on the candidate: interviewer first, then the candidate."""
+    from app.agents.service import AgentError
+    from app.interview_scheduling import automation
+    from app.models.user import User
+
+    app = _app(db, tenant, payload)
+    user = db.query(User).filter(User.email == reviewer).first()
+    out = automation.start(db, tenant, app, user, trigger="send_now", force=True)
+    if out.get("outcome") not in ("started", "retrying"):
+        raise AgentError(out.get("reason") or "the interview times could not be sent")
+    _result(payload, out)
+
+
+@applier("agent_resignation_approve")
+def _apply_resignation(db, tenant, suggestion, payload, reviewer):
+    """Same as approving the last working day on the Exits screen (clearance checklist starts)."""
+    from datetime import date
+    from uuid import UUID
+
+    from app.agents.service import AgentError
+    from app.models.service_desk import Separation
+    from app.service_desk import separations
+
+    s = db.get(Separation, UUID(payload["separation_id"]))
+    if s is None or s.tenant_id != tenant.tenant_id:
+        raise AgentError("the resignation no longer exists")
+    try:
+        lwd = date.fromisoformat(str(payload["last_working_day"]))
+        waived, buyout = int(payload.get("waived_days") or 0), int(payload.get("buyout_days") or 0)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise AgentError("last_working_day must be a date (YYYY-MM-DD); waived_days / buyout_days whole numbers") from exc
+    row = _service_call(db, lambda: separations.approve_lwd(db, tenant, s, lwd=lwd, actor=reviewer, waived_days=waived, buyout_days=buyout))
+    payload["result"] = {"status": row.status, "approved_lwd": row.approved_lwd.isoformat() if row.approved_lwd else None}

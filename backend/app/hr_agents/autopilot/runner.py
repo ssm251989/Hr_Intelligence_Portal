@@ -29,6 +29,24 @@ EVENTS: dict[str, tuple[Callable, ...]] = {
     "bgv_vendor_report_received": (hiring.bgv_report,),
     "bgv_passed": (hiring.offer,),
     "bgv_discrepancy": (hiring.offer,),
+    "interview_scheduling_manual_mode": (hiring.scheduling,),  # Part 29
+}
+# Part 29: steps the app's own services take automatically are written to the same agent timeline, so the
+# Agents page shows one story per candidate from application to joining (audit action -> agent, outcome, text).
+TRACK: dict[str, tuple[str, str, str]] = {
+    "interview_scheduling_started": ("scheduling", "done", "Interview times sent to the interviewer and {candidate}"),
+    "interview_confirmed_by_candidate": ("scheduling", "done", "{candidate} confirmed the interview"),
+    "interview_scheduling_problem": ("scheduling", "escalated", "Could not arrange {candidate}'s interview - the recruiter was told"),
+    "salary_form_sent": ("salary", "done", "Asked {candidate} for salary and joining details"),
+    "salary_auto_decided": ("salary", "done", "{candidate}'s salary was inside the company's salary rule and was approved"),
+    "documents_approved": ("documents", "done", "{candidate}'s joining documents were approved"),
+    "bgv_vendor_assigned": ("bgv", "done", "{candidate}'s BGV was sent to the vendor"),
+    "joining_dates_proposed": ("offer", "done", "Joining dates sent to {candidate}"),
+    "joining_date_chosen": ("offer", "done", "{candidate} chose a joining date; the offer is being prepared"),
+    "offer_sent_for_signing": ("offer", "done", "Offer sent to {candidate} for signing"),
+    "offer_signed": ("offer", "done", "{candidate} signed the offer"),
+    "welcome_sent": ("onboarding", "done", "Welcome portal sent to {candidate}"),
+    "onboarding_completed": ("onboarding", "done", "{candidate} joined"),
 }
 CURSOR = "events.cursor"
 LAG = timedelta(seconds=20)
@@ -49,7 +67,7 @@ def run_events(db: Session, tenant, now: Optional[datetime] = None) -> dict:
         return {"started": upto.isoformat()}
     since = datetime.fromisoformat(saved["at"])
     rows = (db.query(AuditLog).filter(AuditLog.tenant_id == tenant.tenant_id, AuditLog.entity_type == "application",
-                                      AuditLog.action.in_(tuple(EVENTS)), AuditLog.created_at > since, AuditLog.created_at <= upto)
+                                      AuditLog.action.in_(tuple(EVENTS) + tuple(TRACK)), AuditLog.created_at > since, AuditLog.created_at <= upto)
             .order_by(AuditLog.created_at).limit(BATCH).all())
     handled, seen = 0, set()
     last = since
@@ -61,6 +79,9 @@ def run_events(db: Session, tenant, now: Optional[datetime] = None) -> dict:
         seen.add(key)
         app = db.get(Application, row.entity_id)
         if app is None:
+            continue
+        if row.action in TRACK:
+            handled += _track(db, tenant, app, row)
             continue
         for handler in EVENTS[row.action]:
             try:
@@ -76,9 +97,23 @@ def run_events(db: Session, tenant, now: Optional[datetime] = None) -> dict:
     return {"events": len(rows), "handled": handled}
 
 
+def _track(db: Session, tenant, application, row) -> int:
+    from app.hr_agents.autopilot.core import enabled, names
+
+    agent, outcome, text = TRACK[row.action]
+    if not enabled(db, tenant, agent):
+        return 0
+    n = names(db, application)
+    job = f" ({n['job']})" if n["job"] else ""
+    record(db, tenant, Run("event", row.action), agent=agent, action=f"step_{row.action}"[:60], outcome=outcome, entity_type="application",
+           entity_id=application.id, summary=f"{text.format(candidate=n['candidate'])}{job}.",
+           details={"by": row.actor, "audit_id": str(row.id)})
+    return 1
+
+
 def _agent_of(handler) -> str:
     return {"screen": "screening", "shortlist_rule": "screening", "salary": "salary", "documents": "documents", "bgv_assign": "bgv",
-            "bgv_report": "bgv", "offer": "offer"}.get(handler.__name__, "watchdog")
+            "bgv_report": "bgv", "offer": "offer", "scheduling": "scheduling"}.get(handler.__name__, "watchdog")
 
 
 def run_hourly(db: Session, tenant, trigger: str = "schedule") -> dict:
@@ -87,7 +122,8 @@ def run_hourly(db: Session, tenant, trigger: str = "schedule") -> dict:
         return {"skipped": "autopilot off"}
     run = Run(trigger)
     out = {"watchdog": watchdog.run(db, tenant, run)}
-    for name, fn in (("joining_day", people.joining_day), ("exit_letters", people.exit_letters), ("briefing", briefing.run)):
+    for name, fn in (("joining_day", people.joining_day), ("resignations", people.resignations), ("exit_letters", people.exit_letters),
+                     ("briefing", briefing.run)):
         try:
             out[name] = fn(db, tenant, run)
         except Exception as exc:  # noqa: BLE001
@@ -108,7 +144,7 @@ RUN_NOW: dict[str, Callable] = {
     "watchdog": lambda db, t: watchdog.run(db, t, Run("manual")),
     "sourcing": lambda db, t: hiring.source_thin_jobs(db, t, Run("manual")),
     "onboarding": lambda db, t: people.joining_day(db, t, Run("manual")),
-    "exit": lambda db, t: people.exit_letters(db, t, Run("manual")),
+    "exit": lambda db, t: people.resignations(db, t, Run("manual")) + people.exit_letters(db, t, Run("manual")),
     "briefing": lambda db, t: briefing.run(db, t, Run("manual")),
     "events": lambda db, t: run_events(db, t),
 }

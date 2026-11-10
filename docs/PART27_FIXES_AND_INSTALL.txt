@@ -1,0 +1,145 @@
+PART 27 - FRESH-INSTALL FIXES, ONE-STEP SETUP, AND THE 39 TEST-REPORT ISSUES (2026-11-06)
+Repo: hr-portal-work, branch KG-Development (shared on GitHub: ssm251989/Hr_Intelligence_Portal).
+Inputs: docs/ui/Hr_Inteligence_Portal_Issues_By_Pages.pdf (E2E report, 5 Nov, 39 issues: 5 High, 15 Medium,
+19 Low) and the colleague's "Configuration Issues & Solutions" notes (fresh-install problems).
+
+STANDING RULES
+- First message: `git status`, `git log --oneline -5`, `git pull` (quote the output). Work on KG-Development.
+- Quote the real cause (file:line) before fixing anything. Log decisions in docs/build_log.md.
+- Keep ai.provider = anthropic. People decide (no automatic rejections etc.).
+- Every UI string in EN/HI/TA (i18n/pages/*.ts). No new hard-coded company values (hardcode guard).
+- One commit per block below: "part-27.N: <block>". Push only when the user says so.
+
+======================================================================================================
+27.0 ALREADY WRITTEN (outside this session) - CHECK, THEN COMMIT "part-27.0: one-step install + fresh-install fixes"
+======================================================================================================
+Fresh-install bugs (every new machine hit them):
+- backend/hrctl/tenant.py          TENANT_TABLES no longer lists screening_settings (dropped in part 8).
+- backend/app/recruitment/pipeline.py  _STAGE_CATEGORY has offer_withdrawn / offer_declined / no_show /
+                                   left_after_joining (seed_pipeline crashed with KeyError).
+- backend/app/core/database.py     SELECT set_config('app.tenant_id', :tid, true) instead of SET LOCAL ... = :tid
+                                   (psycopg 3 / SQLAlchemy 2.1 rejected the old one).
+- backend/alembic_control_plane/env.py  escapes % in the URL (an encoded password broke configparser).
+One-step setup engine (new): backend/app/platform/install/{__init__,validate,envfile,provision,__main__}.py,
+  backend/hrctl/setup.py (internal _admin/_modules steps), backend/tests/test_install.py (20 tests).
+  `python -m app.platform.install` asks company, admin and database passwords, checks them (no line breaks /
+  tabs / outer spaces, 10-128 chars, letter + digit, not the email, all problems at once), then:
+  PostgreSQL check -> app login hr_app (chosen password, NOSUPERUSER NOBYPASSRLS) + 2 databases -> .env written
+  atomically with URL-encoded passwords and generated MASTER_KEY/SECRET_KEY (never replaced once set), read back
+  to verify, permissions locked to the app account -> migrations (repairs "stamped but empty") -> grants ->
+  company -> base data -> first admin (bcrypt hash only) -> modules (activation request to CTD Techs; or
+  "activate_modules": true for dev). Every step safe to re-run. Verified in the cloud end to end: install ->
+  login 200 -> full menu, with passwords containing @ # : / % and spaces.
+Checks:
+  a. backend/.venv/Scripts/python -m pytest tests/test_install.py -q  (20 pass)
+  b. On THIS PC, a throwaway install (does not touch hr_automation):
+       copy answers below to %TEMP%\a.json, then
+       .venv\Scripts\python -m app.platform.install --answers %TEMP%\a.json --env %TEMP%\fi.env --delete-answers
+     {"company_name":"Test Co","company_slug":"test-co","admin_name":"Test Admin","admin_email":"admin@test.example",
+      "admin_password":"Welcome@2026","pg_superuser_password":"<your postgres password>","app_db_password":"App pass @1 #x",
+      "app_db_user":"t27_app","db_name":"t27_main","control_plane_db_name":"t27_cp","activate_modules":true}
+     -> all 9 steps "done". Run it again -> still all done (idempotent). Then drop t27_main, t27_cp, role t27_app.
+  c. --check with a password containing a line break -> refused with a plain message, exit 2.
+  d. Update backend/.env.example: URLs postgresql+psycopg2://, hr_app login, comment "use python -m
+     app.platform.install instead of editing this by hand".
+  e. Replace the colleague's ad-hoc scripts (grant_app.py, dev_make_admin.py) with this; delete them if present.
+
+======================================================================================================
+27.1 HIGH (before any demo)
+======================================================================================================
+H1  Home loops GET /api/v1/me/home ~12x/s. HomePage.tsx ~l.102: `modules` is a new array every render -> `load`
+    (l.120) changes -> effect re-runs. Fix: useMemo for modules (and any other array/object deps); assert one call
+    per mount + one per explicit refresh. Add a frontend test or a Playwright check counting calls in 10 s (<=2).
+S1  In-band expected pay shown "Salary Above Band" when current CTC is unknown. Cause: salary_auto.check() adds
+    reason "no_current" -> state needs_approval -> apply_stage() moves to status salary_above_band. Fix:
+    - keep the safety (no current CTC = a person approves) but never call it "above band": status label for
+      salary_above_band becomes "Needs salary approval"; the reason chips say why (above band / hike over X% /
+      current salary not known / budget short);
+    - "Above range" counts only applications whose salary_check.reasons contain above_band;
+    - the score card's "within the band" stays correct. Tests: in band + no current -> label "Needs salary
+      approval", reason "Current salary not known", Above-range count 0.
+P1  After salary approval the profile says "reached its last step". Find the "last step" logic (next-action
+    component); next steps after salary_approved: documents -> BGV -> joining date -> offer -> joined. Only
+    onboarding_completed / terminal statuses are "last".
+I1  Interviews can be booked in the past. Backend: reject scheduled_at < now (400, plain message) in every
+    booking path (manual book, propose slots, reschedule); frontend: date picker min = now.
+B1  "The upload link was sent." with no mailbox. Make every "sent" message depend on the real send result
+    (OutboundMessage status sent/queued). When not sent: say so ("Email not sent - no mailbox connected") and
+    ALWAYS show [Copy link] for the candidate form (documents, salary, joining dates, offer sign link) so HR can
+    share it by WhatsApp/phone; plus HR "Upload for the candidate" on the documents drawer (same checks run).
+    Audit every "sent/emailed" toast and history line in the app (grep -i "sent\|emailed") - S3 is the same bug.
+
+======================================================================================================
+27.2 MEDIUM
+======================================================================================================
+L1  Forgot password (owner decision: ADD). /login "Forgot password?" -> email -> one-time link (action_tokens,
+    30 min, single use, rate-limited, same answer whether the email exists or not) -> set new password (same
+    rules as iam.auth.* + history). If no mailbox is connected: page says "Ask your HR admin to reset it", and
+    admins get Employees > [Reset password] (link to copy). Audit-logged. Tests.
+L3  Public sign-up (owner decision: CLOSE). Remove /register route + "No account yet? Create one"; POST
+    /auth/register returns 404/403 (keep the code path only for tests if needed). First admin comes from the
+    installer (27.0); everyone else is invited by HR (Employees / Settings > People & access).
+H3  Config health says "connect an AI provider" while AI works. Make the health check use the same "is AI
+    configured" function as Settings > Integrations > AI (provider + key/secret present, ai.enabled).
+J1  (Owner kept auto-saved drafts.) Fix the pile-up instead: opening the wizard and cancelling without typing
+    beyond the title must not leave a draft (delete an untouched auto-draft on cancel); "Start fresh" reuses the
+    current untouched draft; warn on a duplicate title ("A draft with this title exists - open it?").
+C1  Duplicate apply (owner decision: BLOCK). Same email (case-insensitive) + same job, application not
+    terminal -> careers page shows "You have already applied for this job" (no second application); backend
+    409. Different job = allowed. Agency/bulk import keeps the existing duplicate flag.
+A1  Match score 97% vs Remarks "96/100": one rounding helper for both (round half up, same source value).
+A2  Candidate name/row click opens the profile; Actions column sticky on the right; Remarks truncated with
+    tooltip, never cut by the layout at 1440 px.
+P2  "Approve/Reject Salary" as plain text -> a real button that opens the Salary drawer for that candidate.
+P3  Interview "Selected/Rejected" in one click: offer it only after the interview time has passed; open the
+    scorecard (ratings + note required for Rejected) with a confirm step.
+I2  Meeting link: must be a valid http(s) URL (backend + frontend).
+S2  Salary drawer refreshes its header/status right after Approve (re-fetch or optimistic update).
+R1  Report builder: /api/v1/intelligence/reports + /datasets 404 because the analytics module is not enabled.
+    Either show Report builder only when analytics is enabled (nav + /reports card), or include the builder's
+    APIs in the Reports module. Decide per module_registry; no 404 on a visible button.
+ST1 Settings cards for disabled modules (Performance, Helpdesk): hide them (same module check as the menu).
+X1  10 routes not in the menu still load and fail (/people /directory /performance /performance/team /helpdesk
+    /helpdesk/queue /analytics /assets /compensation /succession): one route guard -> a clean "This module is
+    not switched on for your company" page (with "Ask your admin" / Settings > Modules link for admins).
+X2  Unknown URL = blank page -> "Page not found" with the menu and a Home button.
+(The report counts 15 Medium; P3/I2/S2/A2 etc. above + L1/L3/H3/J1/C1/A1/R1/ST1/X1/X2 = all of them.)
+
+======================================================================================================
+27.3 LOW (one polish pass)
+======================================================================================================
+L2  Locked account (API 423): say "Too many attempts - try again in 15 minutes" (use the minutes from the API).
+H2  "Finish setting up" titles: human labels (Company details, Locations, Branding, Mailbox) in EN/HI/TA.
+H4  Floating assistant button overlaps "Ignore this" (Home, 1440 px) and pager/Reset on phones: reserve space
+    (padding-bottom on pages) or move the button up when it would cover an action.
+J2  Money: one formatter everywhere (₹ + Indian grouping, or the company currency): wizard, review, salary.
+J3  "Jobs by Location" card: count jobs without a location as "Location not set" instead of "No open jobs".
+J4  KPI trend from 0: show "New this month" (no percentage) when the previous value is 0.
+C2  "privacy policy" in the consent text = a link to the company's privacy notice (privacy module / setting).
+C3  Apply form validation: app messages in the company language (noValidate + own messages), not browser pop-ups.
+A3  Phone: filters collapsed behind one "Filters (n)" button; results first.
+P4  "7.0 years in similar roles" > total 5 years: cap relevant experience at total experience; recheck the factor.
+P5  Labels: chart legend spacing, plain "Preferred name" wording, sentence case on all buttons.
+I3  Booking confirmation: date with year in the company format; no interviewer text when none chosen.
+S3  (Covered by B1's audit) - history/approval messages true to what happened; no "reserved in the department
+    budget" when no budget is set (say "No department budget set - nothing reserved").
+B2  /bgv and /offers without a job: show either the table or the "Choose a job" empty state, not both.
+B3  "Ask the candidate again for 0 document(s)": hide/disable until at least one document is chosen.
+M1  Admin not linked to an employee: on /me show "Your account isn't linked to an employee record" + [Create my
+    employee record] / [Link to an existing one] (admins only). The installer's first admin gets one (27.0 add).
+ST2 10 missing translation keys (settingsHome.page.company.modules, 7 purpose.*, nav.home, nav.recruitment): add
+    EN/HI/TA; add a test that fails on a missing key used in code.
+ST3 Approval steps show codes (core_hr.probation_confirmation, v1, published): show names + "Version 1 · Live".
+X3  /superadmin on the company address: owner keeps it; hide it from search engines (noindex) and rate-limit.
+Cross-cutting from the report:
+- Page tour: one "Don't show tours again" per user, saved on the server (user preference), not per page/browser.
+- One date formatter (company locale, always with year when not this year).
+
+======================================================================================================
+27.4 RETEST (record in docs/ui/FIXES_27.md with screenshots)
+======================================================================================================
+Re-run the colleague's E2E script / Playwright pass on all 61 routes (desktop 1440 + phone 390): 0 console errors,
+0 unexpected 4xx/5xx, H1 <= 2 calls / 10 s. Then the SECOND HALF of the flow, which was never reached: connect the
+test mailbox (Settings > Employees > test mailboxes, or Mailpit), documents -> BGV -> joining dates -> offer +
+e-sign -> onboarding -> Mark as joined -> Employees. Delete the E2E test data (5 "E2E Test ..." jobs, 2 "E2E Test
+Candidate" applications) with a dry run first. Commit, then tell the user it is ready to push.

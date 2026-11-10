@@ -60,3 +60,40 @@ autopilot_hourly, autopilot_daily), page `frontend/src/pages/autopilot/Autopilot
 3. New agent name: `AUTOPILOT_AGENTS` (model + migration check constraint), `autopilot.<agent>.enabled` setting + help,
    page strings (EN/HI/TA). New rule: setting + help + `autopilot_router.RULES` + page string.
 4. Test in `tests/test_autopilot.py`.
+
+## Part 29 (2026-11-10): the agents run hiring to exit
+
+Owner decision: HR Automation works on its agents end to end. Decisions about a person: **the agent
+prepares, HR approves** (one click on a card). The screens stay, as the place to look, override or do
+a step by hand.
+
+- Autopilot is **on by default** for every company (`autopilot.enabled` = true). Every decision rule
+  stays off, so nothing about a person is decided without HR.
+- New steps:
+  - **Screening agent:** a candidate at or above the job's shortlist threshold gets a "Shortlist" card.
+    A job with its own automatic shortlisting keeps it.
+  - **Scheduling agent (new):** on a job set to schedule interviews by hand, a "Send interview times"
+    card.
+  - **Exit agent:** an "Approve resignation, last working day ..." card once the manager step is done.
+    HR can change the date and the waived days.
+- **Agent timeline:** the steps services take on their own (interview times, salary form, BGV sent,
+  offer sent and signed, welcome, joined) are written to `agent_activity` too, so HR agents > Journey
+  tells one story per candidate.
+- **HR agents page** (menu Today, formerly Autopilot):
+  - Waiting for you, with Approve, Change and approve, and Decline
+  - Ask the agents, which opens the HR assistant agent team
+  - Journey
+  - switches, rules and activity
+- Agents never decide an interview (scorecards stay with people), publish a job, or approve a resignation on their own.
+
+| Step | Agent | Card |
+|---|---|---|
+| 3-4 screen, shortlist | screening | agent_shortlist |
+| 5 interview times | scheduling | agent_interview_send (manual-scheduling jobs only) |
+| 6 salary above band | salary | agent_salary_decision |
+| 7 documents | documents | agent_documents_approve |
+| 8 BGV vendor, result | bgv | agent_bgv_assign, agent_bgv_decision |
+| 9 joining dates | offer | agent_joining_dates |
+| 12 joined | onboarding | agent_mark_joined |
+| 13 resignation | exit | agent_resignation_approve |
+| 14 letters | exit | agent_exit_letters |

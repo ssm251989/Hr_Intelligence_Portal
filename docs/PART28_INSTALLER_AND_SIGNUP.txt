@@ -1,0 +1,69 @@
+PART 28 - THE CLIENT PACKAGE (zip -> HRAutomation.exe) AND CLOUD SIGN-UP (2026-11-06)
+Design: docs/INSTALLER.md. Do PART 27 first (at least 27.0). Repo: hr-portal-work, branch KG-Development.
+Owner decision: the client gets ONE zip; unzips; double-clicks HRAutomation.exe; everything else is automatic.
+
+STANDING RULES
+- First message: `git status`, `git log --oneline -5`, `git pull`; quote the output.
+- The install engine (backend/app/platform/install) is the ONLY place that creates databases / .env / the
+  first admin; validate.py the only place with input rules. Never duplicate or relax them.
+- Passwords never on a command line, in logs or in the repo. Answers files are deleted after use.
+- Keep ai.provider = anthropic. Commit per block "part-28.N: <block>". Push only when the user says so.
+
+ALREADY WRITTEN (outside this session; tested on Linux, NOT yet on Windows):
+  backend/app/web.py                       one port: /_api -> API, /assets + SPA fallback -> web app
+  backend/app/platform/install/windows.py  files, new PostgreSQL (initdb + service), WinSW app service,
+                                           firewall, shortcuts, installed.json
+  backend/app/platform/install/wizard.py   the setup screen (stdlib http server, token, checks, progress)
+  installer/launcher/main.go + HRAutomation.exe  (admin rights, first run -> wizard, later -> open app)
+  installer/build_zip.ps1, installer/README.txt
+
+28.1 COMMIT what is there: "part-28.1: client package (web.py, wizard, windows steps, launcher, build script)".
+     Add backend/requirements-lock.txt: `pip freeze` from a venv where the full test suite passes
+     (Python 3.13; keep psycopg2-binary; SQLAlchemy as tested). build_zip.ps1 prefers it.
+
+28.2 BUILD THE ZIP on this PC:
+     powershell -ExecutionPolicy Bypass -File installer\build_zip.ps1 -Version 1.0.0
+     - If the PostgreSQL download fails: download "PostgreSQL 16 Windows x86-64 binaries" (zip) from
+       https://www.enterprisedb.com/download-postgresql-binaries and pass -PgZip <path>.
+     - Fix any failure in the script (quote the error first). Step 7 must print "bundle ok".
+     - Report the zip size and SHA-256.
+
+28.3 TEST ON A CLEAN WINDOWS PC / VM (never this dev PC: it already has PostgreSQL on 5432). Record each
+     result + screenshot in docs/ui/INSTALLER_28.md.
+     a. Copy the zip, unzip, double-click HRAutomation.exe -> UAC prompt -> browser setup screen.
+     b. Leave fields empty / type mismatching passwords / paste a password with a line break -> red
+        messages, nothing installed.
+     c. Fill correctly (passwords with @ # : / % and a space), "Install the database for me" -> all steps
+        done -> "Open HR Automation" -> sign in -> menu (modules pending until CTD approves; for this test
+        approve with the activation code, or set "activate_modules": true in a test build only).
+     d. Services: services.msc shows HRAutomation-PostgreSQL and HRAutomation-App (Automatic, Running).
+        Reboot -> both start, app opens from the desktop shortcut.
+     e. Double-click HRAutomation.exe again -> it just opens the app.
+     f. Firewall ticked -> another PC opens http://<pc-name>:8080.
+     g. Interrupt: end the python process during "Creating tables" -> run HRAutomation.exe --setup ->
+        same answers -> completes (re-run safe).
+     h. "Use my existing PostgreSQL" path on a PC with PostgreSQL installed: wrong password -> plain message;
+        right one -> completes.
+     i. Upload a resume, send a salary form link (copy link), confirm files land in
+        <install>\app\backend\uploads and survive a service restart.
+     Fix what fails in windows.py / wizard.py / main.go; rebuild the zip; repeat a-e.
+
+28.4 STILL TO BUILD
+     - Upgrade: HRAutomation.exe --setup on an installed PC -> wizard "Upgrade" mode: no questions (values
+       from the existing .env), `hrctl backup` first, then files -> engine (migrations only) -> service restart.
+     - Uninstall: "Uninstall HR Automation.exe" in the install folder (or HRAutomation.exe --uninstall):
+       stop + remove both services, firewall rule, shortcuts; keep data unless "Delete all data" + second
+       confirmation (then drop databases / pgdata).
+     - Finish page: show MASTER_KEY once with [Copy] and "keep this safe - needed to restore a backup".
+     - Code signing of HRAutomation.exe (owner's certificate) so Windows SmartScreen does not warn.
+
+28.5 CLOUD SIGN-UP (platform side) - unchanged plan:
+     Public "Create your company" on the PLATFORM domain: company, short name (<slug>.<PLATFORM_DOMAIN>,
+     reserved slugs), admin name, email, password x2 (validate.py rules), modules; captcha + rate limit;
+     email confirmation link (30 min, single use); job: provisioning.create_tenant (dedicated_db) + first
+     admin with the CHOSEN password (hash) + activation.request_activation + tenant domain; progress page;
+     CTD approval -> welcome email; super-admin list of sign-ups. Tests with local PostgreSQL and
+     <slug>.localhost. Hosting (AWS) waits for AWS access.
+
+28.6 COMMIT; tell the user what is ready to push and what needs the owner (code-signing certificate,
+     platform domain, AWS).

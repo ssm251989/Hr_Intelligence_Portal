@@ -339,8 +339,11 @@ def register_all() -> None:
     # switch; every DECISION rule is off until the company turns it on (0 / false = a person decides).
     G = "Autopilot (automatic agents)"
     pct = {"type": "integer", "minimum": 0, "maximum": 100}
-    register(SettingDef("autopilot.enabled", "bool", False, module="ai", group=G))
-    for agent in ("watchdog", "screening", "sourcing", "salary", "documents", "bgv", "offer", "onboarding", "exit", "briefing"):
+    # Part 29 (owner, 2026-11-10): HR Automation runs on its agents -- the master switch is ON for every company.
+    # "Agent prepares, HR approves": the decision rules below stay off, so every decision about a person is an
+    # approval card the agent prepared; a company can still turn a rule on (Agents page).
+    register(SettingDef("autopilot.enabled", "bool", True, module="ai", group=G))
+    for agent in ("watchdog", "screening", "sourcing", "scheduling", "salary", "documents", "bgv", "offer", "onboarding", "exit", "briefing"):
         register(SettingDef(f"autopilot.{agent}.enabled", "bool", True, module="ai", group=G))
     register(SettingDef("autopilot.watchdog.stale_hours", "int", 48, module="ai", group=G, json_schema={"type": "integer", "minimum": 4, "maximum": 720}))
     register(SettingDef("autopilot.sourcing.min_strong", "int", 3, module="ai", group=G, json_schema={"type": "integer", "minimum": 0, "maximum": 50}))
@@ -355,6 +358,8 @@ def register_all() -> None:
     register(SettingDef("autopilot.rules.joining_dates_after_days", "int", 14, module="ai", group=G, json_schema={"type": "integer", "minimum": 3, "maximum": 120}))
     register(SettingDef("autopilot.rules.mark_joined_when_ready", "bool", False, module="ai", group=G))
     register(SettingDef("autopilot.rules.exit_letters_auto", "bool", False, module="ai", group=G))
+    # Part 29: with the shortlist rule off, the Screening agent proposes a shortlist card for candidates at/above the job's threshold
+    register(SettingDef("autopilot.screening.propose_shortlist", "bool", True, module="ai", group=G))
 
     # Part 14: module enablement (within the licence), setup wizard, per-user UX prefs.
     # Part 18.5: People (core_hr: employee records, directory, org chart), Performance (+ compensation,

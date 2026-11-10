@@ -49,6 +49,11 @@ _STAGE_CATEGORY = {
     "onboarding_started": "preboarding",
     "onboarding_completed": "hired",
     "on_hold": "withdrawn",
+    # fix 2026-11-06: statuses added after the default template (fresh installs failed with KeyError)
+    "offer_withdrawn": "withdrawn",
+    "offer_declined": "withdrawn",
+    "no_show": "withdrawn",
+    "left_after_joining": "withdrawn",
 }
 
 

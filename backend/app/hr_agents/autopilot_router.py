@@ -72,6 +72,25 @@ def overview(db: Session = Depends(get_db), user: User = Depends(_viewer)):
     }
 
 
+@router.get("/waiting")
+def waiting(db: Session = Depends(get_db), user: User = Depends(_viewer)):
+    """Part 29: the approval cards the agents prepared that this person can decide (same cards as My approvals)."""
+    from app.agents.service import inbox, suggestion_to_dict
+
+    tenant = require_current_tenant()
+    rows = [s for s in inbox(db, tenant, user) if (s.kind or "").startswith("agent_") or str((s.payload_json or {}).get("by_agent") or "").startswith("autopilot.")]
+    return {"items": [{**suggestion_to_dict(s), "by_agent": (s.payload_json or {}).get("by_agent")} for s in rows]}
+
+
+@router.get("/journey/{application_id}")
+def journey(application_id: UUID, db: Session = Depends(get_db), user: User = Depends(_viewer)):
+    """Part 29: one candidate's story as the agents saw it, oldest first."""
+    tenant = require_current_tenant()
+    rows = (db.query(AgentActivity).filter(AgentActivity.tenant_id == tenant.tenant_id, AgentActivity.entity_type == "application",
+                                           AgentActivity.entity_id == application_id).order_by(AgentActivity.created_at.asc()).limit(200).all())
+    return {"items": [_item(a) for a in rows]}
+
+
 @router.get("/activity")
 def activity(agent: Optional[str] = None, outcome: Optional[str] = None, before: Optional[datetime] = None, limit: int = 50,
              db: Session = Depends(get_db), user: User = Depends(_viewer)):

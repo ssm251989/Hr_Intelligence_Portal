@@ -53,6 +53,38 @@ def joining_day(db: Session, tenant, run: Run, today: date | None = None) -> int
     return acted
 
 
+def resignations(db: Session, tenant, run: Run, today: date | None = None) -> int:
+    """Part 29 ("agent prepares, HR approves"): a resignation waiting for HR (the manager step, if the company
+    uses it, is done) gets an approval card with the last working day worked out from the notice period
+    (the employee's own later date wins). Approving it runs the same approval as the Exits screen."""
+    if not enabled(db, tenant, "exit"):
+        return 0
+    from app.employees.self_service import needs_manager
+    from app.models.service_desk import Separation
+    from app.service_desk.separations import standard_lwd
+
+    acted = 0
+    for s in db.query(Separation).filter(Separation.tenant_id == tenant.tenant_id, Separation.separation_type == "resignation",
+                                         Separation.status == "submitted", Separation.approved_lwd.is_(None)).all():
+        if needs_manager(db, tenant, s) is not None or recently(db, tenant, agent="exit", action="propose_resignation", entity_id=s.id, hours=24 * 30):
+            continue
+        name = _employee(db, s.employee_id)
+        standard = standard_lwd(s)
+        lwd = max(standard, s.requested_lwd) if s.requested_lwd else standard
+        note = None
+        if s.requested_lwd and s.requested_lwd < standard:
+            note = f"{name} asked for {s.requested_lwd.isoformat()}, {(standard - s.requested_lwd).days} day(s) short of the notice period; edit the date and waive or buy out days if you agree."
+        c = card(db, tenant, kind="agent_resignation_approve", by_agent="exit", title=f"Approve {name}'s resignation - last working day {lwd.isoformat()}",
+                 payload={"separation_id": str(s.id), "employee": name, "last_working_day": lwd.isoformat(), "notice_period_days": s.notice_period_days,
+                          "requested_lwd": s.requested_lwd.isoformat() if s.requested_lwd else None, "waived_days": 0, "buyout_days": 0, "note": note},
+                 permission="separation.case.approve", entity_type="separation", entity_id=s.id, agent_column="onboarding")
+        record(db, tenant, run, agent="exit", action="propose_resignation", outcome="proposed", entity_type="separation", entity_id=s.id,
+               summary=f"{name} resigned on {s.submitted_on.isoformat()}; prepared the approval with last working day {lwd.isoformat()} "
+                       f"({s.notice_period_days} days' notice) for HR.", details={"card_id": str(c.id)})
+        acted += 1
+    return acted
+
+
 def exit_letters(db: Session, tenant, run: Run, today: date | None = None) -> int:
     """Hourly: exits past their last working day with no letters yet. Nothing blocking + rule on ->
     letters issued; nothing blocking, rule off -> card; still blocked 3+ days after the LWD -> HR told."""

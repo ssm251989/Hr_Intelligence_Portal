@@ -50,6 +50,11 @@ backups/
 Sample/*.pdf
 Sample/*.doc
 Sample/*.docx
+/*.pdf
 !Sample/sample_*.docx
 /*.docx
 Claude outputs/
+
+# Part 28 package build output
+installer/cache/
+installer/build/

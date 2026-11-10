@@ -9,7 +9,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from app.core.database import Base
 from app.platform.tenancy.mixins import TenantOwned
 
-AUTOPILOT_AGENTS = ("watchdog", "screening", "sourcing", "salary", "documents", "bgv", "offer", "onboarding", "exit", "briefing")
+AUTOPILOT_AGENTS = ("watchdog", "screening", "sourcing", "scheduling", "salary", "documents", "bgv", "offer", "onboarding", "exit", "briefing")
 # done: routine step taken | decided: an outcome decided by a company rule | proposed: approval card raised
 # escalated: a person was told something is stuck | skipped: looked, nothing to do / not allowed | failed: error
 OUTCOMES = ("done", "decided", "proposed", "escalated", "skipped", "failed")

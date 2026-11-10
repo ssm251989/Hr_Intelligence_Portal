@@ -12,7 +12,8 @@ from app.platform.tenancy import models_cp  # noqa: F401  -- registers models on
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.CONTROL_PLANE_DATABASE_URL)
+# fix 2026-11-06: escape % for configparser (an encoded password such as Admin%40123 broke this)
+config.set_main_option("sqlalchemy.url", settings.CONTROL_PLANE_DATABASE_URL.replace("%", "%%"))
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

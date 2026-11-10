@@ -1,0 +1,91 @@
+PART 29 - HR AUTOMATION RUNS ON ITS AGENTS, HIRING TO EXIT (2026-11-10)
+Owner decision: "HR automation has to work with all the agents ... full end to end agents has to work."
+Choices: "Agent prepares, HR approves" (every decision about a person is a card the agent prepared) and
+"need both" (the agents run the flow AND every screen stays; the HR agents page is the console).
+Repo: hr-portal-work, branch KG-Development. Do PART 25 and PART 26 checks first if they are not done
+(this part builds on both). Design: docs/HR_AUTOPILOT.md, section "Part 29".
+
+STANDING RULES
+- First message: `git status`, `git log --oneline -5`; quote the output.
+- Agents call the SAME service functions the screens use (they are the agents' tools). Never copy a
+  service into an agent, never let an agent skip a service's own checks.
+- Decisions about a person: a card unless the company switched the rule on. Never turn a rule on by default.
+- Keep ai.provider = anthropic. Commit per block "part-29.N: <block>". Push only when the user says so.
+
+ALREADY WRITTEN (outside this session; 10 new tests + the 39 agent tests pass on Linux against Postgres;
+frontend: i18n check OK, tsc -b OK, vite build OK):
+  backend/app/platform/settings/bootstrap_definitions.py  autopilot.enabled default TRUE; new agent
+        "scheduling"; autopilot.screening.propose_shortlist (default true). Rules stay off.
+  backend/app/models/autopilot.py + alembic/versions/e1f4a7c2d9b8_part29_agent_mode.py
+        agent_activity.agent may be "scheduling" (down_revision c6a8e2f4b1d3 = Part 26).
+  backend/app/hr_agents/autopilot/hiring.py
+        propose_shortlist: screened + score >= the job's shortlist threshold + not knocked out + the job does
+        not use its own auto-shortlist -> card agent_shortlist (approve = the Shortlisting screen's decision,
+        which starts interview scheduling).
+        scheduling: event interview_scheduling_manual_mode (job schedules by hand) -> card agent_interview_send.
+  backend/app/hr_agents/autopilot/people.py
+        resignations (hourly + Run now of the Exit agent): resignation submitted, manager step done ->
+        card agent_resignation_approve with the last working day from the notice period (the employee's later
+        date wins; an earlier date is explained in the note). HR can change the date / waived days.
+  backend/app/hr_agents/approvals.py   appliers agent_interview_send (automation.start send_now, force) and
+        agent_resignation_approve (separations.approve_lwd -> clearance checklist).
+  backend/app/hr_agents/autopilot/runner.py
+        TRACK: the steps services take on their own (interview times sent / confirmed / problem, salary form,
+        salary rule, documents approved, BGV sent, joining dates, offer sent / signed, welcome, joined) are
+        written to the agent timeline -> one story per candidate.
+  backend/app/hr_agents/autopilot_router.py   GET /waiting (the agents' cards this person can decide),
+        GET /journey/{application_id} (the candidate's agent timeline).
+  frontend/src/pages/autopilot/AutopilotPage.tsx   the "HR agents" console: Waiting for you (Approve,
+        Change and approve for resignations, Decline, Open), Ask the agents (opens the HR assistant team),
+        Journey per candidate, plus the Part 26 switches, rules and activity.
+  frontend/src/components/CopilotWidget.tsx   opens on the "open-hr-assistant" event.
+  frontend/src/i18n/pages/autopilot.ts         menu "HR agents"; new texts EN / HI / TA.
+  backend/tests/test_agents_run_flow.py        10 tests.
+
+29.1 CHECK + COMMIT
+     cd backend; .venv\Scripts\activate
+     alembic heads            -> must be ONE head: e1f4a7c2d9b8 (if Part 26's c6a8e2f4b1d3 is not applied yet,
+                                 `alembic upgrade head` applies both)
+     alembic upgrade head
+     pytest tests/test_agents_run_flow.py tests/test_autopilot.py tests/test_hr_agents.py -q   -> all pass
+     pytest -q                -> the same failures as before this part, no new ones (quote both counts)
+     cd ..\frontend; npm run build  -> i18n OK, tsc OK
+     Commit "part-29.1: agents run hiring to exit (agent prepares, HR approves)".
+
+29.2 EXISTING COMPANY: switch the agents on
+     New companies get Autopilot on by default. An existing company that saved "off" keeps it: open
+     HR agents (menu Today) -> switch on (top right). Check every agent switch is on and every decision
+     rule is off / 0 (= HR approves). Do NOT turn a rule on.
+     Note for the owner: the existing company salary rule ("auto-approve when the hike is under X% and
+     inside the band", Settings > Salary) still approves on its own. If the owner wants EVERY salary to
+     come as a card, set recruitment.salary.auto_approve_hike_pct to 0 - ask first, do not change it.
+
+29.3 END-TO-END WITH THE REAL MODEL (Mailpit; screenshots in docs/ui/PART29.md, one per step)
+     a. New job -> careers apply with a sample resume -> within ~2 minutes the Screening agent screens it.
+        Score above the threshold: "Shortlist <name>" waits on HR agents > Waiting for you (and My approvals).
+        Score below: no card, the candidate stays in Screened.
+     b. Approve -> interview times go out (Mailpit) -> HR agents > Journey shows: screened, shortlist
+        prepared, interview times sent.
+     c. A job set to "schedule interviews by hand": shortlist -> "Send interview times" card -> approve -> sent.
+     d. Interviewer: scorecard "Move forward" (a person decides interviews - never an agent) -> salary form.
+        Above the band -> Salary agent card (counter at the band maximum) -> approve.
+     e. Candidate uploads documents -> Documents agent card -> approve -> BGV starts -> BGV agent card
+        "Send BGV to <vendor>" -> approve -> vendor link -> upload a report -> the AI reading + "BGV result" card
+        -> approve passed -> Offer agent "Offer joining dates" card -> approve -> candidate picks a date ->
+        offer sent -> signed -> welcome portal (all on the Journey).
+     f. Joining day: "Confirm <email> joined" card -> approve -> employee created.
+     g. Employee resigns (employee login) -> manager approves (if the company uses the manager step) ->
+        within the hour (or Exit agent "Run now") "Approve <name>'s resignation - last working day ..." ->
+        Change and approve with another date -> exit checklist starts.
+     h. After the last working day + clearance: "Issue relieving and experience letters" card -> approve.
+     i. HR agents > Ask the agents: "who is waiting for a salary decision?" -> the agent team answers.
+     j. Decline any card -> nothing changes; the screen still allows the step by hand.
+     k. Switch the master off -> no new cards; switch on -> they come back (events are not replayed).
+     Fix what fails (quote the error first), add a test for each fix, rerun 29.1.
+
+29.4 STILL TO BUILD (owner to confirm the order)
+     - Job agent on the timeline (draft JD on "New job", publish card) - today the HR assistant team does it on request.
+     - Interview outcome summary card for the hiring manager (the decision stays with people).
+     - Public APIs and webhooks for the agents (Phase 1 of the blueprint, 25 Dec).
+
+29.5 COMMIT; update docs/build_log.md; tell the user what is ready to push.

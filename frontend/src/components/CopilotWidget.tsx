@@ -65,6 +65,12 @@ export default function CopilotWidget() {
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => setLanguage(locale), [locale]);
+  // Part 29: "Ask the agents" on the HR agents page opens this panel
+  useEffect(() => {
+    const show = () => setOpen(true);
+    window.addEventListener("open-hr-assistant", show);
+    return () => window.removeEventListener("open-hr-assistant", show);
+  }, []);
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "end" });
   }, [turns, busy, reduced]);
