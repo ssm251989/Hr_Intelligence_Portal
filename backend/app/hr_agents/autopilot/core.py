@@ -101,6 +101,15 @@ def names(db: Session, application) -> dict:
             "job": getattr(job, "title", None) or "", "status": application.status}
 
 
+def waiting_card(db: Session, tenant, kind: str, entity_id) -> bool:
+    """A card of this kind for this person already waits for HR (one step can arrive as two events, e.g. the
+    salary form answer + the salary check, or each document upload + the final submit)."""
+    from app.models.intelligence import AgentSuggestion
+
+    return db.query(AgentSuggestion.id).filter(AgentSuggestion.tenant_id == tenant.tenant_id, AgentSuggestion.entity_id == entity_id,
+                                               AgentSuggestion.kind == kind, AgentSuggestion.status == "pending").first() is not None
+
+
 def card(db: Session, tenant, *, kind: str, by_agent: str, title: str, payload: dict, permission: str, entity_type: str, entity_id,
          agent_column: str = "recruiter"):
     """The same approval cards the HR assistant's agents raise (approvals.py applies them)."""

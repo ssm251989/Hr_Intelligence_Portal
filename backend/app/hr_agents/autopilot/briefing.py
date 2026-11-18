@@ -65,7 +65,9 @@ def compose(db: Session, tenant, user, f: dict) -> str:
         res = governance.governed_complete(
             db, tenant, feature="agents.briefing", purpose="llm.copilot", actor_user_id=user.id, max_tokens=500,
             system="Write a short morning briefing for an HR person: at most 6 bullet points, most urgent first, plain words, "
-                   "only facts from the data, no greetings beyond one short line.",
+                   "only facts from the data, no greetings beyond one short line. Plain text only: start bullets with '- ', no Markdown "
+                   "(no ** or #) - it is shown and emailed as it is. Never add ages, dates, times or numbers that are not in the data "
+                   "(the data does not say how old each approval is).",
             messages=[{"role": "user", "content": f"Name: {first}\nData: {f}"}])
         return (res.text or "").strip() or base
     except Exception:  # noqa: BLE001 -- AI off / budget / error -> the plain list

@@ -68,6 +68,10 @@ def decide(db: Session, tenant: TenantContext, suggestion: AgentSuggestion, *, u
     if suggestion.reviewer_user_id != user.id and not has_permission(db, tenant, user, suggestion.reviewer_permission):
         raise PermissionError(suggestion.reviewer_permission)
     final = edited_payload if action == "edit" else suggestion.payload_json
+    from app.hr_agents import approvals  # noqa: F401 -- registers the agent-card appliers in every process (a card made before a restart)
+
+    if action in ("approve", "edit") and suggestion.kind.startswith("agent_") and suggestion.kind not in _APPLIERS:
+        raise AgentError(f"this card ({suggestion.kind}) can't be applied by this version of the app - nothing was changed")
     if action in ("approve", "edit") and suggestion.kind in _APPLIERS:
         _APPLIERS[suggestion.kind](db, tenant, suggestion, final, user.email)
     suggestion.status = {"approve": "approved", "edit": "edited", "reject": "rejected"}[action]

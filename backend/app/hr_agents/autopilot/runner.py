@@ -34,6 +34,8 @@ EVENTS: dict[str, tuple[Callable, ...]] = {
 # Part 29: steps the app's own services take automatically are written to the same agent timeline, so the
 # Agents page shows one story per candidate from application to joining (audit action -> agent, outcome, text).
 TRACK: dict[str, tuple[str, str, str]] = {
+    # the app screens on apply by itself; this puts that step on the timeline (and the event still goes to the shortlist rule)
+    "ai_screening_scored": ("screening", "done", "{candidate} was screened: score {score}"),
     "interview_scheduling_started": ("scheduling", "done", "Interview times sent to the interviewer and {candidate}"),
     "interview_confirmed_by_candidate": ("scheduling", "done", "{candidate} confirmed the interview"),
     "interview_scheduling_problem": ("scheduling", "escalated", "Could not arrange {candidate}'s interview - the recruiter was told"),
@@ -54,14 +56,16 @@ BATCH = 500
 
 
 def run_events(db: Session, tenant, now: Optional[datetime] = None) -> dict:
+    now = now or datetime.now(timezone.utc)
+    upto = now - LAG
+    saved = state_get(db, tenant, CURSOR)
     if not setting(db, tenant, "autopilot.enabled"):
+        if saved:  # keep the cursor moving: what happens while Autopilot is off is never replayed when it is switched on
+            state_set(db, tenant, CURSOR, {"at": upto.isoformat()})
         return {"skipped": "autopilot off"}
     from app.models.application import Application
     from app.models.audit_log import AuditLog
 
-    now = now or datetime.now(timezone.utc)
-    upto = now - LAG
-    saved = state_get(db, tenant, CURSOR)
     if not saved:  # first run: start from now, never replay history
         state_set(db, tenant, CURSOR, {"at": upto.isoformat()})
         return {"started": upto.isoformat()}
@@ -82,7 +86,8 @@ def run_events(db: Session, tenant, now: Optional[datetime] = None) -> dict:
             continue
         if row.action in TRACK:
             handled += _track(db, tenant, app, row)
-            continue
+            if row.action not in EVENTS:
+                continue
         for handler in EVENTS[row.action]:
             try:
                 if handler(db, tenant, app, Run("event", row.action)) is not None:
@@ -103,10 +108,12 @@ def _track(db: Session, tenant, application, row) -> int:
     agent, outcome, text = TRACK[row.action]
     if not enabled(db, tenant, agent):
         return 0
+    if row.action == "salary_auto_decided" and (row.details or {}).get("new_status") != "salary_approved":
+        return 0  # the check only routed it to HR (above the band); the Salary agent records its own card
     n = names(db, application)
     job = f" ({n['job']})" if n["job"] else ""
     record(db, tenant, Run("event", row.action), agent=agent, action=f"step_{row.action}"[:60], outcome=outcome, entity_type="application",
-           entity_id=application.id, summary=f"{text.format(candidate=n['candidate'])}{job}.",
+           entity_id=application.id, summary=f"{text.format(candidate=n['candidate'], score=round(float(application.composite_score or 0)))}{job}.",
            details={"by": row.actor, "audit_id": str(row.id)})
     return 1
 

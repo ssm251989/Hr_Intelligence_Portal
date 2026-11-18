@@ -120,6 +120,10 @@ def test_event_salary_inside_rule_is_decided_and_outside_is_a_card(db_session, u
     monkeypatch.setattr("app.recruitment.joining_docs.after_salary_approved", lambda db, tenant, a, actor: after.append(a.id))
     conf["autopilot.rules.salary_max_over_band_pct"] = 10
     t = _tenant()
+    from app.models.autopilot import AutopilotState  # a running app may already have saved this company's cursor
+
+    db_session.query(AutopilotState).filter(AutopilotState.tenant_id == t.tenant_id, AutopilotState.key == runner.CURSOR).delete()
+    db_session.commit()
     first = runner.run_events(db_session, t)  # first run only sets the cursor (never replays history)
     assert "started" in first
 

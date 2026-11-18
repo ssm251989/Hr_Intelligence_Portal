@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Literal, Optional
 
 from anthropic import Anthropic
@@ -46,7 +47,8 @@ def _get_client():
 
 def validate_document(expected_doc_type: str, ocr_text: str) -> dict:
     client = _get_client()
-    user_prompt = f"Expected document type: {expected_doc_type}\nOCR extracted text: {ocr_text}"
+    # PART 26.2: without today's date the model called an experience letter ending May 2026 "in the future" (in November 2026)
+    user_prompt = f"Today's date: {date.today().isoformat()}\nExpected document type: {expected_doc_type}\nOCR extracted text: {ocr_text}"
     try:
         response = client.messages.parse(
             model=MODEL,

@@ -12,7 +12,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.hr_agents.autopilot.core import ACTOR, Run, card, enabled, job_people, names, notify, record, recently, rule
+from app.hr_agents.autopilot.core import ACTOR, Run, card, enabled, job_people, names, notify, record, recently, rule, waiting_card
 
 # ---------------------------------------------------------------- Screening agent
 
@@ -23,15 +23,11 @@ def screen(db: Session, tenant, application, run: Run) -> Optional[str]:
         return None
     from app.screening.service import attempt_auto_screen, is_eligible_for_screening
 
-    n = names(db, application)
     if is_eligible_for_screening(application):
         result = attempt_auto_screen(db, application, actor=ACTOR)
         if result is None:
             return None  # resume not read yet / job has no JD: the next event or sweep tries again
-        db.refresh(application)
-        record(db, tenant, run, agent="screening", action="screen", outcome="done", entity_type="application", entity_id=application.id,
-               summary=f"Screened {n['candidate']} for {n['job']}: score {round(float(application.composite_score or 0))}.",
-               details={"score": application.composite_score, "status": application.status})
+        db.refresh(application)  # the screening writes ai_screening_scored, which puts "screened: score N" on the timeline
     return shortlist_rule(db, tenant, application, run)
 
 
@@ -39,16 +35,21 @@ def shortlist_rule(db: Session, tenant, application, run: Run) -> Optional[str]:
     from app.models.job_role import JobRole
     from app.recruitment.scoring.autoshortlist import maybe_auto_shortlist
 
-    if application.status != "screened":
-        return None
+    if application.status != "screened" or not enabled(db, tenant, "screening", "screening"):
+        return None  # the ai_screening_scored event comes straight here, so the agent's own switch is checked here too
     threshold = int(rule(db, tenant, "shortlist_min_score") or 0)
     if threshold <= 0:  # no rule: the agent prepares the shortlist, HR approves it (Part 29)
         return propose_shortlist(db, tenant, application, run)
     job = db.get(JobRole, application.job_role_id)
     knocked = bool((application.score_breakdown or {}).get("knocked_out")) if isinstance(application.score_breakdown, dict) else False
-    if job is None or not maybe_auto_shortlist(db, tenant, application, job=job, threshold=threshold, knocked_out=knocked, actor=ACTOR,
-                                               override={"auto_shortlist": True, "threshold": threshold}):
+    if job is None:
         return None
+    if not maybe_auto_shortlist(db, tenant, application, job=job, threshold=threshold, knocked_out=knocked, actor=ACTOR,
+                                override={"auto_shortlist": True, "threshold": threshold}):
+        # not decided by the rule (the job keeps shortlisting by hand, the score is under the rule, ...): the card instead,
+        # exactly as with the rule off -- propose_shortlist has its own checks (job threshold, knock-out, already proposed)
+        db.refresh(application)
+        return propose_shortlist(db, tenant, application, run) if application.status == "screened" else None
     n = names(db, application)
     record(db, tenant, run, agent="screening", action="auto_shortlist", outcome="decided", rule_key="autopilot.rules.shortlist_min_score",
            entity_type="application", entity_id=application.id,
@@ -95,6 +96,8 @@ def scheduling(db: Session, tenant, application, run: Run) -> Optional[str]:
     """Part 29: the job is set to schedule interviews by hand, so the automatic start stopped -> the agent
     prepares 'Send interview times' for HR (approving it sends them exactly like the [Send now] button)."""
     if not enabled(db, tenant, "scheduling", "interviews") or application.status != "hr_selected":
+        return None
+    if waiting_card(db, tenant, "agent_interview_send", application.id):
         return None
     n = names(db, application)
     c = card(db, tenant, kind="agent_interview_send", by_agent="scheduling", title=f"Send interview times to {n['candidate']}",
@@ -182,7 +185,9 @@ def salary(db: Session, tenant, application, run: Run) -> Optional[str]:
                         why=f"{over}% above the band" + (f" (rule allows {limit}%)" if limit else "") if over is not None else "figures incomplete")
 
 
-def _salary_card(db, tenant, application, run, n, expected, band_max, over, *, why: str) -> str:
+def _salary_card(db, tenant, application, run, n, expected, band_max, over, *, why: str) -> Optional[str]:
+    if waiting_card(db, tenant, "agent_salary_decision", application.id):
+        return None
     if band_max and expected and expected > band_max:
         decision, amount, reason = "counter", band_max, f"Expected {expected:,.0f} is {over}% above the band maximum {band_max:,.0f}."
     else:
@@ -217,6 +222,8 @@ def documents(db: Session, tenant, application, run: Run) -> Optional[str]:
                summary=f"Approved {n['candidate']}'s {out['approved']} joining document(s) - all in, no AI flag, name and date of birth match"
                        f"{'; BGV started' if out.get('moved_to_bgv') else ''}.")
         return "decided"
+    if waiting_card(db, tenant, "agent_documents_approve", application.id):
+        return None
     flags = [f"{i['label']}: {i['level']}" for i in st["items"] if i.get("level") in ("red", "amber")] + [m["code"] for m in mismatches]
     c = card(db, tenant, kind="agent_documents_approve", by_agent="documents", title=f"Approve documents of {n['candidate']} and start BGV",
              payload={**n, "note": "; ".join(flags) or None, "red_flags": st["reds"], "amber_flags": st["ambers"]},
@@ -228,6 +235,11 @@ def documents(db: Session, tenant, application, run: Run) -> Optional[str]:
 
 
 # ---------------------------------------------------------------- BGV agent
+
+
+def check_names(checks) -> list[str]:
+    """A vendor's checks are stored as {"check": "education", "price": 800}; vendors.assign takes the names."""
+    return [c.get("check") if isinstance(c, dict) else c for c in (checks or []) if (c.get("check") if isinstance(c, dict) else c)]
 
 
 def bgv_assign(db: Session, tenant, application, run: Run) -> Optional[str]:
@@ -248,7 +260,7 @@ def bgv_assign(db: Session, tenant, application, run: Run) -> Optional[str]:
         return "escalated"
     best = sorted(options, key=lambda v: (v.get("turnaround_days") or 99, v["name"]))[0]
     due = date.today() + timedelta(days=int(best.get("turnaround_days") or 7))
-    checks = list(best.get("checks") or [])
+    checks = check_names(best.get("checks"))
     if rule(db, tenant, "bgv_auto_assign_vendor"):
         from uuid import UUID
 
@@ -394,6 +406,8 @@ def offer(db: Session, tenant, application, run: Run) -> Optional[str]:
         record(db, tenant, run, agent="offer", action="joining_dates_rule", outcome="decided", rule_key="autopilot.rules.joining_dates_auto",
                entity_type="application", entity_id=application.id, summary=f"Emailed {n['candidate']} three joining dates: {', '.join(dates)}.")
         return "decided"
+    if waiting_card(db, tenant, "agent_joining_dates", application.id):
+        return None  # bgv_report already called this agent; the bgv_passed event calls it again
     c = card(db, tenant, kind="agent_joining_dates", by_agent="offer", title=f"Offer joining dates to {n['candidate']}",
              payload={**n, "dates": dates, "note": None}, permission="recruitment.offer.edit", entity_type="application", entity_id=application.id)
     record(db, tenant, run, agent="offer", action="propose_joining_dates", outcome="proposed", entity_type="application", entity_id=application.id,

@@ -90,10 +90,11 @@ def _apply_bgv_assign(db, tenant, suggestion, payload, reviewer):
     from uuid import UUID
 
     from app.bgv import vendors
+    from app.hr_agents.autopilot.hiring import check_names
 
     app = _app(db, tenant, payload)
     due = date.fromisoformat(payload["due_date"]) if payload.get("due_date") else None
-    _result(payload, _service_call(db, lambda: vendors.assign(db, tenant, app, agency_id=UUID(payload["agency_id"]), checks=list(payload.get("checks") or []),
+    _result(payload, _service_call(db, lambda: vendors.assign(db, tenant, app, agency_id=UUID(payload["agency_id"]), checks=check_names(payload.get("checks")),
                                                                due_date=due, actor=reviewer)))
 
 

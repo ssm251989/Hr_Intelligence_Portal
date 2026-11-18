@@ -90,6 +90,8 @@ JOB_LABELS = {
     "joining_reminders": "Joining reminders", "workflow_timers": "Approval timers", "report_schedules": "Scheduled reports",
     "onboarding_chase": "Onboarding document chase", "recycle_bin_purge": "Recycle bin clean-up", "closed_jobs_cleanup": "Closed jobs to Recycle bin", "hiring_data_after_exit": "Hiring data to Recycle bin after exit", "bgv_vendor_reminders": "BGV vendor reminders", "document_expiry": "Document expiry",
     "privacy_overdue": "Privacy requests due", "ticket_escalations": "Helpdesk escalations", "review_reminders": "Review reminders",
+    "autopilot_events": "HR agents - events (every minute)", "autopilot_hourly": "HR agents - watchdog and hourly checks",
+    "autopilot_daily": "HR agents - morning briefing",
 }
 
 
