@@ -19,7 +19,7 @@ _ACTION = re.compile(
     r"\b(create|open|post|add|set up|setup|draft|write|prepare|screen|rank|score|shortlist|short-list|find|search|compare|evaluate|"
     r"review|schedule|start|arrange|book|check|list|show|move|send|resend|re-send|remind|chase|follow up|propose|approve|assign|verify|"
     r"track|issue|prepare|record|mark|confirm|what is pending|what's pending|who joins|who is joining|where is|status of|blocks?|"
-    r"take|came back|offer (the )?(joining )?dates?)\b", re.I)
+    r"take|came back|offer (the )?(joining )?dates?|who is waiting|who's waiting|waiting for|stuck|overdue)\b", re.I)
 _OBJECT = re.compile(
     r"\b(job|jobs|jd|job description|role|roles|position|positions|opening|openings|vacanc(y|ies)|requisition|candidate|candidates|"
     r"applicant|applicants|application|applications|resume|resumes|cv|cvs|shortlist|interview|interviews|salary|salaries|ctc|"

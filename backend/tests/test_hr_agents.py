@@ -300,6 +300,10 @@ def _app_in(db_session, user, status, **extra):
     ("Take Sameer Khan from salary through to the offer", True),
     ("What is an offer letter?", False),  # "offer" alone is not a task
     ("Can I take leave during my notice period?", False),
+    # PART 29.3 i: the "Ask the agents" question on the HR agents page
+    ("Who is waiting for a salary decision?", True),
+    ("Which offers are stuck?", True),
+    ("Is my resignation waiting for approval?", False),  # the asker's own: self-service
 ])
 def test_hiring_to_exit_questions_go_to_the_team(q, expected):
     assert looks_like_task(q) is expected
