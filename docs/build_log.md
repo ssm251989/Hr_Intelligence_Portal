@@ -2928,3 +2928,11 @@ NEXT: part-23.3f proof 22.6 letters (PDF each) + emails (Gmail-size screenshot e
 - 2026-11-03: the proof stack (mailpit + API :8010) was stopped by the system for low memory after 23.3f; waiting for the owner's go-ahead to restart it for 23.4.
 
 NEXT: part-23.4 full end-to-end pass (needs the proof stack restarted), then 23.5 hand-over.
+
+- part-25: HR agent team (LangGraph) checked with the real model (docs/ui/FIXES_25.md, screens p25-*). langgraph 1.2.20 installed; test_hr_agents 24 -> 31 passed; test_intelligence + gateway routing: 3 known failures, the same 3 on 9d9b4eb (before the agent code). tsc 0, build OK. 25.2 a-m all pass after six fixes found on the real model: plain-text supervisor answers (no Markdown / ids, My approvals only when a card exists), routing words (take / came back / offer joining dates / joins / joined), today's date in every agent prompt, `required` per document in documents_status, Offer agent gets the notice period + Autopilot's suggested dates (was proposing dates inside a 30-day notice). Usage per agent feature on AI Intelligence (agents INR 51.51 for the run). Proof data removed (scan clean).
+  Decisions:
+  - local backend/.env uses postgresql+psycopg2:// (SQLAlchemy 2.1 defaults to psycopg 3; same choice as Part 27); .env is not committed;
+  - Autopilot was switched off during 25.2 so its cards would not mix with the assistant's; AI usage / decision-log rows are kept (real spend);
+  - the Offer agent reuses autopilot.hiring.joining_dates_for, so the HR assistant and Autopilot always propose the same dates.
+
+NEXT: Hindi/Tamil routing for the agent team (English word check today); scheduled agent runs that post a daily "what's pending" card; PART 26 check.

@@ -64,7 +64,15 @@ def _call(ctx: AgentContext, spec: AgentSpec, messages: list, *, with_tools: boo
     if tools:
         kwargs["tools"] = tools
     system = (AGENTS[spec.name].instructions if spec.name == SUPERVISOR else f"{_common()}\n\n{spec.instructions}")
+    system += f"\n\nToday is {_today_text()}."  # "who joins today", "is this date in the future" need it
     return gateway.complete(ctx.db, ctx.tenant, purpose=PURPOSE, system=system, messages=messages, **kwargs)
+
+
+def _today_text() -> str:
+    from datetime import date
+
+    d = date.today()  # the same date the tools check against (e.g. propose_joining_dates)
+    return f"{d.strftime('%A')} {d.isoformat()}"
 
 
 def _common() -> str:

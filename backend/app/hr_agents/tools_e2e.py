@@ -168,8 +168,8 @@ def documents_status(ctx: AgentContext, application_id: str) -> dict:
 
     app = _application(ctx, application_id)
     st = joining_docs.status(ctx.db, ctx.tenant, app)
-    items = [{"code": i.get("code"), "name": i.get("label"), "received": i["received"], "approved": i["approved"],
-              "check": i.get("level")} for i in st["items"]]
+    items = [{"code": i.get("code"), "name": i.get("label"), "required": i.get("required", True), "received": i["received"],
+              "approved": i["approved"], "check": i.get("level")} for i in st["items"]]  # "missing" lists only required ones
     return {**_names(ctx, app), "documents": items, "missing": st["missing"], "all_received": st["all_received"],
             "all_approved": st["all_approved"], "red_flags": st["reds"], "amber_flags": st["ambers"],
             "cross_check": joining_docs.cross_check(ctx.db, ctx.tenant, app)}
@@ -244,13 +244,26 @@ def _offer_for(ctx: AgentContext, app):
     return ctx.db.query(Offer).filter(Offer.application_id == app.id).order_by(Offer.created_at.desc()).first()
 
 
+def _dates_info(ctx: AgentContext, app) -> dict:
+    """The candidate's notice period and three working days after it (or the company lead time, whichever is
+    later) -- the same dates the Autopilot Offer agent proposes, so both agents agree."""
+    from app.hr_agents.autopilot.hiring import joining_dates_for
+    from app.models.candidate import Candidate
+
+    cand = ctx.db.get(Candidate, app.candidate_id)
+    out = {"notice_period_days": getattr(cand, "notice_period_days", None)}
+    if app.status == "bgv_cleared":
+        out["suggested_dates"] = joining_dates_for(ctx.db, ctx.tenant, app)
+    return out
+
+
 def offer_queue(ctx: AgentContext, job_id: Optional[str] = None) -> dict:
     from app.recruitment import joining_dates
 
     out = []
     for app in _by_status(ctx, ("bgv_cleared", "offer_sent"), job_id):
         offer = _offer_for(ctx, app)
-        out.append({**_names(ctx, app), "joining_dates": joining_dates.info(app), "offer_signed": bool(getattr(offer, "signed", False)) if offer else None})
+        out.append({**_names(ctx, app), **_dates_info(ctx, app), "joining_dates": joining_dates.info(app), "offer_signed": bool(getattr(offer, "signed", False)) if offer else None})
     return {"offers": out}
 
 
@@ -262,7 +275,7 @@ def offer_status(ctx: AgentContext, application_id: str) -> dict:
     offer = _offer_for(ctx, app)
     summary = revisions.summary(ctx.db, ctx.tenant, offer, ctx.user) if offer else None
     keep = ("status", "signed", "sent_count", "last_sent_at", "can_resend", "resend_available_at")
-    return {**_names(ctx, app), "joining_dates": joining_dates.info(app),
+    return {**_names(ctx, app), **_dates_info(ctx, app), "joining_dates": joining_dates.info(app),
             "offer": {k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in (summary or {}).items() if k in keep} if summary else None}
 
 

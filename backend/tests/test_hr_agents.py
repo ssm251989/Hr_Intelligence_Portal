@@ -293,6 +293,13 @@ def _app_in(db_session, user, status, **extra):
     ("What blocks Ravi's relieving letter?", True),
     ("Show me the open exits", True),
     ("Show my offer letter", False),  # the asker's own data: self-service path
+    # PART 25.2 questions that took the old path on the real model (no action / object word matched)
+    ("BGV for Kavya Iyer came back clean, and offer joining dates", True),
+    ("Who joins today?", True),
+    ("Mark Deepa Menon as joined", True),
+    ("Take Sameer Khan from salary through to the offer", True),
+    ("What is an offer letter?", False),  # "offer" alone is not a task
+    ("Can I take leave during my notice period?", False),
 ])
 def test_hiring_to_exit_questions_go_to_the_team(q, expected):
     assert looks_like_task(q) is expected
@@ -444,3 +451,43 @@ def test_people_without_an_hr_permission_never_reach_the_team(db_session, user, 
     svc = CopilotService(db_session, _tenant(), user)
     assert svc._agent_team(None, "Shortlist the top 3 candidates for the Java role") is None
     assert not [c for c in script.calls if c[0] == "hr_assistant"]
+
+
+def test_every_agent_is_told_todays_date(db_session, user, allow, monkeypatch):
+    """PART 25.2: "Who joins today?" was answered "nobody" for a joiner due today - the model had no date to compare with."""
+    from datetime import date
+
+    from app.hr_agents import graph as team_graph
+    from app.platform.ai import gateway
+
+    systems = []
+
+    def model(db, tenant, *, purpose, system, messages, **kw):
+        systems.append((kw.get("_feature"), system))
+        agent = kw.get("_feature", "").removeprefix("agents.")
+        if agent == "hr_assistant" and len(systems) == 1:
+            return {"content": [_use("transfer_to_onboarding", task="Who joins today?")], "usage": {}, "model": "test-model"}
+        return {"content": [_text("done")], "usage": {}, "model": "test-model"}
+
+    monkeypatch.setattr(gateway, "complete", model)
+    team_graph.run_team(_ctx(db_session, user), "Who joins today?")
+    assert {f for f, _ in systems} == {"agents.hr_assistant", "agents.onboarding"}
+    assert all(f"Today is {date.today().strftime('%A')} {date.today().isoformat()}." in s for _, s in systems)
+
+
+def test_offer_agent_sees_the_notice_period_and_the_same_dates_as_autopilot(db_session, user, allow):
+    """PART 25.2: the Offer agent proposed dates 12 days out for a candidate with a 30-day notice period."""
+    from datetime import date, timedelta
+
+    from app.hr_agents import tools_e2e
+    from app.hr_agents.autopilot.hiring import joining_dates_for
+
+    app, cand = _app_in(db_session, user, "bgv_cleared")
+    cand.notice_period_days = 30
+    db_session.commit()
+    out = tools_e2e.offer_status(_ctx(db_session, user), str(app.id))
+    assert out["notice_period_days"] == 30
+    assert out["suggested_dates"] == joining_dates_for(db_session, _tenant(), app)
+    assert date.fromisoformat(out["suggested_dates"][0]) >= date.today() + timedelta(days=30)
+    queue = tools_e2e.offer_queue(_ctx(db_session, user), str(app.job_role_id))["offers"]
+    assert queue[0]["suggested_dates"] == out["suggested_dates"]

@@ -47,7 +47,9 @@ AGENTS: dict[str, AgentSpec] = {
         "Hand each task to the agent that owns it; a request that spans steps (e.g. 'where is Priya and what is pending') can go to "
         "several agents one after another. When the request is fully handled (or needs the person to decide), reply to the person in "
         "2-6 short sentences: what was done, by which agent, and what they need to do next (e.g. approve in My approvals). "
-        "Do not do the specialists' work yourself.",
+        "Write plain text: no Markdown (no ** or # or bullet lists) and no internal ids - the chat shows text as it is. Name people, "
+        "jobs and cards by their names. Send the person to My approvals only when an agent created an approval card; other steps "
+        "(publishing a job, interview feedback) are done on their own screens. Do not do the specialists' work yourself.",
         (), ALL_SPECIALISTS,
     ),
     "job": AgentSpec(
@@ -88,8 +90,9 @@ AGENTS: dict[str, AgentSpec] = {
     ),
     "offer": AgentSpec(
         "offer", "Offer agent", "After BGV: proposes three joining dates (then the offer goes out), tracks signing, re-sends unsigned offers.",
-        "You are the Offer agent. For candidates with BGV cleared propose three joining dates (working days, at least a week out, within "
-        "the notice period if known) as an approval card; report offer signing; re-send an unsigned offer when asked. Hand signed joiners "
+        "You are the Offer agent. For candidates with BGV cleared propose three joining dates as an approval card: use the "
+        "suggested_dates from offer_status / offer_queue (working days after the candidate's notice period and the company lead time) "
+        "unless the person asked for other dates; report offer signing; re-send an unsigned offer when asked. Hand signed joiners "
         "to the Onboarding agent when the person wants the next step.",
         OFFER_TOOLS, ("onboarding", "bgv"),
     ),
