@@ -2951,4 +2951,6 @@ NEXT: owner decisions - Autopilot on or off for this company (on now, the Part 2
   Full suite before (HEAD 1363659 + the mail guard): 165 failed / 1425 passed (the run showed 171: 6 test_interview_negotiation failures were only because the untracked Sample/Interview_Tracker file is missing in a worktree; with it copied that file fails the same 44 as before). After: the run was stopped by the system for low memory at 22% - up to there the identical pass/fail pattern (13 failures, the 7 new tests pass); related files 88 passed. A complete after-run is still owed.
   Decisions: "closed" (not "rejected") so the record shows no person decided; a closed card's step is judged only by the person's current state or the step's own done event after the card; the check admin (proof.admin.p23) made the salary change, so the history names it.
 
-NEXT: complete full-suite run when memory allows; then 29.4 in the owner's order - Job agent on the timeline first.
+- part-29.4 suite: full run after the changes, in 10 batches of test files (one pytest process each, memory): 165 failed / 1432 passed - the same 165 tests as the baseline (none new, none fixed); +7 passed = the new closed-card tests. Mail went to mailpit only.
+
+NEXT: 29.4 in the owner's order - Job agent on the timeline first.
