@@ -375,6 +375,8 @@ def register_all() -> None:
     register(SettingDef("platform.health.ignored", "json", [], module="platform", group="Setup"))
     register(SettingDef("platform.setup.config_pack", "json", {}, module="platform", group="Setup"))  # which pack was applied (Setup Wizard)
     register(SettingDef("ux.reduce_motion", "bool", False, module="ux", group="Accessibility", scopes_allowed=("user", "tenant")))
+    # Part 27 (cross-cutting): "Don't show tours again" -- once per person, kept on the server (not per page / browser)
+    register(SettingDef("ux.tours_off", "bool", False, module="ux", group="Accessibility", scopes_allowed=("user", "tenant")))
     register(SettingDef("ux.page_size", "int", 25, module="ux", group="Lists", scopes_allowed=("user", "tenant")))
     # Part 15.5: home widget layouts -- the user's own ({kind: [{i,x,y,w,h}]}) and the company
     # default per home (hr / manager / employee), set by an admin.

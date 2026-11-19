@@ -1,4 +1,6 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { experienceApi } from "../api/client";
+import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
 import { useTheme } from "@mui/material/styles";
 import type { EventData, Step } from "react-joyride";
 
@@ -53,10 +55,13 @@ export default function PageTour({ tourKey, steps, autoStart = true }: { tourKey
   const reduced = useReducedMotion();
   const tt = useT();
   const [run, setRun] = useState(false);
+  // Part 27: one "Don't show tours again" per person, saved on the server (bootstrap.ux.tours_off)
+  const { data: me } = useMeBootstrap();
+  const toursOff = Boolean(me?.ux?.tours_off);
 
   useEffect(() => {
     // Wait a beat so the page's data (and the targets) have rendered.
-    const timer = autoStart && !seen().includes(tourKey) ? window.setTimeout(() => setRun(true), 900) : undefined;
+    const timer = autoStart && !toursOff && !seen().includes(tourKey) ? window.setTimeout(() => setRun(true), 900) : undefined;
     const onStart = (e: Event) => {
       if ((e as CustomEvent<string>).detail === tourKey) setRun(true);
     };
@@ -65,7 +70,7 @@ export default function PageTour({ tourKey, steps, autoStart = true }: { tourKey
       window.clearTimeout(timer);
       window.removeEventListener(START_EVENT, onStart);
     };
-  }, [tourKey, autoStart]);
+  }, [tourKey, autoStart, toursOff]);
 
   if (!run) return null;
   const available = (steps ?? defaultSteps(tt)).filter((s) => document.querySelector(s.target));
@@ -77,6 +82,8 @@ export default function PageTour({ tourKey, steps, autoStart = true }: { tourKey
     if (status === "finished" || status === "skipped") {
       markSeen(tourKey);
       setRun(false);
+      // "Don't show tours again" (the skip button) switches every page's tour off for this person, on every device
+      if (status === "skipped") experienceApi.updatePreferences({ tours_off: true }).catch(() => undefined);
     }
   };
 

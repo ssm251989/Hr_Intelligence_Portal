@@ -20,6 +20,7 @@ import { http } from "../../api/client";
 import { useT } from "../../i18n";
 import { PageHeader, StatTile } from "../../ui-kit";
 import EmptyState from "../../ui-kit/EmptyState";
+import { formatDateTime } from "../../utils/datetime";
 
 // Part 26: HR Autopilot -- automatic agents that work without anyone asking. Shows what they did
 // (with the company rule that allowed each decision), their switches and decision rules, and Run now.
@@ -155,7 +156,7 @@ export default function AutopilotPage() {
                 <Typography sx={{ fontWeight: 600 }}>{w.title.replace(/ \(Autopilot: [a-z_]+\)$/, "")}</Typography>
                 <Typography variant="caption" sx={{ color: f.muted }}>
                   {w.by_agent ? t("autopilot.by_agent", { agent: t(`autopilot.agent.${agentOf(w.by_agent)}`) }) : ""}
-                  {w.created_at ? ` · ${new Date(w.created_at).toLocaleString()}` : ""}
+                  {w.created_at ? ` · ${formatDateTime(w.created_at)}` : ""}
                 </Typography>
                 {note && <Typography variant="body2" sx={{ color: f.muted }}>{note}</Typography>}
               </Box>
@@ -232,7 +233,7 @@ export default function AutopilotPage() {
                   <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mb: 0.25, flexWrap: "wrap" }}>
                     <Chip size="small" color={OUTCOME_COLOR[it.outcome]} label={t(`autopilot.outcome.${it.outcome}`)} />
                     <Typography variant="caption" sx={{ color: f.muted }}>
-                      {t(`autopilot.agent.${it.agent}`)} · {t(`autopilot.trigger.${it.trigger}`)} · {it.at ? new Date(it.at).toLocaleString() : ""}
+                      {t(`autopilot.agent.${it.agent}`)} · {t(`autopilot.trigger.${it.trigger}`)} · {it.at ? formatDateTime(it.at) : ""}
                     </Typography>
                   </Stack>
                   <Typography variant="body2">{it.summary}</Typography>
@@ -278,7 +279,7 @@ export default function AutopilotPage() {
               <Chip size="small" color={OUTCOME_COLOR[it.outcome]} label={t(`autopilot.outcome.${it.outcome}`)} />
               <Box sx={{ minWidth: 0 }}>
                 <Typography variant="body2">{it.summary}</Typography>
-                <Typography variant="caption" sx={{ color: f.muted }}>{t(`autopilot.agent.${it.agent}`)} · {it.at ? new Date(it.at).toLocaleString() : ""}</Typography>
+                <Typography variant="caption" sx={{ color: f.muted }}>{t(`autopilot.agent.${it.agent}`)} · {it.at ? formatDateTime(it.at) : ""}</Typography>
               </Box>
             </Stack>
           ))}

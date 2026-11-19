@@ -11,6 +11,7 @@ import { automationApi, type AddedFromPool, type TalentPoolItem, type TalentPool
 import { useMeBootstrap } from "../../bootstrap/MeBootstrapContext";
 import { useT } from "../../i18n";
 import { Emoji, EmptyState, FriendlyError, InfoTip, StatusChip } from "../../ui-kit";
+import { formatDate } from "../../utils/datetime";
 
 // Part 17.13: "Past candidates who match" -- people already in the database (applied to other
 // jobs before) scored against THIS job's rules, so a recruiter can add them in one click.
@@ -119,7 +120,7 @@ export default function TalentPoolPanel({ jobId }: { jobId: string }) {
                         {[
                           item.location,
                           item.years != null ? t("autom.pool.years", { count: Math.round(item.years * 10) / 10 }) : null,
-                          item.last_seen ? t("autom.pool.last_seen", { date: new Date(item.last_seen).toLocaleDateString() }) : null,
+                          item.last_seen ? t("autom.pool.last_seen", { date: formatDate(item.last_seen) }) : null,
                         ].filter(Boolean).join(" · ")}
                       </Typography>
                     </Box>

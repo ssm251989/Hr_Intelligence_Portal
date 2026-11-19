@@ -127,7 +127,8 @@ export default function ScoreCard({
                   )}
                   <Radar name={candidateName} dataKey="candidate" stroke={chart[0]} fill={chart[0]} fillOpacity={0.3} strokeWidth={2} isAnimationActive={!reduced} />
                   <ChartTooltip contentStyle={{ background: f.surface, border: `1px solid ${f.line}`, borderRadius: 10, color: f.ink }} formatter={(v) => `${v}%`} />
-                  <Legend iconType="square" wrapperStyle={{ fontSize: 12, color: f.muted }} />
+                  {/* P5 (Part 27): space between legend items ("E2E Test CandidateShortlist threshold" ran together) */}
+                  <Legend iconType="square" wrapperStyle={{ fontSize: 12, color: f.muted }} formatter={(value: string) => <span style={{ marginRight: 12 }}>{value}</span>} />
                 </RadarChart>
               </ResponsiveContainer>
             </Box>

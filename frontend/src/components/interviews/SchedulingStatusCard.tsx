@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { formatDateTime } from "../../utils/datetime";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -25,11 +26,11 @@ const EMOJI: Record<SchedulingStatus["state"], string> = {
   waiting_undo: "hourglass", not_scheduled: "warning", mailbox_retry: "mail", manual_mode: "writing_hand", link_expired: "hourglass",
 };
 
-function when(iso: string | null): string {
+function when(iso: string | null, year: "auto" | "always" = "auto"): string {
   if (!iso) return "";
   const d = new Date(iso);
   const today = new Date().toDateString() === d.toDateString();
-  return today ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : d.toLocaleString([], { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+  return today && year === "auto" ? d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }) : formatDateTime(d, { year });
 }
 
 // Part 18.28: "Waiting for Jr to pick interview times - email sent 10:32 AM" + what HR can do.
@@ -81,7 +82,9 @@ export default function SchedulingStatusCard({ applicationId, candidateName, can
     waiting_interviewer: t("sched.waiting_interviewer", { name, time: when(st.sent_at) }),
     waiting_candidate: t("sched.waiting_candidate", { name: candidateName || t("sched.the_candidate"), time: when(st.sent_at) }),
     needs_manual: st.message || t("sched.needs_manual"),
-    scheduled: t("sched.scheduled", { name, time: when(st.scheduled_at) }),
+    // I3 (Part 27): the booked date always with its year; no interviewer text when none was chosen
+    scheduled: st.interviewer_name || st.interviewer_email ? t("sched.scheduled", { name, time: when(st.scheduled_at, "always") })
+      : t("sched.scheduled_no_one", { time: when(st.scheduled_at, "always") }),
     done: t("sched.done", { name }),
     cancelled: t("sched.cancelled", { time: when(st.sent_at) }),
     waiting_undo: t("sched.waiting_undo", { time: when(st.undo_until ?? null) }),

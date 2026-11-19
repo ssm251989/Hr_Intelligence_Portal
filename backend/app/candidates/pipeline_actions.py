@@ -43,7 +43,7 @@ def compute_next_actions(db: Session, application: Application) -> list[NextActi
         return [
             NextAction(
                 key="screen",
-                label="Screen Candidate",
+                label="Screen candidate",
                 kind="one_click",
                 method="POST",
                 endpoint=f"/applications/{app_id}/screen",
@@ -55,7 +55,7 @@ def compute_next_actions(db: Session, application: Application) -> list[NextActi
         return [
             NextAction(
                 key="shortlist_select",
-                label="Shortlist: Select",
+                label="Shortlist",
                 kind="one_click",
                 method="POST",
                 endpoint=f"/applications/{app_id}/shortlist-decision",
@@ -63,7 +63,7 @@ def compute_next_actions(db: Session, application: Application) -> list[NextActi
             ),
             NextAction(
                 key="shortlist_reject",
-                label="Shortlist: Reject",
+                label="Reject at shortlist",
                 kind="one_click",
                 method="POST",
                 endpoint=f"/applications/{app_id}/shortlist-decision",
@@ -78,7 +78,7 @@ def compute_next_actions(db: Session, application: Application) -> list[NextActi
         return [
             NextAction(
                 key="schedule_interview",
-                label="Schedule Interview",
+                label="Schedule interview",
                 kind="navigate",
                 route=_job_route("/interviews", job_id),
                 description="Needs a date/time and interviewer -- opens the Interviews page.",
@@ -89,7 +89,7 @@ def compute_next_actions(db: Session, application: Application) -> list[NextActi
         return [
             NextAction(
                 key="validate_salary",
-                label="Validate Salary",
+                label="Check salary",
                 kind="one_click",
                 method="POST",
                 endpoint=f"/applications/{app_id}/validate-salary",
@@ -108,7 +108,7 @@ def compute_next_actions(db: Session, application: Application) -> list[NextActi
             return [
                 NextAction(
                     key="manage_interview",
-                    label="Manage Interview",
+                    label="Manage interview",
                     kind="navigate",
                     route=_job_route("/interviews", job_id),
                 )
@@ -142,7 +142,7 @@ def compute_next_actions(db: Session, application: Application) -> list[NextActi
         return [
             NextAction(
                 key="confirm_salary",
-                label="Confirm Salary",
+                label="Confirm salary",
                 kind="one_click",
                 method="POST",
                 endpoint=f"/applications/{app_id}/salary/confirm",
@@ -179,7 +179,7 @@ def compute_next_actions(db: Session, application: Application) -> list[NextActi
         actions = [
             NextAction(
                 key="manage_bgv_documents",
-                label="Manage BGV Documents",
+                label="Manage BGV documents",
                 kind="navigate",
                 route=_job_route("/bgv", job_id),
             ),
@@ -212,7 +212,7 @@ def compute_next_actions(db: Session, application: Application) -> list[NextActi
         return [
             NextAction(
                 key="generate_offer",
-                label="Generate Offer",
+                label="Create offer",
                 kind="navigate",
                 route=_job_route("/offers", job_id),
                 description="Needs a start date -- opens the Offers page.",
@@ -223,7 +223,7 @@ def compute_next_actions(db: Session, application: Application) -> list[NextActi
         return [
             NextAction(
                 key="mark_signed",
-                label="Mark Offer Signed",
+                label="Mark offer signed",
                 kind="one_click",
                 method="POST",
                 endpoint=f"/applications/{app_id}/offer/mark-signed",
@@ -237,7 +237,7 @@ def compute_next_actions(db: Session, application: Application) -> list[NextActi
         return [
             NextAction(
                 key="complete_onboarding",
-                label="Complete Onboarding",
+                label="Complete onboarding",
                 kind="one_click",
                 method="POST",
                 endpoint=f"/applications/{app_id}/offer/complete-onboarding",

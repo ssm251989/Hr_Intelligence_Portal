@@ -23,6 +23,7 @@ import { EDUCATION_DEGREE_LEVELS } from "../api/types";
 import type { JobFieldSuggestionsResponse, JobRoleRead } from "../api/types";
 import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
 import { useT } from "../i18n";
+import { formatMoney } from "../utils/money";
 import { Emoji, FriendlyAnimation, FriendlyError, InfoTip, confirmDiscard, useConfirmLeave } from "../ui-kit";
 import { formatExperienceRange } from "../utils/experience";
 import JdSideBySide from "./jobs/JdSideBySide";
@@ -585,7 +586,7 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
     form.location,
     formatExperienceRange(form.experienceMinYears ? Number(form.experienceMinYears) : null, form.experienceMaxYears ? Number(form.experienceMaxYears) : null),
     ...[...form.technicalSkillsMustHave, ...form.softSkillsMustHave].slice(0, 6),
-    form.salaryMin && form.salaryMax ? t("jobs.rev.salary", { min: form.salaryMin, max: form.salaryMax }) : "",
+    form.salaryMin && form.salaryMax ? t("jobs.rev.salary", { min: formatMoney(form.salaryMin), max: formatMoney(form.salaryMax) }) : "",
     form.benefits ? t("jobs.rev.benefits") : "",
     form.keyResponsibilities ? t("jobs.rev.responsibilities") : "",
     form.additionalNotes ? t("jobs.rev.notes") : "",
@@ -761,7 +762,7 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
           </Typography>
           <Typography variant="body2" sx={{ color: f.muted }}>
             {[t(JOB_TYPES.find((j) => j.value === form.jobType)?.key ?? form.jobType), t("jobs.rev.positions", { count: Number(form.positionsCount) || 1 }),
-              form.salaryMin && form.salaryMax ? t("jobs.rev.salary", { min: form.salaryMin, max: form.salaryMax }) : ""].filter(Boolean).join(" · ")}
+              form.salaryMin && form.salaryMax ? t("jobs.rev.salary", { min: formatMoney(form.salaryMin), max: formatMoney(form.salaryMax) }) : ""].filter(Boolean).join(" · ")}
           </Typography>
           {(form.educationDegreeLevel || form.educationField) && (
             <Typography variant="body2" sx={{ color: f.muted }}>

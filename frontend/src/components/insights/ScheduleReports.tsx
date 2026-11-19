@@ -14,6 +14,7 @@ import { insightsApi, REPORT_TEMPLATE_KEY, type ReportScheduleRow } from "../../
 import { useT, type TFunction } from "../../i18n";
 import { EmptyState, FriendlyError, StatusChip } from "../../ui-kit";
 import { InsightCard, useLoaded } from "./InsightCard";
+import { formatDateTime } from "../../utils/datetime";
 
 // Part 15.6 R2: scheduled reports -- "email this report every Monday at 9 am to ...".
 
@@ -102,7 +103,7 @@ export default function ScheduleReports({ reports, canSchedule }: { reports: { i
           </Box>
           <Typography variant="caption" color="text.secondary" sx={{ gridColumn: "1 / -1" }}>
             {describeSchedule(t, { frequency: form.frequency, hour: form.hour, day_of_week: form.day_of_week, day_of_month: form.day_of_month })}
-            {saved ? ` · ${t("builder.sched.saved", { when: new Date(saved).toLocaleString() })}` : ""}
+            {saved ? ` · ${t("builder.sched.saved", { when: formatDateTime(saved) })}` : ""}
           </Typography>
           {error !== null && <Box sx={{ gridColumn: "1 / -1" }}><FriendlyError error={error} compact /></Box>}
         </Box>
@@ -128,7 +129,7 @@ export default function ScheduleReports({ reports, canSchedule }: { reports: { i
                   <TableCell sx={{ fontWeight: 700 }}>{s.report_name}</TableCell>
                   <TableCell>{describeSchedule(t, s)}</TableCell>
                   <TableCell>{t("builder.sched.people", { count: s.recipients.length })}<Typography variant="caption" display="block" color="text.secondary">{s.recipients.join(", ")}</Typography></TableCell>
-                  <TableCell>{s.next_run_at ? new Date(s.next_run_at).toLocaleString() : "—"}</TableCell>
+                  <TableCell>{s.next_run_at ? formatDateTime(s.next_run_at) : "—"}</TableCell>
                   <TableCell>{s.enabled ? <StatusChip status="active" /> : <StatusChip status="on_hold" />}</TableCell>
                 </TableRow>
               ))}

@@ -19,11 +19,12 @@ import { employeeActionsRegistry } from "../../components/employees/registry";
 import ChangeRequestsCard from "../../components/employees/ChangeRequestsCard";
 import { useT } from "../../i18n";
 import { EmptyState, FriendlyError, StatusChip, UserAvatar } from "../../ui-kit";
+import { formatDate, formatDateTime } from "../../utils/datetime";
 
 // Part 20.1: one employee -- Personal / Job / Documents / Assets / History. Bank, PAN and Aadhaar
 // are only ever shown masked here (the audited reveal stays on the HR record).
 
-const fmtDate = (iso?: string | null) => (iso ? new Date(iso.length === 10 ? `${iso}T00:00:00` : iso).toLocaleDateString() : "—");
+const fmtDate = (iso?: string | null) => (iso ? formatDate(iso.length === 10 ? `${iso}T00:00:00` : iso) : "—");
 
 function Field({ label, value }: { label: string; value: ReactNode }) {
   const f = useTheme().palette.fresh;
@@ -196,7 +197,7 @@ export default function EmployeeProfilePage() {
           <Stack spacing={0.75}>
             {p.history.map((h, i) => (
               <Stack key={i} direction="row" spacing={1.5} sx={{ py: 0.75, borderBottom: `1px solid ${f.line}` }}>
-                <Typography sx={{ fontSize: 12, color: f.muted, minWidth: 150 }}>{h.at ? new Date(h.at).toLocaleString() : ""}</Typography>
+                <Typography sx={{ fontSize: 12, color: f.muted, minWidth: 150 }}>{h.at ? formatDateTime(h.at) : ""}</Typography>
                 <Typography sx={{ fontSize: 14, flex: 1 }}>{h.action.replace(/_/g, " ")}</Typography>
                 <Typography sx={{ fontSize: 12, color: f.muted }}>{h.actor}</Typography>
               </Stack>

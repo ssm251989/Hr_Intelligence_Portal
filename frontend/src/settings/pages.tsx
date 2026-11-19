@@ -24,6 +24,7 @@ import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
 import { LOCALES, useT } from "../i18n";
 import { en as baseEn } from "../i18n/en";
 import { EmptyState, Emoji, FriendlyError, InfoTip, StatTile, StatusChip, humanise } from "../ui-kit";
+import { formatDateTime } from "../utils/datetime";
 
 // Part 16.3: the Settings pages that didn't exist as panels before.
 
@@ -445,7 +446,7 @@ export function AuditLogPage() {
             {data.items.map((r) => (
               <Box component="li" key={r.id}
                 sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: cols }, gap: { xs: 0.25, md: 1.5 }, py: 1, borderBottom: `1px solid ${f.line}` }}>
-                <Typography sx={{ color: f.muted, fontSize: 13 }}>{new Date(r.created_at).toLocaleString()}</Typography>
+                <Typography sx={{ color: f.muted, fontSize: 13 }}>{formatDateTime(r.created_at)}</Typography>
                 <Typography sx={{ fontWeight: 600, fontSize: 14, overflowWrap: "anywhere" }}>{who(r)}</Typography>
                 <Typography sx={{ fontSize: 14 }}>{whatText(r)}</Typography>
                 <Typography sx={{ fontSize: 13, color: f.muted }}>{recordText(r)}</Typography>

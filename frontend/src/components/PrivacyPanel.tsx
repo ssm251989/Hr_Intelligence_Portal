@@ -10,6 +10,7 @@ import ListItemText from "@mui/material/ListItemText";
 import Typography from "@mui/material/Typography";
 
 import { extractErrorMessage, privacyApi, type BreachRow, type PrivacyRequestRow } from "../api/client";
+import { formatDate, formatDateTime } from "../utils/datetime";
 
 // Part 13 section E (docs/HRMS_COMPLETE_SPEC.txt): data principal request queue (with SLA
 // due dates) and the breach register. Erasure/export/retention actions are backend-complete
@@ -41,7 +42,7 @@ export default function PrivacyPanel() {
               const overdue = new Date(r.due_at).getTime() < now && !["completed", "rejected"].includes(r.status);
               return (
                 <ListItem key={r.id} secondaryAction={!r.identity_verified && r.status !== "completed" ? <Button size="small" onClick={() => privacyApi.verify(r.id).then(load)}>Mark identity verified</Button> : null}>
-                  <ListItemText primary={`${r.type} · ${r.subject_email}`} secondary={`${r.status} · due ${new Date(r.due_at).toLocaleDateString()}`} />
+                  <ListItemText primary={`${r.type} · ${r.subject_email}`} secondary={`${r.status} · due ${formatDate(r.due_at)}`} />
                   {overdue && <Chip size="small" color="error" label="Overdue" sx={{ mr: 1 }} />}
                   {r.legal_hold && <Chip size="small" label="Legal hold" sx={{ mr: 1 }} />}
                 </ListItem>
@@ -56,7 +57,7 @@ export default function PrivacyPanel() {
           <List dense>
             {breaches.map((b) => (
               <ListItem key={b.id}>
-                <ListItemText primary={b.title} secondary={`${b.severity} · ${b.status} · detected ${new Date(b.detected_at).toLocaleString()}`} />
+                <ListItemText primary={b.title} secondary={`${b.severity} · ${b.status} · detected ${formatDateTime(b.detected_at)}`} />
               </ListItem>
             ))}
           </List>

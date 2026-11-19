@@ -190,7 +190,8 @@ export default function PlacesMap({ kind, height = 300 }: { kind: PlaceKind; hei
 
   if (error) return <FriendlyError error={error} onRetry={() => setTick((x) => x + 1)} compact />;
   if (!data || !config) return <Box sx={{ display: "grid", placeItems: "center", height }}><CircularProgress aria-label={t("maps.loading")} /></Box>;
-  if (data.places.length === 0 && data.not_found.length === 0) {
+  // J3 (Part 27): "No open jobs yet" only when there really are none (a job without a location is still a job)
+  if ((data.total ?? 0) === 0 && data.places.length === 0 && data.not_found.length === 0) {
     return <EmptyState compact illustration="empty" title={t(kind === "offices" ? "maps.empty_offices" : "maps.empty_jobs")} />;
   }
   const summary = data.places.map((p) => `${p.label}: ${countLabel(p.count)}`).join(", ");

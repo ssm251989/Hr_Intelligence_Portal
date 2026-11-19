@@ -192,6 +192,9 @@ def f_domain(facts: Facts, p: dict) -> FactorResult:
     keys = _words(facts.job.title) | _words(facts.job.department) | {w.lower() for w in p.get("keywords") or []}
     relevant = [r for r in roles if keys & _words(r.get("title"))]
     years = sum(r["_years"] for r in relevant)
+    total = _num(facts.parsed.get("total_experience_years"))
+    if total is not None and years > total:  # P4 (Part 27): overlapping roles were added twice ("7.0 years" of 5 in total)
+        years = total
     full = _num(p.get("years_for_full")) or _num(facts.job.experience_min_years) or 3.0
     ev = [f"{r.get('title')} at {r.get('company')}" for r in relevant[:4]]
     return FactorResult(min(100, round(100 * years / max(full, 0.5))), f"{years:.1f} years in similar roles", ev)

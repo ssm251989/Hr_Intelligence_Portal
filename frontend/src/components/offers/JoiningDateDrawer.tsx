@@ -9,6 +9,7 @@ import Typography from "@mui/material/Typography";
 import CopyLinkButton from "../CopyLinkButton";
 import { extractErrorMessage, http } from "../../api/client";
 import { useT } from "../../i18n";
+import { formatDate } from "../../utils/datetime";
 
 interface Info { status: string; proposed?: string[]; proposed_at?: string; chosen?: string | null; chosen_at?: string | null; note?: string | null }
 
@@ -38,7 +39,7 @@ export default function JoiningDateDrawer({ applicationId, name, onClose, onChan
       load(); onChanged();
     } catch (e) { setMsg({ ok: false, text: extractErrorMessage(e, t("joinpick.err")) }); } finally { setBusy(false); }
   };
-  const nice = (d: string) => new Date(`${d}T00:00:00`).toLocaleDateString();
+  const nice = (d: string) => formatDate(`${d}T00:00:00`);
   const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
 
   return (

@@ -14,6 +14,7 @@ import AvailabilityEditor from "../../components/interviews/AvailabilityEditor";
 import { Section } from "../../components/servicedesk/shared";
 import { useT } from "../../i18n";
 import { Cell, FriendlyError, PageGrid, PageHeader, StatusChip } from "../../ui-kit";
+import { formatDateTime } from "../../utils/datetime";
 
 export default function MyAvailabilityPage() {
   const t = useT();
@@ -68,7 +69,7 @@ export default function MyAvailabilityPage() {
                   <Box>
                     <Typography sx={{ fontWeight: 700, fontSize: 14 }}>{t("interviewers.my.upcoming")}</Typography>
                     {(data.upcoming ?? []).slice(0, 8).map((u) => (
-                      <Typography key={u.id} sx={{ fontSize: 13, color: f.muted }}>{new Date(u.scheduled_at).toLocaleString()}</Typography>
+                      <Typography key={u.id} sx={{ fontSize: 13, color: f.muted }}>{formatDateTime(u.scheduled_at)}</Typography>
                     ))}
                   </Box>
                 )}

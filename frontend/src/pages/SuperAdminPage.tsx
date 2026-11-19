@@ -51,6 +51,14 @@ function StatusOf({ status }: { status: string }) {
 }
 
 export default function SuperAdminPage() {
+  // X3 (Part 27): the console stays reachable on the company address (owner) but is kept out of search engines
+  useEffect(() => {
+    const meta = document.createElement("meta");
+    meta.name = "robots";
+    meta.content = "noindex, nofollow";
+    document.head.appendChild(meta);
+    return () => { meta.remove(); };
+  }, []);
   const t = useT();
   const f = useTheme().palette.fresh;
   const [token, setToken] = useState<string | null>(readToken);

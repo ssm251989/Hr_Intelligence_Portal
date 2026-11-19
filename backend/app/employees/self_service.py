@@ -36,6 +36,38 @@ def me(db: Session, tenant, user: User) -> Optional[Employee]:
     return db.query(Employee).filter(Employee.tenant_id == tenant.tenant_id, Employee.user_id == user.id).first()
 
 
+def link_own_record(db: Session, tenant, user: User, *, mode: str, employee_code: Optional[str] = None) -> Employee:
+    """M1 (Part 27): an admin whose login has no employee record creates one for themselves, or links an existing
+    record (by employee ID or company email) that has no login yet. Never re-links a record another login owns."""
+    from app.audit.service import log_action
+
+    if me(db, tenant, user) is not None:
+        raise ValueError("Your login is already linked to an employee record.")
+    if mode == "create":
+        from app.core_hr import employees as employees_service
+
+        parts = (user.full_name or user.email.split("@")[0]).strip().split(" ", 1)
+        e = employees_service.create_employee(db, tenant, first_name=parts[0], last_name=parts[1] if len(parts) > 1 else None,
+                                              status="active", user_id=user.id, company_email=user.email)
+    elif mode == "link":
+        key = (employee_code or "").strip()
+        if not key:
+            raise ValueError("Type the employee ID or company email of your record.")
+        e = (db.query(Employee).filter(Employee.tenant_id == tenant.tenant_id,
+                                       (Employee.employee_code == key) | (Employee.company_email.ilike(key))).first())
+        if e is None:
+            raise ValueError("No employee record has that ID or company email.")
+        if e.user_id is not None:
+            raise ValueError("That record already belongs to another login.")
+        e.user_id = user.id
+        db.commit()
+    else:
+        raise ValueError("mode is create or link")
+    log_action(db, "employee", e.id, "employee_linked_to_login", user.email[:50], {"mode": mode, "user_id": str(user.id)})
+    db.commit()
+    return e
+
+
 def _setting(db: Session, tenant, key: str):
     from app.platform.settings.resolver import SettingContext, SettingsService
 

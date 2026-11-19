@@ -10,14 +10,16 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 import CopyLinkButton from "../CopyLinkButton";
+import { formatLakh, formatMoney } from "../../utils/money";
 import { extractErrorMessage, http } from "../../api/client";
 import { salaryQueueApi } from "../../api/salaryApi";
 import { useT } from "../../i18n";
 import type { StageRow } from "../stage/StageTable";
 import StatusChip from "../StatusChip";
+import { formatDateTime } from "../../utils/datetime";
 
-export const money = (v: number | null | undefined) => (v == null ? "—" : `₹${Math.round(v).toLocaleString("en-IN")}`);
-export const lakh = (v: number | null | undefined) => (v == null ? "—" : `${(v / 100000).toLocaleString("en-IN", { maximumFractionDigits: 1 })} L`);
+export const money = formatMoney;  // J2 (Part 27): the one money format
+export const lakh = formatLakh;
 
 /** Part 18.14: one reason as a short red/amber chip text ("Hike 35% > 20% limit"). */
 export function reasonText(t: (k: string, v?: Record<string, string | number>) => string, r: { code: string; [k: string]: unknown }): string {
@@ -129,8 +131,12 @@ export default function SalaryPanel({ row, onClose, onChanged }: { row: StageRow
           <Typography sx={{ fontWeight: 700 }}>{t("salaryx.history")}</Typography>
           {history.length === 0 ? <Typography variant="body2" color="text.secondary">{t("salaryx.history_none")}</Typography> : history.map((h, i) => (
             <Box key={i}>
-              <Typography variant="body2" sx={{ fontWeight: 600 }}>{t(`salaryx.event.${h.action}`)}</Typography>
-              <Typography variant="caption">{new Date(h.created_at).toLocaleString()} · {h.actor}</Typography>
+              {/* S3 (Part 27): "emailed" only when it really went (the log keeps details.sent / email_sent) */}
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                {(h.details?.sent === false || h.details?.email_sent === false) && t(`salaryx.event.${h.action}_not_sent`) !== `salaryx.event.${h.action}_not_sent`
+                  ? t(`salaryx.event.${h.action}_not_sent`) : t(`salaryx.event.${h.action}`)}
+              </Typography>
+              <Typography variant="caption">{formatDateTime(h.created_at)} · {h.actor}</Typography>
             </Box>
           ))}
           <Button onClick={onClose}>{t("salaryx.close")}</Button>

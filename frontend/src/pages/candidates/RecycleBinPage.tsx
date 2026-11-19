@@ -22,6 +22,7 @@ import RemoveCandidateDialog from "../../components/candidates/RemoveCandidateDi
 import JobsBinTab from "../../components/candidates/JobsBinTab";
 import { useT } from "../../i18n";
 import { EmptyState, FriendlyError, PageHeader } from "../../ui-kit";
+import { formatDate } from "../../utils/datetime";
 
 // Part 17.15: Candidates > Recycle bin -- removed candidates, restorable for N days
 // (recruitment.candidates.recycle_days), then deleted permanently by the daily job.
@@ -113,10 +114,10 @@ export default function RecycleBinPage() {
                       {item.note && <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>{item.note}</Typography>}
                     </TableCell>
                     <TableCell>
-                      {new Date(item.removed_at).toLocaleDateString()}
+                      {formatDate(item.removed_at)}
                       {item.removed_by && <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>{t("bin.removed_by", { who: item.removed_by })}</Typography>}
                     </TableCell>
-                    <TableCell>{new Date(item.deleted_permanently_on).toLocaleDateString()}</TableCell>
+                    <TableCell>{formatDate(item.deleted_permanently_on)}</TableCell>
                     <TableCell align="right">
                       <Stack direction="row" spacing={1} justifyContent="flex-end">
                         <Button size="small" variant="outlined" onClick={() => restore(item)} disabled={busyId === item.candidate_id}>{t("bin.restore")}</Button>

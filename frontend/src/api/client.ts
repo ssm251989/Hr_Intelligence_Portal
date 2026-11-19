@@ -1173,7 +1173,7 @@ export interface BootstrapRead {
   ai?: { enabled: boolean; features: Record<string, boolean> };
   home_path?: string;
   modules?: string[];
-  ux?: { reduce_motion: boolean; page_size: number; direction: "ltr" | "rtl" };
+  ux?: { reduce_motion: boolean; page_size: number; direction: "ltr" | "rtl"; tours_off?: boolean };
   two_step?: boolean; // Part 18.1
   company_modules?: { active: string[]; pages: Record<string, string[]> }; // Part 19.1
 }
@@ -1713,7 +1713,7 @@ export const experienceApi = {
   discardDraft: (formKey: string, entityRef = "") => request<void>(`/api/v1/drafts/${formKey}?entity_ref=${encodeURIComponent(entityRef)}`, { method: "DELETE" }),
   versions: (kind: string, key: string) => get<{ id: UUID; version: number; status: string; created_at: string | null }[]>(`/api/v1/versions/${kind}/${key}`),
   revertVersion: (kind: string, key: string, version: number) => post<{ version: number; next_step: string }>(`/api/v1/versions/${kind}/${key}/revert`, { version }),
-  updatePreferences: (payload: { reduce_motion?: boolean; page_size?: number; locale?: string; timezone?: string }) => put<{ ok: boolean }>("/api/v1/me/preferences", payload),
+  updatePreferences: (payload: { reduce_motion?: boolean; tours_off?: boolean; page_size?: number; locale?: string; timezone?: string }) => put<{ ok: boolean }>("/api/v1/me/preferences", payload),
   myLetters: () => get<{ id: UUID; template_key: string; html: string }[]>("/api/v1/me/letters"),
   myDocuments: () => get<{ id: UUID; type: string; issued_date: string | null; expiry_date: string | null }[]>("/api/v1/me/documents"),
 };

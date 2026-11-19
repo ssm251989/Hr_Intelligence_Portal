@@ -51,3 +51,31 @@ Affected test files: only baseline failures (3 test_intelligence, 1 test_applica
 | X2 | no catch-all route -> blank page | `path="*"` inside the app shell -> "Page not found" with the menu and Go to Home | browser check in 27.4 |
 
 P2 / I2 were done in 27.1. Affected backend test files: only baseline failures. Frontend unit tests: 3 failed / 40 passed - the same 3 fail on the committed code without these changes (UploadCandidateDialog, theme-from-bootstrap x2).
+
+## 27.3 Low (one polish pass)
+
+| # | Fix |
+|---|---|
+| L2 | done in 27.2 ("Too many attempts - try again in N minutes") |
+| H2 | "Finish setting up": human step names (Company details, Companies and locations, Branding, Mailbox, ...), every word on the card through i18n (EN/HI/TA) |
+| H4 | room under every page (`main` padding-bottom) so the floating assistant button never covers the last row's actions |
+| J2 | one money format `utils/money.ts` (`₹14,00,000`, `8 L`); the wizard's pay line and review use it; the Salary drawer's `money` / `lakh` are the same functions |
+| J3 | jobs without a location are listed as "Location not set" (was "Unspecified"); the map's "No open jobs yet" only when there are no open jobs; card title / filter labels translated |
+| J4 | a rise from 0 shows "New this month" instead of "▲ 100%" (Jobs stats + StatCard) |
+| C2 | "privacy policy" in the consent line links to `/careers/privacy` (the company's published notice for `recruitment.application`; plain words when none is published yet - never an invented notice) |
+| C3 | apply form `noValidate` + the app's own messages (name, email, resume, salary, consent) in the company language |
+| A3 | phone: the 12 filters fold behind one "Filters (n)" button; results first |
+| P4 | `f_domain` capped at the resume's total experience (overlapping roles were added twice: "7.0 years" of 5) - test |
+| P5 | next-step buttons in sentence case ("Schedule interview", "Check salary", "Create offer", ...); score chart legend items spaced; "We call them … (full name - set the first name)" -> "Name used in emails … (the full name, until you set the first name)" |
+| I3 | booking line "Booked: 1 Jan 2025, 10:00 am" (year always) and no "with the interviewer" when none was chosen |
+| S3 | (with B1) approve says "No department budget is set - nothing was reserved"; history says "Salary form link made - not emailed (no mailbox)" when the log has `sent: false` |
+| B2 | /bgv and /offers: with no job chosen the stage table is the page - the "Choose a job" card is gone |
+| B3 | done in 27.1 |
+| M1 | /me for an admin without an employee record: "Create my employee record" / "Link to an existing one" (employee ID or company email; never a record another login owns; audit `employee_linked_to_login`); others keep "ask HR". The installer's first admin gets a linked record. 3 tests |
+| ST2 | the missing keys added (`settingsHome.page.company.modules`, 8 `purpose.*` - the catalog has one more than the report saw - `nav.home`, `nav.recruitment`, plus `nav.core_hr`, `nav.separation` found by the new test). Tests that fail on a missing key built at run time: `src/i18n/dynamicKeys.test.ts` (Settings catalog), `tests/test_ui_text_keys.py` (every connection purpose, module and menu label, EN/HI/TA) |
+| ST3 | approval steps: name + "Version 1 · Live" / "Draft" / "Replaced"; no internal key; "Try it" instead of "Simulate" |
+| X3 | /superadmin kept (owner): `noindex, nofollow` on the page, `robots.txt` disallows it; console sign-in rate-limited (10 per 15 min per IP / email -> 429) |
+| Tours | one "Don't show tours again" per person on the server (`ux.tours_off`, user scope; bootstrap `ux.tours_off`); the tour's skip button sets it; "Show me how" still replays a tour - test |
+| Dates | `utils/datetime.formatDate / formatDateTime` (en-IN, year whenever it is not this year, or always): the 39 files with plain `new Date(x).toLocaleDateString() / toLocaleString()` now use it; calls with their own options are unchanged |
+
+i18n:check 0 missing (5093 keys). Frontend unit tests 40 passed / the same 3 old failures. Affected backend files: only baseline failures.

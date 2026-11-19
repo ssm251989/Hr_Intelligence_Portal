@@ -125,16 +125,16 @@ export default function WorkflowsPanel() {
         ) : (
           <List dense disablePadding>
             {definitionsList.map((d) => (
-              <ListItem key={d.id} divider secondaryAction={<Button size="small" onClick={() => setSimulating(d)}>Simulate</Button>}>
+              <ListItem key={d.id} divider secondaryAction={<Button size="small" onClick={() => setSimulating(d)}>{tr("wf.simulate")}</Button>}>
+                {/* ST3 (Part 27): names + "Version 1 · Live", never the internal key / "v1" / "published" */}
                 <ListItemText
                   primary={
                     <Stack direction="row" spacing={1} alignItems="center">
                       <Typography variant="body2">{d.name}</Typography>
-                      <Chip label={`v${d.version}`} size="small" variant="outlined" />
-                      <Chip label={d.status} size="small" color={d.status === "published" ? "success" : "default"} />
+                      <Chip size="small" color={d.status === "published" ? "success" : "default"} variant={d.status === "published" ? "filled" : "outlined"}
+                        label={tr(d.status === "published" ? "wf.version_live" : d.status === "draft" ? "wf.version_draft" : "wf.version_old", { n: d.version })} />
                     </Stack>
                   }
-                  secondary={d.key}
                 />
               </ListItem>
             ))}

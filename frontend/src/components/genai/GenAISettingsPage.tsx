@@ -20,6 +20,7 @@ import Typography from "@mui/material/Typography";
 import { extractErrorMessage, http, platformSettingsApi } from "../../api/client";
 import { useT } from "../../i18n";
 import ConfirmDialog from "../ConfirmDialog";
+import { formatDateTime } from "../../utils/datetime";
 
 interface Feature { code: string; module: string; label: string; enabled: boolean; switched_off: boolean; model_key: string | null; model: string | null }
 interface LimitRow { scope: string; key: string; limit: number; used: number; pct: number; mode: string }
@@ -75,8 +76,8 @@ export default function GenAISettingsPage() {
             ? t("genai.in_use_bedrock", { region: br.effective_region, prefix: br.effective_prefix })
             : t("genai.in_use", { provider: "Anthropic Claude", source: t(`genai.source.${d.key.source}`), masked: d.key.masked ?? "—" })}
           {isBedrock && br
-            ? ` · ${br.last_tested_at ? `${br.last_test_ok ? t("conn.last_ok") : t("conn.last_failed")} ${new Date(br.last_tested_at).toLocaleString()}` : t("genai.not_tested")}`
-            : d.key.last_tested_at && ` · ${d.key.last_test_ok ? t("conn.last_ok") : t("conn.last_failed")} ${new Date(d.key.last_tested_at).toLocaleString()}`}
+            ? ` · ${br.last_tested_at ? `${br.last_test_ok ? t("conn.last_ok") : t("conn.last_failed")} ${formatDateTime(br.last_tested_at)}` : t("genai.not_tested")}`
+            : d.key.last_tested_at && ` · ${d.key.last_test_ok ? t("conn.last_ok") : t("conn.last_failed")} ${formatDateTime(d.key.last_tested_at)}`}
         </Typography>
         <Stack direction={{ xs: "column", md: "row" }} spacing={1} alignItems={{ md: "center" }}>
           <TextField select size="small" label={t("genai.provider")} value={d.provider} sx={{ minWidth: 260 }} disabled={providers.length < 2}

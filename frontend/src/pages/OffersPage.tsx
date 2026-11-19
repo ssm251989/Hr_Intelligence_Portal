@@ -28,6 +28,7 @@ import RefreshButton from "../components/RefreshButton";
 import { Inset, JobPickerCard, PersonHeader, useOffersContext, useWhen } from "../components/offers/shared";
 import { useT } from "../i18n";
 import { celebrate, EmptyState, Emoji, FriendlyError, InfoTip, PageHeader, StatTile, useReducedMotion } from "../ui-kit";
+import { formatDate } from "../utils/datetime";
 
 const RELEVANT_STATUSES = ["bgv_cleared", "offer_sent", "onboarding_started", "onboarding_completed"];
 
@@ -444,7 +445,7 @@ export default function OffersPage() {
           { key: "signed", label: t("stage.col.signed"), render: (r) => r.offer_signed ? t("stage.yes") : r.status === "bgv_cleared" ? "—" : t("stage.no") },
           { key: "joining", label: t("stage.col.joining"), render: (r) => {
             const d = r.joining_date ?? r.joining_chosen;
-            if (d) return new Date(d).toLocaleDateString();
+            if (d) return formatDate(d);
             if (r.status === "bgv_cleared") return (r.joining_proposed ?? []).length ? <Chip size="small" color="info" label={t("joining.waiting_short")} /> : <Chip size="small" color="warning" label={t("joining.pick_dates")} />;
             return "—";
           } },
@@ -473,11 +474,8 @@ export default function OffersPage() {
         </Alert>
       )}
 
-      {!selectedJobId ? (
-        <Card>
-          <EmptyState illustration="job-offers" title={t("offers.empty.no_job")} hint={t("offers.empty.no_job_hint")} />
-        </Card>
-      ) : loading ? (
+      {/* B2 (Part 27): with no job chosen the table above IS the page - no "choose a job" card under it */}
+      {!selectedJobId ? null : loading ? (
         <Box sx={{ display: "grid", placeItems: "center", py: 6 }} role="status" aria-label={t("offers.shared.loading")}>
           <CircularProgress />
         </Box>

@@ -13,6 +13,7 @@ import { useT } from "../i18n";
 import { matchScoreDisplay } from "../utils/screeningScore";
 import CandidateAvatar from "./CandidateAvatar";
 import SourceIcon from "./SourceIcon";
+import { formatDate } from "../utils/datetime";
 
 export default function RecentCandidatesTable({ rows }: { rows: CandidateApplicationRow[] }) {
   const t = useT();
@@ -65,7 +66,7 @@ export default function RecentCandidatesTable({ rows }: { rows: CandidateApplica
                 <SourceIcon source={row.source} />
               </TableCell>
               <TableCell>{row.job_title}</TableCell>
-              <TableCell>{new Date(row.applied_on).toLocaleDateString()}</TableCell>
+              <TableCell>{formatDate(row.applied_on)}</TableCell>
               <TableCell>
                 {(() => {
                   const { value } = matchScoreDisplay(row, t);

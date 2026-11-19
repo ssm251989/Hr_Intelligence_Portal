@@ -18,6 +18,7 @@ import Typography from "@mui/material/Typography";
 import { connectorsApi, extractErrorMessage, http, type ConnectionRow, type ProviderCatalogEntry, type PurposeStatus } from "../api/client";
 import { t as tr } from "../i18n";
 import ConfirmDialog from "./ConfirmDialog";
+import { formatDateTime } from "../utils/datetime";
 
 export function purposeLabel(code: string): string {
   const text = tr(`purpose.${code}`);
@@ -173,7 +174,7 @@ export default function ConnectionsPanel() {
                     </Stack>
                     <Typography variant="caption" sx={{ display: "block", mt: 0.5 }}>
                       {c.last_tested_at
-                        ? `${c.last_test_result?.success ? tr("conn.last_ok") : tr("conn.last_failed")} · ${new Date(c.last_tested_at).toLocaleString()}${c.last_test_result?.error ? ` · ${c.last_test_result.error}` : ""}`
+                        ? `${c.last_test_result?.success ? tr("conn.last_ok") : tr("conn.last_failed")} · ${formatDateTime(c.last_tested_at)}${c.last_test_result?.error ? ` · ${c.last_test_result.error}` : ""}`
                         : tr("conn.never")}
                     </Typography>
                   </Box>

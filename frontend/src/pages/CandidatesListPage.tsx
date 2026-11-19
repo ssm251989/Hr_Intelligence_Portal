@@ -10,6 +10,9 @@ import PersonRemoveOutlinedIcon from "@mui/icons-material/PersonRemoveOutlined";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
+import { useTheme } from "@mui/material/styles";
+import useMediaQuery from "@mui/material/useMediaQuery";
+import Collapse from "@mui/material/Collapse";
 import Link from "@mui/material/Link";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
@@ -58,6 +61,7 @@ import { EmptyState, FriendlyError, PageHeader, StatusChip, statusStyle } from "
 import { downloadCsv } from "../utils/csv";
 import { downloadResume } from "../utils/resume";
 import { matchScoreDisplay } from "../utils/screeningScore";
+import { formatDate } from "../utils/datetime";
 
 // Part 15.4 Candidates list: table AND Kanban board (switch remembered per browser, table by
 // default -- N4), 25 rows a page (N5), the standard ListToolbar (refresh, saved views, column
@@ -108,6 +112,8 @@ export default function CandidatesListPage() {
   const [viewMode, setViewModeState] = useState<ViewMode>(readViewMode);
   // Part 17.2: links from the Home funnel / other pages pre-set filters (?status=a,b&job=&applied_after=).
   const [urlParams] = useSearchParams();
+  const phone = useMediaQuery(useTheme().breakpoints.down("sm"));
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState<CandidateFilters>(() => ({
     ...EMPTY_CANDIDATE_FILTERS,
     status: urlParams.get("status") ?? EMPTY_CANDIDATE_FILTERS.status,
@@ -463,7 +469,15 @@ export default function CandidatesListPage() {
             {selectedIds.size > 0 ? t("candidates.list.export_selected", { count: selectedIds.size }) : t("candidates.list.export_all")}
           </Button>
         </Stack>
-        <CandidateFiltersPanel jobs={jobs} filters={filters} onChange={setFilters} />
+        {/* A3 (Part 27): on a phone the 12 filters sit behind one "Filters (n)" button so results come first */}
+        {phone && (
+          <Button size="small" variant="outlined" sx={{ mt: 1 }} onClick={() => setFiltersOpen((v) => !v)} aria-expanded={filtersOpen}>
+            {t("candidates.list.filters_n", { count: Object.values(filters).filter((v) => v !== "" && v != null).length })}
+          </Button>
+        )}
+        <Collapse in={!phone || filtersOpen}>
+          <CandidateFiltersPanel jobs={jobs} filters={filters} onChange={setFilters} />
+        </Collapse>
       </Card>
 
       <ListToolbar
@@ -598,7 +612,7 @@ export default function CandidatesListPage() {
                         </TableCell>
                         {show("source") && <TableCell><SourceIcon source={row.source} /></TableCell>}
                         {show("job") && <TableCell>{jobById.get(row.job_role_id)?.title ?? row.job_title}</TableCell>}
-                        {show("applied") && <TableCell>{new Date(row.applied_on).toLocaleDateString()}</TableCell>}
+                        {show("applied") && <TableCell>{formatDate(row.applied_on)}</TableCell>}
                         {show("experience") && <TableCell>{row.experience_years != null ? t("candidates.years", { count: row.experience_years }) : "—"}</TableCell>}
                         {show("location") && <TableCell>{row.location || "—"}</TableCell>}
                         {show("match") && (

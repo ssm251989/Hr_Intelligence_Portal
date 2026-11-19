@@ -22,6 +22,7 @@ import { extractErrorMessage } from "../../api/client";
 import { policiesApi, type PolicyList, type PolicyMeta, type PolicyRow } from "../../api/policiesApi";
 import { useT } from "../../i18n";
 import { EmptyState, Emoji, StatusChip, type Tone } from "../../ui-kit";
+import { formatDate } from "../../utils/datetime";
 
 // Fix 2026-10-05: Settings > Company > Policies & handbook -- the ONE place HR uploads what the
 // HR assistant answers from (works whether or not Helpdesk is switched on). Upload several
@@ -59,7 +60,7 @@ function saveBlob(blob: Blob, name: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-const fmtDate = (iso: string | null) => (iso ? new Date(iso.length === 10 ? `${iso}T00:00:00` : iso).toLocaleDateString() : "—");
+const fmtDate = (iso: string | null) => (iso ? formatDate(iso.length === 10 ? `${iso}T00:00:00` : iso) : "—");
 
 export default function PoliciesPage() {
   const t = useT();

@@ -26,6 +26,7 @@ import { extractErrorMessage, superAdminApi } from "../../api/client";
 import type { ActivationEventRow, ApproverRow, ConsoleActivationRequest, ConsoleActivationState, MailboxIn } from "../../api/modulesApi";
 import { useT } from "../../i18n";
 import { StatusChip } from "../../ui-kit";
+import { formatDateTime } from "../../utils/datetime";
 
 // Part 19.2 / 19.2b / 19.2c (CTD Techs console): activation requests from every installation,
 // the approver priority list, the platform mailbox and the platform settings. Requests whose
@@ -134,7 +135,7 @@ function RequestsCard({ token, rows, approvers, busy, run }: { token: string; ro
                   <TableCell>{r.module_names}</TableCell>
                   <TableCell>
                     <Typography variant="body2">{r.requested_by_name || r.requested_by}</Typography>
-                    <Typography variant="caption">{r.requested_at ? new Date(r.requested_at).toLocaleString() : ""}</Typography>
+                    <Typography variant="caption">{r.requested_at ? formatDateTime(r.requested_at) : ""}</Typography>
                   </TableCell>
                   <TableCell>
                     {status(r)}
@@ -203,7 +204,7 @@ function RequestsCard({ token, rows, approvers, busy, run }: { token: string; ro
               <TableBody>
                 {events.map((e, i) => (
                   <TableRow key={i}>
-                    <TableCell sx={{ whiteSpace: "nowrap" }}>{e.at ? new Date(e.at).toLocaleString() : ""}</TableCell>
+                    <TableCell sx={{ whiteSpace: "nowrap" }}>{e.at ? formatDateTime(e.at) : ""}</TableCell>
                     <TableCell>{t(`act.kind.${e.kind}`)}</TableCell>
                     <TableCell>{e.sent_to.join(", ") || "—"}</TableCell>
                     <TableCell>{e.by}</TableCell>
@@ -316,7 +317,7 @@ function MailboxCard({ token, health, busy, run }: { token: string; health: Cons
         {t("act.mb.intro")} {m.source === "env" ? t("act.mb.from_env") : ""}
       </Typography>
       {health.last && <Alert severity={health.last.ok ? "success" : "error"} sx={{ mb: 1.5 }}>
-        {health.last.ok ? t("act.mb.last_ok", { at: new Date(health.last.at).toLocaleString() }) : t("act.mb.last_failed", { at: new Date(health.last.at).toLocaleString(), reason: health.last.reason ?? "" })}
+        {health.last.ok ? t("act.mb.last_ok", { at: formatDateTime(health.last.at) }) : t("act.mb.last_failed", { at: formatDateTime(health.last.at), reason: health.last.reason ?? "" })}
       </Alert>}
       {m.source === "hr_admin" && (
         <Alert severity="info" sx={{ mb: 1.5 }}>{t("act.mb.hr_admin", { connection: m.connection ?? "", from: m.from_address ?? "" })}</Alert>

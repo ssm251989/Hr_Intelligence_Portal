@@ -5,6 +5,7 @@ import Stack from "@mui/material/Stack";
 import { jobsExtraApi, type JobPipelineRow } from "../../api/jobsExtra";
 import { useT } from "../../i18n";
 import { InfoTip, StatusChip } from "../../ui-kit";
+import { formatDate } from "../../utils/datetime";
 
 // J5: say, in words, when a job will close by itself (all openings filled OR its closing
 // date passes) -- or why it already did.
@@ -16,7 +17,7 @@ export default function AutoCloseNote({ row, withTip = false }: { row: JobPipeli
   // Part 21.1: from 3 days before a closed job moves to the Recycle bin
   if (row.status === "closed" && row.recycle && !kept) {
     chips.push(
-      <StatusChip key="bin" tone="sun" emoji="hourglass" label={t("jobs.bin.moves_on", { date: new Date(row.recycle.moves_on).toLocaleDateString() })} />,
+      <StatusChip key="bin" tone="sun" emoji="hourglass" label={t("jobs.bin.moves_on", { date: formatDate(row.recycle.moves_on) })} />,
       <Button key="keep" size="small" onClick={(e) => { e.stopPropagation(); jobsExtraApi.keepJob(row.job_id).then(() => setKept(true)).catch(() => undefined); }}>
         {t("jobs.bin.keep")}
       </Button>,

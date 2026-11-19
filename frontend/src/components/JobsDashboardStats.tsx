@@ -25,8 +25,9 @@ const LAST_MONTH_SENTINEL = "last_month";
 // pct with a 0 compare value means "grew from nothing" (+100%); a null compare value means
 // there is nothing to compare at all.
 function trendOf(trend: StatTrend, higherIsBetter: boolean, period: string, t: TFunction): { text?: string; direction: "up" | "down" | "flat" } {
-  const zeroBaseline = trend.pct_change == null && trend.compare_value === 0;
-  const pct = zeroBaseline ? 100 : trend.pct_change;
+  // J4 (Part 27): a rise from 0 has no percentage ("▲ 100% vs last month" was misleading) -> "New this month"
+  if (trend.pct_change == null && trend.compare_value === 0) return { text: t("stats.new_this_month"), direction: higherIsBetter ? "up" : "down" };
+  const pct = trend.pct_change;
   if (pct == null) return { direction: "flat" };
   const text = t("jobs.stats.trend", { pct: Math.abs(pct), period });
   if (pct === 0) return { text, direction: "flat" };

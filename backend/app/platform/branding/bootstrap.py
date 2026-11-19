@@ -126,6 +126,7 @@ def build_bootstrap(db: Session, tenant: TenantContext, user: Optional[User], *,
         "ux": {
             "reduce_motion": bool(settings_service.get("ux.reduce_motion", ctx)),
             "page_size": int(settings_service.get("ux.page_size", ctx) or 25),
+            "tours_off": bool(settings_service.get("ux.tours_off", ctx)),
             "direction": "rtl" if resolved_locale in (settings_service.get("org.rtl_locales", ctx) or []) else "ltr",
         },
         "custom_labels": custom_labels,

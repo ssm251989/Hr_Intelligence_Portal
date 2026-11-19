@@ -167,6 +167,7 @@ HELP: dict[str, tuple[str, str]] = {
     "platform.health.ignored": ("Configuration health checks an admin chose to ignore because the company doesn't need them.", "Configuration health on the admin home"),
     "platform.setup.config_pack": ("Which configuration pack was applied during setup.", "Setup checklist"),
     "ux.reduce_motion": ("Turn off animations and celebrations.", "All motion in the app for this user"),
+    "ux.tours_off": ("Don't start page tours automatically (\"Show me how\" still replays them).", "Page tours for this user"),
     "ux.page_size": ("Rows per page in lists.", "Every list"),
     "ux.home_layout": ("How this person arranged the boxes on their home page.", "Their own home page"),
     "ux.home_default_hr": ("The starting layout of the HR home page for your company.", "HR home page for anyone who hasn't arranged their own"),

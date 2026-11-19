@@ -65,14 +65,15 @@ export default function AdminHomeChecklist() {
         <Card>
           <CardContent>
             <Stack direction="row" justifyContent="space-between" alignItems="center">
-              <Typography variant="h6">Finish setting up ({progress.percent}%)</Typography>
-              <Button component={RouterLink} to="/setup" variant="contained">Continue setup</Button>
+              <Typography variant="h6">{t("setupcheck.title", { pct: progress.percent })}</Typography>
+              <Button component={RouterLink} to="/setup" variant="contained">{t("setupcheck.continue")}</Button>
             </Stack>
-            <LinearProgress variant="determinate" value={progress.percent} sx={{ my: 1 }} aria-label="Setup progress" />
+            <LinearProgress variant="determinate" value={progress.percent} sx={{ my: 1 }} aria-label={t("setupcheck.progress")} />
             <List dense>
               {progress.steps.filter((s) => !s.done).slice(0, 4).map((s) => (
-                <ListItem key={s.step} secondaryAction={<Button size="small" component={RouterLink} to={s.fix_path}>Open</Button>}>
-                  <ListItemText primary={s.step.replace(/_/g, " ")} secondary={s.detail} />
+                <ListItem key={s.step} secondaryAction={<Button size="small" component={RouterLink} to={s.fix_path}>{t("setupcheck.open")}</Button>}>
+                  {/* H2 (Part 27): human step names, not the raw keys */}
+                  <ListItemText primary={t(`setupcheck.step.${s.step}`) === `setupcheck.step.${s.step}` ? s.step.replace(/_/g, " ") : t(`setupcheck.step.${s.step}`)} secondary={s.detail} />
                 </ListItem>
               ))}
             </List>
@@ -93,7 +94,7 @@ export default function AdminHomeChecklist() {
               <Alert key={`${issue.code}-${i}`} severity={issue.severity} sx={{ mb: 1 }}
                 action={(
                   <Stack direction="row" spacing={0.5} alignItems="center">
-                    {issue.fix_path && <Button size="small" component={RouterLink} to={issue.fix_path} variant="contained">{issue.action_label ?? "Fix it"}</Button>}
+                    {issue.fix_path && <Button size="small" component={RouterLink} to={issue.fix_path} variant="contained">{issue.action_label ?? t("setupcheck.fix")}</Button>}
                     {issue.key && (
                       <Tooltip title={t("health.ignore.hint")}>
                         <Button size="small" color="inherit" onClick={() => ignore(issue.key as string)}>{t("health.ignore")}</Button>
@@ -104,7 +105,7 @@ export default function AdminHomeChecklist() {
                 <strong>{issue.message}</strong> {issue.fix}
               </Alert>
             ))}
-            {issues.length > 6 && <Typography variant="caption" color="text.secondary">{issues.length - 6} more on the Setup page.</Typography>}
+            {issues.length > 6 && <Typography variant="caption" color="text.secondary">{t("setupcheck.more", { count: issues.length - 6 })}</Typography>}
           </CardContent>
         </Card>
       )}

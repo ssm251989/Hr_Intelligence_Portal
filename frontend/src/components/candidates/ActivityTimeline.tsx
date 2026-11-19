@@ -2,6 +2,7 @@ import type { AuditLogRead } from "../../api/types";
 import { useT, type TFunction } from "../../i18n";
 import { humanise, Timeline, type TimelineItem } from "../../ui-kit";
 import { activityEmoji } from "./stages";
+import { formatDateTime } from "../../utils/datetime";
 
 // Part 15.4 C6: the candidate's history (emails, stage changes, notes, interviews, AI
 // scores) from the existing audit-trail endpoint, newest first, in plain words.
@@ -46,7 +47,7 @@ export default function ActivityTimeline({ events, filter }: { events: AuditLogR
         id: String(event.id),
         emoji: activityEmoji(event.action),
         title: activityLabel(t, event.action),
-        meta: `${timeAgo(t, event.created_at)} · ${new Date(event.created_at).toLocaleString()}${who}${extra ? ` · ${extra}` : ""}`,
+        meta: `${timeAgo(t, event.created_at)} · ${formatDateTime(event.created_at)}${who}${extra ? ` · ${extra}` : ""}`,
       };
     });
   return <Timeline items={items} empty={t("candidates.activity.empty")} />;

@@ -48,6 +48,7 @@ import Emoji from "../ui-kit/Emoji";
 import {
   FALLBACK_NAV, NAV_CHILDREN, NAV_GROUP_ORDER, NOTIFICATION_MODULES, sectionOf, type NavGroup,
 } from "./navConfig";
+import { formatDateTime } from "../utils/datetime";
 
 const SIDEBAR_WIDTH = 236;
 const RAIL_WIDTH = 76;
@@ -310,7 +311,7 @@ function NotificationsBell() {
                   {g.items.slice(0, 5).map((i) => (
                     <Box key={i.id} sx={{ p: "8px 10px", borderRadius: "10px", bgcolor: t.surface2, border: `1px solid ${t.line}` }}>
                       <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{i.title}</Typography>
-                      {i.created_at && <Typography variant="caption">{new Date(i.created_at).toLocaleString()}</Typography>}
+                      {i.created_at && <Typography variant="caption">{formatDateTime(i.created_at)}</Typography>}
                     </Box>
                   ))}
                 </Stack>
@@ -459,7 +460,8 @@ export default function AppLayout() {
               <ProfileMenu onLogout={() => setConfirmLogoutOpen(true)} />
             </Stack>
           </Box>
-          <Box component="main" id="main-content" tabIndex={-1} sx={{ minWidth: 0, outline: "none" }}>
+          {/* H4 (Part 27): room under every page so the floating assistant button never covers an action */}
+          <Box component="main" id="main-content" tabIndex={-1} sx={{ minWidth: 0, outline: "none", pb: { xs: 11, md: 10 } }}>
             {/* Remount the page on a language change so every label (hook or plain t()) re-renders. */}
             {inactiveHere ? <ModuleNotActiveCard module={inactiveHere} /> : <Outlet key={locale} />}
           </Box>

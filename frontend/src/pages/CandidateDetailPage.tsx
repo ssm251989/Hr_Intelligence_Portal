@@ -51,6 +51,7 @@ import { ROLE_MATRIX } from "../auth/roles";
 import { useT } from "../i18n";
 import { EmptyState, FriendlyError, InfoTip, PageHeader, StageStepper, StatusChip } from "../ui-kit";
 import { downloadResume } from "../utils/resume";
+import { formatDateTime } from "../utils/datetime";
 
 // Part 15.4 C1: the candidate profile in two columns (mockup "Candidate profile") --
 // details + stage stepper on the left; score ring with evidence and radar, then the tabbed
@@ -463,7 +464,7 @@ export default function CandidateDetailPage() {
               {application.expected_salary != null && (
                 <Fact label={t("candidates.fact.expected_salary")}>{application.expected_salary.toLocaleString()}</Fact>
               )}
-              <Fact label={t("candidates.fact.applied_on")}>{new Date(application.created_at).toLocaleString()}</Fact>
+              <Fact label={t("candidates.fact.applied_on")}>{formatDateTime(application.created_at)}</Fact>
               {application.ranking_score != null && (
                 <Fact label={t("candidates.fact.ranking")} info={t("candidates.fact.ranking_info")}>{Math.round(application.ranking_score)}%</Fact>
               )}
@@ -689,7 +690,7 @@ export default function CandidateDetailPage() {
                         {shortlistDetails.feedback && <Typography sx={{ fontSize: 13, whiteSpace: "pre-wrap" }}>{shortlistDetails.feedback}</Typography>}
                         {latestShortlistUpdate && (
                           <Typography sx={{ display: "block", mt: 0.5, fontSize: 12, color: f.muted }}>
-                            {latestShortlistUpdate.actor} · {new Date(latestShortlistUpdate.created_at).toLocaleString()}
+                            {latestShortlistUpdate.actor} · {formatDateTime(latestShortlistUpdate.created_at)}
                           </Typography>
                         )}
                       </Box>

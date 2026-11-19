@@ -32,6 +32,7 @@ import StatusBreakdown from "../components/reports/StatusBreakdown";
 import { downloadCsv, fileSlug } from "../components/reports/reportExport";
 import { useT } from "../i18n";
 import { EmptyState, Emoji, FriendlyError, InfoTip, PageHeader, StatTile, Timeline, humanise } from "../ui-kit";
+import { formatDateTime } from "../utils/datetime";
 
 const AUDIT_PAGE_SIZE = 20;
 
@@ -223,7 +224,7 @@ function AuditTrailView() {
     downloadCsv(
       fileSlug(t("reports.tab.audit")),
       [t("reports.audit.col_when"), t("reports.audit.col_type"), t("reports.audit.col_id"), t("reports.audit.col_action"), t("reports.audit.col_who")],
-      data.items.map((i) => [new Date(i.created_at).toLocaleString(), words(i.entity_type), i.entity_id, words(i.action), i.actor]),
+      data.items.map((i) => [formatDateTime(i.created_at), words(i.entity_type), i.entity_id, words(i.action), i.actor]),
     );
 
   return (
@@ -266,7 +267,7 @@ function AuditTrailView() {
               <TableBody>
                 {data.items.map((item) => (
                   <TableRow key={item.id}>
-                    <TableCell sx={{ whiteSpace: "nowrap" }}>{new Date(item.created_at).toLocaleString()}</TableCell>
+                    <TableCell sx={{ whiteSpace: "nowrap" }}>{formatDateTime(item.created_at)}</TableCell>
                     <TableCell>{words(item.entity_type)}</TableCell>
                     <TableCell sx={{ fontFamily: "monospace", fontSize: 12, color: f.muted }}>{item.entity_id}</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>{words(item.action)}</TableCell>
@@ -344,7 +345,7 @@ function TimelineView() {
     downloadCsv(
       fileSlug(`${t("reports.tab.timeline")} ${applicationId}`),
       [t("reports.audit.col_when"), t("reports.audit.col_action"), t("reports.audit.col_who")],
-      data.events.map((e) => [new Date(e.created_at).toLocaleString(), words(e.action), e.actor]),
+      data.events.map((e) => [formatDateTime(e.created_at), words(e.action), e.actor]),
     );
 
   return (
@@ -384,7 +385,7 @@ function TimelineView() {
                 id: event.id,
                 emoji: eventEmoji(event.action),
                 title: words(event.action),
-                meta: t("reports.timeline.meta", { when: new Date(event.created_at).toLocaleString(), who: event.actor ?? "—" }),
+                meta: t("reports.timeline.meta", { when: formatDateTime(event.created_at), who: event.actor ?? "—" }),
               }))}
             />
             <ExportBar onCsv={exportCsv} />

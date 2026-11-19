@@ -19,13 +19,15 @@ import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
 import { Link as RouterLink } from "react-router-dom";
 
-import { extractErrorMessage } from "../api/client";
+import { extractErrorMessage, http } from "../api/client";
+import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
 import { openBlob, selfServiceApi, type ChangeRequest, type Editable, type MyProfile } from "../api/selfServiceApi";
 import { CompanyEmail, EmpStatusChip } from "../components/employees/EmployeeDialogs";
 import { useT } from "../i18n";
 import { EmptyState, FriendlyError, PageHeader, StatusChip, UserAvatar } from "../ui-kit";
+import { formatDate } from "../utils/datetime";
 
-const fmtDate = (iso?: string | null) => (iso ? new Date(iso.length === 10 ? `${iso}T00:00:00` : iso).toLocaleDateString() : "—");
+const fmtDate = (iso?: string | null) => (iso ? formatDate(iso.length === 10 ? `${iso}T00:00:00` : iso) : "—");
 const grid = { display: "grid", gap: 1, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr", md: "1fr 1fr 1fr" } };
 const TEXT_FIELDS = ["preferred_name", "pronouns", "personal_email", "phone", "marital_status", "blood_group", "address"] as const;
 
@@ -119,6 +121,35 @@ function ChangeDialog({ current, onClose, onSent }: { current: Editable; onClose
   );
 }
 
+// M1 (Part 27): an admin whose login has no employee record can create one or link an existing record here.
+function LinkMyRecord({ onDone }: { onDone: () => void }) {
+  const t = useT();
+  const { can } = useMeBootstrap();
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  if (!can("platform.settings.configure")) return <EmptyState illustration="access-denied" title={t("me.not_linked")} />;
+  const go = async (mode: "create" | "link") => {
+    setBusy(true); setErr(null);
+    try { await http.post("/api/v1/ui/self-service/me/link", { mode, employee_code: mode === "link" ? code : null }); onDone(); }
+    catch (e) { setErr(extractErrorMessage(e, t("me.link.failed"))); } finally { setBusy(false); }
+  };
+  return (
+    <Card sx={{ p: 3, maxWidth: 560 }}>
+      <Typography variant="h6" sx={{ mb: 1 }}>{t("me.link.title")}</Typography>
+      <Typography sx={{ color: "text.secondary", mb: 2 }}>{t("me.link.intro")}</Typography>
+      {err && <Alert severity="error" sx={{ mb: 2 }}>{err}</Alert>}
+      <Stack spacing={2}>
+        <Button variant="contained" disabled={busy} onClick={() => go("create")}>{t("me.link.create")}</Button>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+          <TextField size="small" label={t("me.link.code")} value={code} onChange={(e) => setCode(e.target.value)} sx={{ flex: 1 }} />
+          <Button variant="outlined" disabled={busy || !code.trim()} onClick={() => go("link")}>{t("me.link.link")}</Button>
+        </Stack>
+      </Stack>
+    </Card>
+  );
+}
+
 export default function MyProfilePage() {
   const t = useT();
   const f = useTheme().palette.fresh;
@@ -132,7 +163,7 @@ export default function MyProfilePage() {
 
   if (error) return <FriendlyError error={error} onRetry={load} />;
   if (!d) return <Box sx={{ display: "grid", placeItems: "center", py: 8 }}><CircularProgress aria-label={t("me.loading")} /></Box>;
-  if (!d.linked || !d.profile) return (<Box><PageHeader emoji="id_card" title={t("me.title")} purpose={t("me.purpose")} /><EmptyState illustration="access-denied" title={t("me.not_linked")} /></Box>);
+  if (!d.linked || !d.profile) return (<Box><PageHeader emoji="id_card" title={t("me.title")} purpose={t("me.purpose")} /><LinkMyRecord onDone={load} /></Box>);
   const p = d.profile;
   const e = d.editable ?? {};
   const pending = (d.change_requests ?? []).filter((r) => r.status === "pending");

@@ -15,6 +15,7 @@ import { candidatesApi, extractErrorMessage, http } from "../../api/client";
 import { useMeBootstrap } from "../../bootstrap/MeBootstrapContext";
 import { useT } from "../../i18n";
 import ConfirmDialog from "../ConfirmDialog";
+import { formatDateTime } from "../../utils/datetime";
 
 export type BoardCode = "linkedin" | "naukri" | "indeed" | "monster" | "shine";
 interface Board {
@@ -131,7 +132,7 @@ export default function JobBoardsPage() {
                     </Stack>
                   </Stack>
                 )}
-                {b.last_tested_at && <Typography variant="caption" sx={{ display: "block" }}>{t("boards.last_tested", { time: new Date(b.last_tested_at).toLocaleString() })}</Typography>}
+                {b.last_tested_at && <Typography variant="caption" sx={{ display: "block" }}>{t("boards.last_tested", { time: formatDateTime(b.last_tested_at) })}</Typography>}
                 {msg[b.code] && <Alert severity={msg[b.code].ok ? "success" : "warning"} sx={{ my: 1 }}>{msg[b.code].text}</Alert>}
                 <Box sx={{ mt: 1 }}><BoardResumeUpload code={b.code} /></Box>
               </CardContent>

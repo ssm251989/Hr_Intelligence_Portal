@@ -31,6 +31,24 @@ export function isWebLink(value: string): boolean {
   }
 }
 
+/** Part 27 (cross-cutting): ONE date format - the company locale (en-IN by default), day + short month, and the
+ * year whenever it is not this year (or always, when `year: "always"`). */
+export function formatDate(iso: string | Date | null | undefined, opts: { year?: "auto" | "always"; locale?: string } = {}): string {
+  if (!iso) return "";
+  const d = typeof iso === "string" ? new Date(iso) : iso;
+  if (Number.isNaN(d.getTime())) return "";
+  const withYear = opts.year === "always" || d.getFullYear() !== new Date().getFullYear();
+  return d.toLocaleDateString(opts.locale ?? "en-IN", { day: "numeric", month: "short", ...(withYear ? { year: "numeric" } : {}) });
+}
+
+/** formatDate + the time ("1 Jan 2025, 10:00 am"). */
+export function formatDateTime(iso: string | Date | null | undefined, opts: { year?: "auto" | "always"; locale?: string } = {}): string {
+  if (!iso) return "";
+  const d = typeof iso === "string" ? new Date(iso) : iso;
+  if (Number.isNaN(d.getTime())) return "";
+  return `${formatDate(d, opts)}, ${d.toLocaleTimeString(opts.locale ?? "en-IN", { hour: "numeric", minute: "2-digit" })}`;
+}
+
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",

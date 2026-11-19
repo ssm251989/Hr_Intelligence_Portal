@@ -418,11 +418,8 @@ export default function BgvPage() {
         </Alert>
       )}
 
-      {!selectedJobId ? (
-        <Card>
-          <EmptyState illustration="personal-information" title={t("bgv.empty.no_job")} hint={t("bgv.empty.no_job_hint")} />
-        </Card>
-      ) : loading ? (
+      {/* B2 (Part 27): with no job chosen the table above IS the page - no "choose a job" card under it */}
+      {!selectedJobId ? null : loading ? (
         <Box sx={{ display: "grid", placeItems: "center", py: 6 }} role="status" aria-label={t("offers.shared.loading")}>
           <CircularProgress />
         </Box>

@@ -337,6 +337,7 @@ def version_revert(kind: str, key: str, payload: RevertRequest, db: Session = De
 
 class Preferences(BaseModel):
     reduce_motion: Optional[bool] = None
+    tours_off: Optional[bool] = None
     page_size: Optional[int] = None
     locale: Optional[str] = None
     timezone: Optional[str] = None
@@ -348,7 +349,7 @@ def update_preferences(payload: Preferences, db: Session = Depends(get_db), curr
 
     tenant = require_current_tenant()
     service = SettingsService(db)
-    mapping: dict[str, Any] = {"ux.reduce_motion": payload.reduce_motion, "ux.page_size": payload.page_size, "org.locale": payload.locale, "org.timezone": payload.timezone}
+    mapping: dict[str, Any] = {"ux.reduce_motion": payload.reduce_motion, "ux.tours_off": payload.tours_off, "ux.page_size": payload.page_size, "org.locale": payload.locale, "org.timezone": payload.timezone}
     if payload.page_size is not None and payload.page_size not in (10, 25, 50, 100):
         raise HTTPException(status_code=400, detail="page size is 10, 25, 50 or 100")
     for key, value in mapping.items():

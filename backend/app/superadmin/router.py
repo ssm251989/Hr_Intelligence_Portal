@@ -12,7 +12,7 @@ from typing import Optional
 from uuid import UUID
 
 import pyotp
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import text as sa_text
 
@@ -75,7 +75,16 @@ class ConsoleLogin(BaseModel):
 
 
 @router.post("/login")
-def login(payload: ConsoleLogin, cp_db=Depends(_cp)):
+def login(payload: ConsoleLogin, request: Request, cp_db=Depends(_cp)):
+    # X3 (Part 27): the console sign-in is rate-limited (10 tries / 15 min per IP and per email); the page is noindex
+    import time
+
+    from app.platform.ops.rate_limit import _hit
+
+    window = int(time.time() // 900)
+    ip = request.client.host if request.client else "?"
+    if _hit(f"sa-login:ip:{ip}:{window}", window) > 10 or _hit(f"sa-login:email:{payload.email.lower()}:{window}", window) > 10:
+        raise HTTPException(status_code=429, detail="Too many attempts. Try again in 15 minutes.", headers={"Retry-After": "900"})
     admin = cp_db.query(PlatformAdmin).filter(PlatformAdmin.email == payload.email.lower()).first()
     generic = HTTPException(status_code=401, detail="Email, password or code is incorrect")
     if admin is None or not admin.is_active or not admin.password_hash or not verify_password(payload.password, admin.password_hash):
