@@ -148,10 +148,23 @@ def compute_next_actions(db: Session, application: Application) -> list[NextActi
         return [
             NextAction(
                 key="approve_salary",
-                label="Approve/Reject Salary",
+                label="Approve or reject salary",
                 kind="navigate",
-                route=_job_route("/salary", job_id),
-                description="Expected salary is above the job's band -- needs an approval decision and optional override amount.",
+                # P2 (Part 27): opens this candidate's salary drawer, not just the Salary page
+                route=f"/salary?application={app_id}",
+                description="The expected salary needs a person's approval (above the band, hike over the limit, current salary not known or budget short).",
+            )
+        ]
+
+    # P1 (Part 27): salary approved is not the end -- documents -> BGV -> joining date -> offer -> joined
+    if status == "salary_approved":
+        return [
+            NextAction(
+                key="joining_documents",
+                label="Joining documents",
+                kind="navigate",
+                route=_job_route("/bgv", job_id),
+                description="Next: joining documents, then background check, joining date, offer and joining.",
             )
         ]
 

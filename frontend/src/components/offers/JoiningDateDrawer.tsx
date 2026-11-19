@@ -6,6 +6,7 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
+import CopyLinkButton from "../CopyLinkButton";
 import { extractErrorMessage, http } from "../../api/client";
 import { useT } from "../../i18n";
 
@@ -20,6 +21,7 @@ export default function JoiningDateDrawer({ applicationId, name, onClose, onChan
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [shareLink, setShareLink] = useState<string | null>(null);
 
   const load = useCallback(() => {
     if (!applicationId) return;
@@ -31,7 +33,8 @@ export default function JoiningDateDrawer({ applicationId, name, onClose, onChan
     setBusy(true); setMsg(null);
     try {
       const r = await http.post<{ sent: boolean; link: string | null }>(`/api/v1/ui/joining/${applicationId}/propose`, { dates, note: note || null });
-      setMsg({ ok: true, text: r.sent ? t("joining.sent") : t("joining.link", { link: r.link ?? "" }) });
+      setMsg({ ok: r.sent, text: r.sent ? t("joining.sent") : t("joining.link", { link: r.link ?? "" }) });
+      setShareLink(r.link);
       load(); onChanged();
     } catch (e) { setMsg({ ok: false, text: extractErrorMessage(e, t("joinpick.err")) }); } finally { setBusy(false); }
   };
@@ -50,7 +53,7 @@ export default function JoiningDateDrawer({ applicationId, name, onClose, onChan
             slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: tomorrow } }} />
         ))}
         <TextField label={t("joining.note")} value={note} onChange={(e) => setNote(e.target.value)} multiline minRows={2} />
-        {msg && <Alert severity={msg.ok ? "success" : "error"}>{msg.text}</Alert>}
+        {msg && <Alert severity={msg.ok ? "success" : "warning"} action={<CopyLinkButton link={shareLink} />}>{msg.text}</Alert>}
         <Button variant="contained" disabled={busy || dates.some((d) => !d) || new Set(dates).size < 3} onClick={send}>{t("joining.send")}</Button>
         <Button onClick={onClose}>{t("salaryx.close")}</Button>
       </Stack>

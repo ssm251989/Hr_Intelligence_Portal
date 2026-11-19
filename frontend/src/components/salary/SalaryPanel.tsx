@@ -9,6 +9,7 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
+import CopyLinkButton from "../CopyLinkButton";
 import { extractErrorMessage, http } from "../../api/client";
 import { salaryQueueApi } from "../../api/salaryApi";
 import { useT } from "../../i18n";
@@ -51,21 +52,27 @@ export default function SalaryPanel({ row, onClose, onChanged }: { row: StageRow
     if (!row) return;
     setBusy(true); setMsg(null);
     try {
-      await http.post(`/api/v1/ui/salary/applications/${row.application_id}/decide`, {
+      const r = await http.post<{ budget_reserved?: boolean; email_sent?: boolean | null }>(`/api/v1/ui/salary/applications/${row.application_id}/decide`, {
         decision, amount: decision === "reject" ? null : amount ? Number(amount) : null, reason: reason || null,
       });
-      setMsg({ ok: true, text: t(`salaryx.done.${decision}`) });
+      // B1 / S3 (Part 27): say what really happened
+      const text = decision === "approve" ? t(r.budget_reserved ? "salaryx.done.approve" : "salaryx.done.approve_no_budget")
+        : decision === "counter" ? t(r.email_sent ? "salaryx.done.counter" : "salaryx.done.counter_not_sent")
+        : t("salaryx.done.reject");
+      setMsg({ ok: decision !== "counter" || !!r.email_sent, text });
       onChanged();
     } catch (err) {
       setMsg({ ok: false, text: extractErrorMessage(err, t("salaryx.err")) });
     } finally { setBusy(false); }
   };
+  const [shareLink, setShareLink] = useState<string | null>(null);
   const sendForm = async () => {
     if (!row) return;
     setBusy(true);
     try {
       const r = await salaryQueueApi.sendForm(row.application_id);
       setMsg({ ok: r.sent, text: r.sent ? t("salaryx.form_sent") : r.link ? t("salaryx.form_link", { link: r.link }) : t("salaryx.err") });
+      setShareLink(r.link ?? null);
       onChanged();
     } catch (err) { setMsg({ ok: false, text: extractErrorMessage(err, t("salaryx.err")) }); } finally { setBusy(false); }
   };
@@ -112,7 +119,7 @@ export default function SalaryPanel({ row, onClose, onChanged }: { row: StageRow
             </Stack>
           )}
           {row.salary_status === "waiting_form" && <Button variant="outlined" disabled={busy} onClick={sendForm}>{t("salaryx.send_form")}</Button>}
-          {msg && <Alert severity={msg.ok ? "success" : "warning"}>{msg.text}</Alert>}
+          {msg && <Alert severity={msg.ok ? "success" : "warning"} action={<CopyLinkButton link={shareLink} />}>{msg.text}</Alert>}
           <Divider />
           <Typography sx={{ fontWeight: 700 }}>{t("salaryx.history")}</Typography>
           {history.length === 0 ? <Typography variant="body2" color="text.secondary">{t("salaryx.history_none")}</Typography> : history.map((h, i) => (

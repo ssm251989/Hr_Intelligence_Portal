@@ -177,7 +177,7 @@ export const en = {
   "status.interview_selected": "Passed interview",
   "status.interview_rejected": "Did not pass",
   "status.salary_ok": "Salary in band",
-  "status.salary_above_band": "Above salary band",
+  "status.salary_above_band": "Needs salary approval",
   "status.salary_approved": "Salary approved",
   "status.salary_rejected": "Salary declined",
   "status.bgv_requested": "Checks requested",

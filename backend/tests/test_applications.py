@@ -664,3 +664,27 @@ def test_delete_on_hold_application_blocked(client, db_session):
 def test_delete_application_not_found(client):
     response = client.delete(f"/applications/{uuid.uuid4()}")
     assert response.status_code == 404
+
+
+def test_candidate_detail_after_salary_approval_still_has_a_next_step(client, db_session):
+    """P1 (Part 27): salary approved said "reached its last step" -- documents, BGV, offer and joining are still ahead."""
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application_with_status(db_session, job, candidate, "salary_approved")
+
+    body = client.get(f"/applications/{application.id}/candidate-detail").json()
+
+    assert [a["key"] for a in body["next_actions"]] == ["joining_documents"]
+    assert body["next_actions"][0]["route"] == f"/bgv?jobId={job.id}"
+
+
+def test_candidate_detail_salary_approval_opens_the_candidates_salary_drawer(client, db_session):
+    """P2 (Part 27): the action opens this candidate's salary drawer (/salary?application=<id>)."""
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application_with_status(db_session, job, candidate, "salary_above_band")
+
+    action = client.get(f"/applications/{application.id}/candidate-detail").json()["next_actions"][0]
+    assert action["route"] == f"/salary?application={application.id}"
+    page = client.get("/api/v1/ui/stage-table/salary", params={"application_id": str(application.id)}).json()
+    assert [i["application_id"] for i in page["items"]] == [str(application.id)]

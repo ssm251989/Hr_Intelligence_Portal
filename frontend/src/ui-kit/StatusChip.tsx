@@ -29,7 +29,7 @@ export const STATUS_STYLES: Record<string, StatusStyle> = {
   interview_selected: { tone: "ok", emoji: "thumbs_up", label: "Passed interview" },
   interview_rejected: { tone: "coral", emoji: "cross", label: "Did not pass" },
   salary_ok: { tone: "ok", emoji: "money", label: "Salary in band" },
-  salary_above_band: { tone: "sun", emoji: "warning", label: "Above salary band" },
+  salary_above_band: { tone: "sun", emoji: "warning", label: "Needs salary approval" },
   salary_approved: { tone: "ok", emoji: "check", label: "Salary approved" },
   salary_rejected: { tone: "coral", emoji: "cross", label: "Salary declined" },
   bgv_requested: { tone: "sky", emoji: "shield", label: "Checks requested" },

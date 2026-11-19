@@ -104,7 +104,7 @@ def propose(db: Session, tenant, application: Application, dates: list[str], *, 
         except Exception:  # noqa: BLE001
             sent = False
     log_action(db, "application", application.id, "joining_dates_proposed", actor[:50], {"dates": data["proposed"], "sent": sent})
-    return {"proposed": data["proposed"], "sent": sent, "link": None if sent else link(row.token, db)}
+    return {"proposed": data["proposed"], "sent": sent, "link": link(row.token, db)}  # B1 (Part 27): always, for [Copy link]
 
 
 def choose(db: Session, tenant, token_row, application: Application, chosen: str) -> dict:

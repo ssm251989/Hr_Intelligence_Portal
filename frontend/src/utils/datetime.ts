@@ -16,6 +16,21 @@ export function istLocalInputToUtcIso(localValue: string): string {
   return new Date(asIfUtc.getTime() - IST_OFFSET_MINUTES * 60 * 1000).toISOString();
 }
 
+/** The current IST wall-clock time as a `<input type="datetime-local">` value -- the earliest bookable time (I1, Part 27). */
+export function istLocalInputNow(now: Date = new Date()): string {
+  return new Date(now.getTime() + IST_OFFSET_MINUTES * 60 * 1000).toISOString().slice(0, 16);
+}
+
+/** I2 (Part 27): a meeting link must be an http(s) web address. */
+export function isWebLink(value: string): boolean {
+  try {
+    const u = new URL(value.trim());
+    return (u.protocol === "https:" || u.protocol === "http:") && !!u.host && !/\s/.test(value.trim());
+  } catch {
+    return false;
+  }
+}
+
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",

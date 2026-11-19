@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link as RouterLink, useSearchParams } from "react-router-dom";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
@@ -105,7 +105,9 @@ function ApprovalBox({ item, onDone }: { item: SalaryQueueItem; onDone: () => Pr
   return (
     <Inset title={<><Emoji name="writing_hand" size={16} /> {t("salary.approval.title")}</>}>
       <Typography sx={{ fontSize: 14, color: f.muted, mb: 1.5 }}>
-        {item.chip === "flagged" ? t("salaryQueue.approval.flagged_intro", { pct: over ?? 0 }) : t("salaryQueue.approval.intro", { pct: over ?? 0 })}
+        {item.chip === "flagged" ? t("salaryQueue.approval.flagged_intro", { pct: over ?? 0 })
+          : !item.check.reasons || item.check.reasons.some((r) => r.code === "above_band") ? t("salaryQueue.approval.intro", { pct: over ?? 0 })
+          : t("salaryQueue.approval.reasons_intro", { reasons: item.check.reasons.map((r) => reasonText(t, r)).join(", ") })}
       </Typography>
       {error && <Alert severity="error" sx={{ mb: 1.5 }}>{error}</Alert>}
       <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} alignItems={{ xs: "stretch", md: "flex-start" }}>
@@ -373,6 +375,13 @@ export default function SalaryPage() {
   const [open, setOpen] = useState<StageRow | null>(null);
   const [refresh, setRefresh] = useState(0);
   const [bulkMsg, setBulkMsg] = useState<string | null>(null);
+  // P2 (Part 27): /salary?application=<id> (the candidate page's "Approve or reject salary") opens that drawer
+  const linked = searchParams.get("application");
+  useEffect(() => {
+    if (!linked) return;
+    http.get<{ items: StageRow[] }>(`/api/v1/ui/stage-table/salary?application_id=${encodeURIComponent(linked)}`)
+      .then((r) => { if (r.items[0]) setOpen(r.items[0]); }).catch(() => undefined);
+  }, [linked]);
 
   const statusTone = (r: StageRow): "success" | "warning" | "error" | "info" | "default" =>
     r.salary_status === "needs_approval" ? "error" : r.salary_status === "countered" ? "warning" : r.salary_status === "rejected" ? "default"

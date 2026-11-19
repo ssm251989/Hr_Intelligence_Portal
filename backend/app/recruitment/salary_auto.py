@@ -153,6 +153,24 @@ def _approver_emails(db: Session, tenant, job: JobRole) -> list[str]:
     return out
 
 
+def reasons_text(reasons: list[dict]) -> str:
+    """S1 (Part 27): why a person must approve, in words -- never "above the band" unless it is."""
+    words = []
+    for r in reasons:
+        code = r.get("code")
+        if code == "above_band":
+            words.append(f"{r.get('over_pct')}% above the band")
+        elif code == "hike":
+            words.append(f"hike {r.get('hike_pct')}% over the {r.get('limit_pct')}% limit")
+        elif code == "no_current":
+            words.append("current salary not known")
+        elif code == "budget_short":
+            words.append("department budget short")
+        elif code == "no_band":
+            words.append("no salary band on the job")
+    return ", ".join(words) or "needs a person's approval"
+
+
 def apply_stage(db: Session, tenant, application: Application, *, job: JobRole, actor: str = "system") -> Optional[str]:
     """At the salary stage only: move the application on from its salary check."""
     from app.models.comms import OutboundMessage
@@ -178,13 +196,14 @@ def apply_stage(db: Session, tenant, application: Application, *, job: JobRole, 
         after_salary_approved(db, tenant, application, actor=actor)
     else:
         application.status = "salary_above_band"
-        note = "above the band - needs approval" if state == "needs_approval" else "far above the band - flagged"
+        why = reasons_text(application.salary_check.get("reasons") or [])
+        note = f"needs salary approval - {why}" if state == "needs_approval" else f"far above the band - flagged ({why})"
         candidate = db.get(Candidate, application.candidate_id)
         for addr in _approver_emails(db, tenant, job):
             db.add(OutboundMessage(
                 tenant_id=tenant.tenant_id, channel="in_app", purpose="recruitment.salary", to_addresses=[addr],
                 subject=f"Salary approval needed: {(candidate.full_name if candidate else None) or 'a candidate'} for {job.title} "
-                        f"expects {application.salary_check.get('expected'):,.0f} ({application.salary_check.get('over_pct')}% above the band).",
+                        f"expects {application.salary_check.get('expected'):,.0f} ({why}).",
                 body_ref="/salary", status="sent", related_entity_type="application", related_entity_id=application.id))
     db.commit()
     log_action(db, "application", application.id, "salary_auto_decided", actor[:50],
@@ -258,7 +277,7 @@ def send_form(db: Session, tenant, application: Application, *, actor: str = "sy
         db.commit()
     log_action(db, "application", application.id, "salary_form_reminder" if reminder else "salary_form_sent", actor[:50],
                {"sent": sent, "to": candidate.email})
-    return {"sent": sent, "link": None if sent else link}
+    return {"sent": sent, "link": link}  # B1 (Part 27): always, for [Copy link]
 
 
 def after_shortlist(db: Session, tenant, application: Application, actor: str = "system") -> Optional[dict]:
@@ -348,6 +367,8 @@ def decide(db: Session, tenant, application: Application, *, decision: str, acto
     check_ = dict(application.salary_check or {})
     if application.status not in ("salary_above_band", SALARY_STAGE, "salary_ok"):
         raise ValueError("This candidate is not waiting for a salary decision.")
+    # B1 / S3 (Part 27): the answer says what really happened (budget reserved? email sent?)
+    outcome: dict = {"budget_reserved": False, "email_sent": None}
     if decision == "approve":
         final = amount if amount is not None else _num(application.expected_salary)
         if final is None:
@@ -361,6 +382,7 @@ def decide(db: Session, tenant, application: Application, *, decision: str, acto
         application.salary_check = check_
         db.commit()
         budgets.reserve(db, tenant, application, job, final)
+        outcome["budget_reserved"] = bool(b.get("configured"))
         from app.recruitment.joining_docs import after_salary_approved  # Part 18.16
 
         after_salary_approved(db, tenant, application, actor=actor)
@@ -374,12 +396,15 @@ def decide(db: Session, tenant, application: Application, *, decision: str, acto
             try:
                 from app.platform.comms.defaults import send_default
 
-                send_default(db, tenant, "recruitment.salary_counter_offer", to=[candidate.email], related_entity_type="application",
-                             related_entity_id=application.id,
-                             ctx={"candidate_first_name": _given(candidate), "job_title": job.title if job else "",
-                                  "amount": f"{amount:,.0f}", "note": reason or ""})
+                msg = send_default(db, tenant, "recruitment.salary_counter_offer", to=[candidate.email], related_entity_type="application",
+                                   related_entity_id=application.id,
+                                   ctx={"candidate_first_name": _given(candidate), "job_title": job.title if job else "",
+                                        "amount": f"{amount:,.0f}", "note": reason or ""})
+                outcome["email_sent"] = getattr(msg, "status", None) in ("sent", "queued")
             except Exception:  # noqa: BLE001 -- recorded either way; HR can call the candidate
-                pass
+                outcome["email_sent"] = False
+        else:
+            outcome["email_sent"] = False
     else:
         if not (reason or "").strip():
             raise ValueError("Please give a reason.")
@@ -388,5 +413,5 @@ def decide(db: Session, tenant, application: Application, *, decision: str, acto
         application.salary_check = check_
         db.commit()
         budgets.release(db, tenant, application.id)
-    log_action(db, "application", application.id, f"salary_{decision}", actor[:50], {"amount": amount, "reason": reason})
-    return {"status": application.status, "approved_salary": _num(application.approved_salary), "salary_check": application.salary_check}
+    log_action(db, "application", application.id, f"salary_{decision}", actor[:50], {"amount": amount, "reason": reason, **outcome})
+    return {"status": application.status, "approved_salary": _num(application.approved_salary), "salary_check": application.salary_check, **outcome}

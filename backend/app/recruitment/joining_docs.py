@@ -112,7 +112,19 @@ def send_form(db: Session, tenant, application: Application, *, actor: str = "sy
         sent = False
     log_action(db, "application", application.id, "documents_reupload_requested" if reupload else "documents_form_reminder" if reminder else "documents_form_sent",
                actor[:50], {"sent": sent, "documents": [i["code"] for i in items]})
-    return {"sent": sent, "link": None if sent else link}
+    # B1 (Part 27): the link always comes back, so HR can share it (WhatsApp / phone) when no mailbox sent it
+    return {"sent": sent, "link": link}
+
+
+def link_for(db: Session, tenant, application: Application, *, actor: str) -> str:
+    """B1 (Part 27): the candidate's upload link without emailing it ([Copy link])."""
+    from app.platform.iam.action_tokens import create_action_token
+
+    row = _open_token(db, tenant, application)
+    if row is None:
+        row = create_action_token(db, tenant, entity_type="application", entity_id=application.id, action=FORM_ACTION,
+                                  payload={"reminders": 0}, created_by=actor[:50], ttl_days=FORM_TTL_DAYS)
+    return form_link(row.token)
 
 
 def after_salary_approved(db: Session, tenant, application: Application, actor: str = "system") -> Optional[dict]:
@@ -156,7 +168,8 @@ def _doc(d: CandidateDocument) -> dict:
             "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None}
 
 
-def save_upload(db: Session, tenant, application: Application, code: str, filename: str, content_type: str, data: bytes) -> CandidateDocument:
+def save_upload(db: Session, tenant, application: Application, code: str, filename: str, content_type: str, data: bytes,
+                actor: str = "candidate") -> CandidateDocument:
     job = db.get(JobRole, application.job_role_id)
     spec = next((r for r in required_for(db, tenant, job) if r["code"] == code), None)
     if spec is None:
@@ -175,7 +188,7 @@ def save_upload(db: Session, tenant, application: Application, code: str, filena
     db.add(doc)
     db.commit()
     check_document(db, tenant, doc)
-    log_action(db, "application", application.id, "document_uploaded", "candidate", {"code": code, "level": doc.check_level})
+    log_action(db, "application", application.id, "document_uploaded", actor[:50], {"code": code, "level": doc.check_level})
     return doc
 
 

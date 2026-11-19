@@ -212,6 +212,20 @@ def list_all_interviews(
     return InterviewsListPage(total=total, page=page, page_size=page_size, items=items)
 
 
+def check_booking(scheduled_at, meeting_link) -> None:
+    """I1 / I2 (Part 27): an interview is never booked in the past, and a meeting link is a real web address."""
+    from datetime import datetime, timedelta, timezone
+    from urllib.parse import urlparse
+
+    when = scheduled_at if scheduled_at.tzinfo else scheduled_at.replace(tzinfo=timezone.utc)
+    if when < datetime.now(timezone.utc) - timedelta(minutes=5):
+        raise HTTPException(status_code=400, detail="That time is in the past. Pick a date and time from now on.")
+    if meeting_link:
+        u = urlparse(meeting_link.strip())
+        if u.scheme not in ("http", "https") or not u.netloc or " " in meeting_link.strip():
+            raise HTTPException(status_code=400, detail="The meeting link must be a web address starting with https:// (or http://).")
+
+
 @router.post("/applications/{application_id}/interviews", response_model=InterviewRead, status_code=201)
 def schedule_interview(
     application_id: uuid.UUID,
@@ -226,6 +240,7 @@ def schedule_interview(
             status_code=400,
             detail="This candidate isn't at the Shortlisted step, so an interview can't be booked yet.",
         )
+    check_booking(payload.scheduled_at, payload.meeting_link)
     interviewer = None
     if payload.interviewer_id:
         interviewer = db.get(User, payload.interviewer_id)

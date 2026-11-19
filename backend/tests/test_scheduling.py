@@ -654,3 +654,20 @@ def test_schedule_interview_calendar_failure_falls_back_to_manual_link(client, d
         .one_or_none()
     )
     assert audit_entry is not None
+
+
+def test_interview_cannot_be_booked_in_the_past(client, db_session):
+    """I1 (Part 27): 1 Jan 2025 10:00 was accepted."""
+    application = _make_application(db_session, _make_job(db_session), _make_candidate(db_session), status="hr_selected")
+    r = client.post(f"/applications/{application.id}/interviews", json={"scheduled_at": "2025-01-01T10:00:00Z"})
+    assert r.status_code == 400 and "in the past" in r.json()["detail"]
+
+
+def test_meeting_link_must_be_a_web_address(client, db_session):
+    """I2 (Part 27): "not a url" was saved and shown."""
+    application = _make_application(db_session, _make_job(db_session), _make_candidate(db_session), status="hr_selected")
+    soon = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+    r = client.post(f"/applications/{application.id}/interviews", json={"scheduled_at": soon, "meeting_link": "not a url"})
+    assert r.status_code == 400 and "https://" in r.json()["detail"]
+    ok = client.post(f"/applications/{application.id}/interviews", json={"scheduled_at": soon, "meeting_link": "https://meet.example.com/abc"})
+    assert ok.status_code == 201

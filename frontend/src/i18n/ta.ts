@@ -166,7 +166,7 @@ export const ta: Bundle = {
   "status.interview_selected": "நேர்காணலில் தேர்ச்சி",
   "status.interview_rejected": "தேர்ச்சி பெறவில்லை",
   "status.salary_ok": "சம்பள வரம்பிற்குள்",
-  "status.salary_above_band": "சம்பள வரம்பிற்கு மேல்",
+  "status.salary_above_band": "சம்பள ஒப்புதல் தேவை",
   "status.salary_approved": "சம்பளம் ஒப்புதல்",
   "status.salary_rejected": "சம்பளம் நிராகரிப்பு",
   "status.bgv_requested": "சரிபார்ப்பு கோரப்பட்டது",
