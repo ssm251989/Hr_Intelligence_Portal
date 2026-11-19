@@ -14,6 +14,7 @@ import CheckIcon from "@mui/icons-material/Check";
 import Avatar from "@mui/material/Avatar";
 import Badge from "@mui/material/Badge";
 import Box from "@mui/material/Box";
+import CircularProgress from "@mui/material/CircularProgress";
 import Chip from "@mui/material/Chip";
 import Collapse from "@mui/material/Collapse";
 import Divider from "@mui/material/Divider";
@@ -392,7 +393,7 @@ export default function AppLayout() {
   const items = useShellNav();
   // Part 19.1: a page of a module that isn't active for the company shows "not active" instead
   const location = useLocation();
-  const { data: me } = useMeBootstrap();
+  const { data: me, loading: meLoading } = useMeBootstrap();
   const moduleHere = me?.company_modules ? moduleKeyForPath(location.pathname, me.company_modules.pages) : null;
   const registryHere = me?.modules ? moduleKeyForPath(location.pathname, REGISTRY_MODULE_PAGES) : null;
   const inactiveHere = moduleHere && !me?.company_modules?.active.includes(moduleHere) ? moduleHere
@@ -463,7 +464,10 @@ export default function AppLayout() {
           {/* H4 (Part 27): room under every page so the floating assistant button never covers an action */}
           <Box component="main" id="main-content" tabIndex={-1} sx={{ minWidth: 0, outline: "none", pb: { xs: 11, md: 10 } }}>
             {/* Remount the page on a language change so every label (hook or plain t()) re-renders. */}
-            {inactiveHere ? <ModuleNotActiveCard module={inactiveHere} /> : <Outlet key={locale} />}
+            {/* Part 27.4: pages wait for bootstrap (modules / permissions) - a page of a switched-off module used to
+                render first and call its API (404) before the "not switched on" card replaced it */}
+            {meLoading && !me ? <Box sx={{ display: "grid", placeItems: "center", py: 8 }}><CircularProgress aria-label={tr("me.loading")} /></Box>
+              : inactiveHere ? <ModuleNotActiveCard module={inactiveHere} /> : <Outlet key={locale} />}
           </Box>
         </Box>
       </Box>

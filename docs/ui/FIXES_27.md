@@ -79,3 +79,33 @@ P2 / I2 were done in 27.1. Affected backend test files: only baseline failures. 
 | Dates | `utils/datetime.formatDate / formatDateTime` (en-IN, year whenever it is not this year, or always): the 39 files with plain `new Date(x).toLocaleDateString() / toLocaleString()` now use it; calls with their own options are unchanged |
 
 i18n:check 0 missing (5093 keys). Frontend unit tests 40 passed / the same 3 old failures. Affected backend files: only baseline failures.
+
+## 27.4 Retest (proof stack: Mailpit `mailpit-p27`, API :8010 with mail capture, web :5174, Playwright Chromium)
+
+**All routes, desktop 1440 + phone 390** (64 addresses each: every signed-in page incl. a candidate, an employee,
+Settings pages and an unknown URL, plus the public pages; `scratchpad/shots/routes27.mjs`):
+
+| Run | Result |
+|---|---|
+| first | 11 problems: employee profile crash (`registry.tsx` `r.roles.includes`, pre-existing since Part 20.4 - the profile passes a row without `roles`), /org-chart and /settings/performance/cycles called their API (404 MODULE_DISABLED) before the "not switched on" card / hidden page took over (bootstrap not loaded yet), /salary blank once (slow load), /careers/None (no published job in this database - test data, not the app); Home 3 calls / 10 s |
+| fixes | the shell renders a page only after bootstrap (modules / permissions) has loaded; `roles ?? []` in the employee actions |
+| second | 128 page loads: **0 console errors, 0 4xx/5xx, 0 blank, 0 sideways scroll** except /careers/None (no published job to open); **H1: 2 calls of `/me/home` in 10 s** at both widths (dev StrictMode mounts twice - one per mount) |
+
+Screens: `p27-1440-home.png`, `p27-1440-candidates-list.png` / `p27-390-candidates-list.png` (A2/A3), `p27-1440-forgot-password.png`,
+`p27-1440-login.png` (L1/L3), `p27-1440-this-page-does-not-exist.png` (X2), `p27-1440-org-chart.png` (X1), `p27-1440-bgv.png` (B2),
+`p27-1440-me.png`, `p27-1440-careers-privacy.png` (C2).
+
+**Second half of the flow** (never reached in the report; API-driven, `scratchpad/p27_flow*.py`, candidate "Proof Lalitha Rao (P27)"):
+copy link (no email) -> send upload link (`sent: true`, Mailpit) -> HR **uploads the 5 documents for the candidate** (B1; agent
+checks ran) -> approve all -> moved to BGV -> vendor assigned -> vendor opens its link, uploads a clear report -> HR: BGV passed
+-> 3 joining dates proposed (after the 30-day notice) -> candidate picks 22 Dec -> offer emailed for signing -> **signed in the app**
+-> welcome email -> pre-boarding case -> joining date moved to today (proof only) -> **Mark as joined -> employee CTD-0033**.
+Candidate's Mailpit: "please upload your joining documents", "background verification successful - choose your joining date",
+"your offer letter - please review and sign", "Welcome to CTD Techs, Proof Lalitha Rao!". A first run stopped at "approve all"
+because this company requires the experience letter and the script hadn't uploaded it - the app correctly kept it out of BGV.
+
+**Clean-up**: the report's "E2E Test ..." jobs / "E2E Test Candidate" applications are **not in this database** (the tester used
+another installation) - nothing to delete here. Proof data: dry run then delete - 2 vendors, 2 jobs, 2 candidates / applications,
+9 candidate documents + 4 BGV copies, 1 BGV assignment, 1 offer, 1 pre-boarding case, 1 employee + employment record, 3 action
+tokens, 10 messages, 28 audit rows, 6 timeline rows + 1 Autopilot card (Autopilot reacted to the proof candidate); files removed;
+scan after: 0 rows point at a proof id. AI usage kept (real spend).
