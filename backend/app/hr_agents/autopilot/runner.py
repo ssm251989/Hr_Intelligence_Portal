@@ -11,7 +11,7 @@ from typing import Callable, Optional
 
 from sqlalchemy.orm import Session
 
-from app.hr_agents.autopilot import briefing, hiring, people, watchdog
+from app.hr_agents.autopilot import briefing, hiring, leftovers, people, watchdog
 from app.hr_agents.autopilot.core import Run, record, setting, state_get, state_set
 
 log = logging.getLogger(__name__)
@@ -99,7 +99,19 @@ def run_events(db: Session, tenant, now: Optional[datetime] = None) -> dict:
                        entity_type="application", entity_id=app.id, summary=f"{handler.__name__} failed: {type(exc).__name__}: {exc}"[:500])
             db.refresh(app)
     state_set(db, tenant, CURSOR, {"at": (last if len(rows) == BATCH else upto).isoformat()})
-    return {"events": len(rows), "handled": handled}
+    out = {"events": len(rows), "handled": handled}
+    if rows:  # a step just happened: close the cards it made pointless (the hourly run catches everything else)
+        out["cards_closed"] = _close_leftovers(db, tenant, Run("event", "cards"))
+    return out
+
+
+def _close_leftovers(db: Session, tenant, run: Run):
+    try:
+        return leftovers.close_leftovers(db, tenant, run)
+    except Exception as exc:  # noqa: BLE001 -- housekeeping never blocks the agents
+        log.exception("autopilot close_leftovers failed")
+        db.rollback()
+        return f"failed: {type(exc).__name__}"
 
 
 def _track(db: Session, tenant, application, row) -> int:
@@ -137,6 +149,7 @@ def run_hourly(db: Session, tenant, trigger: str = "schedule") -> dict:
             log.exception("autopilot %s failed", name)
             db.rollback()
             out[name] = f"failed: {type(exc).__name__}"
+    out["cards_closed"] = _close_leftovers(db, tenant, run)  # last: after this run's own rules (joined, letters)
     return out
 
 

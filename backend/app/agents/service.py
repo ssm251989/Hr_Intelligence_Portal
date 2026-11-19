@@ -63,6 +63,8 @@ def inbox(db: Session, tenant: TenantContext, user: User) -> list[AgentSuggestio
 def decide(db: Session, tenant: TenantContext, suggestion: AgentSuggestion, *, user: User, action: str, edited_payload: Optional[dict] = None) -> AgentSuggestion:
     if action not in ("approve", "edit", "reject"):
         raise AgentError("action is approve, edit or reject")
+    if suggestion.status == "closed":
+        raise AgentError(f"this card was closed - nothing to decide. {suggestion.closed_reason or ''}".strip())
     if suggestion.status != "pending":
         raise AgentError(f"suggestion already {suggestion.status}")
     if suggestion.reviewer_user_id != user.id and not has_permission(db, tenant, user, suggestion.reviewer_permission):
@@ -253,4 +255,4 @@ def policy_check(db: Session, tenant: TenantContext, *, title: str, text_body: s
 def suggestion_to_dict(s: AgentSuggestion) -> dict:
     return {"id": str(s.id), "agent": s.agent, "kind": s.kind, "title": s.title, "entity_type": s.entity_type,
             "entity_id": str(s.entity_id) if s.entity_id else None, "payload": s.payload_json, "status": s.status,
-            "final_payload": s.final_payload_json, "reviewed_by": s.reviewed_by, "created_at": s.created_at.isoformat() if s.created_at else None}
+            "final_payload": s.final_payload_json, "reviewed_by": s.reviewed_by, "closed_reason": s.closed_reason, "created_at": s.created_at.isoformat() if s.created_at else None}

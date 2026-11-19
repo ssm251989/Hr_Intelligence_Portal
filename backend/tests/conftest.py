@@ -56,6 +56,18 @@ def _default_tenant_context():
     reset_current_tenant(token)
 
 
+def pytest_configure(config):
+    config.addinivalue_line("markers", "fake_smtp: the test replaces smtplib with a fake, so it may turn the mail capture off")
+
+
+@pytest.fixture(autouse=True)
+def _mail_capture_only(request, monkeypatch):
+    """No test ever sends a real email: every send goes to the local capture (mailpit, 127.0.0.1:1025), whatever
+    backend/.env says. Only tests marked fake_smtp (smtplib itself is replaced by a fake) turn the capture off."""
+    capture = "" if request.node.get_closest_marker("fake_smtp") else "127.0.0.1:1025"
+    monkeypatch.setattr(settings, "DEV_MAIL_CAPTURE", capture)
+
+
 @pytest.fixture(autouse=True)
 def _clear_settings_cache():
     """platform/settings/resolver.py's in-process cache (see its own module docstring --

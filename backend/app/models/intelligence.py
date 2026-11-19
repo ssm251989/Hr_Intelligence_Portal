@@ -21,7 +21,7 @@ SCHEDULE_FREQUENCIES = ("daily", "weekly", "monthly")
 DRAFT_ACTIONS = ("raise_ticket", "request_asset", "request_letter", "hr_handover")  # Part 22.1: + hand over to HR (Helpdesk off)
 DRAFT_STATUSES = ("draft", "confirmed", "discarded", "failed")
 AGENTS = ("recruiter", "onboarding", "helpdesk_triage", "policy_checker")
-SUGGESTION_STATUSES = ("pending", "approved", "edited", "rejected")
+SUGGESTION_STATUSES = ("pending", "approved", "edited", "rejected", "closed")  # closed: the step was done another way (no decision)
 
 
 def _in(column: str, values: tuple) -> str:
@@ -212,6 +212,7 @@ class AgentSuggestion(Base, TenantOwned):
     reviewed_by = Column(Text)
     reviewed_at = Column(DateTime(timezone=True))
     decision_log_id = Column(UUID(as_uuid=True))
+    closed_reason = Column(Text)  # status "closed": why the card is no longer a decision (hr_agents/autopilot/leftovers.py)
     created_at = Column(DateTime(timezone=True), server_default=text("now()"))
 
 

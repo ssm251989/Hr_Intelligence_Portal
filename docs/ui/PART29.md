@@ -48,3 +48,34 @@ double timeline lines).
 - Job agent on the timeline (draft JD on "New job", publish card)
 - Interview outcome summary card for the hiring manager (the decision stays with people)
 - Public APIs and webhooks for the agents (Phase 1 of the blueprint, 25 Dec)
+
+## 29.4 Owner decisions (2026-11-19) and the closed card status
+
+Decisions: Autopilot stays **on** for this company (the owner handles the real "Confirm joined" card); every salary is a
+card - `recruitment.salary.auto_approve_hike_pct` 20 -> **0** through the settings API the Settings screen uses (history
+version 1, by the check admin); 29.4 order: **Job agent on the timeline -> public APIs + webhooks (Phase 1, 25 Dec) ->
+interview-outcome card**; leftover cards are closed automatically (below).
+
+**Closed cards** (migration `b4d7e9a1c3f5`: `agent_suggestions.status` may be `closed`, new column `closed_reason`).
+`hr_agents/autopilot/leftovers.py` closes a pending card when its step is no longer waiting:
+
+| Card | Closed when |
+|---|---|
+| Shortlist | none of its candidates is still Screened (an assistant card can hold several) |
+| Send interview times | the candidate left hr_selected, or `interview_scheduling_started` was logged after the card |
+| Salary decision | the candidate left salary_above_band |
+| Documents | the candidate left salary_approved, or `documents_approved` was logged |
+| BGV vendor / BGV result | the candidate left bgv_requested / bgv_pending (vendor: or `bgv_vendor_assigned` was logged) |
+| Joining dates | the candidate left bgv_cleared, or `joining_dates_proposed` was logged |
+| Confirm joined | the joiner is joined / revoked / declined / no show / exited |
+| Resignation | the resignation is no longer submitted (approved on the Exits screen, withdrawn, ...) |
+| Exit letters | both letters are issued |
+
+The reason names who did the step when the log shows it ("already done by an Autopilot rule" / "by hr@..."); the agent
+timeline gets a "Closed the card ..." line. Nothing is applied and nothing is sent; approving a closed card answers
+"this card was closed - nothing to decide". It runs after every events batch that had events and at the end of every
+hourly run. 7 tests (`tests/test_agent_cards_closed.py`).
+
+**Real email can no longer leave from tests:** `tests/conftest.py` sets `DEV_MAIL_CAPTURE=127.0.0.1:1025` for every
+test (only the two fake-SMTP files turn it off), and `platform_mail.send`'s own-SMTP path now honours the capture like
+the HR mailbox and connector paths already did. The local `backend/.env` carries the capture too (not committed).

@@ -259,6 +259,13 @@ def send(to: list[str], subject: str, body: str) -> None:
     msg["From"] = f"{m.get('from_name') or 'CTD Techs HRMS'} <{m.get('from_address')}>"
     msg["To"], msg["Subject"] = ", ".join(to), subject
     msg.set_content(body)
+    from app.core.config import settings
+
+    if settings.DEV_MAIL_CAPTURE:  # development only: the local capture (mailpit), never out
+        host, _, port = settings.DEV_MAIL_CAPTURE.partition(":")
+        with smtplib.SMTP(host, int(port or 1025), timeout=20) as smtp:
+            smtp.send_message(msg)
+        return
     try:
         with smtplib.SMTP(m["host"], int(m.get("port") or 587), timeout=20) as smtp:
             if m.get("starttls"):

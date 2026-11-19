@@ -5,10 +5,14 @@ invite. Every other test in this codebase that exercises an HR email send mocks
 send_hr_email itself; this file is the one place that exercises its own real MIME
 construction, by faking smtplib.SMTP rather than send_hr_email."""
 
+import pytest
+
 from app.core.crypto import encrypt
 from app.integrations import hr_email
 from app.integrations.hr_email import EmailAttachment, send_hr_email
 from app.models.hr_integration import HrIntegration
+
+pytestmark = pytest.mark.fake_smtp  # smtplib is a fake here; the real-mail guard is off for these tests
 
 
 class _FakeSmtpConnection:

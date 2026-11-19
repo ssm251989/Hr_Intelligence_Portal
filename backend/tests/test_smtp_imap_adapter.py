@@ -12,6 +12,8 @@ from app.platform.connectors.capabilities import OutboundEmail
 from app.platform.connectors.providers.imap import ImapAdapter
 from app.platform.connectors.providers.smtp import SmtpAdapter
 
+pytestmark = pytest.mark.fake_smtp  # smtplib is a fake here; the real-mail guard is off for these tests
+
 
 class _FakeSmtpConnection:
     instances: list = []
