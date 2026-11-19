@@ -2954,3 +2954,5 @@ NEXT: owner decisions - Autopilot on or off for this company (on now, the Part 2
 - part-29.4 suite: full run after the changes, in 10 batches of test files (one pytest process each, memory): 165 failed / 1432 passed - the same 165 tests as the baseline (none new, none fixed); +7 passed = the new closed-card tests. Mail went to mailpit only.
 
 NEXT: 29.4 in the owner's order - Job agent on the timeline first.
+
+- part-27.0: one-step install checked (docs/ui/FIXES_27.md 27.0): test_install 20 passed; throwaway install t27_main / t27_cp / t27_app with a password containing @ # and spaces -> all 9 steps done, re-run all done (admin not re-created), then dropped; --check refuses a line-break password (exit 2); .env.example already right; the colleague's grant_app.py / dev_make_admin.py are not in the repo.
