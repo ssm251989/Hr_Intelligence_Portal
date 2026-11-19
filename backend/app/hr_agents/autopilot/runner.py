@@ -5,6 +5,7 @@ saved cursor (minus a small safety lag, so a transaction still committing is not
 calls the agent that owns each event. The cursor is saved per company in autopilot_state.
 """
 
+from app.recruitment.scoring import score_round
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
@@ -125,7 +126,7 @@ def _track(db: Session, tenant, application, row) -> int:
     n = names(db, application)
     job = f" ({n['job']})" if n["job"] else ""
     record(db, tenant, Run("event", row.action), agent=agent, action=f"step_{row.action}"[:60], outcome=outcome, entity_type="application",
-           entity_id=application.id, summary=f"{text.format(candidate=n['candidate'], score=round(float(application.composite_score or 0)))}{job}.",
+           entity_id=application.id, summary=f"{text.format(candidate=n['candidate'], score=score_round(application.composite_score))}{job}.",
            details={"by": row.actor, "audit_id": str(row.id)})
     return 1
 

@@ -134,6 +134,7 @@ export const en = {
   "interviews.score.save": "Save scorecard",
   "interviews.score.saving": "Saving…",
   "interviews.score.confirm_title": "Save your final decision?",
+  "interviews.score.reject_needs_note": "To reject, give the overall rating and a note on why.",
   "interviews.score.confirm_message": "You chose \"{decision}\" for {name}. This moves the candidate to the next stage and can't be undone.",
   "interviews.score.confirm_button": "Save decision",
 
@@ -359,6 +360,7 @@ export const hi: Partial<Record<keyof typeof en, string>> = {
   "interviews.score.save": "स्कोरकार्ड सेव करें",
   "interviews.score.saving": "सेव हो रहा है…",
   "interviews.score.confirm_title": "अपना अंतिम फ़ैसला सेव करें?",
+  "interviews.score.reject_needs_note": "अस्वीकार करने के लिए कुल रेटिंग और कारण का नोट दें।",
   "interviews.score.confirm_message": "आपने {name} के लिए \"{decision}\" चुना है। इससे उम्मीदवार अगले चरण में जाएगा और इसे वापस नहीं किया जा सकता।",
   "interviews.score.confirm_button": "फ़ैसला सेव करें",
   "interviews.ai.title": "AI प्रश्न सुझाव",
@@ -578,6 +580,7 @@ export const ta: Partial<Record<keyof typeof en, string>> = {
   "interviews.score.save": "மதிப்பீட்டு அட்டையைச் சேமிக்கவும்",
   "interviews.score.saving": "சேமிக்கப்படுகிறது…",
   "interviews.score.confirm_title": "உங்கள் இறுதி முடிவைச் சேமிக்கவா?",
+  "interviews.score.reject_needs_note": "நிராகரிக்க, ஒட்டுமொத்த மதிப்பீடும் காரணக் குறிப்பும் தரவும்.",
   "interviews.score.confirm_message": "{name} க்கு \"{decision}\" என்று தேர்ந்தெடுத்துள்ளீர்கள். இது விண்ணப்பதாரரை அடுத்த கட்டத்துக்கு நகர்த்தும், திரும்பப் பெற முடியாது.",
   "interviews.score.confirm_button": "முடிவைச் சேமிக்கவும்",
   "interviews.ai.title": "AI கேள்வி யோசனைகள்",

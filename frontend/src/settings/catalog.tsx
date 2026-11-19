@@ -58,6 +58,8 @@ export interface SettingsPageDef {
   visible: (p: Perms) => boolean;
   /** Part 19.1: hidden when this "Choose what you use" module isn't active */
   module?: string;
+  /** ST1 (Part 27): hidden when none of these platform modules (app/platform/modules.py) is enabled - the same check as the menu */
+  registry?: string[];
   render: (go: (path: string) => void) => ReactNode;
 }
 
@@ -72,6 +74,7 @@ export interface Perms {
   mailbox: boolean; // HR mailbox integration
   twoStep?: boolean; // Part 18.1: 2-step verification switched on (Settings > Advanced)
   modules?: string[]; // Part 19.1: modules active for the company (bootstrap.company_modules.active)
+  registryModules?: string[]; // ST1 (Part 27): platform modules enabled for the company (bootstrap.modules)
 }
 
 const ADMIN = (p: Perms) => p.admin;
@@ -195,17 +198,17 @@ export const CATEGORIES: SettingsCategory[] = [
   },
   {
     id: "performance", emoji: "target", pages: [
-      { id: "cycles", emoji: "target", keywords: "review cycles goals rating scales compensation planning", visible: ADMIN, render: () => <PerformancePanel /> },
-      { id: "rules", emoji: "gear", prefixes: ["performance."], visible: ADMIN, render: scoped(["performance."], "settingsHome.page.performance.rules") },
+      { id: "cycles", emoji: "target", registry: ["performance"], keywords: "review cycles goals rating scales compensation planning", visible: ADMIN, render: () => <PerformancePanel /> },
+      { id: "rules", emoji: "gear", registry: ["performance"], prefixes: ["performance."], visible: ADMIN, render: scoped(["performance."], "settingsHome.page.performance.rules") },
     ],
   },
   {
     id: "helpdesk", emoji: "ring_buoy", pages: [
-      { id: "main", emoji: "ring_buoy", keywords: "tickets categories response times assets exits", visible: ADMIN, render: () => <ServiceDeskPanel /> },
+      { id: "main", emoji: "ring_buoy", registry: ["helpdesk"], keywords: "tickets categories response times assets exits", visible: ADMIN, render: () => <ServiceDeskPanel /> },
       // Part 20.0-D: the lists behind the asset-type / exit-reason dropdowns (they were never seeded -> empty dropdowns)
-      { id: "asset-types", emoji: "laptop", keywords: "asset categories types laptop monitor phone sim id card", visible: ADMIN, render: () => <CategoryListPage kind="asset" /> },
-      { id: "exit-reasons", emoji: "door", keywords: "exit reasons resignation leaving", visible: ADMIN, render: () => <CategoryListPage kind="exit_reason" /> },
-      { id: "rules", emoji: "gear", prefixes: ["helpdesk.", "assets.", "separation."], visible: ADMIN,
+      { id: "asset-types", emoji: "laptop", registry: ["assets"], keywords: "asset categories types laptop monitor phone sim id card", visible: ADMIN, render: () => <CategoryListPage kind="asset" /> },
+      { id: "exit-reasons", emoji: "door", registry: ["separation"], keywords: "exit reasons resignation leaving", visible: ADMIN, render: () => <CategoryListPage kind="exit_reason" /> },
+      { id: "rules", emoji: "gear", registry: ["helpdesk", "assets", "separation"], prefixes: ["helpdesk.", "assets.", "separation."], visible: ADMIN,
         render: scoped(["helpdesk.", "assets.", "separation."], "settingsHome.page.helpdesk.rules") },
     ],
   },
@@ -277,7 +280,8 @@ export const CATEGORIES: SettingsCategory[] = [
 ];
 
 export function visibleCategories(p: Perms): SettingsCategory[] {
-  const moduleOn = (pg: SettingsPageDef) => !pg.module || !p.modules || p.modules.includes(pg.module);
+  const moduleOn = (pg: SettingsPageDef) => (!pg.module || !p.modules || p.modules.includes(pg.module))
+    && (!pg.registry || !p.registryModules || pg.registry.some((m) => p.registryModules!.includes(m)));
   return CATEGORIES.map((c) => ({ ...c, pages: c.pages.filter((pg) => pg.visible(p) && moduleOn(pg)) })).filter((c) => c.pages.length > 0);
 }
 

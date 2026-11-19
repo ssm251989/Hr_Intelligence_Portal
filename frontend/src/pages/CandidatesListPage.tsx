@@ -10,6 +10,7 @@ import PersonRemoveOutlinedIcon from "@mui/icons-material/PersonRemoveOutlined";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
+import Link from "@mui/material/Link";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import Checkbox from "@mui/material/Checkbox";
@@ -34,7 +35,7 @@ import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams, Link as RouterLink } from "react-router-dom";
 
 import { applicationsApi, candidatesApi, extractErrorMessage, jobsApi, shortlistingApi } from "../api/client";
 import { type CandidateApplicationRow, type JobRoleRead } from "../api/types";
@@ -406,7 +407,7 @@ export default function CandidatesListPage() {
       {show("resume") && <TableCell>{t("candidates.col.resume")}</TableCell>}
       {show("status") && <TableCell>{t("candidates.col.status")}</TableCell>}
       {show("remarks") && <TableCell>{t("candidates.col.remarks")}</TableCell>}
-      <TableCell align="right">{t("candidates.col.actions")}</TableCell>
+      <TableCell align="right" sx={{ position: "sticky", right: 0, zIndex: 3, bgcolor: "background.paper", boxShadow: "-6px 0 6px -6px rgba(0,0,0,0.25)" }}>{t("candidates.col.actions")}</TableCell>
     </TableRow>
   );
 
@@ -585,7 +586,8 @@ export default function CandidatesListPage() {
                           <Stack direction="row" spacing={1.25} alignItems="center">
                             <CandidateAvatar candidateId={row.candidate_id} photoPath={row.photo_path} name={row.candidate_name} email={row.candidate_email} sx={{ width: 32, height: 32, fontSize: 12 }} />
                             <Box sx={{ minWidth: 0 }}>
-                              <Typography variant="body2" fontWeight={700} noWrap>{name}</Typography>
+                              <Link component={RouterLink} to={`/candidates/${row.application_id}`} variant="body2" underline="hover"
+                                sx={{ fontWeight: 700, display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "text.primary" }}>{name}</Link>
                               {row.candidate_email && (
                                 <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
                                   {row.candidate_email}
@@ -631,17 +633,17 @@ export default function CandidatesListPage() {
                           ? <StatusChip tone="muted" emoji="pause" label={t("closejob.on_hold_label")} />
                           : <StatusChip status={row.status} />}</TableCell>}
                         {show("remarks") && (
-                          <TableCell sx={{ maxWidth: 220 }}>
+                          <TableCell sx={{ maxWidth: 220, width: 220 }}>
                             {row.remarks ? (
                               <Tooltip title={row.remarks}>
-                                <Typography variant="body2" noWrap>{row.remarks}</Typography>
+                                <Typography variant="body2" noWrap sx={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}>{row.remarks}</Typography>
                               </Tooltip>
                             ) : (
                               "—"
                             )}
                           </TableCell>
                         )}
-                        <TableCell align="right">
+                        <TableCell align="right" sx={{ position: "sticky", right: 0, zIndex: 2, bgcolor: "background.paper", boxShadow: "-6px 0 6px -6px rgba(0,0,0,0.25)" }}>
                           <Stack direction="row" spacing={0.5} justifyContent="flex-end">
                             <Tooltip title={t("candidates.list.view")}>
                               <IconButton size="small" aria-label={t("candidates.list.view_named", { name })} onClick={() => navigate(`/candidates/${row.application_id}`)}>

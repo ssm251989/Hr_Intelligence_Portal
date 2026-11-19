@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent, FormEvent } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Link from "@mui/material/Link";
 import Card from "@mui/material/Card";
 import Checkbox from "@mui/material/Checkbox";
 import FormControlLabel from "@mui/material/FormControlLabel";
@@ -76,6 +77,15 @@ export default function CareersApplyPage() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!id) return;
+    // C3 (Part 27): the app's own messages in the company language, not the browser's English pop-ups
+    if (!fullName.trim()) {
+      setProblem(t("careers.apply.need_name"));
+      return;
+    }
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) {
+      setProblem(t("careers.apply.need_email"));
+      return;
+    }
     if (!resume) {
       setProblem(t("careers.apply.need_resume"));
       return;
@@ -132,7 +142,7 @@ export default function CareersApplyPage() {
           {job ? t("careers.apply.for", { title: job.title }) : t("careers.apply.loading")}
         </Typography>
 
-        <Box component="form" onSubmit={handleSubmit}>
+        <Box component="form" onSubmit={handleSubmit} noValidate>
           <Stack spacing={2.5}>
             {problem && <FriendlyError compact what={problem} fix={t("careers.apply.fix")} />}
             {error !== null && <FriendlyError compact error={error} />}
@@ -170,7 +180,8 @@ export default function CareersApplyPage() {
 
             <FormControlLabel
               control={<Checkbox checked={consent} onChange={(e) => setConsent(e.target.checked)} />}
-              label={t("careers.apply.consent")}
+              label={<>{t("careers.apply.consent_before")}<Link component={RouterLink} to="/careers/privacy" target="_blank" rel="noopener"
+                onClick={(e) => e.stopPropagation()}>{t("careers.apply.privacy_link")}</Link>{t("careers.apply.consent_after")}</>}
             />
 
             <Button type="submit" variant="contained" size="large" disabled={submitting}>

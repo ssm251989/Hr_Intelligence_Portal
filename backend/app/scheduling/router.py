@@ -212,6 +212,23 @@ def list_all_interviews(
     return InterviewsListPage(total=total, page=page, page_size=page_size, items=items)
 
 
+def check_decision(interview, decision: str, updates: dict) -> None:
+    """P3 (Part 27): a result only once the interview time has passed, and a rejection only with the ratings and
+    a note on why (the scorecard, never a bare one-click "Rejected")."""
+    from datetime import datetime, timezone
+
+    when = interview.scheduled_at
+    if when is not None:
+        when = when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+        if when > datetime.now(timezone.utc):
+            raise HTTPException(status_code=400, detail="The result can be recorded once the interview has taken place.")
+    if decision == "rejected":
+        overall = updates.get("overall_rating", interview.overall_rating)
+        note = (updates.get("comments", interview.comments) or "").strip()
+        if overall is None or not note:
+            raise HTTPException(status_code=400, detail="To reject, give the overall rating and a note on why.")
+
+
 def check_booking(scheduled_at, meeting_link) -> None:
     """I1 / I2 (Part 27): an interview is never booked in the past, and a meeting link is a real web address."""
     from datetime import datetime, timedelta, timezone
@@ -324,6 +341,7 @@ def submit_interview_feedback(
                 status_code=400,
                 detail="This interview already has a result, or the candidate has moved on.",
             )
+        check_decision(interview, decision, updates)
 
     for field, value in updates.items():
         setattr(interview, field, value)

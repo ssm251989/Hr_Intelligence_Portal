@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, get_user_for_mfa_enrollment
 from app.core.database import get_db
+from app.audit.service import log_action
 from app.core.security import create_access_token, hash_password, verify_password
 from app.models.iam import UserDevice
 from app.models.user import User
@@ -31,6 +32,10 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 def register(payload: UserRegister, db: Session = Depends(get_db)):
+    from app.core.config import settings as app_settings
+
+    if not app_settings.PUBLIC_SIGNUP_ENABLED:  # L3 (Part 27): sign-up is closed; HR invites people
+        raise HTTPException(status_code=404, detail="Not Found")
     existing = db.query(User).filter(User.email == payload.email).first()
     if existing:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
@@ -72,7 +77,11 @@ def login(payload: UserLogin, request: Request, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == payload.email).first()
 
     if tenant_ctx is not None and user is not None and sessions.is_locked_out(user):
-        raise HTTPException(status_code=status.HTTP_423_LOCKED, detail="Account is temporarily locked. Try again later.")
+        from datetime import datetime as _dt, timezone as _tz
+
+        minutes = max(1, -(-int((user.locked_until - _dt.now(_tz.utc)).total_seconds()) // 60))  # L2 (Part 27): round up
+        raise HTTPException(status_code=status.HTTP_423_LOCKED, detail=f"Too many attempts - try again in {minutes} minutes.",
+                            headers={"Retry-After": str(minutes * 60)})
 
     if user is not None and getattr(user, "deactivated_at", None) is not None:  # Part 18.22
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account has been switched off. Please ask your admin.")
@@ -243,8 +252,6 @@ class SetPasswordRequest(BaseModel):
 @router.post("/set-password", status_code=status.HTTP_204_NO_CONTENT)
 def set_password(payload: SetPasswordRequest, db: Session = Depends(get_db)):
     from app.platform.iam.action_tokens import ActionTokenError, mark_action_token_responded, resolve_action_token
-    from app.platform.settings.resolver import SettingContext, SettingsService
-
     tenant_ctx = get_current_tenant()
     try:
         row = resolve_action_token(db, tenant_ctx, payload.token)
@@ -252,15 +259,86 @@ def set_password(payload: SetPasswordRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="This link is invalid or has expired. Ask your administrator for a new one.")
     if row.action != "set_password" or row.entity_type != "user":
         raise HTTPException(status_code=400, detail="This link is invalid or has expired. Ask your administrator for a new one.")
-    min_length = int(SettingsService(db).get("iam.auth.password_min_length", SettingContext(tenant=tenant_ctx)) or 8)
-    if len(payload.password) < min_length:
-        raise HTTPException(status_code=400, detail=f"Password must be at least {min_length} characters")
+    from app.auth import password_policy
+
     user = db.get(User, row.entity_id)
     if user is None:
         raise HTTPException(status_code=400, detail="This link is invalid or has expired. Ask your administrator for a new one.")
+    # L1 (Part 27): the company's password rules incl. history (an invited account's random password counts too, harmlessly)
+    wrong = password_policy.problems(db, tenant_ctx, user if user.password_set_at else None, payload.password)
+    if wrong:
+        raise HTTPException(status_code=400, detail=". ".join(wrong) + ".")
+    if user.password_set_at:
+        password_policy.remember_old(db, tenant_ctx, user)
     user.hashed_password = hash_password(payload.password)
     from datetime import datetime as _dt, timezone as _tz
 
     user.password_changed_at = user.password_set_at = _dt.now(_tz.utc)  # part 20.1: app account Invited -> Active
     db.commit()
     mark_action_token_responded(db, row)
+
+    log_action(db, "user", user.id, "user_password_set", user.email[:50], {"via": (row.payload_json or {}).get("via", "link")})
+    db.commit()
+
+
+# ---------------------------------------------------------------- L1 (Part 27): forgot password
+
+FORGOT_MINUTES = 30
+_FORGOT_ANSWER = {"ok": True, "message": "If that email has an account, a link to set a new password is on its way. It works once, for 30 minutes."}
+
+
+def _email_reset_available(db: Session, tenant_ctx) -> bool:
+    """Self-service reset needs a connected outgoing mailbox; without one the page says "ask your HR admin"."""
+    if tenant_ctx is None:
+        return False
+    from app.models.connection import Connection, ConnectionRoute
+
+    route = (db.query(ConnectionRoute).filter(ConnectionRoute.tenant_id == tenant_ctx.tenant_id, ConnectionRoute.purpose == "email.outbound.default",
+                                              ConnectionRoute.enabled.is_(True)).first())
+    conn = db.get(Connection, route.connection_id) if route else None
+    return conn is not None and conn.status == "active"
+
+
+@router.get("/forgot-password")
+def forgot_password_available(db: Session = Depends(get_db)):
+    return {"email_reset": _email_reset_available(db, get_current_tenant())}
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+@router.post("/forgot-password")
+def forgot_password(payload: ForgotPasswordRequest, request: Request, db: Session = Depends(get_db)):
+    """Always the same answer, whether the email has an account or not (no account discovery). Rate-limited per
+    address and per IP (5 per 15 minutes); a one-time link valid for 30 minutes; audit-logged."""
+    import time
+
+    from app.platform.iam.action_tokens import create_action_token
+    from app.platform.ops.rate_limit import _hit
+
+    tenant_ctx = get_current_tenant()
+    email = (payload.email or "").strip().lower()[:255]
+    window = int(time.time() // 900)
+    if _hit(f"forgot:email:{email}:{window}", window) > 5 or _hit(f"forgot:ip:{_client_ip(request)}:{window}", window) > 20:
+        raise HTTPException(status_code=429, detail="Too many requests. Try again in 15 minutes.", headers={"Retry-After": "900"})
+    user = db.query(User).filter(User.email == email).first() if email else None
+    if user is None or user.deactivated_at is not None or user.role == "agency" or tenant_ctx is None or not _email_reset_available(db, tenant_ctx):
+        log_action(db, "user", user.id if user else None, "password_reset_requested", email[:50] or "unknown",
+                   {"sent": False, "ip": _client_ip(request), "reason": "no account" if user is None else "not available"})
+        db.commit()
+        return _FORGOT_ANSWER
+    from app.core.config import settings as app_settings
+    from app.platform.comms.defaults import send_default
+
+    token = create_action_token(db, tenant_ctx, entity_type="user", entity_id=user.id, action="set_password", created_by="forgot-password",
+                                payload={"via": "forgot_password"}, ttl_minutes=FORGOT_MINUTES).token
+    link = f"{app_settings.FRONTEND_URL.rstrip('/')}/set-password?token={token}"
+    try:
+        sent = send_default(db, tenant_ctx, "platform.password_forgot", to=[user.email], ctx={"name": user.full_name or user.email, "link": link},
+                            purpose="email.outbound.system").status in ("sent", "queued")
+    except Exception:  # noqa: BLE001 -- same answer either way
+        sent = False
+    log_action(db, "user", user.id, "password_reset_requested", user.email[:50], {"sent": sent, "ip": _client_ip(request)})
+    db.commit()
+    return _FORGOT_ANSWER

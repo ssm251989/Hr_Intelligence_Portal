@@ -5,6 +5,7 @@ application's CURRENT state, does nothing when the step is already done, and rec
 Decisions happen only inside a company rule (autopilot.rules.*); otherwise a card is raised.
 """
 
+from app.recruitment.scoring import score_round
 import json
 import re
 from datetime import date, timedelta
@@ -53,7 +54,7 @@ def shortlist_rule(db: Session, tenant, application, run: Run) -> Optional[str]:
     n = names(db, application)
     record(db, tenant, run, agent="screening", action="auto_shortlist", outcome="decided", rule_key="autopilot.rules.shortlist_min_score",
            entity_type="application", entity_id=application.id,
-           summary=f"Shortlisted {n['candidate']} for {n['job']} (score {round(float(application.composite_score or 0))} >= {threshold}); "
+           summary=f"Shortlisted {n['candidate']} for {n['job']} (score {score_round(application.composite_score)} >= {threshold}); "
                    "the recruiter can undo it during the undo window.")
     return "decided"
 
@@ -80,9 +81,9 @@ def propose_shortlist(db: Session, tenant, application, run: Run) -> Optional[st
     if score < cut or recently(db, tenant, agent="screening", action="propose_shortlist", entity_id=application.id, hours=24 * 30):
         return None
     n = names(db, application)
-    reason = f"Score {round(score)} is at or above the shortlist threshold {cut}."
+    reason = f"Score {score_round(score)} is at or above the shortlist threshold {cut}."
     c = card(db, tenant, kind="agent_shortlist", by_agent="screening", title=f"Shortlist {n['candidate']} for {n['job']}",
-             payload={**n, "candidates": [{"application_id": str(application.id), "name": n["candidate"], "score": round(score)}], "reason": reason},
+             payload={**n, "candidates": [{"application_id": str(application.id), "name": n["candidate"], "score": score_round(score)}], "reason": reason},
              permission="recruitment.shortlisting.edit", entity_type="application", entity_id=application.id)
     record(db, tenant, run, agent="screening", action="propose_shortlist", outcome="proposed", entity_type="application", entity_id=application.id,
            summary=f"{n['candidate']} ({n['job']}): {reason} Prepared the shortlist for HR to approve.", details={"card_id": str(c.id), "score": score, "threshold": cut})

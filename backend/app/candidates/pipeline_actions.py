@@ -113,24 +113,29 @@ def compute_next_actions(db: Session, application: Application) -> list[NextActi
                     route=_job_route("/interviews", job_id),
                 )
             ]
+        # P3 (Part 27): no one-click result. Before the interview time: nothing to decide yet; afterwards the
+        # scorecard opens (ratings + note, confirm step; a rejection needs the note).
+        from datetime import datetime, timezone
+
+        when = interview.scheduled_at
+        if when is not None and (when if when.tzinfo else when.replace(tzinfo=timezone.utc)) > datetime.now(timezone.utc):
+            return [
+                NextAction(
+                    key="manage_interview",
+                    label="Manage interview",
+                    kind="navigate",
+                    route=_job_route("/interviews", job_id),
+                    description="The result can be recorded once the interview has taken place.",
+                )
+            ]
         return [
             NextAction(
-                key="interview_selected",
-                label="Interview Feedback: Selected",
-                kind="one_click",
-                method="PATCH",
-                endpoint=f"/interviews/{interview.id}/feedback",
-                body={"decision": "selected"},
-            ),
-            NextAction(
-                key="interview_rejected",
-                label="Interview Feedback: Rejected",
-                kind="one_click",
-                method="PATCH",
-                endpoint=f"/interviews/{interview.id}/feedback",
-                body={"decision": "rejected"},
-                confirm=True,
-            ),
+                key="record_feedback",
+                label="Record interview result",
+                kind="navigate",
+                route=f"/interviews?feedback={interview.id}",
+                description="Opens the scorecard: ratings, a note (required to reject) and the result.",
+            )
         ]
 
     if status == "salary_ok":

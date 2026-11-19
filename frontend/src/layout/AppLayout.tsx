@@ -40,7 +40,7 @@ import CopilotWidget from "../components/CopilotWidget";
 import GlobalSearch from "../components/GlobalSearch";
 import ModuleTour from "../components/ModuleTour";
 import RecentActivityFeed from "../components/RecentActivityFeed";
-import { moduleKeyForPath } from "../api/modulesApi";
+import { moduleKeyForPath, REGISTRY_MODULE_PAGES } from "../api/modulesApi";
 import ModuleNotActiveCard from "../components/modules/ModuleNotActiveCard";
 import { LOCALES, useI18n, useT } from "../i18n";
 import { useThemeMode } from "../theme/ThemeModeContext";
@@ -99,7 +99,8 @@ function useShellNav(): ShellItem[] {
       path: n.path,
       icon: n.icon ?? "puzzle",
       group: n.group ?? "today",
-      children: NAV_CHILDREN[sectionOf(n.path)]?.filter((c) => !c.permission || can(c.permission)).map((c) => ({ label: t(c.labelKey), path: c.path })),
+      children: NAV_CHILDREN[sectionOf(n.path)]?.filter((c) => (!c.permission || can(c.permission)) && (!c.module || !data?.modules || data.modules.includes(c.module)))
+        .map((c) => ({ label: t(c.labelKey), path: c.path })),
     }));
   }, [data, t, can]);
 }
@@ -392,7 +393,9 @@ export default function AppLayout() {
   const location = useLocation();
   const { data: me } = useMeBootstrap();
   const moduleHere = me?.company_modules ? moduleKeyForPath(location.pathname, me.company_modules.pages) : null;
-  const inactiveHere = moduleHere && !me?.company_modules?.active.includes(moduleHere) ? moduleHere : null;
+  const registryHere = me?.modules ? moduleKeyForPath(location.pathname, REGISTRY_MODULE_PAGES) : null;
+  const inactiveHere = moduleHere && !me?.company_modules?.active.includes(moduleHere) ? moduleHere
+    : registryHere && !me?.modules?.includes(registryHere) ? registryHere : null;
   const [confirmLogoutOpen, setConfirmLogoutOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [expanded, setExpanded] = useState(() => readStorage(SIDEBAR_STORAGE_KEY) !== "false");

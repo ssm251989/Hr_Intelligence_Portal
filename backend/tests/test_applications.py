@@ -266,9 +266,25 @@ def test_candidate_detail_interview_scheduled_offers_feedback_actions_for_latest
     body = client.get(f"/applications/{application.id}/candidate-detail").json()
     actions = {a["key"]: a for a in body["next_actions"]}
 
-    assert actions["interview_selected"]["endpoint"] == f"/interviews/{interview.id}/feedback"
-    assert actions["interview_selected"]["method"] == "PATCH"
-    assert actions["interview_rejected"]["body"] == {"decision": "rejected"}
+    # P3 (Part 27): no one-click Selected / Rejected -- the scorecard for the latest interview opens
+    assert list(actions) == ["record_feedback"]
+    assert actions["record_feedback"]["kind"] == "navigate" and actions["record_feedback"]["route"] == f"/interviews?feedback={interview.id}"
+
+
+def test_candidate_detail_before_the_interview_time_offers_no_result(client, db_session):
+    """P3 (Part 27): "Selected / Rejected" was offered as soon as the interview was booked."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.models.interview import Interview
+
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application_with_status(db_session, job, candidate, "interview_scheduled")
+    db_session.add(Interview(application_id=application.id, scheduled_at=datetime.now(timezone.utc) + timedelta(days=1)))
+    db_session.commit()
+
+    keys = [a["key"] for a in client.get(f"/applications/{application.id}/candidate-detail").json()["next_actions"]]
+    assert keys == ["manage_interview"]
 
 
 def test_candidate_detail_bgv_without_valid_documents_cannot_clear(client, db_session):

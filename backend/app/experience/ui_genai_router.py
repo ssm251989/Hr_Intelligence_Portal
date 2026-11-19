@@ -101,6 +101,7 @@ def genai_settings(db: Session = Depends(get_db), current_user: User = Depends(g
     bedrock_conn = bedrock.company_connection(db, tenant)
     return {
         "enabled": bool(_s(db, tenant, "ai.enabled")), "provider": _s(db, tenant, "ai.provider") or "anthropic",
+        "configured": __import__("app.platform.ai.status", fromlist=["ai_configured"]).ai_configured(db, tenant),
         "providers": ["anthropic", bedrock.PROVIDER],
         "bedrock": {"region": _s(db, tenant, "ai.bedrock.region") or "", "inference_prefix": _s(db, tenant, "ai.bedrock.inference_prefix") or "",
                     "model_map": _s(db, tenant, "ai.bedrock.model_map") or {}, "effective_region": bedrock_cfg.region,

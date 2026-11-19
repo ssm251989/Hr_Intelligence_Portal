@@ -58,6 +58,14 @@ def _default_tenant_context():
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "fake_smtp: the test replaces smtplib with a fake, so it may turn the mail capture off")
+    config.addinivalue_line("markers", "signup_closed: public sign-up as in production (closed)")
+
+
+@pytest.fixture(autouse=True)
+def _signup_for_test_helpers(request, monkeypatch):
+    """L3 (Part 27): public sign-up is closed in the app; many tests create users through /auth/register, so it is
+    open for them. Tests marked signup_closed see the real default."""
+    monkeypatch.setattr(settings, "PUBLIC_SIGNUP_ENABLED", not request.node.get_closest_marker("signup_closed"))
 
 
 @pytest.fixture(autouse=True)

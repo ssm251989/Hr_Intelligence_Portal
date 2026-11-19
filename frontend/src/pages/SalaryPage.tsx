@@ -431,7 +431,12 @@ export default function SalaryPage() {
               ) : null;
             }}
           />
-          <SalaryPanel row={open} onClose={() => setOpen(null)} onChanged={() => setRefresh((k) => k + 1)} />
+          <SalaryPanel row={open} onClose={() => setOpen(null)} onChanged={() => {
+            setRefresh((k) => k + 1);
+            // S2 (Part 27): re-read the open row so the drawer's header / status change right after Approve
+            if (open) http.get<{ items: StageRow[] }>(`/api/v1/ui/stage-table/salary?application_id=${open.application_id}`)
+              .then((r) => { if (r.items[0]) setOpen(r.items[0]); }).catch(() => undefined);
+          }} />
         </>
       )}
     </Box>

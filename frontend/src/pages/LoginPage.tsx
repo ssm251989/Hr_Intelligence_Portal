@@ -8,6 +8,9 @@ import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
+import Alert from "@mui/material/Alert";
+
+import { ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { useBootstrap } from "../bootstrap/BootstrapContext";
 import PublicAuthLayout from "../components/careers/PublicAuthLayout";
@@ -47,18 +50,18 @@ export default function LoginPage() {
       <Typography sx={{ color: "text.secondary", mt: 0.5, mb: 3 }}>{t("login.subtitle", { name: productName })}</Typography>
       <Box component="form" onSubmit={handleSubmit} noValidate={false}>
         <Stack spacing={2}>
-          {error !== null && <FriendlyError error={error} what={t("login.failed")} fix={t("login.failed_fix")} compact />}
+          {error instanceof ApiError && error.status === 423 ? (
+            <Alert severity="warning">{t("login.locked", { minutes: Number(/(\d+) minute/.exec(String(error.detail))?.[1] ?? 15) })}</Alert>
+          ) : error !== null && <FriendlyError error={error} what={t("login.failed")} fix={t("login.failed_fix")} compact />}
           <TextField label={t("login.email")} type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} fullWidth autoFocus />
           <TextField label={t("login.password")} type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} fullWidth />
           <Button type="submit" variant="contained" size="large" disabled={loading} fullWidth>
             {loading ? t("login.signing_in") : t("login.submit")}
           </Button>
           <Typography variant="body2" textAlign="center">
-            {t("login.no_account")}{" "}
-            <Link component={RouterLink} to="/register">
-              {t("login.register_link")}
-            </Link>
+            <Link component={RouterLink} to="/forgot-password">{t("login.forgot")}</Link>
           </Typography>
+          <Typography variant="body2" textAlign="center" sx={{ color: "text.secondary" }}>{t("login.invite_only")}</Typography>
         </Stack>
       </Box>
     </PublicAuthLayout>

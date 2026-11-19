@@ -11,6 +11,7 @@ scheduling starts only AFTER the window closes (release_due), per the job's sche
 mode. Never auto-rejects; a person undoing it is final (not auto-shortlisted again).
 """
 
+from app.recruitment.scoring import score_round
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -110,7 +111,7 @@ def maybe_auto_shortlist(db: Session, tenant, application: Application, *, job: 
     for addr in to:
         db.add(OutboundMessage(
             tenant_id=tenant.tenant_id, channel="in_app", purpose="recruitment.shortlisting", to_addresses=[addr],
-            subject=f"{name} was shortlisted automatically for {job.title} (Match score {round(score)}). You can undo this for a few hours.",
+            subject=f"{name} was shortlisted automatically for {job.title} (Match score {score_round(score)}). You can undo this for a few hours.",
             body_ref=f"/candidates/{application.id}", status="sent", related_entity_type="application", related_entity_id=application.id,
         ))
     db.commit()

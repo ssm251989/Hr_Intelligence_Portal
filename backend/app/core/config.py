@@ -111,6 +111,9 @@ class Settings:
     # Development only: "127.0.0.1:1025" sends EVERY email (HR mailbox, connections) to a local
     # capture such as mailpit instead of the real mail server. Empty in production.
     DEV_MAIL_CAPTURE: str = os.getenv("DEV_MAIL_CAPTURE", "")
+    # L3 (Part 27, owner decision: CLOSE): no public sign-up. The first admin comes from the installer; everyone
+    # else is invited by HR. Only the test suite turns this on (its helpers create users through /auth/register).
+    PUBLIC_SIGNUP_ENABLED: bool = os.getenv("PUBLIC_SIGNUP_ENABLED", "false").lower() == "true"
     # Background work inside the backend (owner 2026-10-04): every Celery-beat job (reminders, 24 h salary-form
     # reminder, document / joining reminders, timers, report schedules ...) runs in-process when there is no
     # Celery worker. Default: on when REDIS_URL isn't set. Never run both (the worker's beat would double them).

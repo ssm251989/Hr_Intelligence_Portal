@@ -300,13 +300,27 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
     setDraftOffer(null);
   };
 
-  const startFresh = () => {
+  // J1 (Part 27): a draft job is created when step 1 is saved. Cancelling before anything beyond the title was
+  // typed deletes that untouched draft; "Start fresh" reuses an untouched draft instead of making another one.
+  const createdHere = useRef<string | null>(null);
+  const beyondTitle = useRef(false);
+  const untouched = (j: JobRoleRead) => j.status === "draft" && !j.jd_text && j.salary_band_min == null && j.salary_band_max == null
+    && !(j.technical_skills_must_have ?? []).length;
+
+  const startFresh = async () => {
+    const old = draftOffer?.draft.jobId;
     discardDraft();
     setDraftOffer(null);
+    if (!old) return;
+    try {
+      const existing = await jobsApi.get(old);
+      if (untouched(existing)) { setJobId(existing.id); createdHere.current = existing.id; beyondTitle.current = false; }
+    } catch { /* gone - a new draft is made on Next */ }
   };
 
   const set = <K extends keyof WizardForm>(key: K, value: WizardForm[K]) => {
     touched.current = true;
+    if (key !== "title") beyondTitle.current = true;
     setFieldsDirty(true);
     setForm((prev) => ({ ...prev, [key]: value }));
   };
@@ -338,6 +352,13 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
 
   const handleClose = () => {
     if (!confirmDiscard(leaveGuard)) return;
+    if (createdHere.current && !beyondTitle.current && !published) {
+      const id = createdHere.current;
+      jobsApi.delete(id).catch(() => undefined);  // the untouched auto-draft goes with the cancel
+      discardDraft();
+    }
+    createdHere.current = null;
+    beyondTitle.current = false;
     reset();
     onClose();
   };
@@ -464,10 +485,19 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
           job_type: form.jobType,
           positions_count: Number(form.positionsCount) || 1,
         };
-        const updated = jobId ? await jobsApi.update(jobId, payload) : await jobsApi.create(payload);
+        let target = jobId;
+        if (!target) {
+          // J1: same title as an existing draft -> offer to open that one instead of making a duplicate
+          const twin = (await jobsApi.list().catch(() => [] as JobRoleRead[]))
+            .find((j) => j.status === "draft" && j.title.trim().toLowerCase() === payload.title.toLowerCase());
+          if (twin && window.confirm(t("jobs.wiz.dup_title", { title: twin.title }))) target = twin.id;
+        }
+        const updated = target ? await jobsApi.update(target, payload) : await jobsApi.create(payload);
+        if (!target) createdHere.current = updated.id;
         setJobId(updated.id);
         setJob(updated);
       } else if (activeStep === 1) {
+        beyondTitle.current = true;
         const updated = await jobsApi.update(jobId!, {
           technical_skills_must_have: form.technicalSkillsMustHave,
           technical_skills_good_to_have: form.technicalSkillsGoodToHave,

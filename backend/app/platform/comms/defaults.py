@@ -249,6 +249,12 @@ DEFAULTS: dict[str, tuple[str, str, list[str]]] = {
         "If you didn't ask for this, you can ignore this email.\n{{ company_name }}",
         ["link"],
     ),
+    "platform.password_forgot": (
+        "Reset your password for {{ company_name }}",
+        "Hi {{ name }},\n\nSomeone (hopefully you) asked to reset your password. Set a new one here - the link works once, "
+        "for 30 minutes:\n{{ link }}\n\nIf you didn't ask for this, ignore this email; your password stays the same.\n{{ company_name }}",
+        ["link"],
+    ),
     "recruitment.job_closed_candidate": (
         "Update on your application for {{ job_title }}",
         "Hi {{ candidate_first_name }},\n\nThank you for applying for {{ job_title }}. This position has been closed for now, so "

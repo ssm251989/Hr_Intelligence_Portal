@@ -39,9 +39,14 @@ export default function SalaryPanel({ row, onClose, onChanged }: { row: StageRow
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [history, setHistory] = useState<AuditRow[]>([]);
 
+  // S2 (Part 27): the form resets only when another candidate is opened; a fresh copy of the same row (after a
+  // decision) keeps the message and just refreshes the header, status and history
+  const rowId = row?.application_id;
   useEffect(() => {
     setMsg(null); setReason("");
     setAmount(row?.expected_salary != null ? String(Math.round(row.expected_salary)) : "");
+  }, [rowId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
     if (!row) return;
     http.get<{ items?: AuditRow[] } | AuditRow[]>(`/reports/audit?entity_id=${row.application_id}&limit=30`)
       .then((r) => setHistory((Array.isArray(r) ? r : r.items ?? []).filter((x) => x.action.startsWith("salary"))))

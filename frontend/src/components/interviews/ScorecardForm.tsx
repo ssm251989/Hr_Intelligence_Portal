@@ -112,7 +112,14 @@ export default function ScorecardForm({
     }
   };
 
+  const [needNote, setNeedNote] = useState(false);
   const handleSubmit = () => {
+    // P3 (Part 27): a rejection needs the overall rating and a note on why
+    if (form.decision === "rejected" && (form.overall_rating == null || !form.comments.trim())) {
+      setNeedNote(true);
+      return;
+    }
+    setNeedNote(false);
     if (form.decision) {
       setConfirmOpen(true);
       return;
@@ -132,6 +139,7 @@ export default function ScorecardForm({
   return (
     <Stack spacing={2.5}>
       {saveError ? <FriendlyError error={saveError} compact /> : null}
+      {needNote && <FriendlyError compact what={t("interviews.score.reject_needs_note")} />}
 
       <Box component="fieldset" sx={{ border: 0, p: 0, m: 0 }}>
         <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mb: 1 }}>

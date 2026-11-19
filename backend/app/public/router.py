@@ -104,6 +104,16 @@ async def submit_application(
         )
     if job.status != "published":
         raise HTTPException(status_code=404, detail="Job not found")
+    # C1 (Part 27, owner decision: BLOCK): same email (any case) + same job + an application still open -> no second one.
+    # Another job is fine; agency / bulk imports keep their own "possible duplicate" flag.
+    from sqlalchemy import func
+
+    from app.models.application import TERMINAL_APPLICATION_STATUSES
+
+    if (db.query(Application.id).join(Candidate, Candidate.id == Application.candidate_id)
+            .filter(Application.job_role_id == job.id, func.lower(Candidate.email) == email.strip().lower(),
+                    Application.status.notin_(TERMINAL_APPLICATION_STATUSES)).first()) is not None:
+        raise HTTPException(status_code=409, detail="You have already applied for this job. We have your application and will be in touch.")
 
     extension = resume.filename.rsplit(".", 1)[-1].lower() if resume.filename and "." in resume.filename else ""
     if extension not in ALLOWED_EXTENSIONS:

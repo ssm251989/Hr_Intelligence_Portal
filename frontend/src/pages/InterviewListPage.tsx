@@ -185,6 +185,8 @@ export default function InterviewListPage() {
 
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [feedbackRow, setFeedbackRow] = useState<InterviewListRow | null>(null);
+  // P3 (Part 27): the candidate page's "Record interview result" opens this interview's scorecard (?feedback=<id>)
+  const [linkedFeedback, setLinkedFeedback] = useState<string | null>(() => searchParams.get("feedback"));
   const [prepQuestionsRow, setPrepQuestionsRow] = useState<InterviewListRow | null>(null);
   const [quickRow, setQuickRow] = useState<InterviewListRow | null>(null);
 
@@ -480,12 +482,13 @@ export default function InterviewListPage() {
       />
 
       <InterviewFeedbackDialog
-        interviewId={feedbackRow?.interview_id ?? null}
+        interviewId={feedbackRow?.interview_id ?? linkedFeedback ?? null}
         applicationId={feedbackRow?.application_id ?? null}
         candidateLabel={feedbackRow ? rowLabel(feedbackRow) : ""}
-        onClose={() => setFeedbackRow(null)}
+        onClose={() => { setFeedbackRow(null); setLinkedFeedback(null); }}
         onSaved={() => {
           setFeedbackRow(null);
+          setLinkedFeedback(null);
           loadPage();
         }}
       />

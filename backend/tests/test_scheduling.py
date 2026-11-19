@@ -210,12 +210,30 @@ def test_submit_interview_feedback_with_decision_rejected(client, db_session):
     application = _make_application(db_session, job, candidate, status="interview_scheduled")
     interview = _make_interview(db_session, application)
 
-    response = client.patch(f"/interviews/{interview.id}/feedback", json={"decision": "rejected"})
+    # P3 (Part 27): a bare "rejected" is refused; with the overall rating and a note it goes through
+    bare = client.patch(f"/interviews/{interview.id}/feedback", json={"decision": "rejected"})
+    assert bare.status_code == 400 and "note" in bare.json()["detail"]
+
+    response = client.patch(f"/interviews/{interview.id}/feedback",
+                            json={"decision": "rejected", "overall_rating": 2, "comments": "Could not explain the basics of SQL joins."})
 
     assert response.status_code == 200
 
     db_session.refresh(application)
     assert application.status == "interview_rejected"
+
+
+def test_interview_result_waits_for_the_interview_time(client, db_session):
+    """P3 (Part 27): the result was offered (and accepted) as soon as the interview was booked."""
+    job = _make_job(db_session)
+    candidate = _make_candidate(db_session)
+    application = _make_application(db_session, job, candidate, status="interview_scheduled")
+    interview = _make_interview(db_session, application)
+    interview.scheduled_at = datetime.now(timezone.utc) + timedelta(hours=3)
+    db_session.commit()
+
+    r = client.patch(f"/interviews/{interview.id}/feedback", json={"decision": "selected"})
+    assert r.status_code == 400 and "taken place" in r.json()["detail"]
 
 
 def test_submit_interview_feedback_decision_requires_interview_scheduled_status(client, db_session):
