@@ -181,3 +181,48 @@ def _apply_resignation(db, tenant, suggestion, payload, reviewer):
         raise AgentError("last_working_day must be a date (YYYY-MM-DD); waived_days / buyout_days whole numbers") from exc
     row = _service_call(db, lambda: separations.approve_lwd(db, tenant, s, lwd=lwd, actor=reviewer, waived_days=waived, buyout_days=buyout))
     payload["result"] = {"status": row.status, "approved_lwd": row.approved_lwd.isoformat() if row.approved_lwd else None}
+
+
+# ---------------------------------------------------------------- Part 30.1: Job agent
+
+
+@applier("agent_job_publish")
+def _apply_job_publish(db, tenant, suggestion, payload, reviewer):
+    """Saves the JD (HR may have changed it in the card) and publishes with the Jobs screen's own Publish."""
+    from uuid import UUID
+
+    from fastapi import HTTPException
+
+    from app.agents.service import AgentError
+    from app.hr_agents.autopilot.jobs import missing_fields
+    from app.jobs import router as jobs_router
+    from app.models.job_role import JobRole
+    from app.models.user import User
+    from app.schemas.job import PublishPlatformsRequest
+
+    job = db.get(JobRole, UUID(str(payload.get("job_id") or suggestion.entity_id)))
+    if job is None or job.tenant_id != tenant.tenant_id or job.deleted_at is not None:
+        raise AgentError("the job no longer exists")
+    user = db.query(User).filter(User.email == reviewer).first()
+    if user is None:
+        raise PermissionError("reviewer not found")
+    if user.role not in ("recruiter", "admin"):  # the Jobs screen's Publish is for recruiters and admins
+        raise PermissionError("only a recruiter or an admin can publish a job")
+    jd = (payload.get("jd_text") or "").strip() or (job.jd_text or "").strip()
+    if not jd:
+        raise AgentError("Write the JD first - in the card (Change and approve) or on the job - then approve again.")
+    missing = missing_fields(db, tenant, job)
+    if missing:
+        raise AgentError("Fill before publishing: " + ", ".join(m["label"].lower() for m in missing) + ". Add it on the job, then approve again.")
+    chosen = payload.get("platforms") or {}
+    kept = job.publish_settings or {}  # the wizard's own choices (new-application emails, deadline) stay as they were
+    request = PublishPlatformsRequest(career_portal=bool(chosen.get("career_portal")), linkedin=bool(chosen.get("linkedin")),
+                                      naukri=bool(chosen.get("naukri")), email_notifications=bool(kept.get("email_notifications")),
+                                      application_deadline=kept.get("application_deadline") or None)
+    job.jd_text = jd
+    try:
+        jobs_router.publish_job_platforms(job.id, request, db, user)
+    except HTTPException as exc:
+        db.rollback()
+        raise AgentError(str(exc.detail)) from exc
+    payload["result"] = {"status": job.status}

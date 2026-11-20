@@ -31,7 +31,7 @@ APPLICATION_STEPS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
 JOINER_DONE = ("joined", "revoked", "declined", "no_show", "exited")
 AGENT_OF = {"agent_shortlist": "screening", "agent_interview_send": "scheduling", "agent_salary_decision": "salary",
             "agent_documents_approve": "documents", "agent_bgv_assign": "bgv", "agent_bgv_decision": "bgv", "agent_joining_dates": "offer",
-            "agent_mark_joined": "onboarding", "agent_resignation_approve": "exit", "agent_exit_letters": "exit"}
+            "agent_mark_joined": "onboarding", "agent_resignation_approve": "exit", "agent_exit_letters": "exit", "agent_job_publish": "job"}
 
 
 def _who(actor: Optional[str]) -> str:
@@ -137,8 +137,25 @@ def _letters_card(db: Session, tenant, card) -> Optional[str]:
     return None
 
 
+def _job_card(db: Session, tenant, card) -> Optional[str]:
+    """Part 30.1: "Publish <job>" waits while the job is still a draft; published (or deleted) by hand -> closed."""
+    from app.models.job_role import JobRole
+
+    job_id = _uuid((card.payload_json or {}).get("job_id")) or card.entity_id
+    job = db.get(JobRole, job_id) if job_id else None
+    if job is None or job.tenant_id != tenant.tenant_id or job.deleted_at is not None:
+        return "the job no longer exists"
+    if job.status == "draft":
+        return None
+    done = _last_audit(db, tenant, job.id, card.created_at, ("job_platforms_published",))
+    who = _who(done.actor) if done is not None and done.actor != "system" else ""
+    if job.status in ("published", "ready_for_publishing"):
+        return f"the job was already published{who}"
+    return f"the job is already '{(job.status or '').replace('_', ' ')}'{who}"
+
+
 CHECKS: dict[str, Callable] = {**{kind: _application_card for kind in APPLICATION_STEPS}, "agent_shortlist": _shortlist_card, "agent_mark_joined": _joiner_card,
-                               "agent_resignation_approve": _resignation_card, "agent_exit_letters": _letters_card}
+                               "agent_resignation_approve": _resignation_card, "agent_exit_letters": _letters_card, "agent_job_publish": _job_card}
 
 
 def no_longer_waiting(db: Session, tenant, card) -> Optional[str]:

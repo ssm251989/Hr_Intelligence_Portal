@@ -343,7 +343,7 @@ def register_all() -> None:
     # "Agent prepares, HR approves": the decision rules below stay off, so every decision about a person is an
     # approval card the agent prepared; a company can still turn a rule on (Agents page).
     register(SettingDef("autopilot.enabled", "bool", True, module="ai", group=G))
-    for agent in ("watchdog", "screening", "sourcing", "scheduling", "salary", "documents", "bgv", "offer", "onboarding", "exit", "briefing"):
+    for agent in ("watchdog", "job", "screening", "sourcing", "scheduling", "salary", "documents", "bgv", "offer", "onboarding", "exit", "briefing"):
         register(SettingDef(f"autopilot.{agent}.enabled", "bool", True, module="ai", group=G))
     register(SettingDef("autopilot.watchdog.stale_hours", "int", 48, module="ai", group=G, json_schema={"type": "integer", "minimum": 4, "maximum": 720}))
     register(SettingDef("autopilot.sourcing.min_strong", "int", 3, module="ai", group=G, json_schema={"type": "integer", "minimum": 0, "maximum": 50}))

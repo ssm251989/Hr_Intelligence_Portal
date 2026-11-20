@@ -54,7 +54,9 @@ const RUNNABLE = ["watchdog", "sourcing", "onboarding", "exit", "briefing"];
 const agentOf = (byAgent?: string | null) => (byAgent ?? "").replace("autopilot.", "");
 const openPath = (w: Waiting) =>
   w.entity_type === "application" && w.entity_id ? `/candidates/${w.entity_id}` : w.entity_type === "separation" ? "/exits"
-    : w.entity_type === "preboarding_case" ? "/onboarding" : null;
+    : w.entity_type === "preboarding_case" ? "/onboarding" : w.entity_type === "job_role" ? "/jobs" : null;
+// Part 30.1: the Job agent's "Publish <job>" card lists what the job still needs
+const missingOf = (w: Waiting) => ((w.payload.missing ?? []) as { field: string }[]).map((m) => m.field);
 
 export default function AutopilotPage() {
   const t = useT();
@@ -70,6 +72,7 @@ export default function AutopilotPage() {
   const [editing, setEditing] = useState<Waiting | null>(null);
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [journey, setJourney] = useState<Item[] | null>(null);
+  const [journeyOf, setJourneyOf] = useState<"application" | "job">("application");
 
   const load = useCallback(() => {
     http.get<Overview>("/api/v1/ui/autopilot/overview").then(setOv).catch(() => setOv(null));
@@ -117,10 +120,14 @@ export default function AutopilotPage() {
   };
   const startEdit = (w: Waiting) => {
     setEditing(w);
-    setEdits({ last_working_day: String(w.payload.last_working_day ?? ""), waived_days: String(w.payload.waived_days ?? 0) });
+    setEdits({ last_working_day: String(w.payload.last_working_day ?? ""), waived_days: String(w.payload.waived_days ?? 0),
+      jd_text: String(w.payload.jd_text ?? "") });
   };
-  const showJourney = (applicationId: string) =>
-    http.get<{ items: Item[] }>(`/api/v1/ui/autopilot/journey/${applicationId}`).then((r) => setJourney(r.items)).catch(() => setJourney([]));
+  const showJourney = (entityType: string, id: string) => {
+    const job = entityType === "job_role";
+    setJourneyOf(job ? "job" : "application");
+    http.get<{ items: Item[] }>(`/api/v1/ui/autopilot/journey/${job ? "job/" : ""}${id}`).then((r) => setJourney(r.items)).catch(() => setJourney([]));
+  };
 
   const total = (o: Outcome) => (ov?.agents ?? []).reduce((s, a) => s + (a.last_7_days[o] ?? 0), 0);
   const can = !!ov?.can_configure;
@@ -159,10 +166,15 @@ export default function AutopilotPage() {
                   {w.created_at ? ` · ${formatDateTime(w.created_at)}` : ""}
                 </Typography>
                 {note && <Typography variant="body2" sx={{ color: f.muted }}>{note}</Typography>}
+                {missingOf(w).length > 0 && (
+                  <Typography variant="body2" color="warning.main">
+                    {t("autopilot.fill_before", { fields: missingOf(w).map((m) => t(`autopilot.missing.${m}`)).join(", ") })}
+                  </Typography>
+                )}
               </Box>
               <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
                 {path && <Button size="small" component={RouterLink} to={path}>{t("autopilot.open")}</Button>}
-                {w.kind === "agent_resignation_approve" && <Button size="small" variant="outlined" onClick={() => startEdit(w)}>{t("autopilot.edit_approve")}</Button>}
+                {(w.kind === "agent_resignation_approve" || w.kind === "agent_job_publish") && <Button size="small" variant="outlined" onClick={() => startEdit(w)}>{t("autopilot.edit_approve")}</Button>}
                 <Button size="small" variant="contained" color="success" onClick={() => decide(w, "approve")}>{t("autopilot.approve")}</Button>
                 <Button size="small" variant="outlined" color="error" onClick={() => decide(w, "reject")}>{t("autopilot.decline")}</Button>
               </Stack>
@@ -241,7 +253,9 @@ export default function AutopilotPage() {
                 </Box>
                 <Stack spacing={0.5} alignItems="flex-end">
                   {it.agent === "briefing" && <Button size="small" onClick={() => http.get<Item>(`/api/v1/ui/autopilot/activity/${it.id}`).then(setOpen)}>{t("autopilot.read")}</Button>}
-                  {it.entity_type === "application" && it.entity_id && <Button size="small" onClick={() => showJourney(it.entity_id as string)}>{t("autopilot.journey")}</Button>}
+                  {(it.entity_type === "application" || it.entity_type === "job_role") && it.entity_id && (
+                    <Button size="small" onClick={() => showJourney(it.entity_type as string, it.entity_id as string)}>{t("autopilot.journey")}</Button>
+                  )}
                   {it.link && <Button size="small" component={RouterLink} to={it.link}>{t("autopilot.open")}</Button>}
                 </Stack>
               </Stack>
@@ -255,9 +269,24 @@ export default function AutopilotPage() {
         <DialogContent><Typography sx={{ whiteSpace: "pre-wrap" }}>{open?.details?.text ?? open?.summary}</Typography></DialogContent>
       </Dialog>
 
-      <Dialog open={!!editing} onClose={() => setEditing(null)} maxWidth="xs" fullWidth>
+      <Dialog open={!!editing} onClose={() => setEditing(null)} maxWidth={editing?.kind === "agent_job_publish" ? "md" : "xs"} fullWidth>
         <DialogTitle>{editing?.title.replace(/ \(Autopilot: [a-z_]+\)$/, "")}</DialogTitle>
         <DialogContent>
+          {editing?.kind === "agent_job_publish" ? (
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            <TextField multiline minRows={10} maxRows={24} label={t("autopilot.jd")} value={edits.jd_text ?? ""}
+              onChange={(e) => setEdits({ ...edits, jd_text: e.target.value })} />
+            {missingOf(editing).length > 0 && (
+              <Typography variant="body2" color="warning.main">
+                {t("autopilot.fill_before", { fields: missingOf(editing).map((m) => t(`autopilot.missing.${m}`)).join(", ") })}
+              </Typography>
+            )}
+            <Button variant="contained" color="success" disabled={!(edits.jd_text ?? "").trim()}
+              onClick={() => decide(editing, "edit", { ...editing.payload, jd_text: edits.jd_text })}>
+              {t("autopilot.approve")}
+            </Button>
+          </Stack>
+          ) : (
           <Stack spacing={2} sx={{ pt: 1 }}>
             <TextField type="date" label={t("autopilot.lwd")} value={edits.last_working_day ?? ""} InputLabelProps={{ shrink: true }}
               onChange={(e) => setEdits({ ...edits, last_working_day: e.target.value })} />
@@ -268,11 +297,12 @@ export default function AutopilotPage() {
               {t("autopilot.approve")}
             </Button>
           </Stack>
+          )}
         </DialogContent>
       </Dialog>
 
       <Dialog open={journey !== null} onClose={() => setJourney(null)} maxWidth="sm" fullWidth>
-        <DialogTitle>{t("autopilot.journey_title")}</DialogTitle>
+        <DialogTitle>{t(journeyOf === "job" ? "autopilot.journey_title_job" : "autopilot.journey_title")}</DialogTitle>
         <DialogContent>
           {(journey ?? []).length === 0 ? <Typography sx={{ color: f.muted }}>{t("autopilot.empty")}</Typography> : (journey ?? []).map((it) => (
             <Stack key={it.id} direction="row" spacing={1} alignItems="baseline" sx={{ py: 0.75, borderBottom: `1px solid ${f.line}` }}>

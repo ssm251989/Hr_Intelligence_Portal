@@ -91,6 +91,15 @@ def journey(application_id: UUID, db: Session = Depends(get_db), user: User = De
     return {"items": [_item(a) for a in rows]}
 
 
+@router.get("/journey/job/{job_id}")
+def journey_job(job_id: UUID, db: Session = Depends(get_db), user: User = Depends(_viewer)):
+    """Part 30.1: one job's story as the agents saw it (Job agent card, publishing, closing), oldest first."""
+    tenant = require_current_tenant()
+    rows = (db.query(AgentActivity).filter(AgentActivity.tenant_id == tenant.tenant_id, AgentActivity.entity_type == "job_role",
+                                           AgentActivity.entity_id == job_id).order_by(AgentActivity.created_at.asc()).limit(200).all())
+    return {"items": [_item(a) for a in rows]}
+
+
 @router.get("/activity")
 def activity(agent: Optional[str] = None, outcome: Optional[str] = None, before: Optional[datetime] = None, limit: int = 50,
              db: Session = Depends(get_db), user: User = Depends(_viewer)):
