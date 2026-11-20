@@ -102,7 +102,9 @@ MODULES: tuple[ModuleDef, ...] = (
                            NavItem("nav.autopilot", "/autopilot", any_of=("recruitment.job.view", "onboarding.preboarding.view", "separation.case.view"),
                                    group="today", icon="robot"),
                            NavItem("nav.setup", "/setup", "platform.settings.configure", group="admin", icon="rocket"),
-                           NavItem("nav.settings", "/settings", "platform.settings.view", group="admin", icon="gear")), always_on=True),
+                           NavItem("nav.settings", "/settings", "platform.settings.view", group="admin", icon="gear"),
+                           # Part 30.2: API keys + webhooks for the company's own systems (admin only)
+                           NavItem("nav.developers", "/developers", "platform.api_keys.manage", group="admin", icon="technologist")), always_on=True),
 )
 _BY_CODE = {m.code: m for m in MODULES}
 
