@@ -37,6 +37,7 @@ HELP: dict[str, tuple[str, str]] = {
     "copilot.agents.enabled": ("Let the HR assistant hand hiring tasks to the agent team (Job, Screening and Scheduling agents).", "HR assistant: creating jobs, screening, shortlist proposals, interview scheduling"),
     "autopilot.enabled": ("Master switch for HR Autopilot: automatic agents that watch hiring, joining and exits and do the routine work on their own.", "Everything the automatic agents do (Autopilot page)"),
     "autopilot.watchdog.enabled": ("Pipeline watchdog: every hour finds candidates, approvals and offers that are stuck, takes the next routine step or tells the right person.", "Escalations, re-sent offers, stuck-item alerts"),
+    "platform.api.rate_limit_per_minute": ("How many calls one API key may make per minute; above it the API answers 429 with Retry-After.", "Public API limits"),
     "autopilot.job.enabled": ("Job agent: when a job is created without a JD it drafts one with the AI, then prepares 'Publish <job>' for HR with the fields still missing. It never publishes on its own.", "JD drafts, publish cards"),
     "autopilot.screening.enabled": ("Screening agent: screens new applications as soon as the resume is read, and proposes a shortlist for HR (or applies the shortlist rule).", "Screening of new applications"),
     "autopilot.scheduling.enabled": ("Scheduling agent: after a shortlist, makes sure interview times go out; for jobs scheduled by hand it prepares 'Send interview times' for HR.", "Interview scheduling"),

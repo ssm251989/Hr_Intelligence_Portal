@@ -371,6 +371,9 @@ def register_all() -> None:
     register(SettingDef("platform.modules.offered", "json", ["onboarding", "assets", "separation", "analytics", "copilot"],
                         module="platform", group="Modules"))
     register(SettingDef("platform.setup.skipped", "json", [], module="platform", group="Setup"))
+    # Part 30.2: public APIs -- calls per minute per API key (429 + Retry-After above it)
+    register(SettingDef("platform.api.rate_limit_per_minute", "int", 60, module="platform", group="Developers",
+                        json_schema={"type": "integer", "minimum": 1, "maximum": 6000}))
     # fix 2026-10-05: configuration-health checks an admin chose to ignore (item keys; undo in Settings > Data > System health)
     register(SettingDef("platform.health.ignored", "json", [], module="platform", group="Setup"))
     register(SettingDef("platform.setup.config_pack", "json", {}, module="platform", group="Setup"))  # which pack was applied (Setup Wizard)

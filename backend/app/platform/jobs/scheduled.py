@@ -194,7 +194,15 @@ def _autopilot_daily(db, tenant):
     return run_daily(db, tenant)
 
 
+def _public_webhooks(db, tenant):
+    """Part 30.2: webhooks for the company's own systems -- new events -> deliveries, then send what is due."""
+    from app.public_api.webhooks import run
+
+    return run(db, tenant)
+
+
 JOBS = {
+    "public_webhooks": _public_webhooks,
     "autopilot_events": _autopilot_events,
     "autopilot_hourly": _autopilot_hourly,
     "autopilot_daily": _autopilot_daily,
@@ -282,6 +290,7 @@ def interview_automation() -> dict:
 
 
 celery_app.conf.beat_schedule = {
+    "public-webhooks": {"task": "hrms.fan_out", "schedule": 60.0, "args": ("public_webhooks",)},
     "autopilot-events": {"task": "hrms.fan_out", "schedule": 60.0, "args": ("autopilot_events",)},
     "autopilot-hourly": {"task": "hrms.fan_out", "schedule": 3600.0, "args": ("autopilot_hourly",)},
     "autopilot-daily": {"task": "hrms.fan_out", "schedule": 86400.0, "args": ("autopilot_daily",)},

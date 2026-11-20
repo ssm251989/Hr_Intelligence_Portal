@@ -311,6 +311,15 @@ app.include_router(ui_genai_router)
 from app.hr_agents.autopilot_router import router as autopilot_router  # noqa: E402 -- Part 26 HR Autopilot
 
 app.include_router(autopilot_router)
+
+# Part 30.2: public APIs for a company's own systems -- its own app (own OpenAPI at /api/public/v1/docs, own error shape)
+from app.public_api.base import API_PREFIX as PUBLIC_API_PREFIX, build_app as build_public_api  # noqa: E402
+from app.public_api.router import router as public_api_router  # noqa: E402
+from app.public_api.developers_router import router as developers_router  # noqa: E402
+
+public_api = build_public_api([public_api_router])
+app.mount(PUBLIC_API_PREFIX, public_api)
+app.include_router(developers_router)
 install_friendly_errors(app)
 
 

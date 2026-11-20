@@ -89,7 +89,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         prefix = f"t:{tenant.tenant_id}:" if tenant else "t:none:"
         checks = [(f"{prefix}rl:tenant:{window}", settings.RATE_LIMIT_TENANT_PER_MINUTE)]
         sub = _user_sub(request)
-        if sub:
+        if request.url.path.startswith("/api/public/"):
+            pass  # Part 30.2: an API key has its own per-key budget (app/public_api/base.py); the company budget still applies
+        elif sub:
             checks.append((f"{prefix}rl:user:{sub}:{window}", settings.RATE_LIMIT_USER_PER_MINUTE))
         else:
             ip = request.client.host if request.client else "unknown"

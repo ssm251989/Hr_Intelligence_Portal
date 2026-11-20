@@ -30,18 +30,21 @@ class GenericWebhookAdapter:
         self.config = config
         self.signing_secret = secrets.get("signing_secret", "")
 
-    def send(self, url: str, payload: dict, secret: str) -> ProviderResult:
+    def send(self, url: str, payload: dict, secret: str, headers: dict | None = None) -> ProviderResult:
+        """`headers` (Part 30.2): extra headers, e.g. X-Event / X-Delivery-Id for the public webhooks."""
         body = json.dumps(payload).encode()
         signature = _sign(body, secret or self.signing_secret)
         try:
             response = httpx.post(
-                url, content=body, headers={"Content-Type": "application/json", "X-Signature": signature},
-                timeout=self.config.get("timeout_seconds", 10),
+                url, content=body, headers={"Content-Type": "application/json", **(headers or {}), "X-Signature": signature},
+                timeout=self.config.get("timeout_seconds", 10), follow_redirects=False,
             )
             response.raise_for_status()
             return ProviderResult(success=True, raw={"status_code": response.status_code})
+        except httpx.HTTPStatusError as exc:
+            return ProviderResult(success=False, error=f"the receiver answered {exc.response.status_code}", raw={"status_code": exc.response.status_code})
         except httpx.HTTPError as exc:
-            return ProviderResult(success=False, error=str(exc))
+            return ProviderResult(success=False, error=str(exc) or type(exc).__name__)
 
     def test_connection(self) -> ProviderResult:
         return self.send(self.config["url"], {"type": "connection_test"}, self.signing_secret)

@@ -15,7 +15,7 @@ real and correctly wired, not an exhaustive enumeration of all 13 modules' every
 from dataclasses import dataclass
 from typing import Optional
 
-ACTIONS = ("view", "create", "edit", "delete", "approve", "export", "view_sensitive", "configure")
+ACTIONS = ("view", "create", "edit", "delete", "approve", "export", "view_sensitive", "configure", "manage")  # manage: Part 30.2, admin-only (no role template but Super Admin claims it)
 
 
 @dataclass(frozen=True)
@@ -81,6 +81,7 @@ def register_all() -> None:
 
     register_permission("platform", "settings", "view")
     register_permission("platform", "settings", "configure")
+    register_permission("platform", "api_keys", "manage", label="Developers: API keys and webhooks")  # Part 30.2
     register_permission("platform", "connections", "view")
     register_permission("platform", "connections", "configure")
     register_permission("platform", "comms", "view")
