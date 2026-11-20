@@ -91,3 +91,119 @@ def test_env_values_never_replace_existing_keys():
 def test_env_refuses_a_line_break_in_a_value(tmp_path):
     with pytest.raises(ValueError):
         envfile.write(tmp_path / ".env", {"SECRET_KEY": "a\nb"})
+
+
+# ---------------------------------------------------------------- Part 28.4: upgrade, uninstall, master key once
+
+import json as _json
+
+import pytest as _pytest
+
+
+@_pytest.fixture()
+def fake_pc(tmp_path, monkeypatch):
+    """No Windows services / firewall: the non-Windows path, data in a temp folder."""
+    from app.platform.install import windows
+
+    monkeypatch.setattr(windows, "WINDOWS", False)
+    monkeypatch.setenv("HRA_DATA", str(tmp_path / "data"))
+    install = tmp_path / "installed"
+    (install / "app" / "backend").mkdir(parents=True)
+    (install / "app" / "backend" / ".env").write_text("MASTER_KEY=abc123key\nDATABASE_URL=\n", encoding="utf-8")
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "installed.json").write_text(_json.dumps({"version": "1.0.0", "install_dir": str(install), "url": "http://localhost:8080/",
+                                                      "web_port": 8080, "new_postgres": True}), encoding="utf-8")
+    return windows, install, data
+
+
+def test_upgrade_backs_up_first_then_files_migrations_service(fake_pc, tmp_path, monkeypatch):
+    windows, install, data = fake_pc
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    (bundle / "VERSION.txt").write_text("1.1.0")
+    order = []
+    monkeypatch.setattr(windows, "step_backup", lambda info: order.append("backup") or {})
+    monkeypatch.setattr(windows, "step_files", lambda o: order.append("files") or {})
+    monkeypatch.setattr(windows, "step_migrate", lambda info: order.append("migrate") or {})
+    monkeypatch.setattr(windows, "step_service", lambda o: order.append("service") or {})
+    info = windows.upgrade(bundle, lambda *a: None)
+    assert order == ["backup", "files", "migrate", "service"]
+    assert info["version"] == "1.1.0" and info["previous_version"] == "1.0.0"
+    assert _json.loads((data / "installed.json").read_text())["version"] == "1.1.0"
+    assert (install / windows.UNINSTALL_CMD).exists()
+
+
+def test_failed_backup_stops_the_upgrade_before_anything_changes(fake_pc, tmp_path, monkeypatch):
+    windows, install, data = fake_pc
+    from app.platform.install import provision
+
+    def boom(info):
+        raise provision.StepFailed("backup", "pg_dump failed")
+
+    monkeypatch.setattr(windows, "step_backup", boom)
+    monkeypatch.setattr(windows, "step_files", lambda o: _pytest.fail("files copied after a failed backup"))
+    with _pytest.raises(provision.StepFailed):
+        windows.upgrade(tmp_path, lambda *a: None)
+
+
+def test_uninstall_keeps_data_unless_confirmed(fake_pc):
+    windows, install, data = fake_pc
+    out = windows.uninstall(False, lambda *a: None)
+    assert out["data_kept"] is True and data.exists() and (data / "uninstalled.json").exists()
+
+
+def test_uninstall_with_delete_removes_the_data_folder(fake_pc):
+    windows, install, data = fake_pc
+    out = windows.uninstall(True, lambda *a: None)
+    assert out["data_kept"] is False and not data.exists()
+
+
+def test_uninstall_screen_needs_the_second_confirmation(fake_pc, monkeypatch):
+    from app.platform.install import wizard
+
+    sent = {}
+
+    class H(wizard.Handler):
+        def __init__(self):
+            pass
+
+        def _ok(self):
+            return True
+
+        def _body(self):
+            return {"delete_data": True, "confirm": "yes"}
+
+        def _send(self, code, obj, ctype="application/json"):
+            sent.update(code=code, obj=obj)
+
+    h = H()
+    h.path, h.mode = "/api/uninstall?t=x", "uninstall"
+    monkeypatch.setattr(wizard.windows, "uninstall", lambda *a: _pytest.fail("uninstalled without DELETE"))
+    h.do_POST()
+    assert sent["obj"]["ok"] is False and "DELETE" in sent["obj"]["problem"]
+
+
+def test_master_key_is_shown_once(fake_pc):
+    windows, install, data = fake_pc
+    from app.platform.install import wizard
+
+    assert windows.master_key(install) == "abc123key"
+    wizard.STATE.update(events=[], running=False, failed=None, finished={"url": "u", "master_key": "abc123key"})
+    seen = []
+
+    class H(wizard.Handler):
+        def __init__(self):
+            pass
+
+        def _ok(self):
+            return True
+
+        def _send(self, code, obj, ctype="application/json"):
+            seen.append(obj)
+
+    h = H()
+    h.path = "/api/progress?t=x"
+    h.do_GET()
+    h.do_GET()
+    assert seen[0]["finished"]["master_key"] == "abc123key" and "master_key" not in seen[1]["finished"]

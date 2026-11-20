@@ -348,7 +348,8 @@ def delete_tenant(slug: str, *, confirm: Optional[str] = None, drop_database: bo
             database = urlparse(admin_dsn_for(cp_db, tenant)).path.lstrip("/")
             engine = create_engine(settings.DATABASE_URL, isolation_level="AUTOCOMMIT")
             with engine.connect() as conn:
-                conn.execute(sa_text(f'DROP DATABASE IF EXISTS "{database}"'))
+                # FORCE: connections a just-created company's set-up left in the pool must not block a confirmed delete
+                conn.execute(sa_text(f'DROP DATABASE IF EXISTS "{database}" WITH (FORCE)'))
             engine.dispose()
         return {"dry_run": False, **plan}
     finally:

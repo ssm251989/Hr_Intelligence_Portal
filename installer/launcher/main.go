@@ -4,6 +4,8 @@
 //   - Not installed yet: starts the setup screen (runtime\python\python.exe -m app.platform.install.wizard)
 //     which opens in the browser and does everything else.
 //   - Already installed: makes sure the services run and opens HR Automation in the browser.
+//   - Part 28.4: --setup on an installed PC opens the screen in "Upgrade" mode (no questions); --uninstall
+//     (or the copy named "Uninstall HR Automation.exe") opens it in uninstall mode.
 //
 // Build (any OS):  GOOS=windows GOARCH=amd64 go build -o HRAutomation.exe .
 // Standard library only: no downloads needed to build it.
@@ -79,6 +81,11 @@ func main() {
 		return
 	}
 	fmt.Println("HR Automation", readVersion(bundle))
+	uninstall := strings.HasPrefix(strings.ToLower(filepath.Base(exe)), "uninstall") || (len(os.Args) > 1 && os.Args[1] == "--uninstall")
+	if uninstall {
+		runWizard(bundle, "--uninstall")
+		return
+	}
 
 	info := filepath.Join(os.Getenv("ProgramData"), "HRAutomation", "installed.json")
 	if b, err := os.ReadFile(info); err == nil {
@@ -102,6 +109,11 @@ func main() {
 		}
 	}
 
+	runWizard(bundle)
+}
+
+// runWizard starts the setup screen (install, or upgrade - the screen decides - or uninstall).
+func runWizard(bundle string, extra ...string) {
 	python := filepath.Join(bundle, "runtime", "python", "python.exe")
 	backend := filepath.Join(bundle, "app", "backend")
 	if _, err := os.Stat(python); err != nil {
@@ -110,7 +122,7 @@ func main() {
 		return
 	}
 	fmt.Println("Starting the setup screen in your browser...")
-	cmd := exec.Command(python, "-m", "app.platform.install.wizard", "--bundle", bundle)
+	cmd := exec.Command(python, append([]string{"-m", "app.platform.install.wizard", "--bundle", bundle}, extra...)...)
 	cmd.Dir = backend
 	cmd.Env = append(os.Environ(), "PYTHONIOENCODING=utf-8", "PYTHONUTF8=1")
 	cmd.Stdout = os.Stdout

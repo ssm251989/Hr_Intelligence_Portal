@@ -5,7 +5,11 @@
               port 5432 or the next free one, Windows service HRAutomation-PostgreSQL (automatic)
     engine    provision.run(...) -- databases, .env, tables, company, admin, modules
     service   Windows service HRAutomation-App (WinSW): one port for the web app + API (app.web)
-    finish    firewall rule (optional), desktop + Start-menu shortcuts, installed.json
+    finish    firewall rule (optional), desktop + Start-menu shortcuts, installed.json, "Uninstall HR Automation.cmd"
+
+Part 28.4: upgrade(...) (no questions: values from the existing .env; backup first, then files ->
+migrations -> service restart) and uninstall(...) (services, firewall rule, shortcuts; data kept
+unless "Delete all data" was confirmed twice).
 
 On Linux/macOS (developers, tests) the same code runs PostgreSQL with pg_ctl and skips the Windows
 services, so the steps can be checked anywhere. Package layout (see installer/build_zip.ps1):
@@ -208,11 +212,189 @@ def step_finish(o: Options, a: Answers, version: str) -> dict:
                 (folder / "HR Automation.url").write_text(shortcut, encoding="utf-8")
             except OSError:
                 pass
+    write_uninstaller(o.install_dir)
     info = {"version": version, "install_dir": str(o.install_dir), "url": url, "web_port": o.web_port, "new_postgres": o.new_postgres,
             "pg_port": a.pg_port, "admin_email": a.admin_email, "installed_at": time.strftime("%Y-%m-%d %H:%M:%S")}
     data_root().mkdir(parents=True, exist_ok=True)
     (data_root() / "installed.json").write_text(json.dumps(info, indent=2), encoding="utf-8")
     return info
+
+
+UNINSTALL_CMD = "Uninstall HR Automation.cmd"
+
+
+def write_uninstaller(install_dir: Path) -> Path:
+    """Part 28.4: "Uninstall HR Automation" in the install folder - asks for administrator rights, then opens the
+    setup screen in uninstall mode (the same as `HRAutomation.exe --uninstall` from a rebuilt launcher)."""
+    py = install_dir / "runtime" / "python" / "python.exe"
+    backend = install_dir / "app" / "backend"
+    script = (
+        "@echo off\r\n"
+        "rem HR Automation - uninstall (Part 28.4). Needs administrator rights; your data is kept unless you choose otherwise.\r\n"
+        f'powershell -NoProfile -Command "Start-Process -Verb RunAs -FilePath \'{py}\' '
+        f"-ArgumentList '-m','app.platform.install.wizard','--uninstall','--bundle','{install_dir}' "
+        f"-WorkingDirectory '{backend}'\"\r\n"
+    )
+    target = install_dir / UNINSTALL_CMD
+    target.write_text(script, encoding="utf-8")
+    return target
+
+
+# ---------------------------------------------------------------- Part 28.4: upgrade + uninstall
+
+
+def _app_service(cmd: str, install_dir: Path) -> None:
+    if WINDOWS:
+        exe = install_dir / "service" / f"{APP_SERVICE}.exe"
+        if exe.exists():
+            subprocess.run([str(exe), cmd], capture_output=True)
+
+
+def step_backup(info: dict) -> dict:
+    """`hrctl backup run` into <data>\\backups with the installed python and the bundled pg_dump. A failed backup
+    stops the upgrade before anything is replaced."""
+    install_dir = Path(info["install_dir"])
+    py = install_dir / "runtime" / "python" / ("python.exe" if WINDOWS else "python")
+    py = py if py.exists() else Path(sys.executable)
+    target = data_root() / "backups"
+    target.mkdir(parents=True, exist_ok=True)
+    env = dict(os.environ, PYTHONIOENCODING="utf-8")
+    pg_dump = install_dir / "runtime" / "pgsql" / "bin" / ("pg_dump.exe" if WINDOWS else "pg_dump")
+    if pg_dump.exists():
+        env["PG_DUMP"] = str(pg_dump)
+    _run([py, "-m", "hrctl.backup", "run", "--dir", target], "backup", cwd=install_dir / "app" / "backend", env=env)
+    return {"backups": str(target)}
+
+
+def step_migrate(info: dict) -> dict:
+    """Migrations only (control plane + every company), with the installed copy and its existing .env."""
+    install_dir = Path(info["install_dir"])
+    py = install_dir / "runtime" / "python" / ("python.exe" if WINDOWS else "python")
+    py = py if py.exists() else Path(sys.executable)
+    _run([py, "-m", "hrctl.migrate", "--all-tenants", "--control-plane"], "migrate", cwd=install_dir / "app" / "backend",
+         env=dict(os.environ, PYTHONIOENCODING="utf-8"))
+    return {"migrated": True}
+
+
+def upgrade(bundle_dir: Path, say: Callable[[str, str, dict], None]) -> dict:
+    """HRAutomation.exe --setup on an installed PC: no questions - backup, files, migrations, service restart."""
+    info = installed_info()
+    if not info:
+        raise provision.StepFailed("upgrade", "HR Automation is not installed on this computer - run the normal setup.")
+    install_dir = Path(info["install_dir"])
+    if not (install_dir / "app" / "backend" / ".env").exists():
+        raise provision.StepFailed("upgrade", f"The installed settings file is missing ({install_dir}\\app\\backend\\.env) - nothing was changed.")
+    version = (bundle_dir / VERSION_FILE).read_text().strip() if (bundle_dir / VERSION_FILE).exists() else "dev"
+    o = Options(bundle_dir=bundle_dir, install_dir=install_dir, web_port=int(info.get("web_port") or 8080), new_postgres=bool(info.get("new_postgres", True)))
+
+    def do(step, fn):
+        say(step, "start", {})
+        r = fn()
+        say(step, "done", r)
+        return r
+
+    do("backup", lambda: step_backup(info))
+    do("stop", lambda: (_app_service("stop", install_dir), {"stopped": APP_SERVICE})[1])
+    do("files", lambda: step_files(o))  # .env and uploads are kept
+    do("migrate", lambda: step_migrate(info))
+    do("service", lambda: step_service(o))
+    write_uninstaller(install_dir)
+    info.update(version=version, upgraded_at=time.strftime("%Y-%m-%d %H:%M:%S"), previous_version=info.get("version"))
+    (data_root() / "installed.json").write_text(json.dumps(info, indent=2), encoding="utf-8")
+    return info
+
+
+def uninstall(delete_data: bool, say: Callable[[str, str, dict], None]) -> dict:
+    """Stop + remove both services, the firewall rule and the shortcuts. Data (databases, uploads, backups) is kept
+    unless delete_data - then the bundled database's data folder and every HR Automation data file go too."""
+    info = installed_info() or {}
+    install_dir = Path(info.get("install_dir") or ".")
+
+    def do(step, fn):
+        say(step, "start", {})
+        r = fn()
+        say(step, "done", r)
+        return r
+
+    def services():
+        _app_service("stop", install_dir)
+        _app_service("uninstall", install_dir)
+        if WINDOWS and info.get("new_postgres", True):
+            subprocess.run(["sc", "stop", PG_SERVICE], capture_output=True)
+            subprocess.run(["sc", "delete", PG_SERVICE], capture_output=True)
+        elif info.get("new_postgres", True) and (data_root() / "pgdata" / "PG_VERSION").exists():
+            subprocess.run([str(_pg_bin(Options(bundle_dir=install_dir, install_dir=install_dir), "pg_ctl")), "stop", "-D",
+                            str(data_root() / "pgdata"), "-m", "fast"], capture_output=True)
+        return {"removed": [APP_SERVICE, PG_SERVICE]}
+
+    def shortcuts():
+        removed = []
+        if WINDOWS:
+            subprocess.run(["netsh", "advfirewall", "firewall", "delete", "rule", "name=HR Automation"], capture_output=True)
+            for folder in (Path(os.environ.get("PUBLIC", "C:\\Users\\Public")) / "Desktop",
+                           Path(os.environ.get("PROGRAMDATA", "C:\\ProgramData")) / "Microsoft" / "Windows" / "Start Menu" / "Programs"):
+                f = folder / "HR Automation.url"
+                if f.exists():
+                    f.unlink()
+                    removed.append(str(f))
+        return {"removed": removed}
+
+    do("services", services)
+    do("shortcuts", shortcuts)
+    result = {"data_kept": not delete_data, "data": str(data_root())}
+    if delete_data and not info.get("new_postgres", True):
+        do("databases", lambda: drop_databases(install_dir))
+    if delete_data:
+        do("data", lambda: (shutil.rmtree(data_root(), ignore_errors=True), {"deleted": str(data_root())})[1])
+        for sub_dir in ("uploads",):
+            shutil.rmtree(install_dir / "app" / "backend" / sub_dir, ignore_errors=True)
+    else:
+        f = data_root() / "installed.json"
+        if f.exists():
+            f.rename(data_root() / "uninstalled.json")  # the data stays; a new install finds the database again
+    return result
+
+
+def drop_databases(install_dir: Path) -> dict:
+    """"Delete all data" on a PC that used its own PostgreSQL: drop the two HR Automation databases and the app login,
+    with the admin connection the installer saved in .env (the server itself stays)."""
+    from urllib.parse import unquote, urlparse
+
+    env = {}
+    f = install_dir / "app" / "backend" / ".env"
+    if f.exists():
+        for line in f.read_text(encoding="utf-8").splitlines():
+            if "=" in line and not line.startswith("#"):
+                k, v = line.split("=", 1)
+                env[k.strip()] = v.strip()
+    admin = urlparse(env.get("DATABASE_URL", ""))
+    if not admin.hostname:
+        return {"dropped": [], "note": "no database settings found"}
+    import psycopg2
+
+    names = [urlparse(env.get(k, "")).path.lstrip("/") for k in ("DATABASE_URL", "CONTROL_PLANE_DATABASE_URL") if env.get(k)]
+    app_user = unquote(urlparse(env.get("APP_DATABASE_URL", "")).username or "")
+    conn = psycopg2.connect(host=admin.hostname, port=admin.port or 5432, user=unquote(admin.username or ""),
+                            password=unquote(admin.password or ""), dbname="postgres")
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        for n in names:
+            cur.execute(f'DROP DATABASE IF EXISTS "{n}" WITH (FORCE)')
+        if app_user and app_user != "postgres":
+            cur.execute(f'DROP ROLE IF EXISTS "{app_user}"')
+    conn.close()
+    return {"dropped": names, "role": app_user}
+
+
+def master_key(install_dir: Path) -> Optional[str]:
+    """Part 28.4: shown ONCE on the finish page ("keep this safe - needed to restore a backup"); never logged."""
+    env = install_dir / "app" / "backend" / ".env"
+    if not env.exists():
+        return None
+    for line in env.read_text(encoding="utf-8").splitlines():
+        if line.startswith("MASTER_KEY="):
+            return line.split("=", 1)[1].strip() or None
+    return None
 
 
 def check_all(a: Answers, o: Options) -> None:
