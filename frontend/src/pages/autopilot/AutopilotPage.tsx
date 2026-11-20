@@ -56,7 +56,9 @@ const openPath = (w: Waiting) =>
   w.entity_type === "application" && w.entity_id ? `/candidates/${w.entity_id}` : w.entity_type === "separation" ? "/exits"
     : w.entity_type === "preboarding_case" ? "/onboarding" : w.entity_type === "job_role" ? "/jobs" : null;
 // Part 30.1: the Job agent's "Publish <job>" card lists what the job still needs
-const missingOf = (w: Waiting) => ((w.payload.missing ?? []) as { field: string }[]).map((m) => m.field);
+type Missing = { field: string; blocking?: boolean };
+const missingOf = (w: Waiting, blocking = true) =>
+  ((w.payload.missing ?? []) as Missing[]).filter((m) => (m.blocking !== false) === blocking).map((m) => m.field);
 
 export default function AutopilotPage() {
   const t = useT();
@@ -169,6 +171,11 @@ export default function AutopilotPage() {
                 {missingOf(w).length > 0 && (
                   <Typography variant="body2" color="warning.main">
                     {t("autopilot.fill_before", { fields: missingOf(w).map((m) => t(`autopilot.missing.${m}`)).join(", ") })}
+                  </Typography>
+                )}
+                {missingOf(w, false).length > 0 && (
+                  <Typography variant="body2" sx={{ color: f.muted }}>
+                    {t("autopilot.not_set", { fields: missingOf(w, false).map((m) => t(`autopilot.missing.${m}`)).join(", ") })}
                   </Typography>
                 )}
               </Box>

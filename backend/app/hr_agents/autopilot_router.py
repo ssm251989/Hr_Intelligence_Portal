@@ -79,7 +79,21 @@ def waiting(db: Session = Depends(get_db), user: User = Depends(_viewer)):
 
     tenant = require_current_tenant()
     rows = [s for s in inbox(db, tenant, user) if (s.kind or "").startswith("agent_") or str((s.payload_json or {}).get("by_agent") or "").startswith("autopilot.")]
-    return {"items": [{**suggestion_to_dict(s), "by_agent": (s.payload_json or {}).get("by_agent")} for s in rows]}
+    return {"items": [_live({**suggestion_to_dict(s), "by_agent": (s.payload_json or {}).get("by_agent")}, db, tenant) for s in rows]}
+
+
+def _live(item: dict, db: Session, tenant) -> dict:
+    """Proof 30.1g: a Publish card kept saying "fill before publishing: interviewer pool" after HR had added one -- the
+    list is a snapshot from when the card was made. Shown live instead (the approval checks it live too)."""
+    if item.get("kind") != "agent_job_publish" or not item.get("entity_id"):
+        return item
+    from app.hr_agents.autopilot.jobs import missing_fields
+    from app.models.job_role import JobRole
+
+    job = db.get(JobRole, UUID(item["entity_id"]))
+    if job is not None:
+        item["payload"] = {**(item.get("payload") or {}), "missing": missing_fields(db, tenant, job)}
+    return item
 
 
 @router.get("/journey/{application_id}")

@@ -13,7 +13,7 @@ from typing import Callable, Optional
 from sqlalchemy.orm import Session
 
 from app.hr_agents.autopilot import briefing, hiring, jobs, leftovers, people, watchdog
-from app.hr_agents.autopilot.core import Run, record, setting, state_get, state_set
+from app.hr_agents.autopilot.core import Run, enabled, record, setting, state_get, state_set
 
 log = logging.getLogger(__name__)
 
@@ -53,7 +53,8 @@ TRACK: dict[str, tuple[str, str, str]] = {
 }
 # Part 30.1: job events (entity_type job_role) -- the Job agent wakes on a new job; the job's own steps go on its timeline.
 JOB_EVENTS: dict[str, tuple[Callable, ...]] = {
-    "job_role_created": (jobs.prepare_publish,),
+    "job_role_created": (jobs.job_created,),  # waits for HR to stop editing; prepare_quiet_jobs makes the card
+    "job_role_deleted": (),  # nothing to do for the job itself; reading it makes this run close its Publish card
 }
 JOB_TRACK: dict[str, tuple[str, str, str]] = {
     "job_platforms_published": ("job", "done", "{job} was published ({where})"),
@@ -121,6 +122,8 @@ def run_events(db: Session, tenant, now: Optional[datetime] = None) -> dict:
             db.refresh(app)
     state_set(db, tenant, CURSOR, {"at": (last if len(rows) == BATCH else upto).isoformat()})
     out = {"events": len(rows), "handled": handled}
+    if enabled(db, tenant, "job", "jobs"):
+        out["job_cards"] = jobs.prepare_quiet_jobs(db, tenant, Run("event", "job_role_created"), now=now)
     if rows:  # a step just happened: close the cards it made pointless (the hourly run catches everything else)
         out["cards_closed"] = _close_leftovers(db, tenant, Run("event", "cards"))
     return out
@@ -188,7 +191,7 @@ def _track_job(db: Session, tenant, job, row) -> int:
 
 def _agent_of(handler) -> str:
     return {"screen": "screening", "shortlist_rule": "screening", "salary": "salary", "documents": "documents", "bgv_assign": "bgv",
-            "bgv_report": "bgv", "offer": "offer", "scheduling": "scheduling", "prepare_publish": "job"}.get(handler.__name__, "watchdog")
+            "bgv_report": "bgv", "offer": "offer", "scheduling": "scheduling", "prepare_publish": "job", "job_created": "job"}.get(handler.__name__, "watchdog")
 
 
 def run_hourly(db: Session, tenant, trigger: str = "schedule") -> dict:

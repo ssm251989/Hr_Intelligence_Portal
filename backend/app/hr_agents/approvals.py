@@ -211,7 +211,7 @@ def _apply_job_publish(db, tenant, suggestion, payload, reviewer):
     jd = (payload.get("jd_text") or "").strip() or (job.jd_text or "").strip()
     if not jd:
         raise AgentError("Write the JD first - in the card (Change and approve) or on the job - then approve again.")
-    missing = missing_fields(db, tenant, job)
+    missing = [m for m in missing_fields(db, tenant, job) if m["blocking"]]
     if missing:
         raise AgentError("Fill before publishing: " + ", ".join(m["label"].lower() for m in missing) + ". Add it on the job, then approve again.")
     chosen = payload.get("platforms") or {}
