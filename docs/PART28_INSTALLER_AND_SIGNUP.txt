@@ -27,6 +27,11 @@ ALREADY WRITTEN (outside this session; tested on Linux, NOT yet on Windows):
        https://www.enterprisedb.com/download-postgresql-binaries and pass -PgZip <path>.
      - Fix any failure in the script (quote the error first). Step 7 must print "bundle ok".
      - Report the zip size and SHA-256.
+     RESULT 2026-11-20 (built by the user on this PC, 18:17):
+       Done: installer\build\HR-Automation-1.0.0.zip (173 MB)  SHA-256
+       499290AABD238CB93F721D706F4A55B4DDD459EDBC71D771729EA6A8675BFEAA
+       (181,083,604 bytes; hash re-checked against the file and the .sha256 next to it. Step 7 passed -
+       the script stops before zipping if "bundle ok" fails.) Next: 28.3 on a clean Windows PC / VM.
 
 28.3 TEST ON A CLEAN WINDOWS PC / VM (never this dev PC: it already has PostgreSQL on 5432). Record each
      result + screenshot in docs/ui/INSTALLER_28.md.
