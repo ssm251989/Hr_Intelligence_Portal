@@ -21,6 +21,8 @@ from app.models.user import User
 from app.platform.tenancy.context import get_current_tenant
 
 API_PREFIX = "/api/public/v1"
+# scope -> the module it uses (the same activation rule as the screens; cards follow their own permissions)
+SCOPE_MODULE = {"jobs": "jobs", "candidates": "candidates", "screening": "screening", "scheduling": "interviews"}
 CODES = {400: "bad_request", 401: "unauthorized", 403: "forbidden", 404: "not_found", 409: "conflict", 422: "invalid", 429: "rate_limited"}
 
 
@@ -70,6 +72,13 @@ def caller(scope: str):
         _rate_limit(db, tenant, key)
         if scope not in (key.scopes or []):
             raise ApiError(403, "missing_scope", f"This key does not have the '{scope}' scope. Add it to a new key on Settings > Developers.")
+        module = SCOPE_MODULE.get(scope)
+        if module:  # proof 30.2h: the API created a job for a company whose Jobs module CTD had not activated
+            from app.platform import module_status
+
+            if not module_status.is_active(db, tenant, module):
+                raise ApiError(403, "module_not_active", f"The {module.replace('_', ' ')} module is not active for your company yet "
+                                                         "(Settings > Company > Modules; CTD activates it).")
         from app.platform.ai.tracked import set_actor
 
         set_actor(user.id)  # AI usage is counted for the key's owner, as on the screens
@@ -111,6 +120,19 @@ def _record_usage(request: Request, status: int, ms: int) -> None:
             db.close()
 
 
+def _unexpected(exc: Exception) -> JSONResponse:
+    """Anything a handler did not turn into an ApiError: still the API's error shape, never a bare 500 page."""
+    import logging
+
+    from app.platform.connectors.router import NoConnectionForPurposeError
+
+    if isinstance(exc, NoConnectionForPurposeError):
+        return JSONResponse(status_code=503, content={"error": {"code": "ai_unavailable", "message": str(exc)}})
+    logging.getLogger(__name__).exception("public API: unexpected error")
+    return JSONResponse(status_code=500, content={"error": {"code": "server_error", "message": "Something went wrong on our side. "
+                                                                                                  "Retry later; send the same Idempotency-Key on a POST."}})
+
+
 def build_app(routers: list) -> FastAPI:
     api = FastAPI(title="HR Automation public API", version="1.0.0", docs_url="/docs", redoc_url=None, openapi_url="/openapi.json",
                   description="Call the HR agents from your own systems. Authenticate with `Authorization: Bearer <key>` "
@@ -130,7 +152,10 @@ def build_app(routers: list) -> FastAPI:
     @api.middleware("http")
     async def _meter(request: Request, call_next):
         start = time.perf_counter()
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception as exc:  # noqa: BLE001 -- proof 30.2h: an unexpected error came back as plain text
+            response = _unexpected(exc)
         _record_usage(request, response.status_code, int((time.perf_counter() - start) * 1000))
         return response
 

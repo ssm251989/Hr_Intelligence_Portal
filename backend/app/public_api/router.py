@@ -2,6 +2,7 @@
 same rules and the same approval cards apply, and the key acts as its creator (their permissions)."""
 
 import json
+import logging
 from typing import Any, Literal, Optional
 from uuid import UUID
 
@@ -77,7 +78,7 @@ async def screen(resume: Optional[UploadFile] = File(None), resume_text: Optiona
                  jd_text: Optional[str] = Form(None, max_length=30000), job_id: Optional[UUID] = Form(None),
                  db: Session = Depends(get_db), c: Caller = Depends(caller("screening"))):
     from app.ai_services.resume_matcher import ResumeMatchError, match_resume
-    from app.ai_services.resume_parser import parse_resume
+    from app.ai_services.resume_parser import ResumeParsingError, parse_resume
     from app.models.job_role import JobRole
     from app.screening.service import compute_certificates_score, compute_skills_score
 
@@ -94,6 +95,11 @@ async def screen(resume: Optional[UploadFile] = File(None), resume_text: Optiona
         raise ApiError(422, "invalid", "The resume file is too big (5 MB at most).")
     if not data and not (resume_text or "").strip():
         raise ApiError(422, "invalid", "Send the resume as a file (resume) or as text (resume_text).")
+    from app.candidates.resume_extraction import MIN_TEXT_LETTERS, needs_vision
+
+    if not data and needs_vision(resume_text or ""):  # proof 30.2h: the parser's answer spoke of "this file" for typed text
+        raise ApiError(422, "resume_too_short", f"resume_text is too short to screen: send the whole resume (at least {MIN_TEXT_LETTERS} letters) "
+                                                "or the file itself.")
     try:
         text = (resume_text or "").strip()
         if data:
@@ -104,8 +110,13 @@ async def screen(resume: Optional[UploadFile] = File(None), resume_text: Optiona
         result = match_resume(jd, parsed, parsed.get("location"), job.location if job else None)
     except ResumeMatchError as exc:
         raise ApiError(502, "ai_failed", f"The AI could not screen this resume: {exc}") from exc
-    except Exception as exc:  # noqa: BLE001 -- a parse failure is the caller's file, not our server
-        raise ApiError(422, "unreadable_resume", f"The resume could not be read: {type(exc).__name__}") from exc
+    except ResumeParsingError as exc:  # proof 30.2h: the class name alone hid "AI usage is blocked ..." -- its message is for people
+        code = getattr(exc, "code", None)
+        raise ApiError(503 if code in ("AI_LIMIT", "AI_KEY", "AI_MODEL", "AI_BUSY") else 422,
+                       "ai_unavailable" if code in ("AI_LIMIT", "AI_KEY", "AI_MODEL", "AI_BUSY") else "unreadable_resume", str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 -- a file we cannot open is the caller's file, not our server
+        logging.getLogger(__name__).warning("public API screening: %s", exc, exc_info=True)
+        raise ApiError(422, "unreadable_resume", f"The resume could not be read ({type(exc).__name__}).") from exc
     reasons = [r for r in [result.get("recommendation")] if r]
     missing: list[str] = []
     if job is not None:

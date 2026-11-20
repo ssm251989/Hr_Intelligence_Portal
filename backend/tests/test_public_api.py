@@ -150,6 +150,18 @@ def test_test_keys_only_on_the_sandbox_and_live_keys_never_there(db_session, own
     assert e.value.code == "wrong_mode"
 
 
+def test_a_module_the_company_has_not_activated_is_refused(api, db_session, owner, monkeypatch):
+    """Proof 30.2h: the sandbox (every module off) could create a job through the API."""
+    from app.platform import module_status
+
+    _, h = _key(db_session, owner)
+    monkeypatch.setattr(module_status, "is_active", lambda db, tenant, key: key != "jobs")
+    r = api.post(f"{API}/jobs", headers=h, json={"title": "Not yet"})
+    assert r.status_code == 403 and r.json()["error"]["code"] == "module_not_active"
+    assert db_session.query(JobRole).filter(JobRole.title == "Not yet").count() == 0
+    assert api.get(f"{API}/cards", headers=h).status_code == 200  # cards have no module of their own
+
+
 def test_rate_limit_answers_429_with_retry_after(api, db_session, owner, monkeypatch):
     from app.platform.settings.resolver import SettingsService
 
@@ -175,6 +187,27 @@ def test_validation_errors_use_the_error_shape(api, db_session, owner):
     _, h = _key(db_session, owner)
     r = api.post(f"{API}/jobs", headers=h, json={"title": ""})
     assert r.status_code == 422 and r.json()["error"]["code"] == "invalid" and "title" in r.json()["error"]["message"]
+
+
+def test_an_unexpected_error_keeps_the_error_shape_and_is_metered(api, db_session, owner, monkeypatch):
+    """Proof 30.2h: with no AI connection the endpoint answered a plain-text 'Internal Server Error'."""
+    from app.platform.ai import governance
+    from app.platform.connectors.router import NoConnectionForPurposeError
+
+    row, h = _key(db_session, owner)
+    monkeypatch.setattr(governance, "feature_enabled", lambda db, tenant, f: True)
+
+    def no_ai(*a, **k):
+        raise NoConnectionForPurposeError("The AI service isn't connected yet")
+
+    monkeypatch.setattr(governance, "governed_complete", no_ai)
+    r = api.post(f"{API}/jd-drafts", headers=h, json={"title": "Data Engineer"})
+    assert r.status_code == 503 and r.json()["error"]["code"] == "ai_unavailable"
+
+    monkeypatch.setattr(governance, "governed_complete", lambda *a, **k: 1 / 0)
+    r = api.post(f"{API}/jd-drafts", headers=h, json={"title": "Data Engineer"})
+    assert r.status_code == 500 and r.json()["error"]["code"] == "server_error"
+    assert [u.status_code for u in db_session.query(ApiUsage).filter(ApiUsage.api_key_id == row.id).order_by(ApiUsage.created_at)] == [503, 500]
 
 
 def test_public_openapi_lists_only_public_endpoints(api):
@@ -247,12 +280,29 @@ def test_screening_scores_against_a_job_without_storing_anything(api, db_session
     job = _job(db_session, owner, knockout_questions_json=[{"question": "Can you work from Chennai?", "disqualify_on": "No"}])
     before = db_session.query(Application).count()
     _, h = _key(db_session, owner, scopes=("screening",))
-    r = api.post(f"{API}/screenings", headers=h, data={"resume_text": "Python developer, 5 years", "job_id": str(job.id)})
+    resume = "Kiran Das, Chennai. Python developer for five years: Django services, REST APIs, PostgreSQL, pytest, code reviews."
+    r = api.post(f"{API}/screenings", headers=h, data={"resume_text": resume, "job_id": str(job.id)})
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["score"] == 74 and "fastapi" in body["missing_skills"] and body["knockouts"][0]["question"].startswith("Can you")
     assert "Good backend fit" in body["reasons"] and db_session.query(Application).count() == before
     assert api.post(f"{API}/screenings", headers=h, data={"resume_text": "x"}).json()["error"]["code"] == "invalid"  # no JD
+    short = api.post(f"{API}/screenings", headers=h, data={"resume_text": "Python, 5 years", "job_id": str(job.id)})
+    assert short.status_code == 422 and short.json()["error"]["code"] == "resume_too_short"  # proof 30.2h
+
+
+def test_screening_says_why_the_ai_refused(api, db_session, owner, monkeypatch):
+    """Proof 30.2h: the sandbox answered "The resume could not be read: ResumeParsingError" - the reason was hidden."""
+    import app.ai_services.resume_parser as parser
+
+    def blocked(*a, **k):
+        raise parser.ResumeParsingError("AI usage is paused for this company (Settings > Integrations > AI Intelligence)", "AI_LIMIT")
+
+    monkeypatch.setattr(parser, "parse_resume", blocked)
+    _, h = _key(db_session, owner, scopes=("screening",))
+    r = api.post(f"{API}/screenings", headers=h, data={"resume_text": "Python developer " * 10, "jd_text": "J" * 40})
+    assert r.status_code == 503 and r.json()["error"] == {"code": "ai_unavailable",
+                                                          "message": "AI usage is paused for this company (Settings > Integrations > AI Intelligence)"}
 
 
 def test_apply_goes_through_the_careers_apply_path(api, db_session, owner, monkeypatch):

@@ -41,3 +41,56 @@ Chromium. Every database migrated with `hrctl.migrate --all-tenants --control-pl
 Not changed (outside 30.1): `PATCH /jobs/{id}` silently ignores `hiring_manager_id` (200, nothing saved).
 
 Screenshots: `docs/ui/screens/p30/p30g-*.png`.
+
+## 30.2h Public API + webhooks against a sandbox company (real model, all mail to Mailpit)
+
+Stack: one API on :8011 in `TENANCY_MODE=multi` (the :8010 API stopped, so only one process polls mail / runs jobs),
+`DEV_MAIL_CAPTURE=127.0.0.1:1025`; a local receiver on :9030 that checks `X-Signature` with the secret; the sandbox web
+app on :5175 (`http://sandbox.localhost:5175`). Calls and answers: `docs/ui/PART30_API_CURLS.md`.
+
+Sandbox: `hrctl tenant create --slug ctd-techs-sandbox --isolation shared_rls --admin-email sandbox.admin@example.com
+--domain sandbox.localhost`. A first try with the default `dedicated_db` was deleted (`hrctl tenant delete --confirm
+--drop-database`): this build serves every request from the one installation database (`get_db` has a single engine),
+so a dedicated-db company is never reachable; the slug `sandbox` stays taken by the deleted row, hence
+`ctd-techs-sandbox` (test mode accepts `sandbox` and `<company>-sandbox`). Setup the sandbox needed, done without mail:
+the platform AI connection (the Anthropic part of `hrctl.migrate_connections` only - never the HR mailbox), and its
+hiring modules activated with `module_status.activate` (the activation request would email CTD's approvers through the
+HR mailbox connection, whose capture I could not confirm for every connector type).
+
+| # | Step | Result | OK |
+|---|---|---|---|
+| a | Developers page as the sandbox admin: test key (5 scopes), webhook to `http://127.0.0.1:9030/hook` (6 events), test ping | Key `hra_test_e2b84b39...` shown once; secret `whsec_...` shown once; ping delivered 200, signature verified (`p30h-developers.png`) | yes |
+| b | Key errors | no key 401 `missing_key`; unknown key 401 `invalid_key`; a live key on the sandbox 403 `wrong_mode` | yes |
+| c | `POST /jobs` + the same `Idempotency-Key` again | 201 draft; the replay returned the same id with `Idempotent-Replay: true` | yes |
+| c2 | That first job was created while the sandbox's Jobs module was not active (every module off) | **The API created it** - the module gate knew only screen paths -> fix 6 | no -> fix 6 |
+| d | `POST /jd-drafts` (real model) | Before the AI connection: plain-text "Internal Server Error" -> fix 5; after: a JD from the inputs, decision log id | yes (fix 5) |
+| e | `POST /screenings` | job without a JD -> 422 (says so); short `resume_text` -> "No readable text found in this file" -> fix 7; whole resume + JD text -> score 85, location 100 | yes (fix 7) |
+| f | Job 2 via `POST /jobs` at 22:18:18 -> `GET /cards` | 22:28:24 "Publish Sandbox Backend Developer" (JD drafted, only the hiring-manager reminder) | yes |
+| g | `POST /cards/{id}/decision` approve | Job published on the careers page through the Jobs screen's Publish; `GET /jobs/{id}` status `published`, `has_jd` true | yes |
+| h | `POST /jobs/{id}/applications` (Kiran Das, docx resume, consent text) | 201 `received`; resume read + screened by the app with the real model: score 98; the Screening agent's "Shortlist Kiran Das" card shows as `waiting_card` on `GET /applications/{id}` | yes |
+| i | Approve the shortlist card by API | Shortlisted (`hr_selected`, next step "Interview times are being arranged"), but interview scheduling failed: `UniqueViolation` on `interview_scheduling_settings` (see "Not fixed") - the candidate flow stops here on a shared-RLS sandbox | no (owner) |
+| j | Webhooks for the candidate (receiver log) | ping, card.created (Publish), job.published, application.created, application.screened, card.decided (Publish), card.created (Shortlist), card.decided (Shortlist) - **every signature verified** (`p30h-delivery-log.png`) | yes |
+| k | `GET /applications/{id}/journey` | screened 98 -> shortlist prepared | yes |
+| l | Mailpit | No new message from this proof (86 before and after) | yes |
+
+### Bugs found and fixed (tests in `tests/test_public_api.py`, each fails on the old code)
+
+5. **An unexpected error answered plain text.** The metering middleware let the exception through; now any error keeps
+   the `{"error"}` shape (500 `server_error`), a missing AI connection is 503 `ai_unavailable`, and both are metered.
+   Test: `test_an_unexpected_error_keeps_the_error_shape_and_is_metered`.
+6. **The API ignored module activation.** Each scope now needs its module active (jobs, candidates, screening,
+   interviews), else 403 `module_not_active`; cards follow their own permissions. Test:
+   `test_a_module_the_company_has_not_activated_is_refused`.
+7. **Screening hid the reason / spoke of "this file" for typed text.** The parser's plain message is returned (503 for
+   AI-side reasons), and a `resume_text` under 80 letters is refused up front (`resume_too_short`). Tests:
+   `test_screening_says_why_the_ai_refused`, the short-text case in `test_screening_scores_against_a_job_without_storing_anything`.
+
+### Not fixed - owner decision (outside Part 30)
+
+- **Shared-RLS companies cannot schedule interviews (and have no HR mailbox / local-import settings).**
+  `interview_scheduling_settings`, `hr_integrations` and `local_import_settings` are one-row-per-installation tables
+  (`id = 1`); in a second company on the same database RLS hides tenant #1's row and the code's "create it if missing"
+  hits the primary key. A fix keys them by company (migration + three getters); `hr_integrations` holds the HR mailbox
+  credentials, so it needs care. Until then a sandbox proves the API up to the shortlist, not the interview.
+- **Dedicated-db companies are not reachable by the app in this build** (one database engine), so test mode needs a
+  shared-RLS sandbox.
