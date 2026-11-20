@@ -38,6 +38,7 @@ const HomePage = lazy(() => import("./pages/HomePage"));
 const MyInterviewsPage = lazy(() => import("./pages/MyInterviewsPage"));
 const CareersPrivacyPage = lazy(() => import("./careers/CareersPrivacyPage"));
 const NotFoundPage = lazy(() => import("./pages/NotFoundPage"));
+const SignupPage = lazy(() => import("./pages/SignupPage"));
 const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
 const ReportsPage = lazy(() => import("./pages/ReportsPage"));
 const SalaryPage = lazy(() => import("./pages/SalaryPage"));
@@ -111,6 +112,8 @@ export default function App() {
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<Navigate to="/login" replace />} />
               <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+              <Route path="/signup" element={<SignupPage />} />
+              <Route path="/signup/confirm" element={<SignupPage />} />
               <Route path="/set-password" element={<SetPasswordPage />} />
               <Route path="/superadmin" element={<SuperAdminPage />} />
               <Route path="/welcome" element={<WelcomePortalPage />} />

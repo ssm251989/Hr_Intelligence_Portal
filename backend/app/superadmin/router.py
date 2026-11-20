@@ -312,6 +312,15 @@ def _act_error(exc) -> HTTPException:
     return HTTPException(status_code=exc.status_code, detail={"code": exc.code, "message": str(exc)})
 
 
+@router.get("/signups")
+def signups(admin: PlatformAdmin = Depends(current_admin)):
+    """Part 28.5: every online sign-up - who, which short name, status (waiting for email / creating / waiting for
+    approval / active / failed with the reason)."""
+    from app.platform import signup
+
+    return {"signups": signup.all_signups()}
+
+
 @router.get("/activation-requests")
 def activation_requests(status: Optional[str] = None, admin: PlatformAdmin = Depends(current_admin)):
     from app.platform import activation, platform_mail

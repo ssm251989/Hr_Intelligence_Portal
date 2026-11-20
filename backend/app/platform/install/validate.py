@@ -135,3 +135,37 @@ def check(a: Answers) -> None:
         p["app_base_url"] = "API address, e.g. http://localhost:8080/_api."
     if p:
         raise InvalidInput(p)
+
+
+# ---------------------------------------------------------------- Part 28.5: cloud sign-up ("Create your company")
+
+# names a company can't take as <slug>.<platform domain>: the platform's own hosts and words people would trust
+RESERVED_SLUGS = frozenset({
+    "www", "app", "api", "admin", "superadmin", "console", "platform", "signup", "login", "auth", "mail", "smtp", "imap", "ftp",
+    "static", "assets", "cdn", "docs", "help", "support", "status", "billing", "careers", "blog", "dev", "test", "staging", "demo",
+    "ctd", "ctdtechs", "ctd-techs", "hrautomation", "hr-automation", "root", "system", "security", "abuse", "postmaster", "localhost",
+})
+
+
+def check_signup(*, company_name: str, company_slug: str, admin_name: str, admin_email: str, password: str, password2: str) -> None:
+    """The same rules as the installer (company, short name, admin name / email, password) + reserved names and the
+    repeated password. Raises InvalidInput with every problem at once."""
+    p: dict[str, str] = {}
+    if text_problem(company_name, label="Company name"):
+        p["company_name"] = text_problem(company_name, label="Company name")
+    slug = (company_slug or "").strip()
+    if not _SLUG.match(slug) or len(slug) < 3:
+        p["company_slug"] = "Short name: 3-40 lower-case letters, digits or '-', e.g. acme-india."
+    elif slug in RESERVED_SLUGS:
+        p["company_slug"] = "That short name is reserved. Choose another, e.g. your company's name."
+    if text_problem(admin_name, label="Your name"):
+        p["admin_name"] = text_problem(admin_name, label="Your name")
+    if not _EMAIL.match((admin_email or "").strip()) or _CONTROL.search(admin_email or ""):
+        p["admin_email"] = "Enter a valid email address, e.g. name@company.com."
+    prob = password_problem(password, label="Password", not_like=(admin_email,))
+    if prob:
+        p["password"] = prob
+    elif password != password2:
+        p["password"] = "The two passwords are different."
+    if p:
+        raise InvalidInput(p)

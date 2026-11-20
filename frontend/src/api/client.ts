@@ -1607,6 +1607,9 @@ export const superAdminApi = {
   setStatus: (token: string, slug: string, status: string, reason?: string) =>
     consoleRequest<{ status: string }>(`/api/v1/superadmin/tenants/${slug}/status`, token, { method: "POST", body: JSON.stringify({ status, reason }) }),
   health: (token: string, slug: string) => consoleRequest<{ database: { ok: boolean }; connections?: { name: string; ok: boolean }[] }>(`/api/v1/superadmin/tenants/${slug}/health`, token),
+  // Part 28.5: online sign-ups ("Create your company")
+  signups: (token: string) => consoleRequest<{ signups: { id: string; company: string; slug: string; host: string; admin_email: string; admin_name: string;
+    modules: string[]; status: string; error: string | null; created_at: string | null; confirmed_at: string | null }[] }>("/api/v1/superadmin/signups", token),
   // Part 19.2 / 19.2b / 19.2c: activation requests, approvers, platform mailbox (CTD Techs console)
   activationRequests: (token: string) =>
     consoleRequest<import("./modulesApi").ConsoleActivationState>("/api/v1/superadmin/activation-requests", token),

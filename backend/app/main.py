@@ -165,6 +165,9 @@ from app.experience.errors import install as install_friendly_errors  # noqa: E4
 
 app.include_router(ops_router)
 app.include_router(superadmin_router)
+from app.platform.signup_router import router as platform_signup_router  # noqa: E402  -- Part 28.5
+
+app.include_router(platform_signup_router)
 app.include_router(privacy_router)
 app.include_router(privacy_public_router)
 app.include_router(experience_router)

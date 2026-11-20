@@ -39,7 +39,7 @@ def clear_single_tenant_cache() -> None:
     _single_tenant_cache = None
 
 
-TENANTLESS_PATH_PREFIXES = ("/api/v1/superadmin", "/healthz", "/readyz", "/metrics")
+TENANTLESS_PATH_PREFIXES = ("/api/v1/superadmin", "/api/v1/platform/signup", "/healthz", "/readyz", "/metrics")  # Part 28.5: sign-up
 
 
 class TenantResolverMiddleware(BaseHTTPMiddleware):

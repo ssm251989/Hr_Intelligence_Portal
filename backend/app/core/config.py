@@ -106,6 +106,9 @@ class Settings:
     PLATFORM_SMTP_PASSWORD: str = os.getenv("PLATFORM_SMTP_PASSWORD", "")
     PLATFORM_SMTP_STARTTLS: bool = os.getenv("PLATFORM_SMTP_STARTTLS", "true").lower() == "true"
     PLATFORM_MAIL_FROM: str = os.getenv("PLATFORM_MAIL_FROM", "HR Platform <no-reply@ctdtechs.com>")
+    # Part 28.5: cloud sign-up. Companies get <slug>.<PLATFORM_DOMAIN>; the confirmation link points at PLATFORM_URL.
+    PLATFORM_DOMAIN: str = os.getenv("PLATFORM_DOMAIN", "localhost")
+    PLATFORM_URL: str = os.getenv("PLATFORM_URL", "http://localhost:5173")
     # fix 2026-10-04: run interview scheduling's background work (undo-window release, mailbox
     # retries) inside the web app. Default: on when there is no Celery worker (no REDIS_URL).
     # Development only: "127.0.0.1:1025" sends EVERY email (HR mailbox, connections) to a local
