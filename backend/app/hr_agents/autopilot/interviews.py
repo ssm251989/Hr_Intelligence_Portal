@@ -70,8 +70,13 @@ def majority(recommendations: list[Optional[str]]) -> Optional[str]:
     return top[0][0]
 
 
-def _scorecards(rounds: list) -> list[dict]:
-    return [{"interview_id": str(i.id), "interviewer": i.interviewer_name or i.interviewer_email or f"Interviewer {n}",
+def _scorecards(db: Session, rounds: list) -> list[dict]:
+    from app.models.user import User
+
+    # proof 30.3f: interviews booked on the recruiter screen keep only interviewer_id -> the card said "Interviewer 1"
+    ids = {i.interviewer_id for i in rounds if i.interviewer_id}
+    people = {u.id: (u.full_name or u.email) for u in db.query(User).filter(User.id.in_(ids)).all()} if ids else {}
+    return [{"interview_id": str(i.id), "interviewer": i.interviewer_name or people.get(i.interviewer_id) or i.interviewer_email or f"Interviewer {n}",
              "label": f"Interviewer {n}", "technical": i.technical_rating, "communication": i.communication_rating, "overall": i.overall_rating,
              "recommendation": i.recommendation, "comments": i.comments or ""} for n, i in enumerate(rounds, start=1)]
 
@@ -128,7 +133,7 @@ def prepare_outcome(db: Session, tenant, application, run: Run):
 
     job = db.get(JobRole, application.job_role_id)
     manager, fallback = hiring_manager(db, tenant, job) if job is not None else (None, True)
-    scorecards = _scorecards(rounds)
+    scorecards = _scorecards(db, rounds)
     summary, log_id, why_not = _summarise(db, tenant, application, scorecards)
     default = majority([c["recommendation"] for c in scorecards])
     n = names(db, application)

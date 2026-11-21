@@ -258,3 +258,42 @@ def test_only_the_named_hiring_manager_decides_and_my_approvals_sends_them_to_th
     bridge_single_user(db_session, _tenant(), manager)
     items = [i for i in items_for(db_session, _tenant(), manager) if i["id"] == str(card.id)]
     assert items and items[0]["path"] == "/autopilot" and items[0]["subtitle"] == "pick the interview result"
+
+
+def test_the_named_hiring_manager_can_decide_through_the_screen_endpoint(db_session, user, manager, conf, ai, anonymous_client):
+    """Proof 30.3f: the hiring manager saw the card but approving answered "Missing permission: agents.suggestion.view"."""
+    from app.core.security import create_access_token
+    from app.platform.iam.roles import bridge_single_user
+
+    bridge_single_user(db_session, _tenant(), manager)
+    app, (a,) = _setup(db_session, user, manager, panel=1)
+    a.scheduled_at = datetime.now(timezone.utc) - timedelta(hours=1)
+    db_session.commit()
+    _score(db_session, a, 4, "selected")
+    card = outcome.prepare_outcome(db_session, _tenant(), app, Run("event", "x"))
+    other = User(email=f"hm3-{uuid.uuid4().hex[:6]}@example.com", hashed_password="x", full_name="Other", role="hiring_manager")
+    db_session.add(other)
+    db_session.commit()
+    bridge_single_user(db_session, _tenant(), other)
+
+    url = f"/api/v1/intelligence/agents/suggestions/{card.id}/decision"
+    r = anonymous_client.post(url, json={"action": "approve"}, headers={"Authorization": f"Bearer {create_access_token(str(other.id))}"})
+    assert r.status_code == 403
+    r = anonymous_client.post(url, json={"action": "approve"}, headers={"Authorization": f"Bearer {create_access_token(str(manager.id))}"})
+    assert r.status_code == 200, r.text
+    db_session.refresh(app)
+    assert r.json()["status"] == "approved" and app.status == "interview_selected"
+
+
+
+def test_interviewers_booked_on_the_screen_are_named_on_the_card(db_session, user, manager, conf, ai):
+    """Proof 30.3f: the recruiter's booking keeps only interviewer_id, and the card showed "Interviewer 1 / 2"."""
+    iv_user = User(email=f"ivu-{uuid.uuid4().hex[:6]}@example.com", hashed_password="x", full_name="Kavya Iyer", role="interviewer")
+    db_session.add(iv_user)
+    db_session.commit()
+    app, (a,) = _setup(db_session, user, manager, panel=1)
+    a.interviewer_name, a.interviewer_email, a.interviewer_id = None, None, iv_user.id
+    db_session.commit()
+    _score(db_session, a, 4, "selected")
+    card = outcome.prepare_outcome(db_session, _tenant(), app, Run("event", "x"))
+    assert card.payload_json["scorecards"][0]["interviewer"] == "Kavya Iyer" and "Kavya" not in ai[0]["messages"][0]["content"]

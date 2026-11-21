@@ -94,3 +94,29 @@ HR mailbox connection, whose capture I could not confirm for every connector typ
   credentials, so it needs care. Until then a sandbox proves the API up to the shortlist, not the interview.
 - **Dedicated-db companies are not reachable by the app in this build** (one database engine), so test mode needs a
   shared-RLS sandbox.
+
+## 30.3f Interview-outcome card with a booked interview (real model, Mailpit) - also the skipped 29.3d proof
+
+Live company, proof API :8010 (`DEV_MAIL_CAPTURE`), proof people `hm.p30@example.com` (hiring manager of the job),
+`iv1.p30@` / `iv2.p30@example.com` (interviewers), candidate `divya.p30c@example.com` (shortlisted, `hr_selected`).
+
+| # | Step | Result | OK |
+|---|---|---|---|
+| a | The recruiter books two interviews (the screen's `POST /applications/{id}/interviews`, 4 min ahead, one per interviewer) | both 201; candidate `interview_scheduled` | yes |
+| b | After the interview time each interviewer sends a scorecard (the screen's `PATCH /interviews/{id}/feedback`): 5/5 and 4/4, both "Move forward", notes | 200 / 200; no decision recorded by either | yes |
+| c | Card | 12:02:45 (1.5 min after the second scorecard): "Interview result for Divya Raman (P30C): Strong technical performer; solid system design and communication skills", real summary (strengths, concern "could go deeper on caching", no disagreements), default = majority "Move forward", named reviewer = `hm.p30@example.com` (`p30c-1`, `p30c-2`) | yes |
+| c2 | The card named the interviewers "Interviewer 1 / 2" | interviews booked on the recruiter screen keep only `interviewer_id` -> fix 8 | no -> fix 8 |
+| d | The hiring manager presses Approve on HR agents | **"Missing permission: agents.suggestion.view"** - the decision endpoint asked a general permission hiring managers do not have -> fix 9; after it: "Approved - the agents carry on." (`p30c-3`) | yes (fix 9) |
+| e | What follows (the feedback screen's own decision code) | candidate `interview_selected`; `salary_checked` (band 12-18 L) and `salary_form_sent` by `hm.p30@example.com`; **Mailpit: "Proof Platform Engineer (P30C): your salary and joining details" to divya.p30c@example.com** | yes |
+
+### Bugs found and fixed (tests in `tests/test_interview_outcome.py`, each fails on the old code)
+
+8. **Interviewers unnamed on the card.** The card now uses the interviewer's account name when the interview has only
+   `interviewer_id` (the AI still gets "Interviewer 1 / 2", never names). Test: `test_interviewers_booked_on_the_screen_are_named_on_the_card`.
+9. **The named hiring manager could not decide.** `POST /api/v1/intelligence/agents/suggestions/{id}/decision` required
+   `agents.suggestion.view`; now a card's named reviewer may decide that card, everyone else still needs the permission,
+   and `decide()` applies the card's own rules. Test: `test_the_named_hiring_manager_can_decide_through_the_screen_endpoint`.
+
+Who may decide the card: only its named reviewer (the job's hiring manager, or the job owner when none is set). The
+card's permission code is deliberately not a registered permission - registering it would give it to every Hiring
+Manager through the role template.
