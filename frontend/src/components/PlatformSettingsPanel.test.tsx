@@ -84,4 +84,25 @@ describe("PlatformSettingsPanel", () => {
     await screen.findByText("This value isn't valid JSON.");
     expect(update).not.toHaveBeenCalled();
   });
+
+  it("the history stays open after Revert and shows the new entry (Part 31.4 proof)", async () => {
+    revert.mockResolvedValue({});
+    renderIn("en");
+    await screen.findByText("Salary form reminders (hours)");
+    fireEvent.click((await screen.findAllByRole("button", { name: "History" }))[0]);
+    const revertBtn = await screen.findByRole("button", { name: "Revert to this" });
+    history.mockResolvedValue([
+      { value: [24, 48], version: 3, updated_by: "hr@example.com (revert to v1)", updated_at: "2026-11-21T11:00:00Z", scope_type: "tenant", scope_id: null },
+      { value: [12], version: 2, updated_by: null, updated_at: "2026-11-21T10:00:00Z", scope_type: "tenant", scope_id: null },
+      { value: [24, 48], version: 1, updated_by: "hr@example.com", updated_at: "2026-11-20T10:00:00Z", scope_type: "tenant", scope_id: null },
+    ]);
+    const rows = await values.mock.results[0].value;
+    values.mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve(rows), 40))); // a reload takes a moment, as over the network
+    fireEvent.click(revertBtn);
+    await waitFor(() => expect(revert).toHaveBeenCalledWith("recruitment.salary.reminder_hours", 1));
+    await waitFor(() => expect(values).toHaveBeenCalledTimes(2)); // the panel reloaded its values after the revert
+    await new Promise((r) => setTimeout(r, 80));
+    expect(screen.queryByRole("dialog")).not.toBeNull(); // ...and the history is still open
+    expect(await screen.findByText(/\(revert to v1\)/)).toBeTruthy();
+  });
 });

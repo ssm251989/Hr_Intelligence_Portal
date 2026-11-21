@@ -307,7 +307,9 @@ export default function PlatformSettingsPanel({ prefixes, title, intro }: { pref
           <FormControlLabel control={<Switch checked={showKeys} onChange={(e) => setShowKeys(e.target.checked)} />} label={tr("comms.advanced")} />
         </Stack>
 
-        {loading ? (
+        {/* Part 31.4 proof: only the first load shows the spinner -- a reload after Save / Revert used to unmount every
+            row and close the History dialog, so the "(revert to vN)" entry was never seen */}
+        {loading && definitions === null ? (
           <CircularProgress size={24} />
         ) : groups.length === 0 ? (
           <Typography variant="body2" color="text.secondary">
