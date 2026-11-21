@@ -25,6 +25,7 @@ import { t as tr } from "../i18n";
 import { useBootstrap } from "../bootstrap/BootstrapContext";
 import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
 import { formatDateTime } from "../utils/datetime";
+import { parseEditValue, valueToEditString } from "../utils/settingValue";
 
 // Part 2 (docs/HRMS_COMPLETE_SPEC.txt section 4's UI) + section L/A1-A3 (client decision,
 // added to the spec after this Part started -- WINS over Part 14's own UI wording):
@@ -39,19 +40,6 @@ import { formatDateTime } from "../utils/datetime";
 // no nested schema, and only the tenant scope has real data yet (no positions/departments/
 // locations exist before Part 7's Core HR) -- see docs/build_log.md's own note on this.
 
-function valueToEditString(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  if (typeof value === "string") return value;
-  return JSON.stringify(value);
-}
-
-function parseEditValue(raw: string, type: string): unknown {
-  if (type === "int") return parseInt(raw, 10);
-  if (type === "decimal") return parseFloat(raw);
-  if (type === "bool") return raw === "true";
-  if (type === "str" || type === "enum" || type === "color" || type === "email" || type === "url") return raw;
-  return JSON.parse(raw); // json, duration, time, and everything else: raw JSON text
-}
 
 function SettingRow({
   showKey,
@@ -73,13 +61,26 @@ function SettingRow({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [history, setHistory] = useState<SettingHistoryEntry[] | null>(null);
 
-  const isDefault = row === undefined;
+  const isDefault = row === undefined || row.is_default === true;
   const [reverting, setReverting] = useState<number | null>(null);
 
+  // Always start editing from the value currently shown (after a save, a revert or a cancel
+  // the draft from an earlier edit is stale).
+  const startEditing = () => {
+    setDraft(valueToEditString(currentValue));
+    setEditing(true);
+  };
+
   const handleSave = async () => {
+    let parsed: unknown;
+    try {
+      parsed = parseEditValue(draft, def.type);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : String(err));
+      return;
+    }
     setSaving(true);
     try {
-      const parsed = parseEditValue(draft, def.type);
       await platformSettingsApi.update(def.key, parsed);
       setEditing(false);
       onSaved();
@@ -102,7 +103,8 @@ function SettingRow({
   const handleRevert = async (entry: SettingHistoryEntry) => {
     setReverting(entry.version);
     try {
-      await platformSettingsApi.update(def.key, entry.value);
+      // The backend's revert route records "(revert to vN)" in the history.
+      await platformSettingsApi.revert(def.key, entry.version);
       setHistory(await platformSettingsApi.history(def.key));
       onSaved();
     } catch (err) {
@@ -118,7 +120,7 @@ function SettingRow({
       secondaryAction={
         !editing && (
           <Stack direction="row" spacing={1}>
-            <Button size="small" onClick={() => setEditing(true)}>
+            <Button size="small" onClick={startEditing}>
               Edit
             </Button>
             <Button size="small" onClick={openHistory}>

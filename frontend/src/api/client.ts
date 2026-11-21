@@ -307,6 +307,8 @@ export interface SettingValueRow {
   value: unknown;
   scope_type: string;
   scope_id: string | null;
+  /** true = nothing saved for the company; `value` is the built-in default */
+  is_default?: boolean;
 }
 
 export interface SettingHistoryEntry {
@@ -323,6 +325,7 @@ export const platformSettingsApi = {
   values: () => get<SettingValueRow[]>("/api/v1/settings"),
   update: (key: string, value: unknown) => put<SettingValueRow>(`/api/v1/settings/${key}`, { value, scope_type: "tenant" }),
   history: (key: string) => get<SettingHistoryEntry[]>(`/api/v1/settings/${key}/history`),
+  revert: (key: string, version: number) => post<SettingValueRow>(`/api/v1/settings/${key}/revert`, { version, scope_type: "tenant" }),
 };
 
 // ---- Connections framework (Part 3) ----

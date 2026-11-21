@@ -142,6 +142,9 @@ export const en = {
   "settings.group_general": "General",
   "settings.search_example": "Search, e.g. password",
   "settings.no_match": "No settings match \"{q}\".",
+  "settings.invalid_whole_number": "Enter a whole number.",
+  "settings.invalid_number": "Enter a number.",
+  "settings.invalid_json": "This value isn't valid JSON.",
 };
 
 export const hi: Partial<Record<keyof typeof en, string>> = {
@@ -283,6 +286,9 @@ export const hi: Partial<Record<keyof typeof en, string>> = {
   "settings.group_general": "सामान्य",
   "settings.search_example": "खोजें, जैसे पासवर्ड",
   "settings.no_match": "\"{q}\" से कोई सेटिंग नहीं मिली।",
+  "settings.invalid_whole_number": "पूर्ण संख्या दर्ज करें।",
+  "settings.invalid_number": "एक संख्या दर्ज करें।",
+  "settings.invalid_json": "यह मान मान्य JSON नहीं है।",
 };
 
 export const ta: Partial<Record<keyof typeof en, string>> = {
@@ -424,4 +430,7 @@ export const ta: Partial<Record<keyof typeof en, string>> = {
   "settings.group_general": "பொது",
   "settings.search_example": "தேடு, எ.கா. கடவுச்சொல்",
   "settings.no_match": "\"{q}\" உடன் எந்த அமைப்பும் பொருந்தவில்லை.",
+  "settings.invalid_whole_number": "முழு எண்ணை உள்ளிடவும்.",
+  "settings.invalid_number": "ஒரு எண்ணை உள்ளிடவும்.",
+  "settings.invalid_json": "இந்த மதிப்பு சரியான JSON அல்ல.",
 };
