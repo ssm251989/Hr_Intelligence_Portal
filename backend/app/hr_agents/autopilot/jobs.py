@@ -24,13 +24,33 @@ GIVE_UP = timedelta(days=7)  # a job still being edited after a week is left alo
 PERMISSION = "recruitment.job.edit"
 # a job in these states is not published yet; "ready_for_publishing" was saved without the careers page on purpose
 NOT_PUBLISHED = ("draft",)
-# field -> (what HR reads on the card, blocks publishing?). Proof 30.1g: no screen can set a job's hiring manager
-# (the wizard does not send it, PATCH /jobs ignores it), so it is a reminder only -- the job owner stands in for it.
+# field -> (what HR reads on the card, blocks publishing?). Owner 2026-11-21: the job wizard / job edit now sets the
+# hiring manager, so a missing one blocks the card again; until it is set the job owner stands in (hiring_manager()).
 FIELDS = {
     "salary_band": ("Salary band", True),
-    "hiring_manager": ("Hiring manager", False),
+    "hiring_manager": ("Hiring manager", True),
     "interviewer_pool": ("Interviewer pool", True),
 }
+
+
+def hiring_manager(db: Session, tenant, job):
+    """The job's hiring manager: the field, else a hiring-team member with that role, else the job owner (fallback).
+    Returns (User or None, is_fallback)."""
+    from app.models.hiring_team import JobHiringTeamMember
+    from app.models.user import User
+
+    user_id = job.hiring_manager_id
+    if user_id is None:
+        row = (db.query(JobHiringTeamMember.user_id).filter(JobHiringTeamMember.tenant_id == tenant.tenant_id, JobHiringTeamMember.job_role_id == job.id,
+                                                             JobHiringTeamMember.role_in_hiring == "hiring_manager", JobHiringTeamMember.user_id.isnot(None))
+               .first())
+        user_id = row[0] if row else None
+    if user_id is not None:
+        person = db.get(User, user_id)
+        if person is not None and getattr(person, "deactivated_at", None) is None:
+            return person, False
+    owner = db.get(User, job.created_by) if job.created_by else None
+    return (owner if owner is not None and getattr(owner, "deactivated_at", None) is None else None), True
 
 
 def missing_fields(db: Session, tenant, job) -> list[dict]:

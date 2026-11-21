@@ -33,6 +33,12 @@ test mailbox. A test key never reaches live data and a live key never works on t
 On the sandbox a webhook may point at `http://localhost` / `http://127.0.0.1` for local testing; live webhooks must be
 public `https://` URLs.
 
+**What test keys cover today:** screening, jobs (incl. JD drafts and the Publish card), applications and cards.
+**Interview scheduling works with live keys only** for now: a sandbox company shares the installation database and the
+interview-scheduling settings are still one row per installation (docs/FUTURE_WORK.md, cloud / AWS phase). On the
+sandbox, `POST /applications/{id}/interview-scheduling` - and approving a shortlist card, which starts scheduling -
+does not get the interview times out.
+
 ## Scopes
 
 | Scope | Endpoints |

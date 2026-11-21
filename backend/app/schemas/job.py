@@ -104,6 +104,7 @@ class JobRoleUpdate(BaseModel):
     jd_text: Optional[str] = None
     benefits: Optional[str] = None
     additional_notes: Optional[str] = None
+    hiring_manager_id: Optional[uuid.UUID] = None  # Part 30 (owner 2026-11-21): set from the job wizard / job edit
     posting_url_naukri: Optional[str] = None
     posting_url_linkedin: Optional[str] = None
 

@@ -99,7 +99,7 @@ def test_new_job_without_jd_gets_a_drafted_jd_and_a_publish_card(db_session, use
     assert p["by_agent"] == "autopilot.job" and p["job_id"] == str(job.id)
     assert p["jd_text"] == DRAFT and p["jd_drafted"] is True
     assert p["platforms"]["career_portal"] is True
-    assert [(m["field"], m["blocking"]) for m in p["missing"]] == [("hiring_manager", False), ("interviewer_pool", True)]
+    assert [(m["field"], m["blocking"]) for m in p["missing"]] == [("hiring_manager", True), ("interviewer_pool", True)]
     db_session.refresh(job)
     assert job.jd_text is None and job.status == "draft"  # nothing saved, nothing published: HR approves the card
 
@@ -249,18 +249,35 @@ def test_missing_salary_band_refuses_and_the_card_stays_pending(db_session, user
     assert job.status == "published"
 
 
-def test_no_hiring_manager_is_a_reminder_not_a_block(db_session, user, allow, job_on, ai):
-    """Proof 30.1g: no screen can set a job's hiring manager (the wizard does not send it, PATCH /jobs ignores it), so a
-    card that required one could never be approved. It is listed as a reminder; the job owner stands in (30.3)."""
-    from app.agents.service import decide
+def test_no_hiring_manager_blocks_until_it_is_set(db_session, user, allow, job_on, ai):
+    """Owner 2026-11-21: the wizard / job edit sets the hiring manager, so a missing one blocks the card again."""
+    from app.agents.service import AgentError, decide
 
     job = _job(db_session, user, manager=False)
     job_agent.prepare_publish(db_session, _tenant(), job, Run("event", "job_role_created"))
     card = _card(db_session, job)
-    assert card.payload_json["missing"] == [{"field": "hiring_manager", "label": "Hiring manager", "blocking": False}]
+    assert card.payload_json["missing"] == [{"field": "hiring_manager", "label": "Hiring manager", "blocking": True}]
+    with pytest.raises(AgentError, match="hiring manager"):
+        decide(db_session, _tenant(), card, user=user, action="approve")
+    db_session.rollback()
+    job.hiring_manager_id = user.id
+    db_session.commit()
     decide(db_session, _tenant(), card, user=user, action="approve")
     db_session.refresh(job)
     assert job.status == "published"
+
+
+def test_hiring_manager_falls_back_to_the_job_owner(db_session, user):
+    from app.models.user import User
+
+    job = _job(db_session, user, manager=False)
+    assert job_agent.hiring_manager(db_session, _tenant(), job) == (user, True)
+    manager = User(email=f"hm-{uuid.uuid4().hex[:6]}@example.com", hashed_password="x", full_name="Hari", role="hiring_manager")
+    db_session.add(manager)
+    db_session.commit()
+    job.hiring_manager_id = manager.id
+    db_session.commit()
+    assert job_agent.hiring_manager(db_session, _tenant(), job) == (manager, False)
 
 
 def test_missing_interviewer_pool_blocks(db_session, user, allow, job_on, ai):
