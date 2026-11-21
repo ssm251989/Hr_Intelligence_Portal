@@ -31,6 +31,22 @@ describe("parseEditValue", () => {
   });
 });
 
+describe("clearing a JSON setting (Part 31)", () => {
+  it("an empty box gives the built-in default instead of a JSON error", () => {
+    expect(parseEditValue("", "json", [24, 48])).toEqual([24, 48]);
+    expect(parseEditValue("   ", "json", { a: 1 })).toEqual({ a: 1 });
+  });
+
+  it("an empty box gives null when the default is null", () => {
+    expect(parseEditValue("", "json", null)).toBeNull();
+    expect(parseEditValue("", "json")).toBeNull();
+  });
+
+  it("numbers still refuse an empty box", () => {
+    expect(() => parseEditValue("", "int", 75)).toThrow();
+  });
+});
+
 describe("valueToEditString", () => {
   it("round-trips through parseEditValue", () => {
     expect(valueToEditString(null)).toBe("");

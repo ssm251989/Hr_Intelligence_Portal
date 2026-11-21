@@ -55,6 +55,9 @@ function SettingRow({
   showKey?: boolean;
 }) {
   const currentValue = row ? row.value : def.default;
+  const name = def.help || friendlyName(def.key);
+  // bool values read Yes / No in the app's language (the stored value stays true / false)
+  const shown = (value: unknown) => (def.type === "bool" && typeof value === "boolean" ? tr(value ? "settings.yes" : "settings.no") : valueToEditString(value));
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(() => valueToEditString(currentValue));
   const [saving, setSaving] = useState(false);
@@ -74,7 +77,7 @@ function SettingRow({
   const handleSave = async () => {
     let parsed: unknown;
     try {
-      parsed = parseEditValue(draft, def.type);
+      parsed = parseEditValue(draft, def.type, def.default); // an empty JSON box = the built-in default
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err));
       return;
@@ -85,7 +88,7 @@ function SettingRow({
       setEditing(false);
       onSaved();
     } catch (err) {
-      onError(extractErrorMessage(err, `Failed to update ${def.key}`));
+      onError(extractErrorMessage(err, tr("settings.failed_update", { name })));
     } finally {
       setSaving(false);
     }
@@ -96,7 +99,7 @@ function SettingRow({
     try {
       setHistory(await platformSettingsApi.history(def.key));
     } catch (err) {
-      onError(extractErrorMessage(err, `Failed to load history for ${def.key}`));
+      onError(extractErrorMessage(err, tr("settings.failed_history", { name })));
     }
   };
 
@@ -108,7 +111,7 @@ function SettingRow({
       setHistory(await platformSettingsApi.history(def.key));
       onSaved();
     } catch (err) {
-      onError(extractErrorMessage(err, `Failed to revert ${def.key}`));
+      onError(extractErrorMessage(err, tr("settings.failed_revert", { name })));
     } finally {
       setReverting(null);
     }
@@ -121,10 +124,10 @@ function SettingRow({
         !editing && (
           <Stack direction="row" spacing={1}>
             <Button size="small" onClick={startEditing}>
-              Edit
+              {tr("settings.edit")}
             </Button>
             <Button size="small" onClick={openHistory}>
-              History
+              {tr("settings.history")}
             </Button>
           </Stack>
         )
@@ -152,34 +155,34 @@ function SettingRow({
             <Stack direction="row" spacing={1} alignItems="center" mt={1}>
               {def.type === "bool" ? (
                 <Select size="small" value={draft} onChange={(e) => setDraft(e.target.value)}>
-                  <MenuItem value="true">true</MenuItem>
-                  <MenuItem value="false">false</MenuItem>
+                  <MenuItem value="true">{tr("settings.yes")}</MenuItem>
+                  <MenuItem value="false">{tr("settings.no")}</MenuItem>
                 </Select>
               ) : (
                 <TextField size="small" value={draft} onChange={(e) => setDraft(e.target.value)} sx={{ minWidth: 260 }} />
               )}
               <Button size="small" variant="contained" onClick={handleSave} disabled={saving}>
-                Save
+                {tr("action.save")}
               </Button>
               <Button size="small" onClick={() => setEditing(false)} disabled={saving}>
-                Cancel
+                {tr("action.cancel")}
               </Button>
             </Stack>
           ) : (
             <Typography variant="body2" color="text.secondary" component="span">
-              {valueToEditString(currentValue) || "(empty)"}
+              {shown(currentValue) || tr("settings.empty")}
             </Typography>
           )
         }
       />
       <Dialog open={historyOpen} onClose={() => setHistoryOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>{def.key} -- history</DialogTitle>
+        <DialogTitle>{tr("settings.history_title", { name })}</DialogTitle>
         <DialogContent>
           {history === null ? (
             <CircularProgress size={20} />
           ) : history.length === 0 ? (
             <Typography variant="body2" color="text.secondary">
-              No changes recorded yet.
+              {tr("settings.no_history")}
             </Typography>
           ) : (
             <List dense>
@@ -190,14 +193,14 @@ function SettingRow({
                   secondaryAction={
                     i > 0 && (
                       <Button size="small" onClick={() => handleRevert(entry)} disabled={reverting !== null}>
-                        {reverting === entry.version ? "Reverting..." : "Revert to this"}
+                        {reverting === entry.version ? tr("settings.reverting") : tr("settings.revert_to_this")}
                       </Button>
                     )
                   }
                 >
                   <ListItemText
-                    primary={valueToEditString(entry.value)}
-                    secondary={`v${entry.version} -- ${entry.updated_by ?? "unknown"} -- ${entry.updated_at ? formatDateTime(entry.updated_at) : ""}${i === 0 ? " (current)" : ""}`}
+                    primary={shown(entry.value) || tr("settings.empty")}
+                    secondary={`v${entry.version} - ${entry.updated_by ?? tr("settings.unknown")} - ${entry.updated_at ? formatDateTime(entry.updated_at) : ""}${i === 0 ? ` ${tr("settings.current")}` : ""}`}
                   />
                 </ListItem>
               ))}
@@ -242,7 +245,7 @@ export default function PlatformSettingsPanel({ prefixes, title, intro }: { pref
         setDefinitions(defs);
         setValues(vals);
       })
-      .catch((err) => setError(extractErrorMessage(err, "Failed to load platform settings")))
+      .catch((err) => setError(extractErrorMessage(err, tr("settings.failed_load"))))
       .finally(() => setLoading(false));
   };
 
