@@ -2970,3 +2970,28 @@ NEXT: Part 28 (installer: lock file, build the zip; the clean-VM test needs a ma
 - 28.3 (clean-PC test of the zip) skipped for now: the owner will test the zip on a clean Windows PC / VM.
 
 NEXT: build the zip alone (no Mailpit / proof API / dev server), report size + SHA-256; then Part 30 backend.
+
+- part-30 (2026-11-20/21): Job agent, public APIs + webhooks, interview-outcome card (docs/ui/PART30.md, docs/PUBLIC_API.md,
+  docs/HR_AUTOPILOT.md "Part 30", docs/FUTURE_WORK.md). Migrations f30a1b2c3d4e (job agent), f30b2a4c6e81 (api_keys,
+  api_usage, webhook_subscriptions, webhook_deliveries + platform.api_keys.manage on Super Admin), f30c3d5e7a92
+  (interviews.recommendation); one head; applied with `hrctl.migrate --all-tenants --control-plane`.
+  - 30.1 Job agent: JD draft + "Publish <title>" card, applier through the Jobs screen's Publish, job timeline + Journey,
+    card auto-close. Proof (real model, Mailpit) found 4 bugs, fixed with tests (drafting while HR was still in the
+    wizard -> 10-minute quiet wait; hiring manager unsettable; stale missing list; delete closed the card only hourly).
+    Owner decisions 2026-11-21: keep the 10-minute wait; Hiring manager field in the job wizard / edit, missing one blocks
+    again (job owner = fallback).
+  - 30.2 Public API (/api/public/v1, own OpenAPI, keys shown once, scopes, per-key limit, idempotency, metering, error
+    shape, module gate) + webhooks (HMAC, retries 1/5/30 min, 2 h, 12 h, Resend) + Settings > Developers page. Proof on a
+    shared-RLS sandbox company `ctd-techs-sandbox` (test keys) found 3 bugs, fixed with tests. Test keys cover
+    screening, jobs, applications, cards; interview scheduling = live keys only (one-row settings tables, future work).
+  - 30.3 Interview-outcome card: recommendation per scorecard; round complete -> AI summary (no names sent) -> card for the
+    job's hiring manager (fallback job owner), majority default / tie none, reject needs a reason, another round, same
+    decision code as the feedback screen (record_decision), closed when decided on the screen, watchdog for missing
+    scorecards. Proof with a booked interview (covers the skipped 29.3d) found 2 bugs, fixed with tests (the named
+    hiring manager could not decide through the endpoint; interviewers unnamed on the card); salary form in Mailpit.
+  - 30.4 Full suite in 12 batches of 10 files: 165 failed / 1553 passed - the same 165 tests as the 29.4 baseline by
+    name (none new, none fixed). Frontend: i18n 0 missing, tsc + vite build OK; vitest 40 passed / 3 failed (the 3 old
+    ones). Screenshots with a real person's card were redacted before pushing (the repository is public).
+
+NEXT: colleague reviews the pull request kishore/part-30 -> KG-Development (not merged by me). Future work (AWS phase):
+docs/FUTURE_WORK.md.

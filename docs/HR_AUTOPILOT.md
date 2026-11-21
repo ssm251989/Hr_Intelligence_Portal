@@ -24,6 +24,7 @@ about a person needs a company rule that is OFF by default.
 
 | Agent | Wakes on | Routine (always, when on) | Decides only with rule (default off) | Otherwise |
 |---|---|---|---|---|
+| Job (Part 30) | job_role_created, then 10 min with no change to the job | drafts the JD (feature `agents.job`) when the job has none | - | "Publish <title>" card (fills missing fields first: salary band, hiring manager, interviewer pool) |
 | Screening | application_created, ai_screening_scored; hourly for missed ones | screens new applications | `shortlist_min_score` -> shortlists with the existing undo window | - |
 | Sourcing | daily | finds open jobs with < `sourcing.min_strong` strong candidates | - | talent-pool proposal card |
 | Salary | salary_checked, salary_form_answered | - (in-band approvals are the existing salary rule) | `salary_max_over_band_pct` -> approve expected CTC if budget allows | card: counter at band max |
@@ -88,8 +89,10 @@ a step by hand.
 
 | Step | Agent | Card |
 |---|---|---|
+| 1-2 job, JD, publish (Part 30) | job | agent_job_publish |
 | 3-4 screen, shortlist | screening | agent_shortlist |
 | 5 interview times | scheduling | agent_interview_send (manual-scheduling jobs only) |
+| 5 interview result (Part 30) | scheduling | agent_interview_outcome (for the job's hiring manager) |
 | 6 salary above band | salary | agent_salary_decision |
 | 7 documents | documents | agent_documents_approve |
 | 8 BGV vendor, result | bgv | agent_bgv_assign, agent_bgv_decision |
@@ -97,3 +100,32 @@ a step by hand.
 | 12 joined | onboarding | agent_mark_joined |
 | 13 resignation | exit | agent_resignation_approve |
 | 14 letters | exit | agent_exit_letters |
+
+
+## Part 30 (2026-11-21): Job agent, public API + webhooks, interview result
+
+Proofs and fixes: docs/ui/PART30.md. Client guide: docs/PUBLIC_API.md. Deferred items: docs/FUTURE_WORK.md.
+
+- **Job agent** (`app/hr_agents/autopilot/jobs.py`, setting `autopilot.job.enabled`): a new job waits until nobody has
+  changed it for 10 minutes (owner decision: the wizard saves the job at step 1, title only), then - if it has no JD and
+  AI is allowed - drafts one and raises "Publish <title>" with the job's publishing choices. Salary band, hiring manager
+  (set in the job wizard / job edit) and interviewer pool must be filled before approving; the Waiting list shows what is
+  still missing now. Approving saves the JD (HR can edit it in the card) and publishes through the Jobs screen's own
+  Publish. Published, deleted or no longer a draft by hand -> the card closes. Job events go on the job's timeline
+  (Journey per job). The agent never publishes on its own.
+- **Interview result** (`app/hr_agents/autopilot/interviews.py`): interviewers add a recommendation to their scorecard
+  (Move forward / Another round / Do not move forward). When the whole round is in, the Scheduling agent summarises the
+  scorecards (feature `agents.interview_summary`; names are never sent, masking applies) and raises "Interview result for
+  <name>: <one line>" for the job's hiring manager - the job owner when none is set. Only that person decides it.
+  Default = the interviewers' majority, a tie has none; Reject needs a reason; Another round -> the next interviews get
+  their own card. Approving runs the feedback screen's own decision code (`scheduling.router.record_decision`: the
+  salary form / band check or the documents form). Decided on the screen first -> the card closes. Watchdog: a scorecard
+  missing 24 h after the interview -> the interviewer is reminded once (email + bell); still missing 24 h later (or the
+  others disagree) -> the hiring manager is told.
+- **Public API + webhooks** (`app/public_api/`): the same cards and services for a company's own systems; keys act as
+  their creator; each scope needs its module active; webhooks from the audit log and the cards.
+
+| Card | Agent | Who decides | Closed by itself when |
+|---|---|---|---|
+| agent_job_publish | job | recruitment.job.edit (recruiter / admin) | the job is published, deleted or no longer a draft |
+| agent_interview_outcome | scheduling | the job's hiring manager (fallback: job owner) | the candidate is no longer `interview_scheduled` |
