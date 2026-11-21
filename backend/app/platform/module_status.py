@@ -33,8 +33,18 @@ def _rows(db, tenant) -> dict:
 
 
 def active_modules(db, tenant) -> set[str]:
-    """Active modules, plus GenAI usage when any AI module is active."""
-    return reg.with_included({k for k, r in _rows(db, tenant).items() if r.status == "active" and k in reg.BY_KEY})
+    """Active modules, plus GenAI usage when any AI module is active.
+    Part 32: a row saying "active" counts only when CTD Techs' newest valid signed approval lists the module; the rows
+    are a cache. A row active without a signature is ignored and logged once as tamper."""
+    from app.platform.licence import state as licence
+
+    rows = {k for k, r in _rows(db, tenant).items() if r.status == "active" and k in reg.BY_KEY}
+    allowed = licence.allowed_modules(tenant)
+    if allowed is not None:
+        for k in sorted(rows - allowed):
+            licence.tamper(tenant, f"module {k} is active in the database without a CTD approval - ignored")
+        rows &= allowed
+    return reg.with_included(rows)
 
 
 def is_active(db, tenant, key: str) -> bool:

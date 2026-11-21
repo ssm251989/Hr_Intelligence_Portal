@@ -56,7 +56,18 @@ def _default_tenant_context():
     reset_current_tenant(token)
 
 
+@pytest.fixture(autouse=True)
+def _licence_not_enforced(request, monkeypatch):
+    """Part 32: suites that are not about the CTD licence run as an approved company; tests marked `licence` see the
+    real rules (signed approvals, the lock)."""
+    from app.platform.licence import state as licence
+
+    if not request.node.get_closest_marker("licence"):
+        monkeypatch.setattr(licence, "_ENFORCED", False)
+
+
 def pytest_configure(config):
+    config.addinivalue_line("markers", "licence: Part 32 - the CTD licence rules apply (signed approvals, the lock)")
     config.addinivalue_line("markers", "fake_smtp: the test replaces smtplib with a fake, so it may turn the mail capture off")
     config.addinivalue_line("markers", "signup_closed: public sign-up as in production (closed)")
 

@@ -18,6 +18,13 @@
 5. The company can resend (cooldown + daily limit) or cancel; CTD Techs can resend to a chosen
    priority or all, make a new code, show the code, cancel.
 Every send / resend / escalation / retry is in the request history (activation_events).
+
+Part 32 (owner decision 2026-11-21): CTD Techs approves BOTH a company's first access AND every module change, through
+exactly ONE approver address taken from CTD's signed file (app/platform/licence/config.py) - the priority list is
+read-only and ACTIVATION_APPROVER_EMAILS is ignored. The app no longer makes codes: a request carries a text block
+("CTDREQ1...") and CTD answers with a code signed by its private key (tools/ctd_licence), checked with the public key
+built into the app (app/platform/licence/codes.py). On-prem the request goes out through the company's own HR mailbox,
+or by the person (mailto / Copy request) when none is connected - CTD's mailbox password is never shipped.
 """
 
 import hashlib
@@ -94,16 +101,22 @@ def check_startup() -> None:
         raise RuntimeError(f"Module activation is misconfigured: {exc}") from exc
 
 
-def list_approvers() -> list[dict]:
-    from app.platform.tenancy.models_cp import ActivationApprover
+SIGNED_APPROVER = ("The CTD approver comes from CTD Techs' signed file and can't be changed here. CTD Techs issues a new "
+                   "file to change it (Settings > Licence > Load CTD file).")
 
-    cp_db = _cp()
-    try:
-        return [{"priority": a.priority, "name": a.name, "email": a.email, "active": a.active,
-                 "updated_by": a.updated_by, "updated_at": a.updated_at.isoformat() if a.updated_at else None}
-                for a in cp_db.query(ActivationApprover).order_by(ActivationApprover.priority).all()]
-    finally:
-        cp_db.close()
+
+def signed_approver() -> Optional[str]:
+    """Part 32: the ONE approver, from CTD's signed file (None = this copy isn't set up by CTD Techs)."""
+    from app.platform.licence import config as ctd_config
+
+    return ctd_config.approver_email()
+
+
+def list_approvers() -> list[dict]:
+    """Part 32: read-only - the signed address only (the old priority rows and .env are not used)."""
+    email = signed_approver()
+    return [{"priority": 1, "name": "CTD Techs (signed CTD file)", "email": email, "active": True, "updated_by": "CTD Techs",
+             "updated_at": None}] if email else []
 
 
 def active_approvers() -> list[dict]:
@@ -128,6 +141,7 @@ def _audit(cp_db, actor: str, action: str, tenant_id=None, **details) -> None:
 
 
 def set_approver(priority: int, email: str, actor: str, *, name: Optional[str] = None, active: bool = True) -> list[dict]:
+    raise ActivationError(SIGNED_APPROVER, "APPROVER_SIGNED", 409)  # Part 32: only CTD's signed file sets it
     from app.platform.tenancy.models_cp import ActivationApprover
 
     if priority < 1 or priority > 20:
@@ -149,6 +163,7 @@ def set_approver(priority: int, email: str, actor: str, *, name: Optional[str] =
 
 
 def remove_approver(priority: int, actor: str) -> list[dict]:
+    raise ActivationError(SIGNED_APPROVER, "APPROVER_SIGNED", 409)  # Part 32: only CTD's signed file sets it
     from app.platform.tenancy.models_cp import ActivationApprover
 
     cp_db = _cp()
@@ -165,6 +180,7 @@ def remove_approver(priority: int, actor: str) -> list[dict]:
 
 
 def reorder_approvers(emails_in_order: list[str], actor: str) -> list[dict]:
+    raise ActivationError(SIGNED_APPROVER, "APPROVER_SIGNED", 409)  # Part 32: only CTD's signed file sets it
     """Drag-to-reorder: the given emails become priorities 1, 2, 3 ... in that order."""
     from app.platform.tenancy.models_cp import ActivationApprover
 
@@ -305,22 +321,52 @@ def _support() -> dict:
 
 # ---------------------------------------------------------------- sending
 
-def _body(req, code: str, note: Optional[str]) -> tuple[str, str]:
-    subject = f"Activation request {req.number} - {req.company_name} - {_names(req.modules)}"
+def _body(req, note: Optional[str] = None) -> tuple[str, str]:
+    what = "First access" if getattr(req, "kind", "modules") == "access" else "Module change"
+    subject = f"{what} request {req.number} - {req.company_name}"
     body = (
         (f"{note}\n\n" if note else "")
-        + f"Request number: {req.number}\n"
+        + f"{what} request {req.number}\n"
         f"Company: {req.company_name}\n"
         f"Installation: {req.domain}\n"
         f"Requested by: {req.requested_by_name or '-'} <{req.requested_by_email or '-'}>\n"
         f"Modules: {_names(req.modules)}\n"
         f"Requested at: {_fmt(req.created_at)}\n\n"
-        f"Activation code: {pretty(code)}\n"
-        f"Valid until: {_fmt(req.expires_at)} (works once)\n\n"
-        "Share this code with the company when they may use these modules. They enter it on\n"
-        "Settings > Company > Modules.\n"
+        "Request (paste it into: python -m ctd_licence approve):\n\n"
+        f"{req.request_text or '-'}\n\n"
+        "Reply with the approval code the tool prints. The company enters it in the app.\n"
     )
     return subject, body
+
+
+def mailto(req) -> Optional[str]:
+    """Part 32.2c: the company's own email program, filled in (no mailbox needed)."""
+    from urllib.parse import quote
+
+    to = signed_approver()
+    if not to or req is None:
+        return None
+    subject, body = _body(req)
+    return f"mailto:{to}?subject={quote(subject)}&body={quote(body)}"
+
+
+def _send_company(db, tenant, to: list[str], subject: str, body: str) -> None:
+    """On-prem: through the company's OWN outbound HR mailbox (never CTD's password in the zip)."""
+    from app.platform.comms.service import _get_adapter_and_secrets
+    from app.platform.connectors.capabilities import OutboundEmail
+    from app.platform.connectors.providers import register_all
+    from app.platform.connectors.router import ConnectorRouter, NoConnectionForPurposeError
+
+    if db is None or tenant is None:
+        raise platform_mail.MailError("No company mailbox to send from - send it from your email (Email CTD / Copy request).")
+    register_all()
+    try:
+        resolved = ConnectorRouter(db).resolve("email.outbound.default")
+    except NoConnectionForPurposeError as exc:
+        raise platform_mail.MailError("Your HR mailbox isn't connected - send the request from your email (Email CTD / Copy request).") from exc
+    result = _get_adapter_and_secrets(db, tenant, resolved.connection).send(OutboundEmail(to=list(to), subject=subject, body_text=body))
+    if not getattr(result, "success", False):
+        raise platform_mail.MailError(getattr(result, "error", None) or "the HR mailbox did not send it")
 
 
 def _targets(req, *, priority: Optional[int] = None, everyone: bool = False) -> list[dict]:
@@ -331,15 +377,30 @@ def _targets(req, *, priority: Optional[int] = None, everyone: bool = False) -> 
     return [a for a in people if a["priority"] == want] or [a for a in people if a["priority"] > (want or 0)][:1]
 
 
-def _deliver(cp_db, req, kind: str, by: str, *, priority: Optional[int] = None, everyone: bool = False, note: Optional[str] = None) -> bool:
-    """Sends the request's code to the chosen approver(s). A refused address moves on to the next
-    priority; any other failure is scheduled for a retry. Every attempt goes into the history."""
-    code = _kept_code(cp_db, req)
-    if code is None:  # made before codes were kept: retrying can't help -- CTD makes a new code
-        reason = "No stored code for this request (made before codes were kept) -- use Generate new code."
-        _event(cp_db, req, kind, by=by, status="failed", reason=reason)
-        req.delivery, req.next_retry_at, req.email_error = "failed", None, reason
+def _deliver(cp_db, req, kind: str, by: str, *, priority: Optional[int] = None, everyone: bool = False, note: Optional[str] = None,
+             db=None, tenant=None) -> bool:
+    """Sends the request to the CTD approver. Cloud: the platform mailbox (a refused address / failure is retried as
+    before). On-prem (Part 32.2c): the company's own HR mailbox; without one the request is "manual" - the person sends
+    it from their email (mailto) or pastes it (Copy request). Every attempt goes into the history."""
+    if not signed_approver():
+        _event(cp_db, req, kind, by=by, status="failed", reason="no signed CTD file")
+        req.delivery, req.next_retry_at, req.email_error = "manual", None, "This copy isn't set up by CTD Techs."
         return False
+    if settings.TENANCY_MODE != "multi":
+        to = [signed_approver()]
+        subject, body = _body(req, note)
+        try:
+            _send_company(db, tenant, to, subject, body)
+        except platform_mail.MailError as exc:
+            _event(cp_db, req, kind, to=to, by=by, status="manual", reason=exc.reason)
+            req.delivery, req.next_retry_at, req.email_error = "manual", None, exc.reason[:500]
+            return False
+        now = _now()
+        _event(cp_db, req, kind, to=to, by=by, status="sent")
+        req.delivery, req.last_sent_at, req.next_retry_at, req.first_failed_at = "sent", now, None, None
+        req.first_sent_at = req.first_sent_at or now
+        req.emailed_at, req.emailed_to, req.email_error = now, to, None
+        return True
     try:
         targets = _targets(req, priority=priority, everyone=everyone)
     except ActivationError as exc:
@@ -352,7 +413,7 @@ def _deliver(cp_db, req, kind: str, by: str, *, priority: Optional[int] = None, 
             _failed(req, kind, by, [], reason, cp_db)
             return False
         to = [a["email"] for a in targets]
-        subject, body = _body(req, code, note)
+        subject, body = _body(req, note)
         try:
             platform_mail.send(to, subject, body)
         except platform_mail.MailError as exc:
@@ -406,13 +467,17 @@ def request_info(req) -> Optional[dict]:
     return {"id": str(req.id), "number": req.number, "modules": list(req.modules or []), "status": status,
             "requested_at": req.created_at.isoformat() if req.created_at else None, "requested_by": req.requested_by_email,
             "expires_at": req.expires_at.isoformat(), "email_sent": req.first_sent_at is not None and req.delivery == "sent",
-            "delivery": "sent" if req.delivery in ("sent", "not_actioned") else ("sending" if req.delivery == "sending" else "not_sent"),
+            "delivery": "sent" if req.delivery in ("sent", "not_actioned") else ("sending" if req.delivery == "sending" else
+                                                                                   ("manual" if req.delivery == "manual" else "not_sent")),
             "sent_at": (req.last_sent_at or req.first_sent_at).isoformat() if (req.last_sent_at or req.first_sent_at) and req.delivery in ("sent", "not_actioned") else None,
             "first_sent_at": req.first_sent_at.isoformat() if req.first_sent_at else None, "resend_count": req.resend_count or 0,
             "resend_available_at": next_at.isoformat() if next_at and next_at > now else None,
             "resends_left_today": max(0, per_day - used_today),
             "locked_until": req.locked_until.isoformat() if req.locked_until and req.locked_until > now else None,
-            "tries_left": MAX_TRIES - (req.attempts or 0), "support": _support()}
+            "tries_left": MAX_TRIES - (req.attempts or 0), "support": _support(),
+            # Part 32: the request text for CTD, how it travels, and the one CTD approver
+            "kind": getattr(req, "kind", "modules"), "request_text": req.request_text, "approver": signed_approver(), "mailto": mailto(req),
+            "manual": req.delivery == "manual", "mail_problem": req.email_error if req.delivery == "manual" else None}
 
 
 def open_request(tenant) -> Optional[dict]:
@@ -451,6 +516,10 @@ def request_activation(db, tenant, modules: list[str], user, *, with_needs: bool
                               "MODULE_NEEDS", 409, needs=need)
     if with_needs:
         wanted = reg.with_needs(wanted)
+    if not signed_approver():
+        from app.platform.licence.config import NOT_SET_UP
+
+        raise ActivationError(NOT_SET_UP, "NOT_SET_UP", 409)
     actor = getattr(user, "email", "system")
     cp_db = _cp()
     try:
@@ -464,16 +533,9 @@ def request_activation(db, tenant, modules: list[str], user, *, with_needs: bool
             _event(cp_db, previous, "replaced", by=f"client {actor}", status="done")
             _forget_code(cp_db, previous)
         company, where = _company(db, tenant)
-        code = new_code()
-        req = ActivationRequest(tenant_id=tenant.tenant_id, modules=keys, code_hash=_hash(code, tenant.tenant_id, keys), status="pending",
-                                company_name=company, domain=where, requested_by_name=getattr(user, "full_name", None), requested_by_email=actor,
-                                expires_at=_now() + timedelta(days=max(1, settings.ACTIVATION_CODE_DAYS)), created_at=_now(),
-                                number=_next_number(cp_db), delivery="sending")
-        cp_db.add(req)
-        cp_db.flush()
-        _keep_code(cp_db, req, code)
-        del code  # only the hash and the encrypted copy remain
-        _deliver(cp_db, req, "request", f"client {actor}")
+        # the approval lists the company's COMPLETE set of modules (what is active + what is added)
+        req = _new_request(cp_db, tenant, "modules", keys, sorted(active & set(reg.CHOOSABLE) | set(keys)), user, company, where)
+        _deliver(cp_db, req, "request", f"client {actor}", db=db, tenant=tenant)
         module_status.mark_pending(db, tenant, keys, actor)
         db.commit()
         cp_db.commit()
@@ -482,6 +544,74 @@ def request_activation(db, tenant, modules: list[str], user, *, with_needs: bool
         cp_db.close()
     log_action(db, "company_module", None, "activation_requested", actor[:50],
                {"modules": keys, "request": info["number"], "email_sent": info["email_sent"], "replaced": replaced})
+    return info
+
+
+def _app_version() -> str:
+    from pathlib import Path
+
+    for base in Path(__file__).resolve().parents:
+        f = base / "VERSION.txt"
+        if f.exists():
+            return f.read_text().strip()[:20]
+    return "dev"
+
+
+def _new_request(cp_db, tenant, kind: str, keys: list[str], full: list[str], user, company: str, where: str):
+    """Part 32: a request row + the text block CTD pastes into its signing tool (install id, company, admin, modules,
+    version, date, nonce). The approval must carry the same nonce, so one approval opens one request only."""
+    from app.platform.licence import codes
+    from app.platform.licence import state as licence
+    from app.platform.tenancy.models_cp import ActivationRequest
+
+    actor = getattr(user, "email", "system")
+    now = _now()
+    nonce = secrets.token_hex(16)
+    number = _next_number(cp_db)
+    text = codes.encode_request({"v": 1, "kind": kind, "install_id": licence.install_id(cp_db), "company": company, "slug": tenant.slug,
+                                 "admin_email": actor, "modules": full, "adding": keys, "app_version": _app_version(),
+                                 "date": now.isoformat(timespec="seconds"), "nonce": nonce, "number": number})
+    req = ActivationRequest(tenant_id=tenant.tenant_id, kind=kind, modules=keys if kind == "modules" else full, code_hash=None, nonce=nonce,
+                            request_text=text, status="pending", company_name=company, domain=where,
+                            requested_by_name=getattr(user, "full_name", None), requested_by_email=actor,
+                            expires_at=now + timedelta(days=max(1, settings.ACTIVATION_CODE_DAYS)), created_at=now, number=number, delivery="sending")
+    cp_db.add(req)
+    cp_db.flush()
+    return req
+
+
+def request_access(db, tenant, modules: list[str], user) -> dict:
+    """Part 32.2: a new installation / online sign-up asks CTD Techs for its FIRST access (with the modules it wants).
+    Until CTD's signed code is entered the company is locked (only sign-in, the waiting page and the code entry open)."""
+    from app.audit.service import log_action
+    from app.platform import module_status
+
+    wanted = set(modules)
+    unknown = sorted(wanted - set(reg.CHOOSABLE))
+    if unknown:
+        raise ActivationError(f"Unknown module: {', '.join(unknown)}.", "UNKNOWN_MODULE")
+    if not signed_approver():
+        from app.platform.licence.config import NOT_SET_UP
+
+        raise ActivationError(NOT_SET_UP, "NOT_SET_UP", 409)
+    keys = sorted(reg.with_needs(wanted) & set(reg.CHOOSABLE))
+    actor = getattr(user, "email", "system")
+    cp_db = _cp()
+    try:
+        previous = _open_request(cp_db, tenant.tenant_id)
+        if previous is not None:
+            previous.status = "replaced"
+            _event(cp_db, previous, "replaced", by=f"client {actor}", status="done")
+        company, where = _company(db, tenant)
+        req = _new_request(cp_db, tenant, "access", keys, keys, user, company, where)
+        _deliver(cp_db, req, "request", f"client {actor}", db=db, tenant=tenant)
+        module_status.mark_pending(db, tenant, keys, actor)
+        db.commit()
+        cp_db.commit()
+        info = request_info(req)
+    finally:
+        cp_db.close()
+    log_action(db, "company_module", None, "access_requested", actor[:50], {"modules": keys, "request": info["number"], "email_sent": info["email_sent"]})
     return info
 
 
@@ -511,7 +641,7 @@ def resend_request(db, tenant, user) -> dict:
         req.resend_count = (req.resend_count or 0) + 1
         req.last_resend_at = now
         req.retry_count = 0
-        ok = _deliver(cp_db, req, "resend", f"client {actor}")
+        ok = _deliver(cp_db, req, "resend", f"client {actor}", db=db, tenant=tenant)
         cp_db.commit()
         info = request_info(req)
     finally:
@@ -567,70 +697,87 @@ def _lock_mail(cp_db, req) -> None:
 
 
 def activate_with_code(db, tenant, code: str, user) -> dict:
+    """Part 32: CTD Techs' SIGNED approval code (first access or a module change). Checked with the public key built into
+    the app: for THIS install id and company, for the open request's nonce, not used before, not past valid_until.
+    The approval is stored as entered (re-verified whenever used); the module rows only cache what CTD signed.
+    5 wrong codes -> 30-minute lock (the 19.2 rule)."""
     from app.audit.service import log_action
+    from app.models.company_module import CompanyModule
     from app.platform import module_status
-    from app.platform.tenancy.models_cp import ActivationRequest
+    from app.platform.licence import codes
+    from app.platform.licence import state as licence
+    from app.platform.tenancy.models_cp import ActivationRequest, LicenceApproval
 
     actor = getattr(user, "email", "system")
     now = _now()
-    clean = normalise(code)
+    text = codes.clean_code(code)
     cp_db = _cp()
     try:
         current = _open_request(cp_db, tenant.tenant_id)
         if current is not None and current.locked_until and current.locked_until > now:
             minutes = max(1, int((current.locked_until - now).total_seconds() // 60) + 1)
             raise ActivationError(f"Too many wrong tries. Please wait {minutes} minutes and try again.", "TOO_MANY_TRIES", 429)
-        match = None
-        if len(clean) == CODE_LENGTH and all(c in ALPHABET for c in clean):
-            recent = (cp_db.query(ActivationRequest).filter(ActivationRequest.tenant_id == tenant.tenant_id)
-                      .order_by(ActivationRequest.created_at.desc()).limit(10).all())
-            match = next((r for r in recent if _matches(clean, r)), None)
-        if match is None:
+        try:
+            payload = codes.decode_approval(text)
+            licence.check_payload(payload, tenant, iid=licence.install_id(cp_db))
+        except codes.CodeError as exc:
+            if exc.code == "no_public_key":
+                from app.platform.licence.config import NOT_SET_UP
+
+                raise ActivationError(NOT_SET_UP, "NOT_SET_UP", 409) from exc
             if current is None:
-                raise ActivationError("This code is not correct.", "WRONG_CODE")
+                raise ActivationError(f"This code is not correct: {exc}", "WRONG_CODE") from exc
             current.attempts = (current.attempts or 0) + 1
             left = MAX_TRIES - current.attempts
             if left <= 0:
                 current.locked_until, current.attempts = now + timedelta(minutes=LOCK_MINUTES), 0
-                _lock_mail(cp_db, current)
-                request_id = str(current.id)
+                _event(cp_db, current, "locked", by=f"client {actor}", status="done", reason=f"{MAX_TRIES} wrong codes")
                 cp_db.commit()
-                log_action(db, "company_module", None, "activation_code_locked", actor[:50], {"request_id": request_id})
-                raise ActivationError(f"This code is not correct. Too many wrong tries - code entry is locked for {LOCK_MINUTES} minutes and CTD Techs has been told.",
-                                      "TOO_MANY_TRIES", 429)
+                log_action(db, "company_module", None, "activation_code_locked", actor[:50], {"request": current.number})
+                raise ActivationError(f"This code is not correct. Too many wrong tries - code entry is locked for {LOCK_MINUTES} minutes.",
+                                      "TOO_MANY_TRIES", 429) from exc
             cp_db.commit()
-            log_action(db, "company_module", None, "activation_code_wrong", actor[:50], {"tries_left": left})
-            raise ActivationError(f"This code is not correct. {left} {'tries' if left != 1 else 'try'} left.", "WRONG_CODE", tries_left=left)
-        if match.status == "activated":
+            log_action(db, "company_module", None, "activation_code_wrong", actor[:50], {"tries_left": left, "why": exc.code})
+            raise ActivationError(f"This code is not correct ({exc}) {left} {'tries' if left != 1 else 'try'} left.", "WRONG_CODE",
+                                  tries_left=left) from exc
+        nonce = str(payload.get("nonce") or "")
+        match = cp_db.query(ActivationRequest).filter(ActivationRequest.tenant_id == tenant.tenant_id, ActivationRequest.nonce == nonce).first() if nonce else None
+        if match is None:
+            raise ActivationError("This code was made for another request. Use the code CTD Techs sent for your latest request.", "OTHER_REQUEST")
+        if match.status == "activated" or cp_db.query(LicenceApproval.id).filter(LicenceApproval.nonce == nonce).first() is not None:
             raise ActivationError("This code has already been used.", "CODE_USED")
         if match.status in ("cancelled", "replaced"):
             raise ActivationError("This code is no longer valid - a newer request replaced it. Use the latest code from CTD Techs.", "CODE_REPLACED")
-        if match.status == "expired" or match.expires_at < now:
-            match.status = "expired"
-            cp_db.commit()
-            raise ActivationError("This code has expired - request a new one.", "CODE_EXPIRED")
-        # only modules still waiting: one switched off after the request needs a new code
-        waiting = {m["key"] for m in module_status.status(db, tenant) if m["status"] == "pending"}
-        keys = [k for k in (match.modules or []) if k in waiting]
-        if not keys:
-            raise ActivationError("None of the modules in this request are waiting any more. Request activation again.", "NOTHING_WAITING", 409)
+        if payload.get("kind") != (match.kind or "modules"):
+            raise ActivationError("This code is for another kind of request.", "OTHER_REQUEST")
+        until = payload.get("valid_until")
+        if until and str(until) < now.date().isoformat():
+            raise ActivationError("This approval has already expired - ask CTD Techs for a new one.", "CODE_EXPIRED")
+        keys = sorted(k for k in (payload.get("modules") or []) if k in reg.CHOOSABLE)
+        cp_db.add(LicenceApproval(tenant_id=tenant.tenant_id, kind=payload["kind"], code=text, payload=payload, nonce=nonce,
+                                  request_number=match.number, entered_by=actor[:200]))
         module_status.activate(db, tenant, keys, actor)
+        for row in db.query(CompanyModule).filter(CompanyModule.tenant_id == tenant.tenant_id, CompanyModule.status.in_(("active", "pending")),
+                                                  CompanyModule.module_key.notin_(keys)).all():
+            row.status, row.updated_at = "off", now  # the signed list is complete: the rows follow it
         match.status, match.activated_at, match.activated_by = "activated", now, actor
         _event(cp_db, match, "activated", by=f"client {actor}", status="done")
-        _forget_code(cp_db, match)
-        number = match.number  # read before the session closes
+        number, kind = match.number, payload["kind"]
         db.commit()
         cp_db.commit()
     finally:
         cp_db.close()
-    log_action(db, "company_module", None, "modules_activated", actor[:50], {"modules": keys, "request": number})
+    licence.invalidate(tenant.tenant_id)
+    module_status.invalidate(tenant.tenant_id)
+    log_action(db, "company_module", None, "modules_activated" if kind == "modules" else "access_approved", actor[:50],
+               {"modules": keys, "request": number, "valid_until": payload.get("valid_until")})
     try:  # Part 28.5: a company that signed up online gets its "ready" email now
         from app.platform import signup
 
         signup.welcome(tenant.tenant_id)
     except Exception:  # noqa: BLE001 -- the activation itself is done
         logging.getLogger(__name__).exception("sign-up welcome failed")
-    return {"activated": keys, "names": _names(keys)}
+    return {"activated": keys, "names": _names(keys), "kind": kind, "valid_until": payload.get("valid_until")}
 
 
 # ---------------------------------------------------------------- background: retries + escalation
@@ -741,6 +888,7 @@ def console_resend(request_id, admin_email: str, *, priority: Optional[int] = No
 
 
 def console_new_code(request_id, admin_email: str) -> dict:
+    raise ActivationError("CTD Techs makes approval codes with its signing tool now (python -m ctd_licence approve).", "SIGNED_CODES", 410)
     """[Generate new code]: the old code stops working; the new one is emailed to the current priority."""
     cp_db = _cp()
     try:
@@ -761,6 +909,7 @@ def console_new_code(request_id, admin_email: str) -> dict:
 
 
 def console_show_code(request_id, admin_email: str) -> dict:
+    raise ActivationError("CTD Techs makes approval codes with its signing tool now (python -m ctd_licence approve).", "SIGNED_CODES", 410)
     """[Show code] -- CTD super-admin only, audit-logged; for giving it by phone."""
     cp_db = _cp()
     try:

@@ -190,7 +190,10 @@ class ActivationRequest(ControlPlaneBase):
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     modules = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
-    code_hash = Column(Text, nullable=False)
+    code_hash = Column(Text)  # Part 19.2 app-made codes; None for Part 32 requests (CTD answers with a signed code)
+    kind = Column(String(10), nullable=False, server_default=text("'modules'"))  # Part 32: access | modules
+    nonce = Column(String(64))  # Part 32: the approval must carry this nonce
+    request_text = Column(Text)  # Part 32: "CTDREQ1...." - what the company sends to CTD Techs
     status = Column(String(20), nullable=False, server_default=text("'pending'"))
     company_name = Column(Text)
     domain = Column(Text)
@@ -291,3 +294,22 @@ class SignupRequest(ControlPlaneBase):
     ip = Column(String(64))
     created_at = Column(DateTime(timezone=True), server_default=text("now()"))
     updated_at = Column(DateTime(timezone=True), server_default=text("now()"))
+
+
+class LicenceApproval(ControlPlaneBase):
+    """Part 32: a CTD-signed approval as entered (access or modules). Re-verified whenever it is used; a row without a
+    valid CTD signature counts for nothing."""
+
+    __tablename__ = "licence_approvals"
+    __table_args__ = (UniqueConstraint("nonce", name="licence_approvals_nonce_uq"),
+                      CheckConstraint("kind IN ('access','modules')", name="licence_approvals_kind_check"))
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False)
+    kind = Column(String(10), nullable=False)
+    code = Column(Text, nullable=False)
+    payload = Column(JSONB, nullable=False)
+    nonce = Column(String(64), nullable=False)
+    request_number = Column(String(20))
+    entered_by = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"))

@@ -1,0 +1,95 @@
+PART 32 - ONE CTD APPROVER + SIGNED APPROVALS (on-prem first, the same for cloud) (2026-11-21)
+Owner decision: CTD Techs approves BOTH the company's first access AND every "Choose what you want" module
+change, through exactly ONE CTD email address that only CTD can set. Everything else works as it does today.
+Repo: hr-portal-work, remote `portal`. Base: KG-Development (c025960 or later).
+
+STANDING RULES
+- First message: `git status`, `git log --oneline -5`; quote the output.
+- Branch: git checkout KG-Development && git pull portal KG-Development && git checkout -b kishore/part-32
+- All mail to Mailpit, never a real email. Tests file by file (memory is short on this PC).
+- Never commit a private key. Commit per block "part-32.N: <block>". Push the branch; do not merge.
+
+WHY SIGNED (read first)
+On-prem the client owns the PC, the database, .env and MASTER_KEY. Today's activation code is made by the app
+itself and its rows live in the client's database, so a client could switch modules on by editing a table or
+reading the code. A rule only CTD can keep must therefore rest on a signature the client cannot make:
+- CTD holds an Ed25519 PRIVATE key (never in the repo, never in the zip).
+- The app ships with the matching PUBLIC key built in (backend/app/platform/licence/ctd_public_key.pem).
+- Only a code signed with CTD's private key turns access or modules on. Editing the database does nothing.
+
+32.1 THE CTD APPROVER (one address, CTD only)
+  a. Signed "CTD config" file (licence/ctd_config.json + .sig, shipped in the zip, verified at start with the
+     public key): {"approver_email": "<one @ctdtechs.com address>", "support": {...}, "issued_at": ...}.
+     A missing / edited / unsigned file -> the app shows "This copy isn't set up by CTD Techs" and refuses
+     access and module requests (everything already active keeps working).
+  b. Exactly ONE approver: the priority list (Part 19.2b) becomes read-only and shows the signed address only.
+     ACTIVATION_APPROVER_EMAILS in .env is ignored when a signed config exists (cloud uses the same signed file).
+  c. CTD changes the address by issuing a new signed config (32.4 tool) - on-prem: the client puts the new file
+     in place (Settings > Licence > "Load CTD file"); cloud: CTD deploys it. The client can never type it.
+
+32.2 FIRST ACCESS NEEDS CTD APPROVAL
+  a. Install (wizard / python -m app.platform.install) ends with the company, admin and modules REQUESTED and
+     the installation LOCKED: the admin can sign in but sees only "Waiting for CTD Techs approval" with the
+     request number, the request code, and buttons Email CTD / Copy request / Enter approval code.
+     Nothing else opens (no hiring, no agents, no careers page, no public API) until the access approval is in.
+  b. The request is a short signed-by-nobody text block (install id, company name, slug, admin email,
+     modules, app version, date, a random nonce) - base64 with a checksum, easy to paste in an email.
+  c. Sending it to CTD - NEVER ship CTD's mailbox password in the zip:
+     1st choice: the company's own HR mailbox if one is connected;
+     else a "mailto:" link (to the signed approver address, subject + body filled in) + "Copy request";
+     cloud: the platform mailbox as today.
+  d. Enter approval code: the app verifies CTD's signature, that it is for THIS install id and nonce, and not
+     expired -> unlocks; the approval is stored signed (licence table) and re-checked at start and every hour.
+     5 wrong codes -> 30-minute lock (keep today's rule).
+
+32.3 MODULE CHANGES ("Choose what you want") USE THE SAME SIGNED CODES
+  a. The existing request flow stays (number ACT-…, pending modules, resend, cancel, history) but the CODE is
+     no longer made by the app: the request goes to the one CTD approver; CTD answers with a signed code.
+  b. A signed approval = {install_id, company slug, modules: [...], issued_at, valid_until (optional), nonce}.
+     module_status.active_modules() = modules in the newest VALID signed approval (database rows are only a
+     cache: a row saying "active" without a matching signature is ignored and logged once as "tamper").
+  c. valid_until (optional, for yearly licences): 30 days before -> a banner for the admin; after it -> modules
+     go read-only (data viewable, nothing new), never deleted.
+  d. Keep 19.2's friendly messages, the request number and the history; remove the "Show code" / "New code"
+     console actions that relied on the app making the code (CTD makes codes with 32.4 now).
+
+32.4 CTD'S SIGNING TOOL (runs on a CTD PC only)
+  a. tools/ctd_licence/ (separate folder, excluded from the client zip): python -m ctd_licence
+       keygen                     -> private key (encrypted with a passphrase) + public key; prints where saved
+       config --approver x@ctdtechs.com [--support ...]   -> ctd_config.json + .sig
+       approve <paste request> [--modules a,b] [--valid-until 2027-12-31]  -> the approval code to email back
+       inspect <code or request>  -> what it contains, valid or not
+     The approve command shows the request (company, admin, modules) and asks "Approve? [y/N]".
+  b. Refuses an approver outside ctdtechs.com. Logs every approval to a local CSV (who, when, company, modules).
+  c. docs/CTD_LICENCE_RUNBOOK.md: keep the private key off the server and backed up offline; what to do if it
+     is lost (new key pair = new zip build) or leaked (rotate + reissue).
+
+32.5 BUILD + CLOUD
+  - build_zip.ps1 checks the zip contains the public key + signed config and NO private key (fail the build
+    otherwise). Add -CtdConfig <path> parameter.
+  - Cloud / online sign-up (Part 28.5): the same rules - the new company stays locked until the one CTD approver
+    approves; module changes use signed codes. The approver email still comes from the signed config.
+
+32.6 TESTS (file by file)
+  - Signature: valid code unlocks; edited code, other install id, other key, expired, reused nonce -> refused.
+  - Tamper: setting a company_modules row to active by SQL does NOT switch the module on.
+  - Config: missing / edited config -> locked messages; .env approver ignored when the config is present.
+  - Locked install: every page/API except sign-in, the waiting page and the code entry returns 403 "waiting for
+    CTD approval"; agents and schedulers don't run.
+  - Tool: keygen / config / approve / inspect round trip; approver outside ctdtechs.com refused.
+  - Upgrade path: an existing install (this PC) with modules active and no signed approval -> on first start
+    after the update it keeps working for 14 days with a banner "Ask CTD Techs for your approval code", then
+    locks. (So the dev PC and any early client are not cut off by surprise.)
+
+32.7 PROOF (Mailpit, screenshots in docs/ui/PART32.md)
+  1. Fresh install in a test folder (python -m app.platform.install with a new database) -> admin sees the
+     waiting page; nothing else opens.
+  2. mailto / Copy request -> on the "CTD side" run `python -m ctd_licence approve` -> paste the code -> unlocked.
+  3. Choose what you want: add a module -> request -> approve with the tool -> active. Edit the DB row to make
+     another module active -> still off.
+  4. Change the approver with a new signed config -> new requests go to the new address.
+  Then commit, push the branch, give the user the pull request link (base KG-Development). Do not merge.
+
+AFTER MERGING (tell the user)
+  - Run `python -m ctd_licence keygen` ONCE on the CTD PC, keep the private key + passphrase safe and offline.
+  - Issue the config with the chosen CTD approver address, approve this PC's own install, rebuild the zip.

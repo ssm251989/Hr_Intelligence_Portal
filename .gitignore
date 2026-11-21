@@ -59,3 +59,9 @@ Claude outputs/
 installer/cache/
 installer/build/
 launch.txt
+
+# Part 32: CTD signing keys and the approvals log never go into git
+*private_key*.pem
+ctd_private*
+.ctd_licence/
+approvals_log.csv
