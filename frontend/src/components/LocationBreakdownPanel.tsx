@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import Box from "@mui/material/Box";
 import FormControl from "@mui/material/FormControl";
 import Grid from "@mui/material/Grid";
@@ -10,13 +10,17 @@ import Typography from "@mui/material/Typography";
 
 import type { LabeledCount } from "../api/types";
 import BreakdownLegend, { toBreakdownSlices } from "./BreakdownLegend";
-import { lazy, Suspense } from "react";
+
+import { useT } from "../i18n";
 
 const PlacesMap = lazy(() => import("./maps/PlacesMap"));
 
 const ALL_LOCATIONS = "all";
 
-export default function LocationBreakdownPanel({ rows }: { rows: LabeledCount[] }) {
+export default function LocationBreakdownPanel({ rows: raw }: { rows: LabeledCount[] }) {
+  const t = useT();
+  // J3 (Part 27): jobs without a location are counted as "Location not set"
+  const rows = useMemo(() => raw.map((r) => (r.label === "Unspecified" || !r.label ? { ...r, label: t("maps.location_not_set") } : r)), [raw, t]);
   const [selected, setSelected] = useState(ALL_LOCATIONS);
   const options = useMemo(() => [...rows].map((row) => row.label).sort(), [rows]);
   const filteredRows = selected === ALL_LOCATIONS ? rows : rows.filter((row) => row.label === selected);
@@ -26,16 +30,16 @@ export default function LocationBreakdownPanel({ rows }: { rows: LabeledCount[] 
   return (
     <Box>
       <Stack direction="row" alignItems="center" justifyContent="space-between" mb={2} flexWrap="wrap" gap={1}>
-        <Typography variant="h6">Jobs by Location</Typography>
+        <Typography variant="h6">{t("maps.jobs_by_location")}</Typography>
         <FormControl size="small" sx={{ minWidth: 180 }}>
-          <InputLabel id="location-breakdown-filter-label">Location</InputLabel>
+          <InputLabel id="location-breakdown-filter-label">{t("maps.location")}</InputLabel>
           <Select
             labelId="location-breakdown-filter-label"
-            label="Location"
+            label={t("maps.location")}
             value={selected}
             onChange={(event: SelectChangeEvent) => setSelected(event.target.value)}
           >
-            <MenuItem value={ALL_LOCATIONS}>All Locations</MenuItem>
+            <MenuItem value={ALL_LOCATIONS}>{t("maps.all_locations")}</MenuItem>
             {options.map((location) => (
               <MenuItem key={location} value={location}>
                 {location}

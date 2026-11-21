@@ -120,6 +120,7 @@ TEMPLATE_MODULE: dict[str, str] = {
     "recruitment.agency_invite": "candidates", "recruitment.application": "candidates",
     "recruitment.shortlist_feedback": "shortlisting",
     "recruitment.interview_kit": "interviews", "recruitment.negotiation_reply": "interviews",
+    "recruitment.interview_feedback_reminder": "interviews",  # Part 30.3
     "recruitment.salary_counter_offer": "salary", "recruitment.salary_details_request": "salary",
     "recruitment.bgv_unsuccessful": "bgv", "recruitment.document_check": "bgv", "recruitment.documents": "bgv",
     "recruitment.documents_request": "bgv", "recruitment.documents_reupload": "bgv",

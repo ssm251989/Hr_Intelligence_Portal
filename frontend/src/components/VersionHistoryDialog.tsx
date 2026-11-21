@@ -11,6 +11,7 @@ import ListItem from "@mui/material/ListItem";
 import ListItemText from "@mui/material/ListItemText";
 
 import { experienceApi, extractErrorMessage } from "../api/client";
+import { formatDateTime } from "../utils/datetime";
 
 // Part 14 section 7 (docs/HRMS_COMPLETE_SPEC.txt): version history + revert for templates,
 // workflows, letters and prompts. Revert creates a NEW draft from the chosen version -- it
@@ -50,7 +51,7 @@ export default function VersionHistoryDialog({ open, kind, objectKey, onClose, o
         <List dense>
           {rows.map((r) => (
             <ListItem key={r.id} secondaryAction={r.status !== "draft" ? <Button size="small" onClick={() => revert(r.version)}>Revert to this</Button> : null}>
-              <ListItemText primary={`v${r.version}`} secondary={r.created_at ? new Date(r.created_at).toLocaleString() : undefined} />
+              <ListItemText primary={`v${r.version}`} secondary={r.created_at ? formatDateTime(r.created_at) : undefined} />
               <Chip size="small" label={r.status} color={r.status === "published" ? "success" : "default"} sx={{ mr: 12 }} />
             </ListItem>
           ))}

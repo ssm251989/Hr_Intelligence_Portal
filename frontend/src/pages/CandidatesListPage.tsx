@@ -10,6 +10,10 @@ import PersonRemoveOutlinedIcon from "@mui/icons-material/PersonRemoveOutlined";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
+import { useTheme } from "@mui/material/styles";
+import useMediaQuery from "@mui/material/useMediaQuery";
+import Collapse from "@mui/material/Collapse";
+import Link from "@mui/material/Link";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import Checkbox from "@mui/material/Checkbox";
@@ -34,7 +38,7 @@ import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams, Link as RouterLink } from "react-router-dom";
 
 import { applicationsApi, candidatesApi, extractErrorMessage, jobsApi, shortlistingApi } from "../api/client";
 import { type CandidateApplicationRow, type JobRoleRead } from "../api/types";
@@ -57,6 +61,7 @@ import { EmptyState, FriendlyError, PageHeader, StatusChip, statusStyle } from "
 import { downloadCsv } from "../utils/csv";
 import { downloadResume } from "../utils/resume";
 import { matchScoreDisplay } from "../utils/screeningScore";
+import { formatDate } from "../utils/datetime";
 
 // Part 15.4 Candidates list: table AND Kanban board (switch remembered per browser, table by
 // default -- N4), 25 rows a page (N5), the standard ListToolbar (refresh, saved views, column
@@ -107,6 +112,8 @@ export default function CandidatesListPage() {
   const [viewMode, setViewModeState] = useState<ViewMode>(readViewMode);
   // Part 17.2: links from the Home funnel / other pages pre-set filters (?status=a,b&job=&applied_after=).
   const [urlParams] = useSearchParams();
+  const phone = useMediaQuery(useTheme().breakpoints.down("sm"));
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState<CandidateFilters>(() => ({
     ...EMPTY_CANDIDATE_FILTERS,
     status: urlParams.get("status") ?? EMPTY_CANDIDATE_FILTERS.status,
@@ -406,7 +413,7 @@ export default function CandidatesListPage() {
       {show("resume") && <TableCell>{t("candidates.col.resume")}</TableCell>}
       {show("status") && <TableCell>{t("candidates.col.status")}</TableCell>}
       {show("remarks") && <TableCell>{t("candidates.col.remarks")}</TableCell>}
-      <TableCell align="right">{t("candidates.col.actions")}</TableCell>
+      <TableCell align="right" sx={{ position: "sticky", right: 0, zIndex: 3, bgcolor: "background.paper", boxShadow: "-6px 0 6px -6px rgba(0,0,0,0.25)" }}>{t("candidates.col.actions")}</TableCell>
     </TableRow>
   );
 
@@ -462,7 +469,15 @@ export default function CandidatesListPage() {
             {selectedIds.size > 0 ? t("candidates.list.export_selected", { count: selectedIds.size }) : t("candidates.list.export_all")}
           </Button>
         </Stack>
-        <CandidateFiltersPanel jobs={jobs} filters={filters} onChange={setFilters} />
+        {/* A3 (Part 27): on a phone the 12 filters sit behind one "Filters (n)" button so results come first */}
+        {phone && (
+          <Button size="small" variant="outlined" sx={{ mt: 1 }} onClick={() => setFiltersOpen((v) => !v)} aria-expanded={filtersOpen}>
+            {t("candidates.list.filters_n", { count: Object.values(filters).filter((v) => v !== "" && v != null).length })}
+          </Button>
+        )}
+        <Collapse in={!phone || filtersOpen}>
+          <CandidateFiltersPanel jobs={jobs} filters={filters} onChange={setFilters} />
+        </Collapse>
       </Card>
 
       <ListToolbar
@@ -585,7 +600,8 @@ export default function CandidatesListPage() {
                           <Stack direction="row" spacing={1.25} alignItems="center">
                             <CandidateAvatar candidateId={row.candidate_id} photoPath={row.photo_path} name={row.candidate_name} email={row.candidate_email} sx={{ width: 32, height: 32, fontSize: 12 }} />
                             <Box sx={{ minWidth: 0 }}>
-                              <Typography variant="body2" fontWeight={700} noWrap>{name}</Typography>
+                              <Link component={RouterLink} to={`/candidates/${row.application_id}`} variant="body2" underline="hover"
+                                sx={{ fontWeight: 700, display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "text.primary" }}>{name}</Link>
                               {row.candidate_email && (
                                 <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
                                   {row.candidate_email}
@@ -596,7 +612,7 @@ export default function CandidatesListPage() {
                         </TableCell>
                         {show("source") && <TableCell><SourceIcon source={row.source} /></TableCell>}
                         {show("job") && <TableCell>{jobById.get(row.job_role_id)?.title ?? row.job_title}</TableCell>}
-                        {show("applied") && <TableCell>{new Date(row.applied_on).toLocaleDateString()}</TableCell>}
+                        {show("applied") && <TableCell>{formatDate(row.applied_on)}</TableCell>}
                         {show("experience") && <TableCell>{row.experience_years != null ? t("candidates.years", { count: row.experience_years }) : "—"}</TableCell>}
                         {show("location") && <TableCell>{row.location || "—"}</TableCell>}
                         {show("match") && (
@@ -631,17 +647,17 @@ export default function CandidatesListPage() {
                           ? <StatusChip tone="muted" emoji="pause" label={t("closejob.on_hold_label")} />
                           : <StatusChip status={row.status} />}</TableCell>}
                         {show("remarks") && (
-                          <TableCell sx={{ maxWidth: 220 }}>
+                          <TableCell sx={{ maxWidth: 220, width: 220 }}>
                             {row.remarks ? (
                               <Tooltip title={row.remarks}>
-                                <Typography variant="body2" noWrap>{row.remarks}</Typography>
+                                <Typography variant="body2" noWrap sx={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}>{row.remarks}</Typography>
                               </Tooltip>
                             ) : (
                               "—"
                             )}
                           </TableCell>
                         )}
-                        <TableCell align="right">
+                        <TableCell align="right" sx={{ position: "sticky", right: 0, zIndex: 2, bgcolor: "background.paper", boxShadow: "-6px 0 6px -6px rgba(0,0,0,0.25)" }}>
                           <Stack direction="row" spacing={0.5} justifyContent="flex-end">
                             <Tooltip title={t("candidates.list.view")}>
                               <IconButton size="small" aria-label={t("candidates.list.view_named", { name })} onClick={() => navigate(`/candidates/${row.application_id}`)}>

@@ -18,11 +18,13 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
 
-import { experienceApi, integrationsApi, jobsApi } from "../api/client";
+import { experienceApi, integrationsApi, jobsApi, usersApi } from "../api/client";
+import type { UserRead } from "../api/types";
 import { EDUCATION_DEGREE_LEVELS } from "../api/types";
 import type { JobFieldSuggestionsResponse, JobRoleRead } from "../api/types";
 import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
 import { useT } from "../i18n";
+import { formatMoney } from "../utils/money";
 import { Emoji, FriendlyAnimation, FriendlyError, InfoTip, confirmDiscard, useConfirmLeave } from "../ui-kit";
 import { formatExperienceRange } from "../utils/experience";
 import JdSideBySide from "./jobs/JdSideBySide";
@@ -87,6 +89,7 @@ const EMPTY_STATE = {
   educationField: "",
   jobType: "Full-time",
   positionsCount: "1",
+  hiringManagerId: "", // Part 30: who decides after the interviews (the job owner stands in until it is set)
   jdText: "",
   technicalSkillsMustHave: [] as string[],
   technicalSkillsGoodToHave: [] as string[],
@@ -131,6 +134,7 @@ function formFromJob(job: JobRoleRead): WizardForm {
     educationField: job.education_field || "",
     jobType: job.job_type || "Full-time",
     positionsCount: String(job.positions_count ?? 1),
+    hiringManagerId: job.hiring_manager_id || "",
     jdText: job.jd_text || "",
     technicalSkillsMustHave: job.technical_skills_must_have || [],
     technicalSkillsGoodToHave: job.technical_skills_good_to_have || [],
@@ -199,6 +203,10 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
   const { aiFeature } = useMeBootstrap();
   const aiEnabled = aiFeature("recruitment.jd_generation");
   const [activeStep, setActiveStep] = useState(0);
+  const [people, setPeople] = useState<UserRead[]>([]);
+  useEffect(() => {
+    if (open) usersApi.list().then(setPeople).catch(() => setPeople([]));
+  }, [open]);
   const [jobId, setJobId] = useState<string | null>(null);
   const [job, setJob] = useState<JobRoleRead | null>(null);
   const [form, setForm] = useState<WizardForm>(EMPTY_STATE);
@@ -300,13 +308,27 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
     setDraftOffer(null);
   };
 
-  const startFresh = () => {
+  // J1 (Part 27): a draft job is created when step 1 is saved. Cancelling before anything beyond the title was
+  // typed deletes that untouched draft; "Start fresh" reuses an untouched draft instead of making another one.
+  const createdHere = useRef<string | null>(null);
+  const beyondTitle = useRef(false);
+  const untouched = (j: JobRoleRead) => j.status === "draft" && !j.jd_text && j.salary_band_min == null && j.salary_band_max == null
+    && !(j.technical_skills_must_have ?? []).length;
+
+  const startFresh = async () => {
+    const old = draftOffer?.draft.jobId;
     discardDraft();
     setDraftOffer(null);
+    if (!old) return;
+    try {
+      const existing = await jobsApi.get(old);
+      if (untouched(existing)) { setJobId(existing.id); createdHere.current = existing.id; beyondTitle.current = false; }
+    } catch { /* gone - a new draft is made on Next */ }
   };
 
   const set = <K extends keyof WizardForm>(key: K, value: WizardForm[K]) => {
     touched.current = true;
+    if (key !== "title") beyondTitle.current = true;
     setFieldsDirty(true);
     setForm((prev) => ({ ...prev, [key]: value }));
   };
@@ -338,6 +360,13 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
 
   const handleClose = () => {
     if (!confirmDiscard(leaveGuard)) return;
+    if (createdHere.current && !beyondTitle.current && !published) {
+      const id = createdHere.current;
+      jobsApi.delete(id).catch(() => undefined);  // the untouched auto-draft goes with the cancel
+      discardDraft();
+    }
+    createdHere.current = null;
+    beyondTitle.current = false;
     reset();
     onClose();
   };
@@ -463,11 +492,21 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
           education_field: form.educationField.trim() || null,
           job_type: form.jobType,
           positions_count: Number(form.positionsCount) || 1,
+          hiring_manager_id: form.hiringManagerId || null,
         };
-        const updated = jobId ? await jobsApi.update(jobId, payload) : await jobsApi.create(payload);
+        let target = jobId;
+        if (!target) {
+          // J1: same title as an existing draft -> offer to open that one instead of making a duplicate
+          const twin = (await jobsApi.list().catch(() => [] as JobRoleRead[]))
+            .find((j) => j.status === "draft" && j.title.trim().toLowerCase() === payload.title.toLowerCase());
+          if (twin && window.confirm(t("jobs.wiz.dup_title", { title: twin.title }))) target = twin.id;
+        }
+        const updated = target ? await jobsApi.update(target, payload) : await jobsApi.create(payload);
+        if (!target) createdHere.current = updated.id;
         setJobId(updated.id);
         setJob(updated);
       } else if (activeStep === 1) {
+        beyondTitle.current = true;
         const updated = await jobsApi.update(jobId!, {
           technical_skills_must_have: form.technicalSkillsMustHave,
           technical_skills_good_to_have: form.technicalSkillsGoodToHave,
@@ -555,7 +594,7 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
     form.location,
     formatExperienceRange(form.experienceMinYears ? Number(form.experienceMinYears) : null, form.experienceMaxYears ? Number(form.experienceMaxYears) : null),
     ...[...form.technicalSkillsMustHave, ...form.softSkillsMustHave].slice(0, 6),
-    form.salaryMin && form.salaryMax ? t("jobs.rev.salary", { min: form.salaryMin, max: form.salaryMax }) : "",
+    form.salaryMin && form.salaryMax ? t("jobs.rev.salary", { min: formatMoney(form.salaryMin), max: formatMoney(form.salaryMax) }) : "",
     form.benefits ? t("jobs.rev.benefits") : "",
     form.keyResponsibilities ? t("jobs.rev.responsibilities") : "",
     form.additionalNotes ? t("jobs.rev.notes") : "",
@@ -638,6 +677,18 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
                 </WithTip>
               </Box>
             </Stack>
+            <WithTip tip={t("jobs.f.hiring_manager_tip")}>
+              <TextField select label={t("jobs.f.hiring_manager")} value={form.hiringManagerId} onChange={(e) => set("hiringManagerId", e.target.value)} fullWidth>
+                <MenuItem value="">
+                  <em>{t("jobs.f.hiring_manager_none")}</em>
+                </MenuItem>
+                {people.map((p) => (
+                  <MenuItem key={p.id} value={p.id}>
+                    {p.full_name || p.email} · {p.email}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </WithTip>
           </Stack>
         );
       case 1:
@@ -731,7 +782,7 @@ export default function CreateJobWizard({ open, onClose, onPublished, initialJob
           </Typography>
           <Typography variant="body2" sx={{ color: f.muted }}>
             {[t(JOB_TYPES.find((j) => j.value === form.jobType)?.key ?? form.jobType), t("jobs.rev.positions", { count: Number(form.positionsCount) || 1 }),
-              form.salaryMin && form.salaryMax ? t("jobs.rev.salary", { min: form.salaryMin, max: form.salaryMax }) : ""].filter(Boolean).join(" · ")}
+              form.salaryMin && form.salaryMax ? t("jobs.rev.salary", { min: formatMoney(form.salaryMin), max: formatMoney(form.salaryMax) }) : ""].filter(Boolean).join(" · ")}
           </Typography>
           {(form.educationDegreeLevel || form.educationField) && (
             <Typography variant="body2" sx={{ color: f.muted }}>

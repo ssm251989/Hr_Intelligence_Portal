@@ -17,6 +17,7 @@ import { extractErrorMessage } from "../../api/client";
 import { employeesApi, type AgentCard, type EmployeeFacets, type ItTodo } from "../../api/employeesApi";
 import { useT } from "../../i18n";
 import { Emoji, StatusChip } from "../../ui-kit";
+import { formatDate } from "../../utils/datetime";
 
 // Part 20.2: the Onboarding agent's approval card -- everything it will create (Employee ID, record,
 // company email, app account + roles), editable before "Approve". A failed step shows in plain words
@@ -91,7 +92,7 @@ export function EmployeeApprovalCard({ card, facets, onChanged, highlight }: { c
         {failed.length > 0 ? <StatusChip tone="coral" emoji="warning" label={t("emp.card.failed_steps", { n: failed.length })} />
           : <StatusChip tone="sun" emoji="hourglass" label={t("emp.card.waiting")} />}
       </Stack>
-      <Typography sx={{ fontSize: 13, color: f.muted, mb: 1.5 }}>{t("emp.card.intro", { job: p.job_title ?? "", date: new Date(`${p.joined_on}T00:00:00`).toLocaleDateString() })}</Typography>
+      <Typography sx={{ fontSize: 13, color: f.muted, mb: 1.5 }}>{t("emp.card.intro", { job: p.job_title ?? "", date: formatDate(`${p.joined_on}T00:00:00`) })}</Typography>
 
       {p.match && (
         <Alert severity={p.match.kind === "exact" ? "info" : "warning"} sx={{ mb: 1.5 }}>

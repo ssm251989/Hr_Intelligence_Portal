@@ -1,0 +1,3 @@
+User-agent: *
+Disallow: /superadmin
+Disallow: /_api/

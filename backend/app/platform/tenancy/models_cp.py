@@ -262,3 +262,32 @@ class PlatformConfig(ControlPlaneBase):
     value_json = Column(JSONB, nullable=False)
     updated_by = Column(Text)
     updated_at = Column(DateTime(timezone=True), server_default=text("now()"))
+
+
+SIGNUP_STATUSES = ("pending_email", "confirmed", "provisioning", "waiting_approval", "active", "failed", "expired")
+
+
+class SignupRequest(ControlPlaneBase):
+    """Part 28.5: "Create your company" on the platform domain. The admin password is kept only as a bcrypt hash
+    (used for the first admin when the company is created); the confirmation token only as its SHA-256."""
+
+    __tablename__ = "signup_requests"
+    __table_args__ = (CheckConstraint("status IN (" + ",".join(f"'{s}'" for s in SIGNUP_STATUSES) + ")", name="signup_requests_status_check"),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    company_name = Column(Text, nullable=False)
+    slug = Column(String(63), nullable=False, index=True)
+    admin_name = Column(Text, nullable=False)
+    admin_email = Column(Text, nullable=False, index=True)
+    password_hash = Column(Text, nullable=False)
+    modules = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    status = Column(String(20), nullable=False, server_default=text("'pending_email'"))
+    token_hash = Column(String(64), nullable=False, unique=True)
+    token_expires_at = Column(DateTime(timezone=True), nullable=False)
+    confirmed_at = Column(DateTime(timezone=True))
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"))
+    host = Column(String(255))
+    error = Column(Text)
+    ip = Column(String(64))
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"))
+    updated_at = Column(DateTime(timezone=True), server_default=text("now()"))

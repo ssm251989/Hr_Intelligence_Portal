@@ -43,7 +43,7 @@ def compute_next_actions(db: Session, application: Application) -> list[NextActi
         return [
             NextAction(
                 key="screen",
-                label="Screen Candidate",
+                label="Screen candidate",
                 kind="one_click",
                 method="POST",
                 endpoint=f"/applications/{app_id}/screen",
@@ -55,7 +55,7 @@ def compute_next_actions(db: Session, application: Application) -> list[NextActi
         return [
             NextAction(
                 key="shortlist_select",
-                label="Shortlist: Select",
+                label="Shortlist",
                 kind="one_click",
                 method="POST",
                 endpoint=f"/applications/{app_id}/shortlist-decision",
@@ -63,7 +63,7 @@ def compute_next_actions(db: Session, application: Application) -> list[NextActi
             ),
             NextAction(
                 key="shortlist_reject",
-                label="Shortlist: Reject",
+                label="Reject at shortlist",
                 kind="one_click",
                 method="POST",
                 endpoint=f"/applications/{app_id}/shortlist-decision",
@@ -78,7 +78,7 @@ def compute_next_actions(db: Session, application: Application) -> list[NextActi
         return [
             NextAction(
                 key="schedule_interview",
-                label="Schedule Interview",
+                label="Schedule interview",
                 kind="navigate",
                 route=_job_route("/interviews", job_id),
                 description="Needs a date/time and interviewer -- opens the Interviews page.",
@@ -89,7 +89,7 @@ def compute_next_actions(db: Session, application: Application) -> list[NextActi
         return [
             NextAction(
                 key="validate_salary",
-                label="Validate Salary",
+                label="Check salary",
                 kind="one_click",
                 method="POST",
                 endpoint=f"/applications/{app_id}/validate-salary",
@@ -108,36 +108,41 @@ def compute_next_actions(db: Session, application: Application) -> list[NextActi
             return [
                 NextAction(
                     key="manage_interview",
-                    label="Manage Interview",
+                    label="Manage interview",
                     kind="navigate",
                     route=_job_route("/interviews", job_id),
                 )
             ]
+        # P3 (Part 27): no one-click result. Before the interview time: nothing to decide yet; afterwards the
+        # scorecard opens (ratings + note, confirm step; a rejection needs the note).
+        from datetime import datetime, timezone
+
+        when = interview.scheduled_at
+        if when is not None and (when if when.tzinfo else when.replace(tzinfo=timezone.utc)) > datetime.now(timezone.utc):
+            return [
+                NextAction(
+                    key="manage_interview",
+                    label="Manage interview",
+                    kind="navigate",
+                    route=_job_route("/interviews", job_id),
+                    description="The result can be recorded once the interview has taken place.",
+                )
+            ]
         return [
             NextAction(
-                key="interview_selected",
-                label="Interview Feedback: Selected",
-                kind="one_click",
-                method="PATCH",
-                endpoint=f"/interviews/{interview.id}/feedback",
-                body={"decision": "selected"},
-            ),
-            NextAction(
-                key="interview_rejected",
-                label="Interview Feedback: Rejected",
-                kind="one_click",
-                method="PATCH",
-                endpoint=f"/interviews/{interview.id}/feedback",
-                body={"decision": "rejected"},
-                confirm=True,
-            ),
+                key="record_feedback",
+                label="Record interview result",
+                kind="navigate",
+                route=f"/interviews?feedback={interview.id}",
+                description="Opens the scorecard: ratings, a note (required to reject) and the result.",
+            )
         ]
 
     if status == "salary_ok":
         return [
             NextAction(
                 key="confirm_salary",
-                label="Confirm Salary",
+                label="Confirm salary",
                 kind="one_click",
                 method="POST",
                 endpoint=f"/applications/{app_id}/salary/confirm",
@@ -148,10 +153,23 @@ def compute_next_actions(db: Session, application: Application) -> list[NextActi
         return [
             NextAction(
                 key="approve_salary",
-                label="Approve/Reject Salary",
+                label="Approve or reject salary",
                 kind="navigate",
-                route=_job_route("/salary", job_id),
-                description="Expected salary is above the job's band -- needs an approval decision and optional override amount.",
+                # P2 (Part 27): opens this candidate's salary drawer, not just the Salary page
+                route=f"/salary?application={app_id}",
+                description="The expected salary needs a person's approval (above the band, hike over the limit, current salary not known or budget short).",
+            )
+        ]
+
+    # P1 (Part 27): salary approved is not the end -- documents -> BGV -> joining date -> offer -> joined
+    if status == "salary_approved":
+        return [
+            NextAction(
+                key="joining_documents",
+                label="Joining documents",
+                kind="navigate",
+                route=_job_route("/bgv", job_id),
+                description="Next: joining documents, then background check, joining date, offer and joining.",
             )
         ]
 
@@ -161,7 +179,7 @@ def compute_next_actions(db: Session, application: Application) -> list[NextActi
         actions = [
             NextAction(
                 key="manage_bgv_documents",
-                label="Manage BGV Documents",
+                label="Manage BGV documents",
                 kind="navigate",
                 route=_job_route("/bgv", job_id),
             ),
@@ -194,7 +212,7 @@ def compute_next_actions(db: Session, application: Application) -> list[NextActi
         return [
             NextAction(
                 key="generate_offer",
-                label="Generate Offer",
+                label="Create offer",
                 kind="navigate",
                 route=_job_route("/offers", job_id),
                 description="Needs a start date -- opens the Offers page.",
@@ -205,7 +223,7 @@ def compute_next_actions(db: Session, application: Application) -> list[NextActi
         return [
             NextAction(
                 key="mark_signed",
-                label="Mark Offer Signed",
+                label="Mark offer signed",
                 kind="one_click",
                 method="POST",
                 endpoint=f"/applications/{app_id}/offer/mark-signed",
@@ -219,7 +237,7 @@ def compute_next_actions(db: Session, application: Application) -> list[NextActi
         return [
             NextAction(
                 key="complete_onboarding",
-                label="Complete Onboarding",
+                label="Complete onboarding",
                 kind="one_click",
                 method="POST",
                 endpoint=f"/applications/{app_id}/offer/complete-onboarding",

@@ -52,7 +52,8 @@ def _install(data: dict, bundle: Path):
     try:
         a, o = _split(data, bundle)
         info = windows.install(a, o, _say)
-        STATE["finished"] = info
+        # Part 28.4: the master key is shown once on the finish page (kept only in memory, never in installed.json)
+        STATE["finished"] = {**info, "master_key": windows.master_key(o.install_dir)}
     except InvalidInput as exc:
         STATE["failed"] = {"problems": exc.problems}
     except provision.StepFailed as exc:
@@ -63,10 +64,22 @@ def _install(data: dict, bundle: Path):
         STATE["running"] = False
 
 
+def _run(fn, *args):
+    try:
+        STATE["finished"] = fn(*args, _say)
+    except provision.StepFailed as exc:
+        STATE["failed"] = {"step": exc.step, "message": exc.message, "detail": exc.detail}
+    except Exception as exc:  # noqa: BLE001
+        STATE["failed"] = {"step": "unexpected", "message": f"{type(exc).__name__}: {exc}"}
+    finally:
+        STATE["running"] = False
+
+
 class Handler(BaseHTTPRequestHandler):
     token = ""
     bundle = Path(".")
     server_ref = None
+    mode = "install"  # install | upgrade (already installed) | uninstall
 
     def log_message(self, *args):  # quiet console
         pass
@@ -96,10 +109,18 @@ class Handler(BaseHTTPRequestHandler):
             return
         path = urlparse(self.path).path
         if path == "/":
-            return self._send(200, PAGE.replace("__DEFAULTS__", json.dumps(_defaults(self.bundle))), "text/html")
+            if self.mode == "install":
+                return self._send(200, PAGE.replace("__DEFAULTS__", json.dumps(_defaults(self.bundle))), "text/html")
+            info = windows.installed_info() or {}
+            ver = (self.bundle / windows.VERSION_FILE).read_text().strip() if (self.bundle / windows.VERSION_FILE).exists() else "dev"
+            page = UPGRADE_PAGE if self.mode == "upgrade" else UNINSTALL_PAGE
+            return self._send(200, page.replace("__INFO__", json.dumps({"installed": info, "package_version": ver})), "text/html")
         if path == "/api/progress":
             with LOCK:
-                return self._send(200, {"events": STATE["events"], "running": STATE["running"], "finished": STATE["finished"], "failed": STATE["failed"]})
+                finished = STATE["finished"]
+                if finished and finished.get("master_key"):
+                    STATE["finished"] = {k: v for k, v in finished.items() if k != "master_key"}  # shown once
+                return self._send(200, {"events": STATE["events"], "running": STATE["running"], "finished": finished, "failed": STATE["failed"]})
         self._send(404, {"error": "not found"})
 
     def do_POST(self):  # noqa: N802
@@ -121,6 +142,21 @@ class Handler(BaseHTTPRequestHandler):
             STATE.update(events=[], running=True, finished=None, failed=None)
             threading.Thread(target=_install, args=(data, self.bundle), daemon=True).start()
             return self._send(200, {"started": True})
+        if path == "/api/upgrade" and self.mode == "upgrade":
+            if STATE["running"]:
+                return self._send(409, {"error": "already running"})
+            STATE.update(events=[], running=True, finished=None, failed=None)
+            threading.Thread(target=_run, args=(windows.upgrade, self.bundle), daemon=True).start()
+            return self._send(200, {"started": True})
+        if path == "/api/uninstall" and self.mode == "uninstall":
+            delete = bool(data.get("delete_data"))
+            if delete and data.get("confirm") != "DELETE":
+                return self._send(200, {"ok": False, "problem": 'To delete all data, type DELETE in the box (second confirmation).'})
+            if STATE["running"]:
+                return self._send(409, {"error": "already running"})
+            STATE.update(events=[], running=True, finished=None, failed=None)
+            threading.Thread(target=_run, args=(windows.uninstall, delete), daemon=True).start()
+            return self._send(200, {"started": True})
         if path == "/api/close":
             self._send(200, {"bye": True})
             threading.Thread(target=self.server_ref.shutdown, daemon=True).start()
@@ -133,8 +169,11 @@ def main(argv=None) -> int:
     ap.add_argument("--bundle", type=Path, default=Path(__file__).resolve().parents[5])
     ap.add_argument("--port", type=int, default=0)
     ap.add_argument("--no-browser", action="store_true")
+    ap.add_argument("--uninstall", action="store_true")
     args = ap.parse_args(argv)
     Handler.token, Handler.bundle = windows.new_token(), args.bundle.resolve()
+    # Part 28.4: on an installed PC the same screen upgrades (no questions); --uninstall removes it
+    Handler.mode = "uninstall" if args.uninstall else "upgrade" if windows.installed_info() else "install"
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     Handler.server_ref = server
     url = f"http://127.0.0.1:{server.server_address[1]}/?t={Handler.token}"
@@ -214,12 +253,55 @@ async function poll(){const r=await (await fetch('/api/progress?t='+T)).json(),o
  for(const [s,st] of Object.entries(seen)){const li=document.createElement('li');li.textContent=(LABELS[s]||s)+(st==='done'?' - done':' ...');li.className=st==='done'?'done':'';ol.appendChild(li);}
  const res=document.getElementById('result');
  if(r.finished){document.querySelector('#progress h2').textContent='HR Automation is installed';
-  res.innerHTML='<p>Open <a href="'+r.finished.url+'">'+r.finished.url+'</a> and sign in with <b>'+r.finished.admin_email+'</b>. A shortcut "HR Automation" is on the desktop.</p><p><small>Your modules were requested from CTD Techs; they switch on when CTD Techs approves.</small></p><button onclick="post(\'/api/close\',{}).then(()=>location.href=\''+r.finished.url+'\')">Open HR Automation</button>';return;}
+  res.innerHTML='<p>Open <a href="'+r.finished.url+'">'+r.finished.url+'</a> and sign in with <b>'+r.finished.admin_email+'</b>. A shortcut "HR Automation" is on the desktop.</p><p><small>Your modules were requested from CTD Techs; they switch on when CTD Techs approves.</small></p>'+(r.finished.master_key?'<section style="border-color:#b42318"><h2>Your master key - shown only once</h2><p>Keep this safe (a password manager or a sealed envelope). It is needed to restore a backup on another computer.</p><pre id="mk">'+r.finished.master_key+'</pre><button type="button" onclick="navigator.clipboard.writeText(document.getElementById(\'mk\').textContent);this.textContent=\'Copied\'">Copy</button></section>':'')+'
+<button onclick="post(\'/api/close\',{}).then(()=>location.href=\''+r.finished.url+'\')">Open HR Automation</button>';return;}
  if(r.failed){document.querySelector('#progress h2').textContent='Setup stopped';
   if(r.failed.problems){f.hidden=false;document.getElementById('progress').hidden=true;document.getElementById('go').disabled=false;return show(r.failed.problems);}
   res.innerHTML='<p class="fail">'+(LABELS[r.failed.step]||r.failed.step)+': '+(r.failed.message||'')+'</p>'+(r.failed.detail?'<pre>'+r.failed.detail.replace(/</g,'&lt;')+'</pre>':'')+
    '<p>Fix the problem and press Try again - finished steps are not repeated.</p><button onclick="location.reload()">Try again</button>';return;}
  setTimeout(poll,1000);}
+</script></body></html>"""
+
+
+_SMALL_PAGE_HEAD = PAGE.split("<main>")[0] + "<main>"
+_POLL_JS = r"""
+const T=new URLSearchParams(location.search).get('t'), I=__INFO__;
+const LABELS={backup:'Backing up the databases and files',stop:'Stopping HR Automation',files:'Copying the new program files',migrate:'Updating the database',
+ service:'Starting HR Automation',services:'Removing the Windows services',shortcuts:'Removing the firewall rule and shortcuts',databases:'Dropping the databases',data:'Deleting all data'};
+async function post(u,b){const r=await fetch(u+'?t='+T,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});return r.json();}
+async function poll(done){const r=await (await fetch('/api/progress?t='+T)).json(),ol=document.getElementById('steps'),seen={};ol.innerHTML='';
+ for(const ev of r.events)seen[ev.step]=ev.state;
+ for(const [s,st] of Object.entries(seen)){const li=document.createElement('li');li.textContent=(LABELS[s]||s)+(st==='done'?' - done':' ...');li.className=st==='done'?'done':'';ol.appendChild(li);}
+ if(r.finished)return done(r.finished);
+ if(r.failed){document.getElementById('result').innerHTML='<p class="fail">'+(LABELS[r.failed.step]||r.failed.step)+': '+(r.failed.message||'')+'</p>'+(r.failed.detail?'<pre>'+r.failed.detail.replace(/</g,'&lt;')+'</pre>':'')+'<p>Nothing after this step was changed. Fix the problem and try again.</p>';return;}
+ setTimeout(()=>poll(done),1000);}
+"""
+UPGRADE_PAGE = _SMALL_PAGE_HEAD + r"""<h1>Upgrade HR Automation</h1><p class="lead" id="lead"></p>
+<section id="ask"><p>No questions: the settings of your installation are kept. First a backup of the databases and files is made, then the new
+program files are copied, the database is updated and HR Automation starts again. People can't use it for a few minutes.</p>
+<button id="go">Upgrade now</button></section>
+<section id="progress" hidden><h2>Upgrading...</h2><ol id="steps"></ol><div id="result"></div></section></main><script>""" + _POLL_JS + r"""
+document.getElementById('lead').textContent='Installed: version '+(I.installed.version||'?')+' in '+(I.installed.install_dir||'?')+'. This package: version '+I.package_version+'.';
+document.getElementById('go').onclick=async()=>{document.getElementById('go').disabled=true;await post('/api/upgrade');document.getElementById('ask').hidden=true;
+ document.getElementById('progress').hidden=false;poll(f=>{document.querySelector('#progress h2').textContent='Upgraded to version '+f.version;
+ document.getElementById('result').innerHTML='<p>Backup kept in your HR Automation data folder (backups).</p><button onclick="post(\'/api/close\').then(()=>location.href=\''+f.url+'\')">Open HR Automation</button>';});};
+</script></body></html>"""
+UNINSTALL_PAGE = _SMALL_PAGE_HEAD + r"""<h1>Uninstall HR Automation</h1><p class="lead" id="lead"></p>
+<section id="ask"><p>This stops and removes the two Windows services, the firewall rule and the shortcuts.</p>
+<label style="font-weight:400"><input type="checkbox" id="del"> Delete all data too (the database, uploaded files and backups). <b>This cannot be undone.</b></label>
+<div id="confirmbox" hidden><label>Type DELETE to confirm<input type="text" id="confirm"></label></div><div class="err" id="err"></div>
+<p><small>Without the tick your data stays in the HR Automation data folder; installing again later finds it.</small></p>
+<button id="go">Uninstall</button></section>
+<section id="progress" hidden><h2>Uninstalling...</h2><ol id="steps"></ol><div id="result"></div></section></main><script>""" + _POLL_JS + r"""
+document.getElementById('lead').textContent='Installed: version '+(I.installed.version||'?')+' in '+(I.installed.install_dir||'?')+'.';
+document.getElementById('del').onchange=e=>document.getElementById('confirmbox').hidden=!e.target.checked;
+document.getElementById('go').onclick=async()=>{const del=document.getElementById('del').checked;
+ if(del&&!confirm('Delete ALL HR Automation data? This cannot be undone.'))return;
+ const r=await post('/api/uninstall',{delete_data:del,confirm:document.getElementById('confirm').value});
+ if(r.ok===false){document.getElementById('err').textContent=r.problem;return;}
+ document.getElementById('ask').hidden=true;document.getElementById('progress').hidden=false;
+ poll(f=>{document.querySelector('#progress h2').textContent='HR Automation is uninstalled';
+ document.getElementById('result').innerHTML='<p>'+(f.data_kept?'Your data is kept in '+f.data+'.':'All data was deleted.')+' You can delete the program folder now.</p><button onclick="post(\'/api/close\').then(()=>window.close())">Close</button>';});};
 </script></body></html>"""
 
 

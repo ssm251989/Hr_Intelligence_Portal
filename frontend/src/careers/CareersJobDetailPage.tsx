@@ -16,6 +16,7 @@ import JobFacts from "../components/careers/JobFacts";
 import { useT } from "../i18n";
 import { EmptyState, Emoji, FriendlyError } from "../ui-kit";
 import { categorizeSkills } from "../utils/skills";
+import { formatDate } from "../utils/datetime";
 
 function SkillChips({ skills, strong }: { skills: string[]; strong?: boolean }) {
   const f = useTheme().palette.fresh;
@@ -88,7 +89,7 @@ export default function CareersJobDetailPage() {
   const { mustHave, goodToHave } = categorizeSkills(job);
   const extraFacts = [
     ...(extras?.job_type ? [{ emoji: "briefcase", text: extras.job_type }] : []),
-    ...(extras?.application_deadline ? [{ emoji: "alarm_clock", text: t("careers.deadline", { date: new Date(extras.application_deadline).toLocaleDateString() }) }] : []),
+    ...(extras?.application_deadline ? [{ emoji: "alarm_clock", text: t("careers.deadline", { date: formatDate(extras.application_deadline) }) }] : []),
   ];
   const applyButton = (
     <Button component={RouterLink} to={`/careers/${job.id}/apply`} variant="contained" size="large">

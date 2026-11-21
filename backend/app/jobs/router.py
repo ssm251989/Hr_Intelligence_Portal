@@ -29,6 +29,15 @@ from app.schemas.job import (
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 
+def _check_hiring_manager(db: Session, user_id) -> None:
+    """Part 30: the hiring manager picked in the wizard must be a person who can still sign in."""
+    if user_id is None:
+        return
+    person = db.get(User, user_id)
+    if person is None or getattr(person, "deactivated_at", None) is not None:
+        raise HTTPException(status_code=400, detail="Choose a hiring manager who has an active account.")
+
+
 def _get_job_or_404(db: Session, job_id: uuid.UUID) -> JobRole:
     job = db.get(JobRole, job_id)
     if not job:
@@ -97,6 +106,7 @@ def create_job(
     # app/jobs/service.py notify_job_owner_of_new_application), so it must be
     # trustworthy rather than whatever a client happens to send.
     data["created_by"] = current_user.id
+    _check_hiring_manager(db, data.get("hiring_manager_id"))
     job = JobRole(**data)
     db.add(job)
     db.commit()
@@ -169,6 +179,8 @@ def update_job(
 ):
     job = _get_job_or_404(db, job_id)
     updates = payload.model_dump(exclude_unset=True)
+    if "hiring_manager_id" in updates:
+        _check_hiring_manager(db, updates["hiring_manager_id"])
     if "status" in updates and updates["status"] != job.status:
         try:
             validate_status_transition(job.status, updates["status"])
@@ -178,7 +190,7 @@ def update_job(
         setattr(job, field, value)
     db.commit()
     db.refresh(job)
-    log_action(db, "job_role", job.id, "job_role_updated", "system", updates)
+    log_action(db, "job_role", job.id, "job_role_updated", "system", payload.model_dump(mode="json", exclude_unset=True))
     return job
 
 

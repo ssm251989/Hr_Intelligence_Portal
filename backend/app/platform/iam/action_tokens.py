@@ -24,11 +24,12 @@ DEFAULT_ACTION_TOKEN_TTL_DAYS = 14
 def create_action_token(
     db: Session, tenant: TenantContext, *, entity_type: str, entity_id: UUID, action: str,
     payload: Optional[dict] = None, created_by: Optional[str] = None, ttl_days: int = DEFAULT_ACTION_TOKEN_TTL_DAYS,
+    ttl_minutes: Optional[int] = None,
 ) -> ActionToken:
     row = ActionToken(
         tenant_id=tenant.tenant_id, entity_type=entity_type, entity_id=entity_id, action=action,
         token=secrets.token_urlsafe(32), payload_json=payload, created_by=created_by,
-        expires_at=datetime.now(timezone.utc) + timedelta(days=ttl_days),
+        expires_at=datetime.now(timezone.utc) + (timedelta(minutes=ttl_minutes) if ttl_minutes else timedelta(days=ttl_days)),
     )
     db.add(row)
     db.commit()

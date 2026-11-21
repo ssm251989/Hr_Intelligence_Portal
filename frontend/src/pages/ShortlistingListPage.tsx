@@ -71,6 +71,7 @@ import { useT } from "../i18n";
 import { EmptyState, FriendlyError, PageHeader, StatusChip, type Tone } from "../ui-kit";
 import { downloadCsv } from "../utils/csv";
 import { downloadResume } from "../utils/resume";
+import { formatDate } from "../utils/datetime";
 
 const SEARCH_DEBOUNCE_MS = 300;
 const POOL_PAGE_SIZE = 200;
@@ -643,7 +644,7 @@ export default function ShortlistingListPage() {
                       <TableCell><MatchScoreChip score={matchScoreOf(row)} threshold={thresholds.get(row.job_role_id)} /></TableCell>
                       <TableCell><KnockoutChip row={row} /></TableCell>
                       <TableCell><SourceIcon source={row.source} /></TableCell>
-                      <TableCell sx={{ whiteSpace: "nowrap" }}>{new Date(row.applied_on).toLocaleDateString()}</TableCell>
+                      <TableCell sx={{ whiteSpace: "nowrap" }}>{formatDate(row.applied_on)}</TableCell>
                       <TableCell>
                         <Stack spacing={0.75} alignItems="flex-start">
                           {st ? <StatusChip tone={STATUS_CHIP[st].tone} emoji={STATUS_CHIP[st].emoji} label={t(STATUS_CHIP[st].key)} /> : "—"}

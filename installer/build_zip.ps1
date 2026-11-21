@@ -18,7 +18,11 @@ param(
   [string]$PgZip = "",
   [string]$PgUrl = "https://get.enterprisedb.com/postgresql/postgresql-16.6-1-windows-x64-binaries.zip",
   [string]$WinSWUrl = "https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe",
-  [string]$Out = "installer\build"
+  [string]$Out = "installer\build",
+  # Part 28.4: code signing with the owner's certificate so SmartScreen does not warn. Import the .pfx into the
+  # Windows certificate store once (double-click it), then pass its thumbprint - no password on any command line.
+  [string]$SignThumbprint = "",
+  [string]$TimestampUrl = "http://timestamp.digicert.com"
 )
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"   # Invoke-WebRequest is 10x faster without the progress bar
@@ -56,7 +60,7 @@ Push-Location $Cache
 $ok = $LASTEXITCODE; Pop-Location
 if ($ok -ne 0) { throw "could not set up pip inside the bundled Python (see the error above)" }
 & $pyExe -m pip install --disable-pip-version-check --no-warn-script-location --only-binary=:all: -r $req psycopg2-binary --target $site --upgrade
-if ($LASTEXITCODE -ne 0) { throw "pip install failed - a package above has no Windows wheel for Python $PythonVersion (see the error)" }
+if ($LASTEXITCODE -ne 0) { throw "pip install failed - no internet / pypi.org unreachable, or a package above has no Windows wheel for Python $PythonVersion (see the error above)" }
 # pip itself is not needed on the client's PC
 Get-ChildItem $site -Directory -Filter "pip*" | Remove-Item -Recurse -Force
 Get-ChildItem (Join-Path $py "Scripts") -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
@@ -108,6 +112,14 @@ if (Get-Command go -ErrorAction SilentlyContinue) {
   & go build -trimpath -ldflags "-s -w" -o HRAutomation.exe .; Pop-Location
 }
 Copy-Item $launcher (Join-Path $Stage "HRAutomation.exe")
+if ($SignThumbprint) {
+  $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+    Where-Object { $_.FullName -match "x64" } | Select-Object -Last 1
+  if (-not $signtool) { throw "signtool.exe not found - install the Windows SDK (Signing Tools) or build without -SignThumbprint." }
+  & $signtool.FullName sign /sha1 $SignThumbprint /fd SHA256 /tr $TimestampUrl /td SHA256 (Join-Path $Stage "HRAutomation.exe")
+  if ($LASTEXITCODE -ne 0) { throw "Signing HRAutomation.exe failed." }
+  Write-Host "signed HRAutomation.exe"
+}
 Set-Content -Encoding ASCII -Path (Join-Path $Stage "VERSION.txt") -Value $Version
 Copy-Item (Join-Path $Root "installer\README.txt") (Join-Path $Stage "README.txt")
 

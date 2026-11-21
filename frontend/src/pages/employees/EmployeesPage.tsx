@@ -31,6 +31,7 @@ import { useT } from "../../i18n";
 import { useMeBootstrap } from "../../bootstrap/MeBootstrapContext";
 import AssignRolesDialog from "../../components/employees/AssignRolesDialog";
 import { EmptyState, FriendlyError, PageHeader, UserAvatar } from "../../ui-kit";
+import { formatDate } from "../../utils/datetime";
 
 // Part 20.1: Employees -- everyone who has finished onboarding. Column chooser, saved views, filters,
 // search, Excel export, bulk "resend app invite"; row click opens the profile; "..." has the actions.
@@ -213,7 +214,7 @@ export default function EmployeesPage() {
                     {col("department") && <TableCell>{r.department ?? "—"}</TableCell>}
                     {col("manager") && <TableCell>{r.manager ?? "—"}</TableCell>}
                     {col("location") && <TableCell>{r.location ?? "—"}</TableCell>}
-                    {col("joined") && <TableCell sx={{ whiteSpace: "nowrap" }}>{r.joined_on ? new Date(`${r.joined_on}T00:00:00`).toLocaleDateString() : "—"}</TableCell>}
+                    {col("joined") && <TableCell sx={{ whiteSpace: "nowrap" }}>{r.joined_on ? formatDate(`${r.joined_on}T00:00:00`) : "—"}</TableCell>}
                     {col("exp_company") && <TableCell sx={{ whiteSpace: "nowrap" }}>{r.experience_company || "—"}</TableCell>}
                     {col("exp_total") && <TableCell sx={{ whiteSpace: "nowrap" }}>{r.experience_total || "—"}</TableCell>}
                     {col("email") && <TableCell><CompanyEmail email={r.company_email} test={r.company_email_test} /></TableCell>}

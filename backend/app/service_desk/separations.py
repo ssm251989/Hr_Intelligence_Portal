@@ -180,6 +180,10 @@ def approve_lwd(db: Session, tenant: TenantContext, separation: Separation, *, l
     db.commit()
     generate_clearance(db, tenant, separation)
     db.refresh(separation)
+    from app.audit.service import log_action  # Part 30.2: the separation.approved webhook reads this
+
+    log_action(db, "separation", separation.id, "separation_lwd_approved", (actor or "system")[:50],
+               {"approved_lwd": lwd.isoformat(), "waived_days": waived_days, "buyout_days": buyout_days})
     return separation
 
 

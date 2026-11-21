@@ -9,7 +9,9 @@ HR:
 - GET  /api/v1/ui/documents/file/{doc_id}              open one file
 - POST /api/v1/ui/documents/{application_id}/approve   {doc_ids?} (none = all pending); all approved -> BGV
 - POST /api/v1/ui/documents/{application_id}/reupload  {codes, note} -> the candidate is emailed the list
-- POST /api/v1/ui/documents/{application_id}/send-form send (or resend) the upload link
+- POST /api/v1/ui/documents/{application_id}/send-form send (or resend) the upload link -> {sent, link}
+- GET  /api/v1/ui/documents/{application_id}/link      the upload link without emailing it (B1, Part 27: [Copy link])
+- POST /api/v1/ui/documents/{application_id}/files/{code}  HR uploads for the candidate (the same checks run)
 """
 
 from typing import Optional
@@ -163,6 +165,26 @@ def reupload(application_id: UUID, body: ReuploadIn, db: Session = Depends(get_d
 def send_form(application_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     tenant = _need(db, current_user, "recruitment.bgv.edit")
     return jd.send_form(db, tenant, _app(db, tenant, application_id), actor=current_user.email)
+
+
+@router.get("/{application_id}/link")
+def form_link(application_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    tenant = _need(db, current_user, "recruitment.bgv.edit")
+    return {"link": jd.link_for(db, tenant, _app(db, tenant, application_id), actor=current_user.email)}
+
+
+@router.post("/{application_id}/files/{code}")
+async def hr_upload(application_id: UUID, code: str, file: UploadFile = File(...), db: Session = Depends(get_db),
+                    current_user: User = Depends(get_current_user)):
+    """B1 (Part 27): HR uploads a document the candidate sent another way; the agent's checks run exactly as for the candidate."""
+    tenant = _need(db, current_user, "recruitment.bgv.edit")
+    data = await file.read()
+    try:
+        doc = jd.save_upload(db, tenant, _app(db, tenant, application_id), code, file.filename or "file", file.content_type or "", data,
+                             actor=current_user.email)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"uploaded": True, "code": code, "id": str(doc.id)}
 
 
 # ---------------------------------------------------------------- Part 18.18: BGV decision by HR

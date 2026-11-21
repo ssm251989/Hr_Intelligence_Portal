@@ -20,6 +20,7 @@ import { experienceApi, intelligenceApi, workflowApi, type InboxItem, type Inbox
 import { t as tr, useT, type TFunction } from "../i18n";
 import RefreshButton from "../components/RefreshButton";
 import { EmptyState, Emoji, FriendlyError, humanise, PageHeader, StatusChip } from "../ui-kit";
+import { formatDateTime } from "../utils/datetime";
 
 // Part 5B section 3's Unified Inbox + Part 14 section 4 + Part 15.6: every approval / task
 // waiting on the current user, across every module, grouped by what kind of request it is,
@@ -222,7 +223,7 @@ export default function UnifiedInboxPage() {
                     <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mb: 0.25 }}>
                       <Chip size="small" color="info" label={t("approvalsPage.kind.candidate_email")} />
                       {!item.linked && <Chip size="small" color="warning" variant="outlined" label={t("candidateEmails.card.not_linked")} />}
-                      {item.received_at && <Typography sx={{ fontSize: 12, color: f.muted }}>{new Date(item.received_at).toLocaleString()}</Typography>}
+                      {item.received_at && <Typography sx={{ fontSize: 12, color: f.muted }}>{formatDateTime(item.received_at)}</Typography>}
                     </Stack>
                   )}
                   <Typography sx={{ fontWeight: item.kind === "candidate_email" && !item.unread ? 500 : 700 }}>{item.title}</Typography>

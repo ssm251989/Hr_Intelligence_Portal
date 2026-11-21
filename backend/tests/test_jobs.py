@@ -1135,3 +1135,32 @@ def test_list_jobs_table_stats_are_scoped_per_job_not_global(client, db_session)
 
     assert row_a["application_count"] == 2
     assert row_b["application_count"] == 1
+
+
+# ---- Part 30 (owner 2026-11-21): the hiring manager is set in the job wizard / job edit ----
+
+
+def test_hiring_manager_can_be_set_and_cleared_on_the_job(client, db_session):
+    job = _make_job(db_session, status="draft")
+    manager = User(email=f"hm-{uuid.uuid4().hex[:6]}@example.com", hashed_password="x", full_name="Hari Manager", role="hiring_manager")
+    db_session.add(manager)
+    db_session.commit()
+
+    r = client.patch(f"/jobs/{job.id}", json={"hiring_manager_id": str(manager.id)})
+    assert r.status_code == 200 and r.json()["hiring_manager_id"] == str(manager.id)
+    db_session.refresh(job)
+    assert job.hiring_manager_id == manager.id
+
+    r = client.patch(f"/jobs/{job.id}", json={"hiring_manager_id": None})
+    assert r.status_code == 200 and r.json()["hiring_manager_id"] is None
+
+
+def test_hiring_manager_must_be_an_active_person(client, db_session):
+    job = _make_job(db_session, status="draft")
+    assert client.patch(f"/jobs/{job.id}", json={"hiring_manager_id": str(uuid.uuid4())}).status_code == 400
+    gone = User(email=f"gone-{uuid.uuid4().hex[:6]}@example.com", hashed_password="x", full_name="Gone", role="hiring_manager",
+                deactivated_at=datetime.now(timezone.utc))
+    db_session.add(gone)
+    db_session.commit()
+    assert client.patch(f"/jobs/{job.id}", json={"hiring_manager_id": str(gone.id)}).status_code == 400
+    assert client.post("/jobs", json={"title": "HM Role 3", "hiring_manager_id": str(gone.id)}).status_code == 400

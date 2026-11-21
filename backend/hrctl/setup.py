@@ -39,6 +39,11 @@ def _admin() -> int:
             user.failed_login_attempts, user.locked_until, user.deactivated_at = 0, None, None
             db.commit()
             bridge_single_user(db, tenant, user)
+            # M1 (Part 27): the first admin also gets an employee record, so My profile / Exits work from day one
+            from app.employees import self_service
+
+            if self_service.me(db, tenant, user) is None:
+                self_service.link_own_record(db, tenant, user, mode="create")
         finally:
             db.close()
     print(json.dumps({"admin": data["email"], "created": created}))

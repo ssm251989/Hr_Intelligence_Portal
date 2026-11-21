@@ -32,7 +32,9 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
             row = db.query(IdempotencyKey).filter(IdempotencyKey.tenant_id == tenant.tenant_id, IdempotencyKey.key == key).first()
             if row is not None and row.created_at and row.created_at > datetime.now(timezone.utc) - KEEP:
                 if row.path != request.url.path or row.method != request.method:
-                    return JSONResponse(status_code=409, content={"detail": "This Idempotency-Key was already used for a different request."})
+                    msg = "This Idempotency-Key was already used for a different request."
+                    body = {"error": {"code": "idempotency_key_reused", "message": msg}} if request.url.path.startswith("/api/public/") else {"detail": msg}
+                    return JSONResponse(status_code=409, content=body)
                 return Response(content=row.body or "", status_code=row.status_code, media_type=row.content_type or "application/json",
                                 headers={"Idempotent-Replay": "true"})
             response = await call_next(request)

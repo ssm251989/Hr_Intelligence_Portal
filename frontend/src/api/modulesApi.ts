@@ -66,6 +66,16 @@ export function moduleErrorDetail(err: unknown): { code?: string; message?: stri
 }
 
 /** Which module an app page belongs to (bootstrap.company_modules.pages). */
+/** X1 / R1 (Part 27): pages of the platform's own modules (backend app/platform/modules.py). A route whose
+ * module is not enabled for the company shows "not switched on" instead of loading and failing (404s). */
+export const REGISTRY_MODULE_PAGES: Record<string, string[]> = {
+  core_hr: ["/people", "/directory", "/org-chart"],
+  performance: ["/performance", "/compensation", "/succession"],
+  helpdesk: ["/helpdesk"],
+  assets: ["/assets"],
+  analytics: ["/analytics", "/reports/builder"],
+};
+
 export function moduleKeyForPath(pathname: string, pages: Record<string, string[]> | undefined): string | null {
   for (const [key, list] of Object.entries(pages ?? {})) {
     if (list.some((p) => pathname === p || pathname.startsWith(p + "/"))) return key;

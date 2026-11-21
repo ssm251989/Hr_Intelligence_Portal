@@ -54,6 +54,11 @@ def check(db: Session, tenant: TenantContext) -> dict:
             continue
         if purpose.startswith("llm.") and not SettingsService(db).get("ai.enabled", SettingContext(tenant=tenant)):
             continue
+        if purpose.startswith("llm."):
+            from app.platform.ai.status import ai_configured
+
+            if ai_configured(db, tenant):  # H3 (Part 27): the same answer as Settings > Integrations > AI
+                continue
         if not _is_routed(purpose):
             message, label, path = purpose_health(purpose)
             issues.append(_issue("error" if purpose.startswith("email.outbound") else "warning", "UNROUTED_PURPOSE",

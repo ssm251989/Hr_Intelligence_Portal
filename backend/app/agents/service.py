@@ -90,21 +90,32 @@ def decide(db: Session, tenant: TenantContext, suggestion: AgentSuggestion, *, u
 # ---- recruiter agent ----
 
 
+def job_inputs(job) -> str:
+    """The role inputs a JD is drafted from (HR assistant's JD draft, the Job agent, the public API)."""
+    return (f"Title: {job.title}\nDepartment: {job.department}\nLocation: {job.location}\nResponsibilities: {job.key_responsibilities or ''}\n"
+            f"Must-have skills: {job.technical_skills_must_have or []}\nGood-to-have: {job.technical_skills_good_to_have or []}")
+
+
+def draft_jd_text(db: Session, tenant: TenantContext, inputs: str, *, feature: str = "agents.recruiter",
+                  input_refs: Optional[dict] = None) -> tuple[str, Optional[UUID]]:
+    """One JD draft through the governed AI (budget, masking, decision log). Returns (text, decision_log_id)."""
+    result = governance.governed_complete(
+        db, tenant, feature=feature, purpose="llm.judgment",
+        system="Draft a clear, inclusive job description from the role inputs. Plain text with headings. Never invent a salary, benefit or requirement not given.",
+        messages=[{"role": "user", "content": inputs}], input_refs=input_refs or {},
+    )
+    return result.text, result.decision_log_id
+
+
 def recruiter_jd_draft(db: Session, tenant: TenantContext, job_role_id: UUID) -> AgentSuggestion:
     from app.models.job_role import JobRole
 
     job = db.get(JobRole, job_role_id)
     if job is None:
         raise AgentError("job not found")
-    result = governance.governed_complete(
-        db, tenant, feature="agents.recruiter", purpose="llm.judgment",
-        system="Draft a clear, inclusive job description from the role inputs. Plain text with headings. Never invent a salary, benefit or requirement not given.",
-        messages=[{"role": "user", "content": f"Title: {job.title}\nDepartment: {job.department}\nLocation: {job.location}\nResponsibilities: {job.key_responsibilities or ''}\n"
-                                                f"Must-have skills: {job.technical_skills_must_have or []}\nGood-to-have: {job.technical_skills_good_to_have or []}"}],
-        input_refs={"job_role_id": str(job.id)},
-    )
-    return suggest(db, tenant, agent="recruiter", kind="jd_draft", title=f"JD draft for {job.title}", payload={"jd_text": result.text},
-                   reviewer_permission="recruitment.job.edit", entity_type="job_role", entity_id=job.id, decision_log_id=result.decision_log_id)
+    text, log_id = draft_jd_text(db, tenant, job_inputs(job), input_refs={"job_role_id": str(job.id)})
+    return suggest(db, tenant, agent="recruiter", kind="jd_draft", title=f"JD draft for {job.title}", payload={"jd_text": text},
+                   reviewer_permission="recruitment.job.edit", entity_type="job_role", entity_id=job.id, decision_log_id=log_id)
 
 
 @applier("jd_draft")

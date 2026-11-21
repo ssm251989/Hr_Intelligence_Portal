@@ -54,6 +54,26 @@ def my_profile(db: Session = Depends(get_db), current_user: User = Depends(get_c
     return ss.my_profile(db, require_current_tenant(), current_user)
 
 
+class LinkIn(BaseModel):
+    mode: str = Field(pattern="^(create|link)$")
+    employee_code: Optional[str] = Field(None, max_length=255)
+
+
+@router.post("/me/link")
+def link_my_record(body: LinkIn, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """M1 (Part 27): admins only -- create or link the employee record behind their own login."""
+    from app.platform.iam.authz import has_permission
+
+    tenant = require_current_tenant()
+    if not has_permission(db, tenant, current_user, "platform.settings.configure"):
+        raise HTTPException(status_code=403, detail="Ask HR to link your login to your employee record.")
+    try:
+        e = ss.link_own_record(db, tenant, current_user, mode=body.mode, employee_code=body.employee_code)
+    except ValueError as exc:
+        raise _bad(exc, 400)
+    return {"linked": True, "employee_id": str(e.id), "employee_code": e.employee_code}
+
+
 class ChangeIn(BaseModel):
     changes: dict = Field(default_factory=dict)
     note: Optional[str] = None

@@ -55,6 +55,7 @@ AI_FEATURES: dict[str, tuple[str, str]] = {
     "agents.policy": ("agents", "HR policy agent"),
     "agents.bgv_reader": ("agents", "Autopilot: BGV report reader"),
     "agents.briefing": ("agents", "Autopilot: daily HR briefing"),
+    "agents.interview_summary": ("agents", "Autopilot: interview result summary"),  # Part 30.3
     "analytics.predictive": ("analytics", "Predictive estimates"),
     "platform.prompt_eval": ("platform", "Prompt evaluation runs"),
 }

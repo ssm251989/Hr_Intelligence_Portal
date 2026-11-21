@@ -15,7 +15,7 @@ import type { CandidateApplicationRow, InterviewRead, UserRead } from "../api/ty
 import { useT } from "../i18n";
 import Emoji from "../ui-kit/Emoji";
 import { humanise } from "../ui-kit/StatusChip";
-import { istLocalInputToUtcIso } from "../utils/datetime";
+import { istLocalInputNow, istLocalInputToUtcIso, isWebLink } from "../utils/datetime";
 
 // The manual "Schedule Interview" flow, extracted out of the old InterviewsPage so both
 // the Interview List's header button and (eventually) any other entry point share exactly
@@ -108,6 +108,14 @@ export default function ScheduleInterviewDialog({
       setError(t("interviews.schedule.pick_time"));
       return;
     }
+    if (new Date(istLocalInputToUtcIso(scheduledAt)).getTime() < Date.now() - 5 * 60 * 1000) {
+      setError(t("interviews.schedule.past"));
+      return;
+    }
+    if (meetingLink.trim() && !isWebLink(meetingLink)) {
+      setError(t("interviews.schedule.bad_link"));
+      return;
+    }
     setScheduling(true);
     setError(null);
     try {
@@ -155,6 +163,7 @@ export default function ScheduleInterviewDialog({
             value={scheduledAt}
             onChange={(e) => setScheduledAt(e.target.value)}
             InputLabelProps={{ shrink: true }}
+            inputProps={{ min: istLocalInputNow() }}
             fullWidth
           />
           <TextField
@@ -194,6 +203,9 @@ export default function ScheduleInterviewDialog({
             helperText={t("interviews.schedule.link_hint")}
             value={meetingLink}
             onChange={(e) => setMeetingLink(e.target.value)}
+            error={!!meetingLink.trim() && !isWebLink(meetingLink)}
+            type="url"
+            placeholder="https://"
             fullWidth
           />
         </Stack>

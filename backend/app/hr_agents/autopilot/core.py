@@ -111,14 +111,15 @@ def waiting_card(db: Session, tenant, kind: str, entity_id) -> bool:
 
 
 def card(db: Session, tenant, *, kind: str, by_agent: str, title: str, payload: dict, permission: str, entity_type: str, entity_id,
-         agent_column: str = "recruiter"):
-    """The same approval cards the HR assistant's agents raise (approvals.py applies them)."""
+         agent_column: str = "recruiter", reviewer_user_id=None, decision_log_id=None):
+    """The same approval cards the HR assistant's agents raise (approvals.py applies them). `reviewer_user_id`: a named
+    person who may decide besides the holders of `permission` (Part 30.3: the job's hiring manager)."""
     from app.agents.service import suggest
     from app.hr_agents import approvals  # noqa: F401 -- registers the appliers
 
     return suggest(db, tenant, agent=agent_column, kind=kind, title=f"{title} (Autopilot: {by_agent})",
                    payload={"by_agent": f"autopilot.{by_agent}", **payload}, reviewer_permission=permission,
-                   entity_type=entity_type, entity_id=entity_id)
+                   entity_type=entity_type, entity_id=entity_id, reviewer_user_id=reviewer_user_id, decision_log_id=decision_log_id)
 
 
 def state_get(db: Session, tenant, key: str, default=None):

@@ -443,3 +443,22 @@ def test_submit_application_before_deadline_still_succeeds(anonymous_client, db_
     )
 
     assert response.status_code == 201
+
+
+def test_same_email_cannot_apply_twice_to_the_same_job(anonymous_client, db_session):
+    """C1 (Part 27, owner: BLOCK): a second application from the same email (any case) to the same open job is refused;
+    another job is fine."""
+    job = _make_job(db_session, title="Twice Role", status="published")
+    other = _make_job(db_session, title="Other Role", status="published")
+    resume = ("resume.docx", _make_docx_bytes("Dup Applicant"), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+    def apply(job_id, email):
+        return anonymous_client.post("/public/apply", data={"job_id": str(job_id), "consent": "true", "full_name": "Dup Applicant", "email": email,
+                                                            "expected_ctc": "900000", "notice_period_days": "30"},
+                                     files={"resume": resume})
+
+    assert apply(job.id, "dup.applicant@example.com").status_code == 201
+    second = apply(job.id, "Dup.Applicant@Example.com")
+    assert second.status_code == 409 and "already applied" in second.json()["detail"]
+    assert apply(other.id, "dup.applicant@example.com").status_code == 201
+    assert db_session.query(Application).filter(Application.job_role_id == job.id).count() == 1

@@ -12,6 +12,7 @@ import { exitInterviewApi, type Answers, type ExitInterviewHr, type ExitIntervie
 import { useI18n } from "../../i18n";
 import { Emoji, StatusChip } from "../../ui-kit";
 import { ExitInterviewFields } from "./ExitInterviewFields";
+import { formatDate } from "../../utils/datetime";
 
 // fix 2026-10-06: the exit interview is answered by the EMPLOYEE (here) and read by HR (HrExitInterviewCard).
 
@@ -23,7 +24,7 @@ function StatusLine({ v }: { v: Pick<ExitInterviewView, "status" | "submitted_at
   const { t } = useI18n();
   const s = STATUS[v.status];
   return <StatusChip tone={s.tone} emoji={s.emoji} label={v.status === "submitted" && v.submitted_at
-    ? t("exitq.status.submitted_on", { date: new Date(v.submitted_at).toLocaleDateString() }) : t(`exitq.status.${v.status}`)} />;
+    ? t("exitq.status.submitted_on", { date: formatDate(v.submitted_at) }) : t(`exitq.status.${v.status}`)} />;
 }
 
 /** Employee: "A few questions before you go" -- autosaves, Submit, then read-only. */
@@ -73,7 +74,7 @@ export function MyExitInterview({ firstTime, onSkip }: { firstTime?: boolean; on
       <Alert severity="info" icon={<Emoji name="lock" size={16} />} sx={{ mb: 1.5 }}>{t("exitq.private")}</Alert>
       {v.can_edit ? (
         <>
-          {v.deadline && <Typography sx={{ fontSize: 13, color: f.muted, mb: 1.5 }}>{t("exitq.until", { date: new Date(`${v.deadline}T00:00:00`).toLocaleDateString() })}</Typography>}
+          {v.deadline && <Typography sx={{ fontSize: 13, color: f.muted, mb: 1.5 }}>{t("exitq.until", { date: formatDate(`${v.deadline}T00:00:00`) })}</Typography>}
           <ExitInterviewFields questions={v.questions} answers={answers} onChange={change} />
           {error && <Alert severity="error" sx={{ mt: 1.5 }}>{error}</Alert>}
           <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 2 }}>
@@ -114,9 +115,9 @@ export function HrExitInterviewCard({ separationId, canEdit, onToast }: { separa
       <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }} flexWrap="wrap" useFlexGap>
         <StatusLine v={v} />
         {v.filled_by === "hr_call" && v.filled_by_hr && (
-          <StatusChip tone="sky" emoji="phone" label={t("exitq.filled_by_hr", { date: new Date(v.filled_by_hr.at).toLocaleDateString() })} />
+          <StatusChip tone="sky" emoji="phone" label={t("exitq.filled_by_hr", { date: formatDate(v.filled_by_hr.at) })} />
         )}
-        {v.reminders.length > 0 && <Typography sx={{ fontSize: 12, color: f.muted }}>{t("exitq.reminded", { n: v.reminders.length, date: new Date(v.reminders[v.reminders.length - 1].at).toLocaleDateString() })}</Typography>}
+        {v.reminders.length > 0 && <Typography sx={{ fontSize: 12, color: f.muted }}>{t("exitq.reminded", { n: v.reminders.length, date: formatDate(v.reminders[v.reminders.length - 1].at) })}</Typography>}
       </Stack>
       <Typography sx={{ fontSize: 13, color: f.muted, mb: 1.5 }}>{t("exitq.hr_hint")}</Typography>
       {v.status === "submitted" ? <ExitInterviewFields questions={v.questions} answers={v.answers} readOnly />

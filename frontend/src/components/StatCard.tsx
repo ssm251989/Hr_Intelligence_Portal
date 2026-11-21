@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { useT } from "../i18n";
 import { Area, AreaChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
 import type { SvgIconComponent } from "@mui/icons-material";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
@@ -157,6 +158,7 @@ function TrendIndicator({
   // alongside the sparkline in the non-compact card.
   dense?: boolean;
 }) {
+  const t = useT();
   const { pct_change: pctChange, compare_month: compareMonth, compare_value: compareValue } = trend;
   const compareLabel = formatMonthKey(compareMonth);
 
@@ -189,7 +191,8 @@ function TrendIndicator({
   // equal -- see the displayPct == null branch above for "nothing to compare at all").
   // Still worth a neutral marker, not just bare "0%", so every card reads consistently.
   const ArrowIcon = direction === "down" ? ArrowDownwardIcon : direction === "up" ? ArrowUpwardIcon : TrendingFlatIcon;
-  const pctLabel = isZeroBaselineGrowth ? "+100%" : `${Math.abs(displayPct)}%`;
+  // J4 (Part 27): growth from 0 has no percentage -- "New this month" instead of "+100%"
+  const pctLabel = isZeroBaselineGrowth ? t("stats.new_this_month") : `${Math.abs(displayPct)}%`;
 
   if (dense) {
     return (

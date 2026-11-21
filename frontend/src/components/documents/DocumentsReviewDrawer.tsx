@@ -42,6 +42,28 @@ export default function DocumentsReviewDrawer({ applicationId, name, onClose, on
     setBusy(true); setMsg(null);
     try { await fn(); setMsg({ ok: true, text: ok }); load(); onChanged(); } catch (e) { setMsg({ ok: false, text: extractErrorMessage(e, t("docrev.err")) }); } finally { setBusy(false); }
   };
+  // B1 (Part 27): "sent" only when the email really went; otherwise say so and offer the link to share
+  const send = async (fn: () => Promise<{ sent: boolean; link?: string | null }>, ok: string) => {
+    setBusy(true); setMsg(null);
+    try {
+      const r = await fn();
+      setMsg(r.sent ? { ok: true, text: ok } : { ok: false, text: t("docrev.not_sent") });
+      load(); onChanged();
+    } catch (e) { setMsg({ ok: false, text: extractErrorMessage(e, t("docrev.err")) }); } finally { setBusy(false); }
+  };
+  const [copied, setCopied] = useState(false);
+  const copyLink = async () => {
+    try {
+      const r = await http.get<{ link: string }>(`/api/v1/ui/documents/${applicationId}/link`);
+      await navigator.clipboard.writeText(r.link);
+      setCopied(true); setTimeout(() => setCopied(false), 2500);
+    } catch (e) { setMsg({ ok: false, text: extractErrorMessage(e, t("docrev.err")) }); }
+  };
+  const uploadFor = (code: string, file: File | undefined) => {
+    if (!file || !applicationId) return;
+    const form = new FormData(); form.append("file", file);
+    void act(() => http.postForm(`/api/v1/ui/documents/${applicationId}/files/${code}`, form), t("docrev.uploaded_for"));
+  };
   const colour = (lvl: string | null) => (lvl === "red" ? "error" : lvl === "amber" ? "warning" : lvl === "green" ? "success" : "default") as "error" | "warning" | "success" | "default";
   const openFile = async (id: string, fileName: string | null) => {
     const blob = await http.fetchBlob(`/api/v1/ui/documents/file/${id}`);
@@ -73,6 +95,12 @@ export default function DocumentsReviewDrawer({ applicationId, name, onClose, on
                 inputProps={{ "aria-label": t("docrev.ask_again_one", { doc: it.label }) }} />
               <Typography sx={{ fontWeight: 700, flex: 1 }}>{it.label}{!it.required && ` (${t("docform.optional")})`}</Typography>
               {it.approved ? <Chip size="small" color="success" label={t("docrev.approved")} /> : !it.received ? <Chip size="small" label={t("docrev.not_received")} /> : null}
+              {!it.approved && (
+                <Button size="small" component="label" disabled={busy}>
+                  {t("docrev.upload_for")}
+                  <input hidden type="file" onChange={(e) => { uploadFor(it.code, e.target.files?.[0]); e.target.value = ""; }} />
+                </Button>
+              )}
             </Stack>
             {it.files.map((file) => (
               <Stack key={file.id} spacing={0.5} sx={{ pl: 5, mt: 0.75, opacity: file.hr_status === "reupload" ? 0.55 : 1 }}>
@@ -94,11 +122,16 @@ export default function DocumentsReviewDrawer({ applicationId, name, onClose, on
             <Button variant="contained" color="success" disabled={busy || !data.all_received}
               onClick={() => act(() => http.post(`/api/v1/ui/documents/${applicationId}/approve`, {}), t("docrev.done_all"))}>{t("docrev.approve_all")}</Button>
             <TextField size="small" label={t("docrev.note")} value={note} onChange={(e) => setNote(e.target.value)} multiline minRows={2} />
-            <Button variant="outlined" disabled={busy || again.size === 0}
-              onClick={() => act(() => http.post(`/api/v1/ui/documents/${applicationId}/reupload`, { codes: Array.from(again), note: note || null }), t("docrev.done_again"))}>
-              {t("docrev.ask_again", { count: again.size })}
-            </Button>
-            <Button disabled={busy} onClick={() => act(() => http.post(`/api/v1/ui/documents/${applicationId}/send-form`, {}), t("docrev.done_send"))}>{t("docrev.send_link")}</Button>
+            {again.size > 0 ? (
+              <Button variant="outlined" disabled={busy}
+                onClick={() => send(() => http.post<{ sent: boolean; link?: string | null }>(`/api/v1/ui/documents/${applicationId}/reupload`, { codes: Array.from(again), note: note || null }), t("docrev.done_again"))}>
+                {t("docrev.ask_again", { count: again.size })}
+              </Button>
+            ) : <Typography variant="caption" sx={{ color: f.muted }}>{t("docrev.ask_again_hint")}</Typography>}
+            <Stack direction="row" spacing={1}>
+              <Button disabled={busy} onClick={() => send(() => http.post<{ sent: boolean; link?: string | null }>(`/api/v1/ui/documents/${applicationId}/send-form`, {}), t("docrev.done_send"))}>{t("docrev.send_link")}</Button>
+              <Button disabled={busy} onClick={copyLink}>{copied ? t("docrev.copied") : t("docrev.copy_link")}</Button>
+            </Stack>
           </Stack>
         )}
         <Button onClick={onClose}>{t("salaryx.close")}</Button>

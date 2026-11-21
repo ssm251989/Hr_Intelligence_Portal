@@ -166,7 +166,7 @@ export const hi: Bundle = {
   "status.interview_selected": "इंटरव्यू पास",
   "status.interview_rejected": "पास नहीं हुए",
   "status.salary_ok": "वेतन सीमा में",
-  "status.salary_above_band": "वेतन सीमा से ऊपर",
+  "status.salary_above_band": "वेतन मंज़ूरी चाहिए",
   "status.salary_approved": "वेतन मंज़ूर",
   "status.salary_rejected": "वेतन अस्वीकार",
   "status.bgv_requested": "जाँच का अनुरोध",

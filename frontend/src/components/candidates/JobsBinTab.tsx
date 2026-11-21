@@ -19,6 +19,7 @@ import { jobsExtraApi, type BinnedJob } from "../../api/jobsExtra";
 import { useT } from "../../i18n";
 import ConfirmDialog from "../ConfirmDialog";
 import { EmptyState } from "../../ui-kit";
+import { formatDate } from "../../utils/datetime";
 
 export default function JobsBinTab({ onNotice }: { onNotice: (m: string) => void }) {
   const t = useT();
@@ -75,13 +76,13 @@ export default function JobsBinTab({ onNotice }: { onNotice: (m: string) => void
                       <Typography variant="body2" fontWeight={700}>{j.title}</Typography>
                       {j.department && <Typography variant="caption" color="text.secondary">{j.department}</Typography>}
                     </TableCell>
-                    <TableCell>{new Date(j.closed_on).toLocaleDateString()}</TableCell>
+                    <TableCell>{formatDate(j.closed_on)}</TableCell>
                     <TableCell>
-                      {new Date(j.moved_on).toLocaleDateString()}
+                      {formatDate(j.moved_on)}
                       {j.by && <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>{j.by}</Typography>}
                     </TableCell>
                     <TableCell>{j.applications}</TableCell>
-                    <TableCell>{new Date(j.deleted_permanently_on).toLocaleDateString()}</TableCell>
+                    <TableCell>{formatDate(j.deleted_permanently_on)}</TableCell>
                     <TableCell align="right">
                       <Stack direction="row" spacing={1} justifyContent="flex-end">
                         <Button size="small" variant="outlined" disabled={busy === j.id}

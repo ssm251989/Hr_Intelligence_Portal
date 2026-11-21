@@ -1,18 +1,19 @@
 """Wakes the automatic agents: events (from the audit log, every minute) and sweeps (schedule).
 
-Events: the audit log is the outbox. Every run reads the application events written since the
+Events: the audit log is the outbox. Every run reads the application and job events written since the
 saved cursor (minus a small safety lag, so a transaction still committing is not skipped) and
 calls the agent that owns each event. The cursor is saved per company in autopilot_state.
 """
 
+from app.recruitment.scoring import score_round
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
 from sqlalchemy.orm import Session
 
-from app.hr_agents.autopilot import briefing, hiring, leftovers, people, watchdog
-from app.hr_agents.autopilot.core import Run, record, setting, state_get, state_set
+from app.hr_agents.autopilot import briefing, hiring, interviews, jobs, leftovers, people, watchdog
+from app.hr_agents.autopilot.core import Run, enabled, record, setting, state_get, state_set
 
 log = logging.getLogger(__name__)
 
@@ -50,6 +51,24 @@ TRACK: dict[str, tuple[str, str, str]] = {
     "welcome_sent": ("onboarding", "done", "Welcome portal sent to {candidate}"),
     "onboarding_completed": ("onboarding", "done", "{candidate} joined"),
 }
+# Part 30.1: job events (entity_type job_role) -- the Job agent wakes on a new job; the job's own steps go on its timeline.
+JOB_EVENTS: dict[str, tuple[Callable, ...]] = {
+    "job_role_created": (jobs.job_created,),  # waits for HR to stop editing; prepare_quiet_jobs makes the card
+    "job_role_deleted": (),  # nothing to do for the job itself; reading it makes this run close its Publish card
+}
+JOB_TRACK: dict[str, tuple[str, str, str]] = {
+    "job_platforms_published": ("job", "done", "{job} was published ({where})"),
+    "job_closed": ("job", "done", "{job} was closed"),
+    "job_reopened": ("job", "done", "{job} was reopened"),
+    "job_reopened_position_open_again": ("job", "done", "{job} was reopened: a position is open again"),
+    "job_auto_closed_deadline_passed": ("job", "done", "{job} closed by itself: the application deadline passed"),
+    "job_auto_closed_positions_filled": ("job", "done", "{job} closed by itself: every position is filled"),
+}
+WHERE = {"career_portal": "careers page", "linkedin": "LinkedIn", "naukri": "Naukri"}
+# Part 30.3: interview events (entity_type interview) -- each scorecard may complete the round -> the outcome card
+INTERVIEW_EVENTS: dict[str, tuple[Callable, ...]] = {
+    "interview_feedback_recorded": (interviews.on_feedback,),
+}
 CURSOR = "events.cursor"
 LAG = timedelta(seconds=20)
 BATCH = 500
@@ -69,9 +88,14 @@ def run_events(db: Session, tenant, now: Optional[datetime] = None) -> dict:
     if not saved:  # first run: start from now, never replay history
         state_set(db, tenant, CURSOR, {"at": upto.isoformat()})
         return {"started": upto.isoformat()}
+    from sqlalchemy import and_, or_
+
     since = datetime.fromisoformat(saved["at"])
-    rows = (db.query(AuditLog).filter(AuditLog.tenant_id == tenant.tenant_id, AuditLog.entity_type == "application",
-                                      AuditLog.action.in_(tuple(EVENTS) + tuple(TRACK)), AuditLog.created_at > since, AuditLog.created_at <= upto)
+    rows = (db.query(AuditLog).filter(AuditLog.tenant_id == tenant.tenant_id,
+                                      or_(and_(AuditLog.entity_type == "application", AuditLog.action.in_(tuple(EVENTS) + tuple(TRACK))),
+                                          and_(AuditLog.entity_type == "job_role", AuditLog.action.in_(tuple(JOB_EVENTS) + tuple(JOB_TRACK))),
+                                          and_(AuditLog.entity_type == "interview", AuditLog.action.in_(tuple(INTERVIEW_EVENTS)))),
+                                      AuditLog.created_at > since, AuditLog.created_at <= upto)
             .order_by(AuditLog.created_at).limit(BATCH).all())
     handled, seen = 0, set()
     last = since
@@ -79,8 +103,14 @@ def run_events(db: Session, tenant, now: Optional[datetime] = None) -> dict:
         last = row.created_at
         key = (row.action, row.entity_id)
         if key in seen or row.entity_id is None:
-            continue  # one application + event once per run
+            continue  # one application/job + event once per run
         seen.add(key)
+        if row.entity_type == "job_role":
+            handled += _job_event(db, tenant, row)
+            continue
+        if row.entity_type == "interview":
+            handled += _interview_event(db, tenant, row)
+            continue
         app = db.get(Application, row.entity_id)
         if app is None:
             continue
@@ -100,6 +130,8 @@ def run_events(db: Session, tenant, now: Optional[datetime] = None) -> dict:
             db.refresh(app)
     state_set(db, tenant, CURSOR, {"at": (last if len(rows) == BATCH else upto).isoformat()})
     out = {"events": len(rows), "handled": handled}
+    if enabled(db, tenant, "job", "jobs"):
+        out["job_cards"] = jobs.prepare_quiet_jobs(db, tenant, Run("event", "job_role_created"), now=now)
     if rows:  # a step just happened: close the cards it made pointless (the hourly run catches everything else)
         out["cards_closed"] = _close_leftovers(db, tenant, Run("event", "cards"))
     return out
@@ -125,14 +157,63 @@ def _track(db: Session, tenant, application, row) -> int:
     n = names(db, application)
     job = f" ({n['job']})" if n["job"] else ""
     record(db, tenant, Run("event", row.action), agent=agent, action=f"step_{row.action}"[:60], outcome=outcome, entity_type="application",
-           entity_id=application.id, summary=f"{text.format(candidate=n['candidate'], score=round(float(application.composite_score or 0)))}{job}.",
+           entity_id=application.id, summary=f"{text.format(candidate=n['candidate'], score=score_round(application.composite_score))}{job}.",
            details={"by": row.actor, "audit_id": str(row.id)})
+    return 1
+
+
+def _job_event(db: Session, tenant, row) -> int:
+    """A job_role audit row: put the step on the job's timeline (JOB_TRACK) and/or wake the Job agent (JOB_EVENTS)."""
+    from app.models.job_role import JobRole
+
+    job = db.get(JobRole, row.entity_id)
+    if job is None or job.tenant_id != tenant.tenant_id:
+        return 0  # deleted since (the leftover check closes its card)
+    handled = 0
+    if row.action in JOB_TRACK:
+        handled += _track_job(db, tenant, job, row)
+    for handler in JOB_EVENTS.get(row.action, ()):
+        try:
+            if handler(db, tenant, job, Run("event", row.action)) is not None:
+                handled += 1
+        except Exception as exc:  # noqa: BLE001 -- one event never blocks the queue
+            log.exception("autopilot handler %s failed", handler.__name__)
+            db.rollback()
+            record(db, tenant, Run("event", row.action), agent=_agent_of(handler), action=handler.__name__, outcome="failed",
+                   entity_type="job_role", entity_id=job.id, summary=f"{handler.__name__} failed: {type(exc).__name__}: {exc}"[:500])
+    return handled
+
+
+def _interview_event(db: Session, tenant, row) -> int:
+    handled = 0
+    for handler in INTERVIEW_EVENTS.get(row.action, ()):
+        try:
+            if handler(db, tenant, row, Run("event", row.action)) is not None:
+                handled += 1
+        except Exception as exc:  # noqa: BLE001 -- one event never blocks the queue
+            log.exception("autopilot handler %s failed", handler.__name__)
+            db.rollback()
+            record(db, tenant, Run("event", row.action), agent="scheduling", action=handler.__name__, outcome="failed", entity_type="interview",
+                   entity_id=row.entity_id, summary=f"{handler.__name__} failed: {type(exc).__name__}: {exc}"[:500])
+    return handled
+
+
+def _track_job(db: Session, tenant, job, row) -> int:
+    from app.hr_agents.autopilot.core import enabled
+
+    agent, outcome, text = JOB_TRACK[row.action]
+    if not enabled(db, tenant, agent):
+        return 0
+    details = row.details or {}
+    where = ", ".join(label for key, label in WHERE.items() if (details.get("published_platforms") or {}).get(key)) or "no channel chosen"
+    record(db, tenant, Run("event", row.action), agent=agent, action=f"step_{row.action}"[:60], outcome=outcome, entity_type="job_role",
+           entity_id=job.id, summary=text.format(job=job.title or "The job", where=where) + ".", details={"by": row.actor, "audit_id": str(row.id)})
     return 1
 
 
 def _agent_of(handler) -> str:
     return {"screen": "screening", "shortlist_rule": "screening", "salary": "salary", "documents": "documents", "bgv_assign": "bgv",
-            "bgv_report": "bgv", "offer": "offer", "scheduling": "scheduling"}.get(handler.__name__, "watchdog")
+            "bgv_report": "bgv", "offer": "offer", "scheduling": "scheduling", "prepare_publish": "job", "job_created": "job"}.get(handler.__name__, "watchdog")
 
 
 def run_hourly(db: Session, tenant, trigger: str = "schedule") -> dict:

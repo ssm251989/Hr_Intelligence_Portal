@@ -13,6 +13,7 @@ threshold (Part 2 Settings Registry (recruitment.screening.*)). Used by:
     parsed before being linked to a job (manual upload, local import).
 """
 
+from app.recruitment.scoring import score_round
 import re
 from dataclasses import dataclass
 from typing import Optional
@@ -83,7 +84,7 @@ def describe_screening_audit_entry(action: str, details: dict) -> str:
     # confused for each other before (see frontend/src/utils/screeningScore.ts).
     composite = details.get("composite_score")
     # Part 17.4: one score everywhere -- "Match score"
-    score_text = f" (Match score {round(composite)}/100)" if composite is not None else ""
+    score_text = f" (Match score {score_round(composite)}/100)" if composite is not None else ""
     if details.get("knocked_out"):
         reasons = [k.get("reason") or k.get("label") for k in details.get("knockouts") or [] if not k.get("passed")]
         score_text += f" -- knocked out: {'; '.join(r for r in reasons if r)}" if reasons else " -- knocked out"
@@ -137,7 +138,7 @@ def describe_interview_readiness(action: str, details: dict) -> str:
         return f"AI screening failed: {details.get('error') or 'unknown error'}"
 
     composite = details.get("composite_score")
-    score_text = f" (Match score {round(composite)})" if composite is not None else ""
+    score_text = f" (Match score {score_round(composite)})" if composite is not None else ""
     if details.get("knocked_out"):
         return f"Knocked out{score_text}"
     # Part 17.4: "above_threshold" (older entries: "interview_ready") against the one

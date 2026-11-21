@@ -99,7 +99,9 @@ export default function HomePage() {
   const f = theme.palette.fresh;
   const wide = useMediaQuery(theme.breakpoints.up("md"));
   const { can, data: me } = useMeBootstrap();
-  const modules = me?.modules ? [...me.modules, ...(me.company_modules?.active ?? [])] : undefined;
+  // H1 (Part 27): one stable list -- a new array every render changed `load` and re-ran the effect (~12 calls/s)
+  const moduleKey = me?.modules ? [...me.modules, ...(me.company_modules?.active ?? [])].join(",") : null;
+  const modules = useMemo(() => (moduleKey === null ? undefined : moduleKey.split(",").filter(Boolean)), [moduleKey]);
   const [home, setHome] = useState<MyHome | null>(null);
   const [preview, setPreview] = useState<HomeKind | null>(null);
   const [layout, setLayout] = useState<LayoutItem[]>([]);

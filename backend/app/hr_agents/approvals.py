@@ -181,3 +181,100 @@ def _apply_resignation(db, tenant, suggestion, payload, reviewer):
         raise AgentError("last_working_day must be a date (YYYY-MM-DD); waived_days / buyout_days whole numbers") from exc
     row = _service_call(db, lambda: separations.approve_lwd(db, tenant, s, lwd=lwd, actor=reviewer, waived_days=waived, buyout_days=buyout))
     payload["result"] = {"status": row.status, "approved_lwd": row.approved_lwd.isoformat() if row.approved_lwd else None}
+
+
+# ---------------------------------------------------------------- Part 30.1: Job agent
+
+
+@applier("agent_job_publish")
+def _apply_job_publish(db, tenant, suggestion, payload, reviewer):
+    """Saves the JD (HR may have changed it in the card) and publishes with the Jobs screen's own Publish."""
+    from uuid import UUID
+
+    from fastapi import HTTPException
+
+    from app.agents.service import AgentError
+    from app.hr_agents.autopilot.jobs import missing_fields
+    from app.jobs import router as jobs_router
+    from app.models.job_role import JobRole
+    from app.models.user import User
+    from app.schemas.job import PublishPlatformsRequest
+
+    job = db.get(JobRole, UUID(str(payload.get("job_id") or suggestion.entity_id)))
+    if job is None or job.tenant_id != tenant.tenant_id or job.deleted_at is not None:
+        raise AgentError("the job no longer exists")
+    user = db.query(User).filter(User.email == reviewer).first()
+    if user is None:
+        raise PermissionError("reviewer not found")
+    if user.role not in ("recruiter", "admin"):  # the Jobs screen's Publish is for recruiters and admins
+        raise PermissionError("only a recruiter or an admin can publish a job")
+    jd = (payload.get("jd_text") or "").strip() or (job.jd_text or "").strip()
+    if not jd:
+        raise AgentError("Write the JD first - in the card (Change and approve) or on the job - then approve again.")
+    missing = [m for m in missing_fields(db, tenant, job) if m["blocking"]]
+    if missing:
+        raise AgentError("Fill before publishing: " + ", ".join(m["label"].lower() for m in missing) + ". Add it on the job, then approve again.")
+    chosen = payload.get("platforms") or {}
+    kept = job.publish_settings or {}  # the wizard's own choices (new-application emails, deadline) stay as they were
+    request = PublishPlatformsRequest(career_portal=bool(chosen.get("career_portal")), linkedin=bool(chosen.get("linkedin")),
+                                      naukri=bool(chosen.get("naukri")), email_notifications=bool(kept.get("email_notifications")),
+                                      application_deadline=kept.get("application_deadline") or None)
+    job.jd_text = jd
+    try:
+        jobs_router.publish_job_platforms(job.id, request, db, user)
+    except HTTPException as exc:
+        db.rollback()
+        raise AgentError(str(exc.detail)) from exc
+    payload["result"] = {"status": job.status}
+
+
+# ---------------------------------------------------------------- Part 30.3: interview result
+
+
+@applier("agent_interview_outcome")
+def _apply_interview_outcome(db, tenant, suggestion, payload, reviewer):
+    """The hiring manager's pick, through the feedback screen's own decision code (record_decision: the result, then the
+    salary form / band check or the documents form). "Another round": nothing decided, the recruiter books the next one."""
+    from uuid import UUID
+
+    from fastapi import HTTPException
+
+    from app.agents.service import AgentError
+    from app.audit.service import log_action
+    from app.hr_agents.autopilot.core import job_people, names, notify
+    from app.models.interview import Interview
+    from app.models.job_role import JobRole
+    from app.scheduling.router import check_decision, record_decision
+
+    app = _app(db, tenant, payload)
+    choice = payload.get("decision")
+    if choice not in ("move_forward", "reject", "another_round"):
+        raise AgentError("Pick the result first (Change and approve): Move forward, Reject or Another round - the interviewers did not agree.")
+    reason = (payload.get("reason") or "").strip()
+    if choice == "reject" and not reason:
+        raise AgentError("To reject, give the reason (Change and approve).")
+    if app.status != "interview_scheduled":
+        raise AgentError("This interview already has a result, or the candidate has moved on.")
+    ids = [UUID(i) for i in payload.get("interview_ids") or []]
+    rounds = [iv for iv in (db.get(Interview, i) for i in ids) if iv is not None and iv.application_id == app.id]
+    if not rounds:
+        raise AgentError("The interviews on this card no longer exist.")
+    n = names(db, app)
+    if choice == "another_round":
+        log_action(db, "application", app.id, "interview_another_round", reviewer[:50], {"interview_ids": [str(i.id) for i in rounds], "reason": reason})
+        job = db.get(JobRole, app.job_role_id)
+        notify(db, tenant, job_people(db, tenant, job), f"Another interview round for {n['candidate']} ({n['job']}) - please book it",
+               f"/candidates/{app.id}", entity_type="application", entity_id=app.id)
+        payload["result"] = {"status": app.status, "next": "another round"}
+        return
+    last = rounds[-1]
+    decision = "selected" if choice == "move_forward" else "rejected"
+    try:
+        # the scorecards carry the ratings; the hiring manager's reason is the note a rejection needs
+        check_decision(last, decision, {"comments": last.comments or reason})
+    except HTTPException as exc:
+        raise AgentError(str(exc.detail)) from exc
+    record_decision(db, last, app, decision, actor=reviewer)
+    log_action(db, "interview", last.id, "interview_feedback_recorded", reviewer[:50],
+               {"decision": decision, "by_card": str(suggestion.id), "hiring_manager_reason": reason or None})
+    payload["result"] = {"status": app.status}

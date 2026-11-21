@@ -212,6 +212,37 @@ def list_all_interviews(
     return InterviewsListPage(total=total, page=page, page_size=page_size, items=items)
 
 
+def check_decision(interview, decision: str, updates: dict) -> None:
+    """P3 (Part 27): a result only once the interview time has passed, and a rejection only with the ratings and
+    a note on why (the scorecard, never a bare one-click "Rejected")."""
+    from datetime import datetime, timezone
+
+    when = interview.scheduled_at
+    if when is not None:
+        when = when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+        if when > datetime.now(timezone.utc):
+            raise HTTPException(status_code=400, detail="The result can be recorded once the interview has taken place.")
+    if decision == "rejected":
+        overall = updates.get("overall_rating", interview.overall_rating)
+        note = (updates.get("comments", interview.comments) or "").strip()
+        if overall is None or not note:
+            raise HTTPException(status_code=400, detail="To reject, give the overall rating and a note on why.")
+
+
+def check_booking(scheduled_at, meeting_link) -> None:
+    """I1 / I2 (Part 27): an interview is never booked in the past, and a meeting link is a real web address."""
+    from datetime import datetime, timedelta, timezone
+    from urllib.parse import urlparse
+
+    when = scheduled_at if scheduled_at.tzinfo else scheduled_at.replace(tzinfo=timezone.utc)
+    if when < datetime.now(timezone.utc) - timedelta(minutes=5):
+        raise HTTPException(status_code=400, detail="That time is in the past. Pick a date and time from now on.")
+    if meeting_link:
+        u = urlparse(meeting_link.strip())
+        if u.scheme not in ("http", "https") or not u.netloc or " " in meeting_link.strip():
+            raise HTTPException(status_code=400, detail="The meeting link must be a web address starting with https:// (or http://).")
+
+
 @router.post("/applications/{application_id}/interviews", response_model=InterviewRead, status_code=201)
 def schedule_interview(
     application_id: uuid.UUID,
@@ -226,6 +257,7 @@ def schedule_interview(
             status_code=400,
             detail="This candidate isn't at the Shortlisted step, so an interview can't be booked yet.",
         )
+    check_booking(payload.scheduled_at, payload.meeting_link)
     interviewer = None
     if payload.interviewer_id:
         interviewer = db.get(User, payload.interviewer_id)
@@ -287,6 +319,42 @@ def get_interview(
     return _get_interview_or_404(db, interview_id)
 
 
+def record_decision(db: Session, interview: Interview, application: Application, decision: str, *, actor: str) -> None:
+    """The interview result and what follows it (salary form / band check, or the documents form without the Salary
+    module). Part 30.3: the feedback endpoint and the hiring manager's "Interview result" card both run this.
+    Callers check first: application.status == "interview_scheduled" and check_decision()."""
+    interview.decision = decision
+    application.status = "interview_selected" if decision == "selected" else "interview_rejected"
+    db.commit()
+    db.refresh(interview)
+    from app.platform import module_status
+    from app.platform.tenancy.context import require_current_tenant as _tenant_now
+
+    _active = module_status.active_modules(db, _tenant_now()) if application.status == "interview_selected" else set()
+    if application.status == "interview_selected" and "salary" not in _active and "bgv" in _active:
+        try:  # Part 19.1: no Salary module -> the documents form goes out straight after the interview
+            from app.recruitment.joining_docs import after_salary_approved
+
+            after_salary_approved(db, _tenant_now(), application, actor=actor)
+        except Exception:  # noqa: BLE001
+            pass
+    if application.status == "interview_selected" and "salary" in _active:  # Part 17.8: salary stage -> decide from the band check
+        try:
+            from app.platform.tenancy.context import require_current_tenant
+            from app.recruitment.salary_auto import check
+
+            check(db, require_current_tenant(), application, actor="system")
+        except Exception:  # noqa: BLE001
+            pass
+        try:  # Part 18.12: salary form when the interview is cleared (Settings > Hiring > Salary)
+            from app.platform.tenancy.context import require_current_tenant
+            from app.recruitment.salary_auto import after_interview
+
+            after_interview(db, require_current_tenant(), application, interview, actor=actor)
+        except Exception:  # noqa: BLE001 -- the decision is saved even when the email fails
+            pass
+
+
 @router.patch("/interviews/{interview_id}/feedback", response_model=InterviewRead)
 def submit_interview_feedback(
     interview_id: uuid.UUID,
@@ -309,42 +377,16 @@ def submit_interview_feedback(
                 status_code=400,
                 detail="This interview already has a result, or the candidate has moved on.",
             )
+        check_decision(interview, decision, updates)
 
     for field, value in updates.items():
         setattr(interview, field, value)
 
     if decision is not None:
-        interview.decision = decision
-        application.status = "interview_selected" if decision == "selected" else "interview_rejected"
-
-    db.commit()
-    db.refresh(interview)
-    from app.platform import module_status
-    from app.platform.tenancy.context import require_current_tenant as _tenant_now
-
-    _active = module_status.active_modules(db, _tenant_now()) if application.status == "interview_selected" else set()
-    if application.status == "interview_selected" and "salary" not in _active and "bgv" in _active:
-        try:  # Part 19.1: no Salary module -> the documents form goes out straight after the interview
-            from app.recruitment.joining_docs import after_salary_approved
-
-            after_salary_approved(db, _tenant_now(), application, actor=current_user.email)
-        except Exception:  # noqa: BLE001
-            pass
-    if application.status == "interview_selected" and "salary" in _active:  # Part 17.8: salary stage -> decide from the band check
-        try:
-            from app.platform.tenancy.context import require_current_tenant
-            from app.recruitment.salary_auto import check
-
-            check(db, require_current_tenant(), application, actor="system")
-        except Exception:  # noqa: BLE001
-            pass
-        try:  # Part 18.12: salary form when the interview is cleared (Settings > Hiring > Salary)
-            from app.platform.tenancy.context import require_current_tenant
-            from app.recruitment.salary_auto import after_interview
-
-            after_interview(db, require_current_tenant(), application, interview, actor=current_user.email)
-        except Exception:  # noqa: BLE001 -- the decision is saved even when the email fails
-            pass
+        record_decision(db, interview, application, decision, actor=current_user.email)
+    else:
+        db.commit()
+        db.refresh(interview)
 
     log_action(
         db,

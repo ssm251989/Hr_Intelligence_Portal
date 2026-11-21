@@ -43,7 +43,8 @@ _INBOX_ROLES = ("recruiter", "hiring_manager", "admin")
 def _feedback_submitted(interview: Interview) -> bool:
     return any(
         v is not None and v != ""
-        for v in (interview.technical_rating, interview.communication_rating, interview.overall_rating, interview.comments, interview.decision)
+        for v in (interview.technical_rating, interview.communication_rating, interview.overall_rating, interview.comments, interview.decision,
+                  getattr(interview, "recommendation", None))
     )
 
 
@@ -181,6 +182,7 @@ class PanelEntry(BaseModel):
     overall_rating: Optional[int] = None
     comments: Optional[str] = None
     decision: Optional[str] = None
+    recommendation: Optional[str] = None  # Part 30.3
     submitted: bool = False
 
 
@@ -223,6 +225,7 @@ def panel_feedback(
             overall_rating=i.overall_rating,
             comments=i.comments,
             decision=i.decision,
+            recommendation=i.recommendation,
             submitted=_feedback_submitted(i),
         )
         for i in sorted(siblings, key=lambda x: x.scheduled_at or datetime.min.replace(tzinfo=timezone.utc))

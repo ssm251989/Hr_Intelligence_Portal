@@ -20,6 +20,7 @@ import { useTheme } from "@mui/material/styles";
 
 import { superAdminApi, type ConsoleTenantRow } from "../api/client";
 import ActivationConsole from "../components/modules/ActivationConsole";
+import SignupsConsole from "../components/modules/SignupsConsole";
 import { t as tr, useT } from "../i18n";
 import { EmptyState, Emoji, FriendlyError, humanise, Illustration, InfoTip, PageHeader, StatusChip } from "../ui-kit";
 
@@ -51,6 +52,14 @@ function StatusOf({ status }: { status: string }) {
 }
 
 export default function SuperAdminPage() {
+  // X3 (Part 27): the console stays reachable on the company address (owner) but is kept out of search engines
+  useEffect(() => {
+    const meta = document.createElement("meta");
+    meta.name = "robots";
+    meta.content = "noindex, nofollow";
+    document.head.appendChild(meta);
+    return () => { meta.remove(); };
+  }, []);
   const t = useT();
   const f = useTheme().palette.fresh;
   const [token, setToken] = useState<string | null>(readToken);
@@ -221,6 +230,7 @@ export default function SuperAdminPage() {
       )}
 
       {token && loaded && <ActivationConsole token={token} />}
+      {token && loaded && <SignupsConsole token={token} />}
 
       <Dialog open={Boolean(suspending)} onClose={() => setSuspending(null)} maxWidth="sm" fullWidth aria-labelledby="suspend-title">
         <DialogTitle id="suspend-title">{t("console.suspend_title", { name: suspending?.name ?? "" })}</DialogTitle>

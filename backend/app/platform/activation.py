@@ -624,6 +624,12 @@ def activate_with_code(db, tenant, code: str, user) -> dict:
     finally:
         cp_db.close()
     log_action(db, "company_module", None, "modules_activated", actor[:50], {"modules": keys, "request": number})
+    try:  # Part 28.5: a company that signed up online gets its "ready" email now
+        from app.platform import signup
+
+        signup.welcome(tenant.tenant_id)
+    except Exception:  # noqa: BLE001 -- the activation itself is done
+        logging.getLogger(__name__).exception("sign-up welcome failed")
     return {"activated": keys, "names": _names(keys)}
 
 

@@ -46,13 +46,15 @@ def _mailbox(db: Session, tenant) -> dict:
 
 def _ai(db: Session, tenant) -> dict:
     from app.models.intelligence import AiDecisionLog
-    from app.platform.connectors.router import ConnectorRouter
     from app.platform.settings.resolver import SettingContext, SettingsService
+
+    from app.platform.ai.status import ai_status
 
     if not SettingsService(db).get("ai.enabled", SettingContext(tenant=tenant)):
         return _item("ai", "amber", "AI is switched off for your company.")
-    if ConnectorRouter(db).try_resolve("llm.scoring") is None and ConnectorRouter(db).try_resolve("llm.judgment") is None:
-        return _item("ai", "red", "AI is on but no AI connection is set up.")
+    ok, why = ai_status(db, tenant)  # H3 (Part 27): one answer with Settings > Integrations > AI
+    if not ok:
+        return _item("ai", "red", why or "AI is on but no AI connection is set up.")
     since = datetime.now(timezone.utc) - timedelta(hours=24)
     rows = dict(db.query(AiDecisionLog.status, func.count(AiDecisionLog.id)).filter(AiDecisionLog.tenant_id == tenant.tenant_id,
                                                                                  AiDecisionLog.created_at >= since).group_by(AiDecisionLog.status).all())
@@ -90,7 +92,7 @@ JOB_LABELS = {
     "joining_reminders": "Joining reminders", "workflow_timers": "Approval timers", "report_schedules": "Scheduled reports",
     "onboarding_chase": "Onboarding document chase", "recycle_bin_purge": "Recycle bin clean-up", "closed_jobs_cleanup": "Closed jobs to Recycle bin", "hiring_data_after_exit": "Hiring data to Recycle bin after exit", "bgv_vendor_reminders": "BGV vendor reminders", "document_expiry": "Document expiry",
     "privacy_overdue": "Privacy requests due", "ticket_escalations": "Helpdesk escalations", "review_reminders": "Review reminders",
-    "autopilot_events": "HR agents - events (every minute)", "autopilot_hourly": "HR agents - watchdog and hourly checks",
+    "public_webhooks": "Webhooks to your own systems (every minute)",     "autopilot_events": "HR agents - events (every minute)", "autopilot_hourly": "HR agents - watchdog and hourly checks",
     "autopilot_daily": "HR agents - morning briefing",
 }
 

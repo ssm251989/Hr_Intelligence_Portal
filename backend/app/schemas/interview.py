@@ -17,6 +17,9 @@ class InterviewFeedbackUpdate(BaseModel):
     overall_rating: Optional[int] = None
     comments: Optional[str] = None
     decision: Optional[Literal["selected", "rejected"]] = None
+    # Part 30.3: the interviewer's own view; with several interviewers the hiring manager decides on the
+    # "Interview result" card the Scheduling agent prepares
+    recommendation: Optional[Literal["selected", "rejected", "another_round"]] = None
 
 
 class InterviewRead(BaseModel):
@@ -34,6 +37,7 @@ class InterviewRead(BaseModel):
     overall_rating: Optional[int] = None
     comments: Optional[str] = None
     decision: Optional[str] = None
+    recommendation: Optional[str] = None  # Part 30.3
     scheduling_method: str
     created_at: datetime
 

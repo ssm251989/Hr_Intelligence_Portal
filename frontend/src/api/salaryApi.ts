@@ -21,6 +21,7 @@ export interface SalaryCheck {
   over_pct?: number | null;
   suggestion?: number | null;
   missing?: string[];
+  reasons?: { code: string; [k: string]: unknown }[];
   checked_at?: string;
 }
 

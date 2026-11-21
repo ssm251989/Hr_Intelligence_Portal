@@ -26,6 +26,7 @@ const CandidatesImportPage = lazy(() => import("./pages/CandidatesImportPage"));
 const RecycleBinPage = lazy(() => import("./pages/candidates/RecycleBinPage"));
 const GenAIUsagePage = lazy(() => import("./pages/genai/GenAIUsagePage")); // Part 18.24
 const AutopilotPage = lazy(() => import("./pages/autopilot/AutopilotPage")); // Part 26 HR Autopilot
+const DevelopersPage = lazy(() => import("./pages/developers/DevelopersPage")); // Part 30.2 public APIs + webhooks
 const CandidatesListPage = lazy(() => import("./pages/CandidatesListPage"));
 const HrInboxListPage = lazy(() => import("./pages/HrInboxListPage"));
 const InterviewListPage = lazy(() => import("./pages/InterviewListPage"));
@@ -36,7 +37,10 @@ const OffersPage = lazy(() => import("./pages/OffersPage"));
 const OverviewPage = lazy(() => import("./pages/OverviewPage"));
 const HomePage = lazy(() => import("./pages/HomePage"));
 const MyInterviewsPage = lazy(() => import("./pages/MyInterviewsPage"));
-const RegisterPage = lazy(() => import("./pages/RegisterPage"));
+const CareersPrivacyPage = lazy(() => import("./careers/CareersPrivacyPage"));
+const NotFoundPage = lazy(() => import("./pages/NotFoundPage"));
+const SignupPage = lazy(() => import("./pages/SignupPage"));
+const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
 const ReportsPage = lazy(() => import("./pages/ReportsPage"));
 const SalaryPage = lazy(() => import("./pages/SalaryPage"));
 const ScreeningDashboardPage = lazy(() => import("./pages/ScreeningDashboardPage"));
@@ -107,7 +111,10 @@ export default function App() {
               <Suspense fallback={<PageLoading />}>
               <Routes>
               <Route path="/login" element={<LoginPage />} />
-              <Route path="/register" element={<RegisterPage />} />
+              <Route path="/register" element={<Navigate to="/login" replace />} />
+              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+              <Route path="/signup" element={<SignupPage />} />
+              <Route path="/signup/confirm" element={<SignupPage />} />
               <Route path="/set-password" element={<SetPasswordPage />} />
               <Route path="/superadmin" element={<SuperAdminPage />} />
               <Route path="/welcome" element={<WelcomePortalPage />} />
@@ -123,6 +130,7 @@ export default function App() {
                 <Route path=":id" element={<CareersJobDetailPage />} />
                 <Route path=":id/apply" element={<CareersApplyPage />} />
                 <Route path=":id/thank-you" element={<CareersThankYouPage />} />
+                <Route path="privacy" element={<CareersPrivacyPage />} />
               </Route>
               <Route
                 element={
@@ -144,6 +152,7 @@ export default function App() {
                 <Route path="/candidates/recycle-bin" element={<RecycleBinPage />} />
                 <Route path="/genai-usage" element={<GenAIUsagePage />} />
                 <Route path="/autopilot" element={<AutopilotPage />} />
+                <Route path="/developers" element={<DevelopersPage />} />
                 <Route path="/candidates/:applicationId" element={<CandidateDetailPage />} />
                 <Route path="/screening" element={<Navigate to="/screening/dashboard" replace />} />
                 <Route path="/screening/dashboard" element={<ScreeningDashboardPage />} />
@@ -190,6 +199,7 @@ export default function App() {
                 <Route path="/settings" element={<SettingsHomePage />} />
                 <Route path="/settings/:category" element={<SettingsCategoryPage />} />
                 <Route path="/settings/:category/:page" element={<SettingsCategoryPage />} />
+                <Route path="*" element={<NotFoundPage />} />
               </Route>
               </Routes>
               </Suspense>

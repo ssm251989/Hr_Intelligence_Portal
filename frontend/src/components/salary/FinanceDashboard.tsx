@@ -23,6 +23,7 @@ import { budgetsApi, type FinanceData } from "../../api/budgetsApi";
 import { useT } from "../../i18n";
 import { StatTile } from "../../ui-kit";
 import { lakh } from "./SalaryPanel";
+import { formatDate } from "../../utils/datetime";
 
 // Part 18.15: Salary > Finance -- per department allocated / reserved / committed / remaining
 // (coloured bars), month trend, top roles by cost, alerts, Excel export.
@@ -155,7 +156,7 @@ export default function FinanceDashboard() {
               <Stack key={i} direction="row" spacing={1.5} alignItems="baseline">
                 <Typography sx={{ fontWeight: 800, color: "success.main", minWidth: 90 }}>+{lakh(h.amount)}</Typography>
                 <Typography variant="body2" sx={{ flex: 1 }}>{t("budget21.released")} - {h.reason ?? h.job_title} <Typography component="span" variant="caption" color="text.secondary">({h.department})</Typography></Typography>
-                <Typography variant="caption" color="text.secondary">{new Date(h.on).toLocaleDateString()}</Typography>
+                <Typography variant="caption" color="text.secondary">{formatDate(h.on)}</Typography>
               </Stack>
             ))}
           </Stack>

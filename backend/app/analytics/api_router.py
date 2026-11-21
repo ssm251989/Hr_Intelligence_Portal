@@ -20,6 +20,7 @@ from app.core.database import get_db
 from app.models.intelligence import AgentSuggestion, AiDecisionLog, AiUsageBudget, Dashboard, KnowledgeDocument, PromptEvalFixture, ReportSchedule, SavedReport
 from app.models.user import User
 from app.platform.ai import governance, prompt_eval
+from app.auth.dependencies import get_current_user
 from app.platform.iam.authz import has_permission, require
 from app.platform.iam.org_scope import employee_ids_in_scope
 from app.platform.iam.roles import role_names_for
@@ -353,9 +354,17 @@ class SuggestionDecision(BaseModel):
 
 
 @router.post("/agents/suggestions/{suggestion_id}/decision")
-def agent_decide(suggestion_id: UUID, payload: SuggestionDecision, db: Session = Depends(get_db), current_user: User = Depends(require("agents.suggestion.view"))):
+def agent_decide(suggestion_id: UUID, payload: SuggestionDecision, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Part 30.3 proof: a card's named reviewer (the job's hiring manager on "Interview result") may decide it without the
+    # general agents.suggestion.view; everyone else still needs it. decide() then applies the card's own reviewer rules.
+    from app.platform.iam.authz import has_permission
+
+    tenant = require_current_tenant()
+    suggestion = _get(db, AgentSuggestion, suggestion_id, "Suggestion")
+    if suggestion.reviewer_user_id != current_user.id and not has_permission(db, tenant, current_user, "agents.suggestion.view"):
+        raise HTTPException(status_code=403, detail="Missing permission: agents.suggestion.view")
     try:
-        row = agents.decide(db, require_current_tenant(), _get(db, AgentSuggestion, suggestion_id, "Suggestion"), user=current_user, **payload.model_dump())
+        row = agents.decide(db, tenant, suggestion, user=current_user, **payload.model_dump())
     except agents.AgentError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except PermissionError as exc:

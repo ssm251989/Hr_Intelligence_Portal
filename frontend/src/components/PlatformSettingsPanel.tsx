@@ -24,6 +24,7 @@ import { extractErrorMessage, platformSettingsApi, type SettingDefinition, type 
 import { t as tr } from "../i18n";
 import { useBootstrap } from "../bootstrap/BootstrapContext";
 import { useMeBootstrap } from "../bootstrap/MeBootstrapContext";
+import { formatDateTime } from "../utils/datetime";
 
 // Part 2 (docs/HRMS_COMPLETE_SPEC.txt section 4's UI) + section L/A1-A3 (client decision,
 // added to the spec after this Part started -- WINS over Part 14's own UI wording):
@@ -194,7 +195,7 @@ function SettingRow({
                 >
                   <ListItemText
                     primary={valueToEditString(entry.value)}
-                    secondary={`v${entry.version} -- ${entry.updated_by ?? "unknown"} -- ${entry.updated_at ? new Date(entry.updated_at).toLocaleString() : ""}${i === 0 ? " (current)" : ""}`}
+                    secondary={`v${entry.version} -- ${entry.updated_by ?? "unknown"} -- ${entry.updated_at ? formatDateTime(entry.updated_at) : ""}${i === 0 ? " (current)" : ""}`}
                   />
                 </ListItem>
               ))}

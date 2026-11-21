@@ -343,7 +343,7 @@ def register_all() -> None:
     # "Agent prepares, HR approves": the decision rules below stay off, so every decision about a person is an
     # approval card the agent prepared; a company can still turn a rule on (Agents page).
     register(SettingDef("autopilot.enabled", "bool", True, module="ai", group=G))
-    for agent in ("watchdog", "screening", "sourcing", "scheduling", "salary", "documents", "bgv", "offer", "onboarding", "exit", "briefing"):
+    for agent in ("watchdog", "job", "screening", "sourcing", "scheduling", "salary", "documents", "bgv", "offer", "onboarding", "exit", "briefing"):
         register(SettingDef(f"autopilot.{agent}.enabled", "bool", True, module="ai", group=G))
     register(SettingDef("autopilot.watchdog.stale_hours", "int", 48, module="ai", group=G, json_schema={"type": "integer", "minimum": 4, "maximum": 720}))
     register(SettingDef("autopilot.sourcing.min_strong", "int", 3, module="ai", group=G, json_schema={"type": "integer", "minimum": 0, "maximum": 50}))
@@ -371,10 +371,15 @@ def register_all() -> None:
     register(SettingDef("platform.modules.offered", "json", ["onboarding", "assets", "separation", "analytics", "copilot"],
                         module="platform", group="Modules"))
     register(SettingDef("platform.setup.skipped", "json", [], module="platform", group="Setup"))
+    # Part 30.2: public APIs -- calls per minute per API key (429 + Retry-After above it)
+    register(SettingDef("platform.api.rate_limit_per_minute", "int", 60, module="platform", group="Developers",
+                        json_schema={"type": "integer", "minimum": 1, "maximum": 6000}))
     # fix 2026-10-05: configuration-health checks an admin chose to ignore (item keys; undo in Settings > Data > System health)
     register(SettingDef("platform.health.ignored", "json", [], module="platform", group="Setup"))
     register(SettingDef("platform.setup.config_pack", "json", {}, module="platform", group="Setup"))  # which pack was applied (Setup Wizard)
     register(SettingDef("ux.reduce_motion", "bool", False, module="ux", group="Accessibility", scopes_allowed=("user", "tenant")))
+    # Part 27 (cross-cutting): "Don't show tours again" -- once per person, kept on the server (not per page / browser)
+    register(SettingDef("ux.tours_off", "bool", False, module="ux", group="Accessibility", scopes_allowed=("user", "tenant")))
     register(SettingDef("ux.page_size", "int", 25, module="ux", group="Lists", scopes_allowed=("user", "tenant")))
     # Part 15.5: home widget layouts -- the user's own ({kind: [{i,x,y,w,h}]}) and the company
     # default per home (hr / manager / employee), set by an admin.

@@ -36,7 +36,7 @@ STAGES = {
 }
 
 
-def _query(db, tenant, stage, *, search, job_role_id, status, department):
+def _query(db, tenant, stage, *, search, job_role_id, status, department, application_id=None):
     statuses = STAGES[stage][1]
     q = (db.query(Application, Candidate, JobRole)
          .join(Candidate, Candidate.id == Application.candidate_id)
@@ -47,6 +47,8 @@ def _query(db, tenant, stage, *, search, job_role_id, status, department):
         q = q.filter(Application.status.in_(wanted or ["-"]))
     if job_role_id:
         q = q.filter(Application.job_role_id == job_role_id)
+    if application_id:  # P2 (Part 27): open one candidate's drawer from a link
+        q = q.filter(Application.id == application_id)
     if department:
         q = q.filter(JobRole.department == department)
     if search:
@@ -146,11 +148,13 @@ SORTS = {"hike": cast(Application.salary_check["hike_pct"].astext, Float),
 def stage_table(stage: str, page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=500),
                 sort: Literal["name", "job", "days", "status", "updated", "hike"] = "days", dir: Literal["asc", "desc"] = "desc",
                 search: Optional[str] = None, job_role_id: Optional[uuid.UUID] = None, status: Optional[str] = None, department: Optional[str] = None,
-                db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+                application_id: Optional[uuid.UUID] = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     tenant = _guard(db, current_user, stage)
-    q = _query(db, tenant, stage, search=search, job_role_id=job_role_id, status=status, department=department)
+    q = _query(db, tenant, stage, search=search, job_role_id=job_role_id, status=status, department=department, application_id=application_id)
     total = q.count()
     counts = dict(q.with_entities(Application.status, func.count(Application.id)).group_by(Application.status).all())
+    # S1 (Part 27): "Above range" = really above the band; "needs salary approval" also covers hike / unknown current / budget
+    above_range = (q.filter(Application.salary_check["reasons"].contains([{"code": "above_band"}])).count() if stage == "salary" else None)
     col = SORTS[sort]
     # "days in stage" desc = waiting longest first = oldest update first
     order = col.asc() if (sort == "days") == (dir == "desc") else col.desc()
@@ -161,7 +165,7 @@ def stage_table(stage: str, page: int = Query(1, ge=1), page_size: int = Query(5
     extras = _extras(db, stage, [a.id for a, _c, _j in rows])
     departments = sorted({d for (d,) in db.query(JobRole.department).filter(JobRole.tenant_id == tenant.tenant_id, JobRole.department.isnot(None)).distinct()})
     return {"stage": stage, "statuses": list(STAGES[stage][1]), "total": total, "page": page, "page_size": page_size, "status_counts": counts,
-            "departments": departments, "items": [_row(a, c, j, extras.get(a.id, {}), now) for a, c, j in rows]}
+            "above_range": above_range, "departments": departments, "items": [_row(a, c, j, extras.get(a.id, {}), now) for a, c, j in rows]}
 
 
 @router.get("/{stage}/export")

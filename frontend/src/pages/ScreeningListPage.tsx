@@ -43,6 +43,7 @@ import { useT } from "../i18n";
 import { EmptyState, FriendlyError, PageHeader, StatusChip } from "../ui-kit";
 import { downloadCsv } from "../utils/csv";
 import { matchScoreDisplay } from "../utils/screeningScore";
+import { formatDate } from "../utils/datetime";
 
 const SEARCH_DEBOUNCE_MS = 300;
 const COLUMN_KEYS = ["source", "job", "applied", "skill", "score", "pass", "ranking", "status", "remarks"] as const;
@@ -485,7 +486,7 @@ export default function ScreeningListPage() {
                       <TableCell><CandidateCell row={row} /></TableCell>
                       {show("source") && <TableCell><SourceIcon source={row.source} /></TableCell>}
                       {show("job") && <TableCell>{row.job_title}</TableCell>}
-                      {show("applied") && <TableCell>{new Date(row.applied_on).toLocaleDateString()}</TableCell>}
+                      {show("applied") && <TableCell>{formatDate(row.applied_on)}</TableCell>}
                       {show("skill") && (
                         <TableCell>{row.skill_match_pct != null ? t("screening.pct", { n: Math.round(row.skill_match_pct) }) : "—"}</TableCell>
                       )}

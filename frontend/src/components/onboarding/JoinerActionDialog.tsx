@@ -15,6 +15,7 @@ import Typography from "@mui/material/Typography";
 import { onboardingExtraApi, type ExitKind, type JoinerReasons } from "../../api/onboardingExtra";
 import { useT } from "../../i18n";
 import { explainError } from "../../ui-kit";
+import { formatDate } from "../../utils/datetime";
 
 // Fix 2026-10-05: one dialog for every joiner action. The server decides what is allowed (joiner_stage.py);
 // this only asks for what each action needs. Exits (absconded / resigned / terminated) get a second
@@ -113,7 +114,7 @@ export default function JoinerActionDialog({ kind, caseId, name, lastSeen, onClo
       <DialogContent>
         {confirming ? (
           <Stack spacing={1.5} sx={{ pt: 1 }}>
-            <Alert severity="warning">{t("joinerx.confirm.body", { name, date: new Date(`${day}T00:00:00`).toLocaleDateString() })}</Alert>
+            <Alert severity="warning">{t("joinerx.confirm.body", { name, date: formatDate(`${day}T00:00:00`) })}</Alert>
             <Typography>{t("joinerx.confirm.what")}</Typography>
             <Typography component="ul" sx={{ m: 0, pl: 3 }}>
               <li>{t("joinerx.confirm.exit_case")}</li>

@@ -13,6 +13,7 @@ import { useT } from "../../i18n";
 import { Emoji, StatusChip, UserAvatar } from "../../ui-kit";
 import { useFresh } from "../candidates/stages";
 import type { JoinerDialogKind } from "./JoinerActionDialog";
+import { formatDate } from "../../utils/datetime";
 
 // Fix 2026-10-05: people who joined in the last 90 days (and anyone marked "not reporting").
 // After joining, the offer can't be withdrawn -- only Not reporting / Absconded / Resigned / Terminated.
@@ -51,11 +52,11 @@ export default function RecentJoiners({ rows, canAct, onAct }: { rows: RecentJoi
                   {r.candidate_id ? <RouterLink to={`/candidates/list?q=${encodeURIComponent(r.name)}`} style={{ color: "inherit" }}>{r.name}</RouterLink> : r.name}
                 </Typography>
                 <Typography sx={{ fontSize: 13, color: f.muted }}>
-                  {[r.role, t("joinerx.recent.since", { days: r.days_since_joining, date: new Date(`${r.joining_date}T00:00:00`).toLocaleDateString() })].filter(Boolean).join(" · ")}
+                  {[r.role, t("joinerx.recent.since", { days: r.days_since_joining, date: formatDate(`${r.joining_date}T00:00:00`) })].filter(Boolean).join(" · ")}
                 </Typography>
                 {flow && (
                   <Typography sx={{ fontSize: 13, color: f.coral, fontWeight: 700 }}>
-                    {t("joinerx.recent.not_reporting", { date: new Date(`${flow.last_seen}T00:00:00`).toLocaleDateString() })}
+                    {t("joinerx.recent.not_reporting", { date: formatDate(`${flow.last_seen}T00:00:00`) })}
                     {flow.notices.length ? ` · ${flow.notices.map((n) => (NOTICE[n] ? t(NOTICE[n].labelKey) : n)).join(", ")}` : ` · ${t("joinerx.recent.no_notice_yet")}`}
                   </Typography>
                 )}

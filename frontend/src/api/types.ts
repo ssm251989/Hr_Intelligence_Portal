@@ -550,6 +550,7 @@ export interface InterviewFeedbackUpdate {
   overall_rating?: number | null;
   comments?: string | null;
   decision?: "selected" | "rejected" | null;
+  recommendation?: "selected" | "rejected" | "another_round" | null; // Part 30.3: the interviewer's own view
 }
 
 export interface InterviewRead {
@@ -565,6 +566,7 @@ export interface InterviewRead {
   overall_rating?: number | null;
   comments?: string | null;
   decision?: string | null;
+  recommendation?: string | null;
   scheduling_method: SchedulingMethod;
   created_at: string;
 }

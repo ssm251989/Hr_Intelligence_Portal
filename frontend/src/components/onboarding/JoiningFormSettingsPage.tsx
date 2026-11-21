@@ -18,6 +18,7 @@ import { useTheme } from "@mui/material/styles";
 import { extractErrorMessage } from "../../api/client";
 import { onboardingExtraApi, type FieldShow, type JoiningFormSettings } from "../../api/onboardingExtra";
 import { useI18n } from "../../i18n";
+import { formatDateTime } from "../../utils/datetime";
 
 // Change 2026-10-05: Settings > Onboarding & employees > Joining details form. Every field of the
 // joiner's "Your joining details" form (and every document on "Upload documents") is Required,
@@ -178,7 +179,7 @@ export default function JoiningFormSettingsPage() {
               <Stack key={h.version} direction="row" spacing={1} alignItems="flex-start" sx={{ p: 1, borderBottom: `1px solid ${f.line}` }}>
                 <Box sx={{ flex: 1 }}>
                   <Typography sx={{ fontSize: 14, fontWeight: 600 }}>
-                    {t("jform.history_row", { v: h.version, who: h.updated_by ?? "—", when: h.updated_at ? new Date(h.updated_at).toLocaleString() : "—" })}
+                    {t("jform.history_row", { v: h.version, who: h.updated_by ?? "—", when: h.updated_at ? formatDateTime(h.updated_at) : "—" })}
                   </Typography>
                   <Typography sx={{ fontSize: 12, color: f.muted }}>{h.changes.length ? h.changes.join(" · ") : t("jform.history_nochange")}</Typography>
                 </Box>

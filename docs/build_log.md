@@ -2951,4 +2951,47 @@ NEXT: owner decisions - Autopilot on or off for this company (on now, the Part 2
   Full suite before (HEAD 1363659 + the mail guard): 165 failed / 1425 passed (the run showed 171: 6 test_interview_negotiation failures were only because the untracked Sample/Interview_Tracker file is missing in a worktree; with it copied that file fails the same 44 as before). After: the run was stopped by the system for low memory at 22% - up to there the identical pass/fail pattern (13 failures, the 7 new tests pass); related files 88 passed. A complete after-run is still owed.
   Decisions: "closed" (not "rejected") so the record shows no person decided; a closed card's step is judged only by the person's current state or the step's own done event after the card; the check admin (proof.admin.p23) made the salary change, so the history names it.
 
-NEXT: complete full-suite run when memory allows; then 29.4 in the owner's order - Job agent on the timeline first.
+- part-29.4 suite: full run after the changes, in 10 batches of test files (one pytest process each, memory): 165 failed / 1432 passed - the same 165 tests as the baseline (none new, none fixed); +7 passed = the new closed-card tests. Mail went to mailpit only.
+
+NEXT: 29.4 in the owner's order - Job agent on the timeline first.
+
+- part-27.0: one-step install checked (docs/ui/FIXES_27.md 27.0): test_install 20 passed; throwaway install t27_main / t27_cp / t27_app with a password containing @ # and spaces -> all 9 steps done, re-run all done (admin not re-created), then dropped; --check refuses a line-break password (exit 2); .env.example already right; the colleague's grant_app.py / dev_make_admin.py are not in the repo.
+- part-27.1: the 5 High issues (docs/ui/FIXES_27.md 27.1): H1 Home loop (memoised modules, vitest 1 call vs 56), S1 "Needs salary approval" + real reasons + "Above range" counts only above_band, P1 next step after salary approval, I1 no past interviews (400 + picker min), B1 sent messages follow the real send + Copy link always + HR upload for the candidate. Also P2, I2, S3, B3 (same code). 9 new backend tests + 1 frontend test; affected files only baseline failures.
+  Decisions: the "no current salary" safety stays (a person approves) - only its label and reasons changed; the HR upload uses the candidate's save_upload (same checks) with HR's name as actor; the link is returned even when emailed so HR can always copy it.
+- part-27.2: the Medium issues (docs/ui/FIXES_27.md 27.2): L1 forgot password (30-min single-use link, same answer for unknown emails, rate limit, audit, "ask your HR admin" without a mailbox) + company password rules incl. history now enforced; L2 lockout says the minutes; L3 public sign-up closed (404, route -> login); H3 one "is AI configured" for health + settings; J1 no abandoned draft jobs; C1 duplicate apply blocked (409); A1 one rounding; A2 name opens profile + sticky actions; P3 no one-click interview result (scorecard, after the interview, note to reject); S2 salary drawer refreshes; R1/X1 module-off pages show "not switched on"; ST1 settings pages follow the module switch; X2 Page not found. 13 new backend tests.
+  Decisions: sign-up closed with a config flag (PUBLIC_SIGNUP_ENABLED, off) so the existing tests' helpers keep working; the reset email needs an active outgoing mailbox (otherwise the admin reset with Copy link, which already existed); password rules apply to every link-set password, history counts the current password.
+- part-27.3: the Low polish pass (docs/ui/FIXES_27.md 27.3): H2 H4 J2 J3 J4 C2 C3 A3 P4 P5 I3 S3 B2 M1 ST2 ST3 X3 + server-side "don't show tours again" + one date formatter (39 files). New tests: P4 factor cap, M1 (3), ST2 dynamic keys (frontend + backend), tours preference.
+  Decisions: privacy link shows the company's published notice or plain words, never an invented notice; plain date displays moved to the shared formatter mechanically, option-carrying calls left alone; X3 keeps /superadmin on the company address (owner) with noindex + robots.txt + a login rate limit.
+- part-27.4: retest (docs/ui/FIXES_27.md 27.4): 64 routes x desktop/phone - first pass found an employee-profile crash (pre-existing, Part 20.4) and module pages calling their API before bootstrap; fixed (shell waits for bootstrap, roles guard); second pass 0 console errors / 0 4xx-5xx (except /careers/None: no published job in this DB), Home 2 calls / 10 s. Second half of the flow end to end through the API with Mailpit (HR upload for the candidate -> BGV -> joining dates -> in-app signing -> joined -> employee). E2E test data from the report is not in this database; proof data removed (scan clean).
+
+NEXT: Part 28 (installer: lock file, build the zip; the clean-VM test needs a machine other than this PC), then Part 30.
+
+- part-28.5: cloud sign-up, platform side ("Create your company" on the platform domain): public /signup page + confirm link (30 min, single use), captcha + rate limit, company password rules, reserved slugs; job provisions the tenant (dedicated DB) + first admin with the chosen password + activation request + tenant domain; progress page; super-admin "Sign-ups" list. Control-plane migration e28a5b6c7d8f (one head). Checks after a clean `npm ci`: tsc 0, i18n 0 missing, vitest 40 passed / 3 failed - the same 3 fail with the 28.5 changes stashed (theme-from-bootstrap x2 and UploadCandidateDialog: their vi.mock of ../api/client lacks apiUrl / ApiError; not caused by 28.5). Backend: compileall OK, test_signup 7 passed, test_install 26 passed. Hosting (AWS) waits for AWS access.
+- 28.3 (clean-PC test of the zip) skipped for now: the owner will test the zip on a clean Windows PC / VM.
+
+NEXT: build the zip alone (no Mailpit / proof API / dev server), report size + SHA-256; then Part 30 backend.
+
+- part-30 (2026-11-20/21): Job agent, public APIs + webhooks, interview-outcome card (docs/ui/PART30.md, docs/PUBLIC_API.md,
+  docs/HR_AUTOPILOT.md "Part 30", docs/FUTURE_WORK.md). Migrations f30a1b2c3d4e (job agent), f30b2a4c6e81 (api_keys,
+  api_usage, webhook_subscriptions, webhook_deliveries + platform.api_keys.manage on Super Admin), f30c3d5e7a92
+  (interviews.recommendation); one head; applied with `hrctl.migrate --all-tenants --control-plane`.
+  - 30.1 Job agent: JD draft + "Publish <title>" card, applier through the Jobs screen's Publish, job timeline + Journey,
+    card auto-close. Proof (real model, Mailpit) found 4 bugs, fixed with tests (drafting while HR was still in the
+    wizard -> 10-minute quiet wait; hiring manager unsettable; stale missing list; delete closed the card only hourly).
+    Owner decisions 2026-11-21: keep the 10-minute wait; Hiring manager field in the job wizard / edit, missing one blocks
+    again (job owner = fallback).
+  - 30.2 Public API (/api/public/v1, own OpenAPI, keys shown once, scopes, per-key limit, idempotency, metering, error
+    shape, module gate) + webhooks (HMAC, retries 1/5/30 min, 2 h, 12 h, Resend) + Settings > Developers page. Proof on a
+    shared-RLS sandbox company `ctd-techs-sandbox` (test keys) found 3 bugs, fixed with tests. Test keys cover
+    screening, jobs, applications, cards; interview scheduling = live keys only (one-row settings tables, future work).
+  - 30.3 Interview-outcome card: recommendation per scorecard; round complete -> AI summary (no names sent) -> card for the
+    job's hiring manager (fallback job owner), majority default / tie none, reject needs a reason, another round, same
+    decision code as the feedback screen (record_decision), closed when decided on the screen, watchdog for missing
+    scorecards. Proof with a booked interview (covers the skipped 29.3d) found 2 bugs, fixed with tests (the named
+    hiring manager could not decide through the endpoint; interviewers unnamed on the card); salary form in Mailpit.
+  - 30.4 Full suite in 12 batches of 10 files: 165 failed / 1553 passed - the same 165 tests as the 29.4 baseline by
+    name (none new, none fixed). Frontend: i18n 0 missing, tsc + vite build OK; vitest 40 passed / 3 failed (the 3 old
+    ones). Screenshots with a real person's card were redacted before pushing (the repository is public).
+
+NEXT: colleague reviews the pull request kishore/part-30 -> KG-Development (not merged by me). Future work (AWS phase):
+docs/FUTURE_WORK.md.

@@ -1,0 +1,110 @@
+PART 30 - JOB AGENT, PUBLIC APIs + WEBHOOKS, INTERVIEW-OUTCOME CARD (2026-11-19)
+Owner order (Part 29.4 decision): 30.1 Job agent -> 30.2 Public APIs + webhooks (Phase 1, due 25 Dec)
+-> 30.3 Interview-outcome card. Repo: hr-portal-work. Base: KG-Development at ab9e8e0 or later.
+
+STANDING RULES
+- First message: `git status`, `git log --oneline -5`, `git pull`; quote the output.
+- Work on a branch: `git checkout -b kishore/part-30` from the latest KG-Development (docs/WORKING_TOGETHER.md).
+- Agents call the SAME service functions the screens use. Decisions about a person = a card (rules stay off).
+  Agents never decide an interview, never publish a job and never approve a resignation on their own.
+- ALL mail goes to Mailpit (tests, scripts, proofs). Never send a real email. Start Mailpit before any proof.
+- Keep ai.provider = anthropic. Personal identifiers stay masked before text goes to the AI (existing masking).
+- Memory is short on this PC: run tests per file or in batches of ~10 files, never the whole suite in one process.
+- Commit per block "part-30.N: <block>". Push only when the user says so.
+
+30.1 JOB AGENT (steps 1-2 of the flow)
+  Today the JD is drafted only when someone asks the HR assistant. Make it automatic.
+  a. New agent "job": add to AUTOPILOT_AGENTS (app/models/autopilot.py), setting autopilot.job.enabled
+     (default true), help text, EN/HI/TA names; migration widening agent_activity_agent_check (one alembic head).
+  b. Event job_role_created (entity_type job_role; extend runner.run_events, which today reads only
+     application events): if the job has no jd_text and AI is allowed for the company -> draft the JD with the
+     existing recruiter_jd_draft logic (feature agents.job, metered) -> card "agent_job_publish" titled
+     "Publish <title>" with the draft JD, the career-portal / job-board choices the job already has, and any
+     missing fields (salary band, hiring manager, interviewer pool) listed as "fill before publishing".
+     The job HAS a JD -> the card only checks the missing fields.
+  c. Applier agent_job_publish: HR can edit the JD in the card ("Change and approve"); approving saves jd_text
+     and publishes through the SAME function the Jobs screen's Publish uses (app/jobs/router.py, career portal
+     + platforms). A missing required field -> AgentError with a plain message, card stays pending.
+  d. TRACK the existing job events on the timeline (job_platforms_published, job_closed, job_reopened,
+     job_auto_closed_*) under agent "job"; the HR agents page Journey gets a job view (/journey/job/{id}).
+  e. Card auto-close (Part 29.4 "closed" status): the job got published or deleted by hand -> closed with reason.
+  f. Tests (tests/test_job_agent.py): draft + card on event, no AI -> card without draft, approve publishes via
+     the screen function, edited JD is saved, missing band refuses, closed when published by hand, agent off.
+  g. Proof (Mailpit, real model): new job on the screen -> within 2 min "Publish <title>" card with a JD ->
+     edit one line -> approve -> job on the careers page. Screenshots in docs/ui/PART30.md.
+  STATUS 2026-11-20: a-f done (migration f30a1b2c3d4e = the one head; tests/test_job_agent.py 14 passed, 5 repeats).
+     Related files run one by one: no new failures (the failing tests in test_intelligence, test_settings_resolver,
+     test_experience, test_public, test_recruitment, test_reports fail by the same names on the code before 30.1).
+     Frontend build ok; vitest = the 3 old failures only. The frontend has no /jobs/<id> page, so the card links
+     to /jobs. g (proof with the real model) still to do.
+
+30.2 PUBLIC APIs + WEBHOOKS (Phase 1 of the blueprint: "first sellable APIs", due 25 Dec)
+  Clients call the agents from their own systems. Same code, same rules, same cards.
+  a. API keys: table api_keys (tenant, name, prefix shown, SHA-256 hash of the secret only, scopes, created_by,
+     last_used_at, expires_at, revoked_at, mode live|test). Secret shown ONCE at creation ("hra_live_..." /
+     "hra_test_..."). Header `Authorization: Bearer <key>`. Keys are per company; a key never sees another
+     company's data (RLS as today). Permission check: settings platform.api_keys.manage (new, admin only).
+  b. Base path /api/public/v1, its own OpenAPI at /api/public/v1/docs (only public endpoints, examples,
+     error codes). Errors: JSON {"error":{"code","message"}}; 401 bad key, 403 scope, 404, 409, 422, 429.
+     Rate limit per key (setting, default 60/min) with Retry-After. `Idempotency-Key` on every POST (reuse
+     app/models/idempotency.py). Every call metered (api_usage: key, endpoint, status, ms) for per-call pricing.
+  c. Endpoints (scope in brackets) - each calls the existing service, nothing re-implemented:
+     POST /screenings                  [screening]  resume file or text + JD text or job_id -> score 0-100, reasons,
+                                                    missing skills, knock-outs (the pasted-JD screening service)
+     POST /jd-drafts                   [jobs]       role inputs -> drafted JD (the Job agent's drafting)
+     POST /jobs, GET /jobs, GET /jobs/{id}   [jobs] create = the screen's create (the Job agent then prepares
+                                                    the Publish card); never publishes on its own
+     POST /jobs/{id}/applications      [candidates] resume + contact -> application (same path as careers
+                                                    apply: duplicate block, consent text required, knock-outs)
+     GET  /applications/{id}           [candidates] status, score, next step, waiting card (if any)
+     GET  /applications/{id}/journey   [candidates] the agent timeline
+     POST /applications/{id}/interview-scheduling [scheduling] = [Send interview times now]
+     GET  /cards?status=pending, POST /cards/{id}/decision {approve|edit|reject} [cards] the same cards as
+                                                    "Waiting for you", same appliers, same reviewer rules
+                                                    (a key acts as its creator: their permissions apply)
+  d. Webhooks: table webhook_subscriptions (url https only, events[], signing secret shown once, active) +
+     webhook_deliveries (event, payload, attempts, last status, next_at). Send through the existing
+     generic_webhook provider (HMAC-SHA256 in X-Signature, add X-Event and X-Delivery-Id). Retries 1, 5, 30 min,
+     2 h, 12 h, then failed; "Resend" button. Events, fired from the audit-log runner (the TRACK map):
+     application.created, application.screened, card.created, card.decided, interview.scheduled,
+     interview.decided, salary.decided, bgv.decided, offer.sent, offer.signed, employee.joined,
+     separation.approved, job.published. Payload = ids + status + link; no résumé text, no salary figures
+     unless the subscription has scope "sensitive".
+  e. Test mode: "hra_test_" keys work only on a sandbox company (`python -m hrctl.tenant create --slug sandbox
+     --name "Sandbox"` + base data) with all mail to Mailpit; live keys never touch it.
+  f. Settings > Developers page: create / revoke keys (secret shown once with Copy), scopes, last used, usage
+     chart per day; webhooks: add, events, test ping, delivery log with Resend. EN/HI/TA.
+  g. Tests (tests/test_public_api.py, tests/test_webhooks.py): auth (missing, wrong, revoked, expired, wrong
+     scope), tenant isolation, rate limit 429, idempotent POST, each endpoint against its screen behaviour,
+     card decision via API = same result as the screen, webhook signature verifies, retry schedule, sensitive
+     fields hidden without scope, test key cannot reach live data.
+  h. Proof: create a test key -> curl each endpoint against the sandbox (commands + responses in
+     docs/ui/PART30.md) -> a webhook to a local receiver (`python -m http.server` + a tiny verify script) shows
+     signed events for one candidate from apply to interview.
+  i. docs/PUBLIC_API.md: quick start (key, first call, verify a webhook in Python and Node), every endpoint,
+     events, limits, errors. This is what a client's developer reads.
+
+30.3 INTERVIEW-OUTCOME CARD (step 5)
+  The interviewer still decides (scorecard). The agent prepares the hiring manager's view.
+  a. When every interviewer of the round submitted feedback (or the last one did and the decision is still
+     open), the Scheduling agent summarises all scorecards with the AI (feature agents.interview_summary,
+     masked): strengths, concerns, disagreements between interviewers, a suggested next step - and raises card
+     "agent_interview_outcome" for the job's hiring manager (fallback: job owner) titled
+     "Interview result for <name>: <summary in one line>".
+  b. The card does not decide by itself: approve = apply the decision the hiring manager picks in the card
+     (Move forward / Reject with reason / Another round), through the SAME code as the feedback endpoint
+     (app/scheduling/router.py submit_interview_feedback decision path, incl. the salary / BGV stage that
+     follows). Default option = the interviewers' majority; ties = no default.
+  c. Interviewers disagree or a scorecard is missing for 24 h -> the watchdog nudges the missing interviewer
+     once, then tells the hiring manager.
+  d. Closed automatically when the decision is made on the screen.
+  e. Tests: summary card after the last scorecard, majority default, tie has none, reject needs a reason,
+     approve = same status change as the screen, closed when decided by hand, AI off -> card with scores only.
+  f. Proof with a booked interview (this also covers the 29.3d step that was skipped): book -> two
+     scorecards -> card -> approve "Move forward" -> salary form in Mailpit.
+
+30.4 FINISH
+  - Tests per file / in batches; quote failed / passed against the 165 baseline; compare failing tests by name.
+  - Frontend `npm run build` (i18n + tsc).
+  - Update docs/HR_AUTOPILOT.md (Part 30 section + the step/agent/card table), docs/build_log.md.
+  - Commit each block; open a pull request kishore/part-30 -> KG-Development; tell the user what needs review.

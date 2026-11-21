@@ -226,8 +226,15 @@ def _job(db, app):
     return db.get(JobRole, app.job_role_id)
 
 
+def missing_scorecards(db, tenant, run_, stale, hours, now) -> int:
+    """Part 30.3: a scorecard missing 24 h after the interview -> the interviewer is reminded once, then the hiring manager is told."""
+    from app.hr_agents.autopilot.interviews import missing_scorecards as check
+
+    return check(db, tenant, run_, now)
+
+
 CHECKS = (
-    ("unscreened", unscreened), ("screened_waiting", screened_waiting), ("interview_problems", interview_problems),
+    ("unscreened", unscreened), ("missing_scorecards", missing_scorecards), ("screened_waiting", screened_waiting), ("interview_problems", interview_problems),
     ("salary_waiting", salary_waiting), ("documents_waiting", documents_waiting), ("bgv_overdue", bgv_overdue),
     ("joining_dates_unchosen", joining_dates_unchosen), ("offers_unsigned", offers_unsigned), ("approvals_waiting", approvals_waiting),
 )

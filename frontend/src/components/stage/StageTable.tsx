@@ -39,7 +39,7 @@ export interface StageRow {
   joining_docs?: number; joining_red?: number; joining_amber?: number; joining_pending?: number; // Part 18.17
   budget_configured?: boolean; reasons?: { code: string; [k: string]: unknown }[]; salary_status?: string; counter?: number | null; form_open?: boolean;
 }
-interface StagePage { total: number; statuses: string[]; status_counts: Record<string, number>; departments: string[]; items: StageRow[] }
+interface StagePage { total: number; statuses: string[]; status_counts: Record<string, number>; above_range?: number | null; departments: string[]; items: StageRow[] }
 export type SortKey = "name" | "job" | "days" | "status" | "hike";
 
 // Part 18.11: every candidate at this stage, across ALL jobs, in one table -- job is a
@@ -139,6 +139,7 @@ export default function StageTable({ stage, onOpen, bulkActions, refreshSignal =
             <Chip key={s} clickable label={`${t(`stage.status.${s}`)} · ${data?.status_counts[s] ?? 0}`}
               color={q.status === s ? "primary" : "default"} variant={q.status === s ? "filled" : "outlined"} onClick={() => setQ((v) => ({ ...v, status: v.status === s ? "" : s }))} />
           ))}
+          {data?.above_range != null && <Chip variant="outlined" color="warning" label={t("stage.above_range", { count: data.above_range })} />}
         </Stack>
       </Box>
       {selected.size > 0 && (

@@ -26,7 +26,7 @@ export default function SettingsCategoryPage() {
   const navigate = useNavigate();
   const { category = "", page } = useParams();
   const perms = useSettingsPerms();
-  const cats = useMemo(() => visibleCategories(perms), [perms.admin, perms.mailbox, perms.modules?.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cats = useMemo(() => visibleCategories(perms), [perms.admin, perms.mailbox, perms.modules?.join(","), perms.registryModules?.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
   const cat = cats.find((c) => c.id === category);
   const found = cat?.pages.find((p) => p.id === page);
   // fix 2026-10-05: a link to a page that is hidden (module off / no access) used to jump silently

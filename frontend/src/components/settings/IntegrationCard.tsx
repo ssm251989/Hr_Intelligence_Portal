@@ -10,6 +10,7 @@ import { useTheme } from "@mui/material/styles";
 import type { IntegrationStatus } from "../../api/types";
 import { useT } from "../../i18n";
 import { Emoji, FriendlyError, StatusChip } from "../../ui-kit";
+import { formatDateTime } from "../../utils/datetime";
 
 // One personal account connection (Google Calendar / DocuSign / LinkedIn). Behaviour is
 // unchanged from the old SettingsPage card: status on mount + on window focus (the OAuth
@@ -101,7 +102,7 @@ export default function IntegrationCard({
               {chip}
               {status?.connected && status.connected_at && (
                 <Typography variant="body2" sx={{ color: f.muted }}>
-                  {t("settingsPage.integration.since", { when: new Date(status.connected_at).toLocaleString() })}
+                  {t("settingsPage.integration.since", { when: formatDateTime(status.connected_at) })}
                 </Typography>
               )}
               {status?.expired && (
