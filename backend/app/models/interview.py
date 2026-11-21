@@ -16,6 +16,10 @@ class Interview(Base, TenantOwned):
             "scheduling_method IN ('manual','auto')",
             name="interviews_scheduling_method_check",
         ),
+        CheckConstraint(  # Part 30.3: each interviewer's own recommendation; the decision stays the hiring manager's
+            "recommendation IN ('selected','rejected','another_round')",
+            name="interviews_recommendation_check",
+        ),
     )
 
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
@@ -38,6 +42,7 @@ class Interview(Base, TenantOwned):
     overall_rating = Column(Integer)
     comments = Column(Text)
     decision = Column(String(20))
+    recommendation = Column(String(20))  # Part 30.3: selected | rejected | another_round (the interviewer's view)
     # "manual" = the recruiter-driven POST /applications/{id}/interviews flow
     # (app/scheduling/router.py); "auto" = Part 3's candidate email + secure-link
     # confirmation flow (app/interview_scheduling/confirmation.py confirm_token). Defaults

@@ -21,6 +21,7 @@ import AiQuestionsSection from "./AiQuestionsSection";
 import PanelFeedbackSection from "./PanelFeedbackSection";
 
 type Decision = "" | "selected" | "rejected";
+type Recommendation = "" | "selected" | "rejected" | "another_round"; // Part 30.3
 type Competency = "technical_rating" | "communication_rating" | "overall_rating";
 
 interface ScoreState {
@@ -29,9 +30,10 @@ interface ScoreState {
   overall_rating: number | null;
   comments: string;
   decision: Decision;
+  recommendation: Recommendation;
 }
 
-const EMPTY: ScoreState = { technical_rating: null, communication_rating: null, overall_rating: null, comments: "", decision: "" };
+const EMPTY: ScoreState = { technical_rating: null, communication_rating: null, overall_rating: null, comments: "", decision: "", recommendation: "" };
 
 const COMPETENCIES: { key: Competency; label: string; emoji: string }[] = [
   { key: "technical_rating", label: "technical", emoji: "technologist" },
@@ -82,6 +84,7 @@ export default function ScorecardForm({
           overall_rating: interview.overall_rating ?? null,
           comments: interview.comments ?? "",
           decision: (interview.decision as Decision | null) ?? "",
+          recommendation: (interview.recommendation as Recommendation | null) ?? "",
         });
       })
       .catch(setLoadError)
@@ -100,6 +103,7 @@ export default function ScorecardForm({
       overall_rating: form.overall_rating,
       comments: form.comments || null,
       decision: form.decision || null,
+      recommendation: form.recommendation || null,
     };
     try {
       await schedulingApi.submitFeedback(interviewId, payload);
@@ -183,6 +187,24 @@ export default function ScorecardForm({
         multiline
         minRows={3}
       />
+
+      <Box>
+        <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mb: 1 }}>
+          <Typography sx={{ fontWeight: 700 }} id={`recommendation-${interviewId}`}>{t("interviews.score.recommendation")}</Typography>
+          <InfoTip text={t("interviews.score.recommendation_info")} />
+        </Stack>
+        <ToggleButtonGroup
+          exclusive
+          value={form.recommendation}
+          onChange={(_e, v: Recommendation | null) => setForm({ ...form, recommendation: v ?? "" })}
+          aria-labelledby={`recommendation-${interviewId}`}
+          sx={{ flexWrap: "wrap", gap: 1, "& .MuiToggleButton-root": { borderRadius: "11px !important", border: `1px solid ${f.line} !important`, px: 2, textTransform: "none", fontWeight: 700 } }}
+        >
+          <ToggleButton value="selected">{t("interviews.rec.selected")}</ToggleButton>
+          <ToggleButton value="another_round">{t("interviews.rec.another_round")}</ToggleButton>
+          <ToggleButton value="rejected">{t("interviews.rec.rejected")}</ToggleButton>
+        </ToggleButtonGroup>
+      </Box>
 
       <Box>
         <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mb: 1 }}>

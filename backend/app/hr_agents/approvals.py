@@ -226,3 +226,55 @@ def _apply_job_publish(db, tenant, suggestion, payload, reviewer):
         db.rollback()
         raise AgentError(str(exc.detail)) from exc
     payload["result"] = {"status": job.status}
+
+
+# ---------------------------------------------------------------- Part 30.3: interview result
+
+
+@applier("agent_interview_outcome")
+def _apply_interview_outcome(db, tenant, suggestion, payload, reviewer):
+    """The hiring manager's pick, through the feedback screen's own decision code (record_decision: the result, then the
+    salary form / band check or the documents form). "Another round": nothing decided, the recruiter books the next one."""
+    from uuid import UUID
+
+    from fastapi import HTTPException
+
+    from app.agents.service import AgentError
+    from app.audit.service import log_action
+    from app.hr_agents.autopilot.core import job_people, names, notify
+    from app.models.interview import Interview
+    from app.models.job_role import JobRole
+    from app.scheduling.router import check_decision, record_decision
+
+    app = _app(db, tenant, payload)
+    choice = payload.get("decision")
+    if choice not in ("move_forward", "reject", "another_round"):
+        raise AgentError("Pick the result first (Change and approve): Move forward, Reject or Another round - the interviewers did not agree.")
+    reason = (payload.get("reason") or "").strip()
+    if choice == "reject" and not reason:
+        raise AgentError("To reject, give the reason (Change and approve).")
+    if app.status != "interview_scheduled":
+        raise AgentError("This interview already has a result, or the candidate has moved on.")
+    ids = [UUID(i) for i in payload.get("interview_ids") or []]
+    rounds = [iv for iv in (db.get(Interview, i) for i in ids) if iv is not None and iv.application_id == app.id]
+    if not rounds:
+        raise AgentError("The interviews on this card no longer exist.")
+    n = names(db, app)
+    if choice == "another_round":
+        log_action(db, "application", app.id, "interview_another_round", reviewer[:50], {"interview_ids": [str(i.id) for i in rounds], "reason": reason})
+        job = db.get(JobRole, app.job_role_id)
+        notify(db, tenant, job_people(db, tenant, job), f"Another interview round for {n['candidate']} ({n['job']}) - please book it",
+               f"/candidates/{app.id}", entity_type="application", entity_id=app.id)
+        payload["result"] = {"status": app.status, "next": "another round"}
+        return
+    last = rounds[-1]
+    decision = "selected" if choice == "move_forward" else "rejected"
+    try:
+        # the scorecards carry the ratings; the hiring manager's reason is the note a rejection needs
+        check_decision(last, decision, {"comments": last.comments or reason})
+    except HTTPException as exc:
+        raise AgentError(str(exc.detail)) from exc
+    record_decision(db, last, app, decision, actor=reviewer)
+    log_action(db, "interview", last.id, "interview_feedback_recorded", reviewer[:50],
+               {"decision": decision, "by_card": str(suggestion.id), "hiring_manager_reason": reason or None})
+    payload["result"] = {"status": app.status}

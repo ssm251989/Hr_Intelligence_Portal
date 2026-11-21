@@ -57,6 +57,9 @@ const openPath = (w: Waiting) =>
     : w.entity_type === "preboarding_case" ? "/onboarding" : w.entity_type === "job_role" ? "/jobs" : null;
 // Part 30.1: the Job agent's "Publish <job>" card lists what the job still needs
 type Missing = { field: string; blocking?: boolean };
+// Part 30.3: the Scheduling agent's "Interview result" card
+const RESULTS = ["move_forward", "reject", "another_round"] as const;
+type Summary = { strengths?: string[]; concerns?: string[]; disagreements?: string[]; why?: string } | null;
 const missingOf = (w: Waiting, blocking = true) =>
   ((w.payload.missing ?? []) as Missing[]).filter((m) => (m.blocking !== false) === blocking).map((m) => m.field);
 
@@ -123,7 +126,7 @@ export default function AutopilotPage() {
   const startEdit = (w: Waiting) => {
     setEditing(w);
     setEdits({ last_working_day: String(w.payload.last_working_day ?? ""), waived_days: String(w.payload.waived_days ?? 0),
-      jd_text: String(w.payload.jd_text ?? "") });
+      jd_text: String(w.payload.jd_text ?? ""), decision: String(w.payload.decision ?? ""), reason: String(w.payload.reason ?? "") });
   };
   const showJourney = (entityType: string, id: string) => {
     const job = entityType === "job_role";
@@ -173,6 +176,18 @@ export default function AutopilotPage() {
                     {t("autopilot.fill_before", { fields: missingOf(w).map((m) => t(`autopilot.missing.${m}`)).join(", ") })}
                   </Typography>
                 )}
+                {w.kind === "agent_interview_outcome" && (() => {
+                  const s = w.payload.summary as Summary;
+                  const lines = [...(s?.concerns ?? []).map((c) => `– ${c}`), ...(s?.disagreements ?? []).map((d) => `≠ ${d}`)].slice(0, 3);
+                  return (
+                    <>
+                      {lines.map((l) => <Typography key={l} variant="body2" sx={{ color: f.muted }}>{l}</Typography>)}
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        {w.payload.majority ? t("autopilot.result.majority", { result: t(`autopilot.result.${w.payload.majority}`) }) : t("autopilot.result.tie")}
+                      </Typography>
+                    </>
+                  );
+                })()}
                 {missingOf(w, false).length > 0 && (
                   <Typography variant="body2" sx={{ color: f.muted }}>
                     {t("autopilot.not_set", { fields: missingOf(w, false).map((m) => t(`autopilot.missing.${m}`)).join(", ") })}
@@ -181,8 +196,9 @@ export default function AutopilotPage() {
               </Box>
               <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
                 {path && <Button size="small" component={RouterLink} to={path}>{t("autopilot.open")}</Button>}
-                {(w.kind === "agent_resignation_approve" || w.kind === "agent_job_publish") && <Button size="small" variant="outlined" onClick={() => startEdit(w)}>{t("autopilot.edit_approve")}</Button>}
-                <Button size="small" variant="contained" color="success" onClick={() => decide(w, "approve")}>{t("autopilot.approve")}</Button>
+                {(w.kind === "agent_resignation_approve" || w.kind === "agent_job_publish" || w.kind === "agent_interview_outcome") && <Button size="small" variant="outlined" onClick={() => startEdit(w)}>{t("autopilot.edit_approve")}</Button>}
+                <Button size="small" variant="contained" color="success" disabled={w.kind === "agent_interview_outcome" && !w.payload.decision}
+                  onClick={() => decide(w, "approve")}>{t("autopilot.approve")}</Button>
                 <Button size="small" variant="outlined" color="error" onClick={() => decide(w, "reject")}>{t("autopilot.decline")}</Button>
               </Stack>
             </Stack>
@@ -276,10 +292,30 @@ export default function AutopilotPage() {
         <DialogContent><Typography sx={{ whiteSpace: "pre-wrap" }}>{open?.details?.text ?? open?.summary}</Typography></DialogContent>
       </Dialog>
 
-      <Dialog open={!!editing} onClose={() => setEditing(null)} maxWidth={editing?.kind === "agent_job_publish" ? "md" : "xs"} fullWidth>
+      <Dialog open={!!editing} onClose={() => setEditing(null)} maxWidth={editing?.kind === "agent_job_publish" ? "md" : editing?.kind === "agent_interview_outcome" ? "sm" : "xs"} fullWidth>
         <DialogTitle>{editing?.title.replace(/ \(Autopilot: [a-z_]+\)$/, "")}</DialogTitle>
         <DialogContent>
-          {editing?.kind === "agent_job_publish" ? (
+          {editing?.kind === "agent_interview_outcome" ? (
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            {((editing.payload.scorecards ?? []) as { interviewer: string; overall: number | null; recommendation: string | null; comments: string }[]).map((c) => (
+              <Box key={c.interviewer}>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  {c.interviewer} · {c.overall ?? "–"}/5{c.recommendation ? ` · ${t(`autopilot.result.${c.recommendation === "selected" ? "move_forward" : c.recommendation === "rejected" ? "reject" : "another_round"}`)}` : ""}
+                </Typography>
+                {c.comments && <Typography variant="body2" sx={{ color: f.muted, whiteSpace: "pre-wrap" }}>{c.comments}</Typography>}
+              </Box>
+            ))}
+            <TextField select label={t("autopilot.result.pick")} value={edits.decision ?? ""} onChange={(e) => setEdits({ ...edits, decision: e.target.value })}>
+              {RESULTS.map((r) => <MenuItem key={r} value={r}>{t(`autopilot.result.${r}`)}</MenuItem>)}
+            </TextField>
+            <TextField multiline minRows={2} label={t("autopilot.result.reason")} value={edits.reason ?? ""} onChange={(e) => setEdits({ ...edits, reason: e.target.value })}
+              helperText={edits.decision === "reject" ? t("autopilot.result.reason_needed") : undefined} />
+            <Button variant="contained" color="success" disabled={!edits.decision || (edits.decision === "reject" && !(edits.reason ?? "").trim())}
+              onClick={() => decide(editing, "edit", { ...editing.payload, decision: edits.decision, reason: edits.reason ?? "" })}>
+              {t("autopilot.approve")}
+            </Button>
+          </Stack>
+          ) : editing?.kind === "agent_job_publish" ? (
           <Stack spacing={2} sx={{ pt: 1 }}>
             <TextField multiline minRows={10} maxRows={24} label={t("autopilot.jd")} value={edits.jd_text ?? ""}
               onChange={(e) => setEdits({ ...edits, jd_text: e.target.value })} />

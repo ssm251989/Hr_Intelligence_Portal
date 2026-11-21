@@ -180,6 +180,13 @@ DEFAULTS: dict[str, tuple[str, str, list[str]]] = {
         "experience letter are attached as PDFs.\n\nThank you for your time with us, and all the best.\n\n{{ company_name }} HR",
         ["first_name", "last_working_day"],
     ),
+    "recruitment.interview_feedback_reminder": (  # Part 30.3: the watchdog nudges an interviewer once
+        "Your feedback on {{ candidate_name }} is still missing",
+        "Hi {{ interviewer_name }},\n\nYou interviewed {{ candidate_name }} for {{ job_title }} on {{ interview_date }}. Your scorecard "
+        "is not in yet, and the hiring manager is waiting for every interviewer's view before deciding.\n\n"
+        "Please add your ratings, notes and recommendation: {{ link }}\n\nThank you.\n\n{{ company_name }} HR",
+        ["interviewer_name", "candidate_name", "job_title", "link"],
+    ),
     "employee.exit_interview_reminder": (  # fix 2026-10-06: the employee answers their own exit interview
         "A few questions before you go",
         "Hi {{ first_name }},\n\n{{ before }}, please take a few minutes to answer some questions about your time at "

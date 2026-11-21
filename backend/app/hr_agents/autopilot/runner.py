@@ -12,7 +12,7 @@ from typing import Callable, Optional
 
 from sqlalchemy.orm import Session
 
-from app.hr_agents.autopilot import briefing, hiring, jobs, leftovers, people, watchdog
+from app.hr_agents.autopilot import briefing, hiring, interviews, jobs, leftovers, people, watchdog
 from app.hr_agents.autopilot.core import Run, enabled, record, setting, state_get, state_set
 
 log = logging.getLogger(__name__)
@@ -65,6 +65,10 @@ JOB_TRACK: dict[str, tuple[str, str, str]] = {
     "job_auto_closed_positions_filled": ("job", "done", "{job} closed by itself: every position is filled"),
 }
 WHERE = {"career_portal": "careers page", "linkedin": "LinkedIn", "naukri": "Naukri"}
+# Part 30.3: interview events (entity_type interview) -- each scorecard may complete the round -> the outcome card
+INTERVIEW_EVENTS: dict[str, tuple[Callable, ...]] = {
+    "interview_feedback_recorded": (interviews.on_feedback,),
+}
 CURSOR = "events.cursor"
 LAG = timedelta(seconds=20)
 BATCH = 500
@@ -89,7 +93,8 @@ def run_events(db: Session, tenant, now: Optional[datetime] = None) -> dict:
     since = datetime.fromisoformat(saved["at"])
     rows = (db.query(AuditLog).filter(AuditLog.tenant_id == tenant.tenant_id,
                                       or_(and_(AuditLog.entity_type == "application", AuditLog.action.in_(tuple(EVENTS) + tuple(TRACK))),
-                                          and_(AuditLog.entity_type == "job_role", AuditLog.action.in_(tuple(JOB_EVENTS) + tuple(JOB_TRACK)))),
+                                          and_(AuditLog.entity_type == "job_role", AuditLog.action.in_(tuple(JOB_EVENTS) + tuple(JOB_TRACK))),
+                                          and_(AuditLog.entity_type == "interview", AuditLog.action.in_(tuple(INTERVIEW_EVENTS)))),
                                       AuditLog.created_at > since, AuditLog.created_at <= upto)
             .order_by(AuditLog.created_at).limit(BATCH).all())
     handled, seen = 0, set()
@@ -102,6 +107,9 @@ def run_events(db: Session, tenant, now: Optional[datetime] = None) -> dict:
         seen.add(key)
         if row.entity_type == "job_role":
             handled += _job_event(db, tenant, row)
+            continue
+        if row.entity_type == "interview":
+            handled += _interview_event(db, tenant, row)
             continue
         app = db.get(Application, row.entity_id)
         if app is None:
@@ -173,6 +181,20 @@ def _job_event(db: Session, tenant, row) -> int:
             db.rollback()
             record(db, tenant, Run("event", row.action), agent=_agent_of(handler), action=handler.__name__, outcome="failed",
                    entity_type="job_role", entity_id=job.id, summary=f"{handler.__name__} failed: {type(exc).__name__}: {exc}"[:500])
+    return handled
+
+
+def _interview_event(db: Session, tenant, row) -> int:
+    handled = 0
+    for handler in INTERVIEW_EVENTS.get(row.action, ()):
+        try:
+            if handler(db, tenant, row, Run("event", row.action)) is not None:
+                handled += 1
+        except Exception as exc:  # noqa: BLE001 -- one event never blocks the queue
+            log.exception("autopilot handler %s failed", handler.__name__)
+            db.rollback()
+            record(db, tenant, Run("event", row.action), agent="scheduling", action=handler.__name__, outcome="failed", entity_type="interview",
+                   entity_id=row.entity_id, summary=f"{handler.__name__} failed: {type(exc).__name__}: {exc}"[:500])
     return handled
 
 

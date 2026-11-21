@@ -27,11 +27,13 @@ APPLICATION_STEPS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "agent_bgv_assign": (("bgv_requested", "bgv_pending"), ("bgv_vendor_assigned",)),
     "agent_bgv_decision": (("bgv_requested", "bgv_pending"), ()),
     "agent_joining_dates": (("bgv_cleared",), ("joining_dates_proposed",)),
+    "agent_interview_outcome": (("interview_scheduled",), ()),  # Part 30.3: decided on the screen -> the candidate moved on
 }
 JOINER_DONE = ("joined", "revoked", "declined", "no_show", "exited")
 AGENT_OF = {"agent_shortlist": "screening", "agent_interview_send": "scheduling", "agent_salary_decision": "salary",
             "agent_documents_approve": "documents", "agent_bgv_assign": "bgv", "agent_bgv_decision": "bgv", "agent_joining_dates": "offer",
-            "agent_mark_joined": "onboarding", "agent_resignation_approve": "exit", "agent_exit_letters": "exit", "agent_job_publish": "job"}
+            "agent_mark_joined": "onboarding", "agent_resignation_approve": "exit", "agent_exit_letters": "exit", "agent_job_publish": "job",
+            "agent_interview_outcome": "scheduling"}
 
 
 def _who(actor: Optional[str]) -> str:

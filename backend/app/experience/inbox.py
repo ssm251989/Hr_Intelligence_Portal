@@ -55,6 +55,11 @@ def items_for(db: Session, tenant: TenantContext, user: User) -> list[dict]:
                         "subtitle": f"{(s.payload_json or {}).get('person')} - {(s.payload_json or {}).get('why')}",
                         "due_at": None, "path": f"/jobs?view={(s.payload_json or {}).get('job_id')}", "actions": ["open"]})
             continue
+        if s.kind in ("agent_interview_outcome", "agent_job_publish"):  # Part 30: decided with a picker / editor on the HR agents page
+            out.append({"kind": "todo", "id": str(s.id), "title": s.title.split(" (Autopilot:")[0],
+                        "subtitle": "pick the interview result" if s.kind == "agent_interview_outcome" else "check the JD, then publish",
+                        "due_at": None, "path": "/autopilot", "actions": ["open"]})
+            continue
         if s.kind == "copilot_question":  # Part 22.1: the HR assistant handed a question to HR
             pl = s.payload_json or {}
             out.append({"kind": "copilot_question", "id": str(s.id), "title": s.title, "subtitle": pl.get("user_email") or "",
