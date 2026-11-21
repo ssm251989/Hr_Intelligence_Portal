@@ -5,6 +5,8 @@ setting_values, a tenant table -- see resolver.py); it's purely the schema: what
 what type/default/scopes each one allows, and where its label/help text comes from.
 """
 
+import math
+import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
@@ -48,8 +50,81 @@ class SettingDef:
                 raise ValueError(f"{self.key}: unknown scope {scope!r}")
 
     def validate(self, value: Any) -> None:
+        """Raises ValueError when `value` can't be stored for this setting: wrong type for
+        `type`, outside `json_schema` (the subset in use: type / enum / minimum / maximum /
+        minLength / maxLength / items / minItems / maxItems), or rejected by a custom validator.
+        None is accepted only for settings whose default is None."""
+        if value is None:
+            if self.default is None:
+                return
+            raise ValueError(f"{self.key}: a value is required")
+        _check_type(self.key, self.type, value)
+        if self.json_schema:
+            _check_schema(self.key, value, self.json_schema)
         for validator in self.validators:
             validator(value)
+
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_STRING_TYPES = ("str", "enum", "email", "url", "color")
+
+
+def _is_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _is_number(value: Any) -> bool:
+    return (_is_int(value) or isinstance(value, float)) and math.isfinite(value)
+
+
+def _check_type(key: str, setting_type: str, value: Any) -> None:
+    if setting_type == "int" and not _is_int(value):
+        raise ValueError(f"{key}: must be a whole number")
+    if setting_type == "decimal" and not _is_number(value):
+        raise ValueError(f"{key}: must be a number")
+    if setting_type == "bool" and not isinstance(value, bool):
+        raise ValueError(f"{key}: must be true or false")
+    if setting_type in _STRING_TYPES and not isinstance(value, str):
+        raise ValueError(f"{key}: must be text")
+    if setting_type == "email" and value and not _EMAIL_RE.match(value):
+        raise ValueError(f"{key}: must be an email address")
+    # json / duration / time / *_ref: no fixed Python shape -- json_schema (if any) decides.
+
+
+_SCHEMA_TYPES = {
+    "integer": _is_int,
+    "number": _is_number,
+    "string": lambda v: isinstance(v, str),
+    "boolean": lambda v: isinstance(v, bool),
+    "array": lambda v: isinstance(v, list),
+    "object": lambda v: isinstance(v, dict),
+}
+
+
+def _check_schema(where: str, value: Any, schema: dict) -> None:
+    expected = schema.get("type")
+    if expected in _SCHEMA_TYPES and not _SCHEMA_TYPES[expected](value):
+        raise ValueError(f"{where}: must be of type {expected}")
+    if "enum" in schema and value not in schema["enum"]:
+        raise ValueError(f"{where}: must be one of {', '.join(repr(v) for v in schema['enum'])}")
+    if _is_number(value):
+        if "minimum" in schema and value < schema["minimum"]:
+            raise ValueError(f"{where}: must be at least {schema['minimum']}")
+        if "maximum" in schema and value > schema["maximum"]:
+            raise ValueError(f"{where}: must be at most {schema['maximum']}")
+    if isinstance(value, str):
+        if "minLength" in schema and len(value) < schema["minLength"]:
+            raise ValueError(f"{where}: must be at least {schema['minLength']} characters")
+        if "maxLength" in schema and len(value) > schema["maxLength"]:
+            raise ValueError(f"{where}: must be at most {schema['maxLength']} characters")
+    if isinstance(value, list):
+        if "minItems" in schema and len(value) < schema["minItems"]:
+            raise ValueError(f"{where}: needs at least {schema['minItems']} entries")
+        if "maxItems" in schema and len(value) > schema["maxItems"]:
+            raise ValueError(f"{where}: allows at most {schema['maxItems']} entries")
+        if isinstance(schema.get("items"), dict):
+            for i, item in enumerate(value):
+                _check_schema(f"{where}[{i}]", item, schema["items"])
 
 
 class SettingAlreadyRegisteredError(Exception):
