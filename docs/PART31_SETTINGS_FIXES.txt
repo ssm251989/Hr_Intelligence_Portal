@@ -1,0 +1,50 @@
+PART 31 - SETTINGS SCREEN FIXES (colleague's work, merged safely) (2026-11-21)
+Repo: hr-portal-work. Remote for GitHub = `portal`. Base: KG-Development (Part 30 merged, 4abca95 or later).
+
+STANDING RULES
+- First message: `git status`, `git log --oneline -5`; quote the output.
+- Work on a branch: git checkout KG-Development && git pull portal KG-Development && git checkout -b kishore/settings-fixes
+- All mail to Mailpit; never send real email. Run tests file by file (memory is short on this PC).
+- Commit per block "part-31.N: <block>". Push the branch only; do not merge (the user merges the pull request).
+
+SOURCE: the colleague's files are in "Claude outputs/colleague-settings-fixes/" (git-ignored). They were made on an
+OLDER copy of the code. NEVER copy a whole file over: client.ts would delete Part 27 (tours_off) and Part 28.5
+(superadmin signups) and break the build; PlatformSettingsPanel.tsx would undo formatDateTime. Compare each file
+with the current one (diff) and bring over ONLY the changes listed below.
+
+31.1 BACKEND - refuse bad values on save
+  a. registry.py: SettingDef.validate(value) with _check_type (int / decimal / bool / text / email) and _check_schema
+     (type, enum, minimum, maximum, minLength, maxLength, items, minItems, maxItems); None only when the default is None.
+  b. resolver.py: resolve(key, ctx) -> (value, source scope or None); get() calls it. set() calls validate() first.
+  c. router.py: list returns is_default (source is None); PUT / import / revert turn ValueError into 400 with the message.
+     Keep the existing revert route; FIX it to match scope_id as well as version + scope_type.
+  d. tests/test_settings_resolver.py: take the colleague's version (renamed key recruitment.scoring.shortlist_threshold
+     + the validation tests). Check every registered default passes validate().
+  e. Run tests/test_settings_resolver.py and quote the result.
+
+31.2 FRONTEND - Settings screen
+  a. New frontend/src/utils/settingValue.ts + settingValue.test.ts from the colleague (parseEditValue throws a readable
+     error instead of saving NaN/null; valueToEditString).
+  b. PlatformSettingsPanel.tsx: bring over startEditing (edit starts from the value shown), the parse-error message,
+     isDefault = row undefined OR row.is_default, and Revert through platformSettingsApi.revert. KEEP formatDateTime.
+  c. client.ts: ADD ONLY `is_default?: boolean` on SettingValueRow and
+     `revert: (key, version) => post(`/api/v1/settings/${key}/revert`, { version, scope_type: "tenant" })` on
+     platformSettingsApi. Keep signups and tours_off.
+  d. i18n settingsHome.ts: add settings.invalid_whole_number / invalid_number / invalid_json (EN/HI/TA from the
+     colleague's file).
+
+31.3 EXTRA FIXES found in review
+  a. Translate the panel's English-only words: Edit, History, Save, Cancel, Revert to this, Reverting..., "No changes
+     recorded yet.", "(empty)", "(current)", "unknown", "-- history", and the "Failed to ..." messages (EN/HI/TA keys).
+  b. A json setting can be cleared: an empty box saves the built-in default (or null when the default is null),
+     never "not valid JSON".
+  c. Tests for a and b (vitest) and for the revert scope_id fix (backend).
+
+31.4 CHECK + FINISH
+  - Frontend: npm run build (i18n check + tsc) passes; vitest only the 3 known old failures.
+  - Backend: test_settings_resolver.py and the settings-related test files pass, no new failures against the baseline.
+  - Proof on screen (Settings > Advanced > All settings): type "abc" in a number setting -> red message, nothing saved;
+    change a value -> "Default" chip goes; History -> Revert to this -> history shows "(revert to vN)"; switch the app
+    to Hindi and Tamil -> no English words left in the panel. Screenshots in docs/ui/PART31.md.
+  - Commit, push the branch (git push portal kishore/settings-fixes), and give the user the pull request link
+    (base KG-Development) with a short description. Do not merge.

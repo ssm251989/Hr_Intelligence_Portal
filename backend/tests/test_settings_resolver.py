@@ -27,7 +27,7 @@ def _tenant_ctx() -> TenantContext:
 def test_bootstrap_definitions_registered_every_section_6_group():
     for key in (
         "org.display_name", "org.timezone",
-        "recruitment.screening.auto_shortlist_threshold",
+        "recruitment.scoring.shortlist_threshold",  # Part 17.4 replaced recruitment.screening.*
         "recruitment.negotiation.slots_offered", "recruitment.negotiation.slots_to_pick",
         "recruitment.tracker.save_retry.attempts",
         "ai.models.resume_extraction", "ai.models.candidate_ranking",
@@ -142,3 +142,103 @@ def test_cache_invalidates_on_write_within_the_same_session(db_session):
         actor="admin@example.com", tenant=_tenant_ctx(),
     )
     assert service.get("recruitment.negotiation.slots_to_pick", ctx) == 3
+
+
+# --- type + json_schema validation on save (a bad value used to be stored and crash readers) ---
+
+@pytest.mark.parametrize("key, bad", [
+    ("recruitment.scoring.shortlist_threshold", None),       # int, default 75: null not allowed
+    ("recruitment.scoring.shortlist_threshold", "abc"),      # int: wrong type
+    ("recruitment.scoring.shortlist_threshold", 75.5),       # int: not a whole number
+    ("recruitment.scoring.shortlist_threshold", True),       # bool is not an int
+    ("recruitment.scoring.shortlist_threshold", 500),        # schema maximum 100
+    ("recruitment.scoring.shortlist_threshold", -5),         # schema minimum 0
+    ("iam.auth.mfa_required", "yes"),                        # bool: wrong type
+    ("org.display_name", 42),                                # str: wrong type
+    ("org.support_email", "not-an-email"),                   # email: bad format
+    ("recruitment.negotiation.busy_source", "outlook"),      # enum: not in the list
+    ("recruitment.salary.reminder_hours", [24, 0]),          # json array item below minimum 1
+    ("recruitment.salary.reminder_hours", [1, 2, 3, 4, 5, 6]),  # maxItems 5
+])
+def test_validate_rejects_values_of_the_wrong_type_or_outside_the_schema(key, bad):
+    with pytest.raises(ValueError):
+        get_definition(key).validate(bad)
+
+
+@pytest.mark.parametrize("key, good", [
+    ("recruitment.scoring.shortlist_threshold", 0),
+    ("recruitment.scoring.shortlist_threshold", 100),
+    ("copilot.min_confidence", 1),                           # decimal accepts an int
+    ("org.support_email", ""),                               # empty email = not set
+    ("org.support_email", "hr@example.com"),
+    ("recruitment.salary.reminder_hours", [24, 48]),
+])
+def test_validate_accepts_valid_values(key, good):
+    get_definition(key).validate(good)
+
+
+def test_every_registered_default_passes_its_own_validation():
+    from app.platform.settings.registry import all_definitions
+
+    for setting_def in all_definitions():
+        setting_def.validate(setting_def.default)
+
+
+def test_settings_api_rejects_a_bad_value_with_400_and_keeps_the_old_one(client):
+    key = "recruitment.scoring.shortlist_threshold"
+    before = {r["key"]: r["value"] for r in client.get("/api/v1/settings").json()}[key]
+    for bad in (None, "abc", 500):
+        response = client.put(f"/api/v1/settings/{key}", json={"value": bad})
+        assert response.status_code == 400, bad
+    after = {r["key"]: r["value"] for r in client.get("/api/v1/settings").json()}[key]
+    assert after == before
+
+
+def test_settings_list_marks_which_values_are_defaults(client):
+    key = "recruitment.negotiation.slots_offered"
+    rows = {r["key"]: r for r in client.get("/api/v1/settings").json()}
+    if rows[key]["is_default"]:
+        assert rows[key]["value"] == get_definition(key).default
+    assert client.put(f"/api/v1/settings/{key}", json={"value": 5}).status_code == 200
+    rows = {r["key"]: r for r in client.get("/api/v1/settings").json()}
+    assert rows[key]["value"] == 5 and rows[key]["is_default"] is False
+
+
+def test_resolve_reports_the_scope_the_value_came_from(db_session):
+    ctx = SettingContext(tenant=_tenant_ctx())
+    service = SettingsService(db_session)
+    register(SettingDef("test.resolve_source", "int", 7, module="test"), replace=True)
+    assert service.resolve("test.resolve_source", ctx) == (7, None)
+    service.set("test.resolve_source", 9, scope_type="tenant", scope_id=None, actor="a@example.com", tenant=_tenant_ctx())
+    assert service.resolve("test.resolve_source", ctx) == (9, "tenant")
+
+
+# --- Part 31: import is all or nothing; revert matches the scope id too ---
+
+
+def test_import_with_one_bad_value_saves_nothing(client):
+    key = "recruitment.negotiation.slots_offered"
+    before = {r["key"]: r["value"] for r in client.get("/api/v1/settings").json()}[key]
+    r = client.post("/api/v1/settings/import", json={"settings": {key: (before or 3) + 1, "recruitment.scoring.shortlist_threshold": 500}})
+    assert r.status_code == 400 and "shortlist_threshold" in r.json()["detail"] and "Nothing was imported" in r.json()["detail"]
+    assert {r["key"]: r["value"] for r in client.get("/api/v1/settings").json()}[key] == before
+
+    r = client.post("/api/v1/settings/import", json={"settings": {key: 4, "no.such.setting": 1}})
+    assert r.status_code == 200 and r.json()["imported"] == [key] and r.json()["skipped"][0]["key"] == "no.such.setting"
+
+
+def test_revert_picks_the_version_of_the_same_scope_id(client, db_session):
+    """Two users' rows of the same setting both have a version 1; reverting user A's v1 must not take user B's value."""
+    import uuid as _uuid
+
+    key = "test.revert_scope"
+    register(SettingDef(key, "int", 0, module="test", scopes_allowed=("tenant", "user")), replace=True)
+    service = SettingsService(db_session)
+    user_a, user_b = _uuid.uuid4(), _uuid.uuid4()
+    service.set(key, 11, scope_type="user", scope_id=user_b, actor="b@example.com", tenant=_tenant_ctx())  # B v1 = 11 (newest first in history)
+    service.set(key, 22, scope_type="user", scope_id=user_a, actor="a@example.com", tenant=_tenant_ctx())  # A v1 = 22
+    service.set(key, 23, scope_type="user", scope_id=user_a, actor="a@example.com", tenant=_tenant_ctx())  # A v2 = 23
+    r = client.post(f"/api/v1/settings/{key}/revert", json={"version": 1, "scope_type": "user", "scope_id": str(user_a)})
+    assert r.status_code == 200, r.text
+    assert r.json()["value"] == 22 and r.json()["scope_id"] == str(user_a)
+    assert client.post(f"/api/v1/settings/{key}/revert", json={"version": 9, "scope_type": "user", "scope_id": str(user_a)}).status_code == 404

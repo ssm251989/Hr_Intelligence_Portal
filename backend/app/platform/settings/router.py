@@ -44,6 +44,8 @@ class SettingValueRead(BaseModel):
     value: Any
     scope_type: str
     scope_id: Optional[UUID]
+    # True when nothing is saved for this company and `value` is the registry default.
+    is_default: bool = False
 
 
 class SettingValueUpdate(BaseModel):
@@ -86,8 +88,13 @@ def list_settings(
 ):
     ctx = SettingContext(tenant=require_current_tenant())
     service = SettingsService(db)
-    values = service.get_many(prefix, ctx)
-    return [SettingValueRead(key=key, value=value, scope_type="tenant", scope_id=None) for key, value in values.items()]
+    rows = []
+    for d in all_definitions():
+        if not d.key.startswith(prefix):
+            continue
+        value, source = service.resolve(d.key, ctx)
+        rows.append(SettingValueRead(key=d.key, value=value, scope_type="tenant", scope_id=None, is_default=source is None))
+    return rows
 
 
 @router.put("/{key}", response_model=SettingValueRead)
@@ -165,19 +172,30 @@ def import_settings(
 ):
     tenant = require_current_tenant()
     service = SettingsService(db)
-    imported: list[str] = []
     skipped: list[dict] = []
+    known: dict[str, Any] = {}
+    problems: list[str] = []
     for key, value in payload.settings.items():
         try:
-            get_definition(key)
+            setting_def = get_definition(key)
         except UnknownSettingError:
             skipped.append({"key": key, "reason": "unknown setting"})
             continue
-        try:
-            service.set(key, value, scope_type="tenant", scope_id=None, actor=current_user.email, tenant=tenant)
-            imported.append(key)
+        if "tenant" not in setting_def.scopes_allowed:
+            problems.append(f"{key}: cannot be set for the whole company")
+            continue
+        try:  # Part 31: all or nothing -- one bad value refuses the import before anything is saved
+            setting_def.validate(value)
         except ValueError as exc:
-            skipped.append({"key": key, "reason": str(exc)})
+            problems.append(str(exc))
+            continue
+        known[key] = value
+    if problems:
+        raise HTTPException(status_code=400, detail="Nothing was imported. Fix these values: " + "; ".join(problems))
+    imported: list[str] = []
+    for key, value in known.items():  # every value was checked above
+        service.set(key, value, scope_type="tenant", scope_id=None, actor=current_user.email, tenant=tenant)
+        imported.append(key)
     return {"imported": imported, "skipped": skipped}
 
 
@@ -197,7 +215,10 @@ def revert_setting(key: str, payload: SettingRevertRequest, db: Session = Depend
         raise HTTPException(status_code=404, detail=f"No such setting: {key}")
     tenant = require_current_tenant()
     service = SettingsService(db)
-    entry = next((h for h in service.history(key, SettingContext(tenant=tenant)) if h.version == payload.version and h.scope_type == payload.scope_type), None)
+    # Part 31: the version must belong to the same scope (type AND id) -- another user's / position's history row can
+    # carry the same version number
+    entry = next((h for h in service.history(key, SettingContext(tenant=tenant))
+                  if h.version == payload.version and h.scope_type == payload.scope_type and h.scope_id == payload.scope_id), None)
     if entry is None:
         raise HTTPException(status_code=404, detail=f"No version {payload.version} in this setting's history")
     try:

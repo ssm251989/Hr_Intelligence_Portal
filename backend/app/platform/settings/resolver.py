@@ -91,10 +91,15 @@ class SettingsService:
         return value
 
     def get(self, key: str, ctx: SettingContext) -> Any:
+        return self.resolve(key, ctx)[0]
+
+    def resolve(self, key: str, ctx: SettingContext) -> tuple[Any, Optional[str]]:
+        """(value, scope_type it came from) -- scope None means nothing is saved and the
+        value is the registry default (what the Settings page shows as "Default")."""
         setting_def = get_definition(key)
         for scope_type in SCOPE_ORDER:
             if scope_type == "platform":
-                return setting_def.default
+                break
             if scope_type == "plan":
                 # No plan-limits/plan-default source exists yet (Part 13) -- falls through
                 # to platform default, same as any other scope with nothing set for it.
@@ -107,8 +112,8 @@ class SettingsService:
                     continue
                 value = self._get_value(ctx.tenant.tenant_id, key, scope_type, scope_id)
             if value is not _NO_VALUE:
-                return value
-        return setting_def.default
+                return value, scope_type
+        return setting_def.default, None
 
     def get_many(self, prefix: str, ctx: SettingContext) -> dict:
         from app.platform.settings.registry import all_definitions
@@ -161,6 +166,7 @@ class SettingsService:
         return (
             self.db.query(SettingValueHistory)
             .filter(SettingValueHistory.tenant_id == ctx.tenant.tenant_id, SettingValueHistory.key == key)
-            .order_by(SettingValueHistory.updated_at.desc())
+            # Part 31: version breaks a tie -- on Windows two writes a moment apart can share one updated_at
+            .order_by(SettingValueHistory.updated_at.desc(), SettingValueHistory.version.desc())
             .all()
         )
