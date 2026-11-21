@@ -58,3 +58,4 @@ Claude outputs/
 # Part 28 package build output
 installer/cache/
 installer/build/
+launch.txt
