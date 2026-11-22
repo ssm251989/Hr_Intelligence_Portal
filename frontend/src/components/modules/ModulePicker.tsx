@@ -199,6 +199,8 @@ export default function ModulePicker({ variant = "settings", onChange }: { varia
                   <Typography sx={{ fontWeight: 700 }}>{reqExpired ? t("mod19.expired_title") : sent ? t("mod19.waiting_title") : t("mod19.not_sent_title")}</Typography>
                   <Typography variant="body2">
                     {reqExpired ? t("mod19.expired_body") : sent ? t("mod19.waiting_body")
+                      // Part 32: no mailbox on this installation -> nothing retries by itself; the person sends it (Email CTD / Copy request)
+                      : req.delivery === "manual" ? t("lic.send_yourself")
                       : t("mod19.not_sent_body", { number: req.number ?? "", support: support || t("mod19.support_none") })}
                   </Typography>
                 </Box>

@@ -58,7 +58,8 @@ def status(db, tenant) -> list[dict]:
     out = []
     for m in reg.MODULES:
         r = rows.get(m.key)
-        state = "active" if m.key in active else (r.status if r is not None and not m.included else "off")
+        # Part 32: a row saying "active" that CTD did not approve shows as off (proof 32.7: SQL-tampered rows showed "active")
+        state = "active" if m.key in active else ("pending" if r is not None and r.status == "pending" and not m.included else "off")
         out.append({**next(c for c in reg.catalog() if c["key"] == m.key), "status": state,
                     "requested_at": r.requested_at.isoformat() if r is not None and r.requested_at else None,
                     "requested_by": r.requested_by if r is not None else None,

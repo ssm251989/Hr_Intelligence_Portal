@@ -175,6 +175,8 @@ def test_a_module_switched_on_in_the_database_stays_off(db_session, admin, ctd_k
     db_session.commit()
     module_status.invalidate(TENANT_1_ID)
     assert "salary" not in module_status.active_modules(db_session, _tenant())
+    shown = {m["key"]: m["status"] for m in module_status.status(db_session, _tenant())}
+    assert shown["salary"] == "off" and shown["jobs"] == "active"  # proof 32.7: the Modules page showed the tampered row as active
 
 
 def test_a_stored_approval_edited_in_the_database_counts_for_nothing(db_session, admin, ctd_key, no_grace):
@@ -317,3 +319,11 @@ def test_tool_round_trip(tmp_path, monkeypatch):
         codes.set_public_key_for_tests(None)
     with pytest.raises(tool.ToolError):
         tool.make_config("me@gmail.com", out=tmp_path / "out2")
+
+
+def test_the_modules_page_takes_a_long_signed_code(client, ctd_key, monkeypatch):
+    """Proof 32.7: "Choose what you want" refused CTD's code - the field still allowed only 40 characters (the old code)."""
+    monkeypatch.setattr(licence, "_in_grace", lambda tenant: 14)  # the install is open; this is about the module change
+    licence.invalidate()
+    r = client.post("/api/v1/modules/activate", json={"code": "CTD1." + "x" * 200 + ".y"})
+    assert r.status_code != 422, r.text  # refused for its content (not CTD's signature), not for its length
