@@ -11,6 +11,8 @@
   No Python is needed on the build PC: the bundled Python installs its own packages.
   Optional: -PgZip <path> if the PostgreSQL download is blocked (get it from
   https://www.enterprisedb.com/download-postgresql-binaries -> Windows x86-64, version 16).
+  Part 32: -CtdConfig <folder> with CTD's signed ctd_config.json + ctd_config.json.sig (python -m ctd_licence config).
+  The build stops unless the package has CTD's public key + a signed CTD file and NO private key.
 #>
 param(
   [Parameter(Mandatory = $true)][string]$Version,
@@ -22,7 +24,9 @@ param(
   # Part 28.4: code signing with the owner's certificate so SmartScreen does not warn. Import the .pfx into the
   # Windows certificate store once (double-click it), then pass its thumbprint - no password on any command line.
   [string]$SignThumbprint = "",
-  [string]$TimestampUrl = "http://timestamp.digicert.com"
+  [string]$TimestampUrl = "http://timestamp.digicert.com",
+  # Part 32: the folder with CTD's signed ctd_config.json + ctd_config.json.sig (default: the ones already in the licence folder)
+  [string]$CtdConfig = ""
 )
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"   # Invoke-WebRequest is 10x faster without the progress bar
@@ -103,6 +107,24 @@ $be = Join-Path $Stage "app\backend"
   /XD .venv venv uploads tests __pycache__ .pytest_cache /XF .env "*.pyc" | Out-Null
 if ($LASTEXITCODE -ge 8) { throw "copying the backend failed (robocopy $LASTEXITCODE)" }
 if (Test-Path (Join-Path $be ".env")) { throw "a .env got into the package - stop" }
+
+# Part 32: CTD's public key + signed CTD file in, NO private key anywhere in the package
+$lic = Join-Path $be "app\platform\licence"
+if ($CtdConfig) {
+  foreach ($f in "ctd_config.json", "ctd_config.json.sig") {
+    $src = Join-Path $CtdConfig $f
+    if (-not (Test-Path $src)) { throw "-CtdConfig: $src is missing (python -m ctd_licence config)" }
+    Copy-Item -Force $src (Join-Path $lic $f)
+  }
+}
+foreach ($f in "ctd_public_key.pem", "ctd_config.json", "ctd_config.json.sig") {
+  if (-not (Test-Path (Join-Path $lic $f))) { throw "the package has no $f - copy CTD's public key into backend\app\platform\licence and pass -CtdConfig (docs/CTD_LICENCE_RUNBOOK.md)" }
+}
+$private = Get-ChildItem -Path $Stage -Recurse -File -ErrorAction SilentlyContinue |
+  Where-Object { $_.Name -like "*private_key*" -or $_.Name -like "ctd_private*" -or $_.Name -eq "approvals_log.csv" -or
+                 ($_.Extension -in ".pem", ".key" -and (Select-String -Path $_.FullName -Pattern "PRIVATE KEY" -Quiet)) }
+if ($private) { throw "a PRIVATE KEY got into the package - stop: $($private.FullName -join ', ')" }
+if (Test-Path (Join-Path $Stage "app\tools")) { throw "the CTD signing tool got into the package - stop" }
 
 # 6. Launcher + text files ------------------------------------------------------------------
 Write-Host "6/7 Launcher"
