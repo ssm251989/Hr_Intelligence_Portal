@@ -351,25 +351,7 @@ def activation_resend(request_id: UUID, body: ResendIn, admin: PlatformAdmin = D
         raise _act_error(exc)
 
 
-@router.post("/activation-requests/{request_id}/new-code")
-def activation_new_code(request_id: UUID, admin: PlatformAdmin = Depends(current_admin)):
-    from app.platform import activation
-
-    try:
-        return activation.console_new_code(request_id, admin.email)
-    except activation.ActivationError as exc:
-        raise _act_error(exc)
-
-
-@router.post("/activation-requests/{request_id}/show-code")
-def activation_show_code(request_id: UUID, admin: PlatformAdmin = Depends(current_admin)):
-    """CTD super-admin only; audit-logged (superadmin_audit + request history)."""
-    from app.platform import activation
-
-    try:
-        return activation.console_show_code(request_id, admin.email)
-    except activation.ActivationError as exc:
-        raise _act_error(exc)
+# Part 32: "new code" / "show code" are gone - CTD Techs makes signed approval codes with tools/ctd_licence.
 
 
 @router.post("/activation-requests/{request_id}/cancel")

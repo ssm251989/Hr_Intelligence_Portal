@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import LicencePanel from "../components/licence/LicencePanel";
 import { integrationsApi } from "../api/client";
 import AccessControlPanel from "../components/AccessControlPanel";
 import CommunicationsPanel from "../components/CommunicationsPanel";
@@ -275,6 +276,8 @@ export const CATEGORIES: SettingsCategory[] = [
   {
     id: "advanced", emoji: "tools", pages: [
       { id: "all", emoji: "tools", keywords: "all settings raw", visible: ADMIN, render: () => <PlatformSettingsPanel /> },
+      // Part 32: the CTD approval - state, end date, the one CTD approver, Load CTD file, CTD's signed code
+      { id: "licence", emoji: "key", keywords: "licence license ctd approval code activation approver", visible: ADMIN, render: () => <LicencePanel /> },
     ],
   },
 ];

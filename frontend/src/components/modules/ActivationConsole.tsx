@@ -8,7 +8,6 @@ import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
 import FormControlLabel from "@mui/material/FormControlLabel";
-import IconButton from "@mui/material/IconButton";
 import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
@@ -87,7 +86,6 @@ function RequestsCard({ token, rows, approvers, busy, run }: { token: string; ro
   const [menu, setMenu] = useState<{ el: HTMLElement; row: ConsoleActivationRequest } | null>(null);
   const [historyOf, setHistoryOf] = useState<ConsoleActivationRequest | null>(null);
   const [events, setEvents] = useState<ActivationEventRow[] | null>(null);
-  const [shown, setShown] = useState<{ number: string; code: string } | null>(null);
 
   const openHistory = (row: ConsoleActivationRequest) => {
     setHistoryOf(row);
@@ -169,19 +167,6 @@ function RequestsCard({ token, rows, approvers, busy, run }: { token: string; ro
             return r.sent ? { tone: "success", text: t("act.resent_all") } : { tone: "error", text: t("act.email_failed", { reason: r.email_error ?? "" }) };
           })}>{t("act.resend_all")}</MenuItem>
         )}
-        {menu && (
-          <MenuItem onClick={() => act(async () => {
-            const r = await superAdminApi.activationNewCode(token, menu.row.id);
-            return r.sent ? { tone: "success", text: t("act.new_code_sent") } : { tone: "error", text: t("act.email_failed", { reason: r.email_error ?? "" }) };
-          })}>{t("act.new_code")}</MenuItem>
-        )}
-        {menu && menu.row.status === "pending" && (
-          <MenuItem onClick={() => act(async () => {
-            const r = await superAdminApi.activationShowCode(token, menu.row.id);
-            setShown({ number: r.number, code: r.code });
-            return null;
-          })}>{t("act.show_code")}</MenuItem>
-        )}
         {menu && menu.row.status === "pending" && (
           <MenuItem sx={{ color: "warning.main" }} onClick={() => act(async () => {
             await superAdminApi.activationCancel(token, menu.row.id);
@@ -221,84 +206,22 @@ function RequestsCard({ token, rows, approvers, busy, run }: { token: string; ro
         <DialogActions><Button onClick={() => setHistoryOf(null)}>{t("act.close")}</Button></DialogActions>
       </Dialog>
 
-      <Dialog open={Boolean(shown)} onClose={() => setShown(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>{t("act.code_for", { number: shown?.number ?? "" })}</DialogTitle>
-        <DialogContent>
-          <Typography sx={{ fontSize: 32, fontWeight: 800, letterSpacing: 4, textAlign: "center", my: 2 }}>{shown?.code}</Typography>
-          <Typography variant="body2" color="text.secondary">{t("act.code_shown_note")}</Typography>
-        </DialogContent>
-        <DialogActions><Button onClick={() => setShown(null)}>{t("act.close")}</Button></DialogActions>
-      </Dialog>
     </Card>
   );
 }
 
-function ApproversCard({ token, rows, busy, run }: { token: string; rows: ApproverRow[]; busy: boolean; run: Run }) {
+// Part 32: ONE approver, from CTD Techs' signed file - shown here, never edited here (a new signed file changes it).
+function ApproversCard({ rows }: { token: string; rows: ApproverRow[]; busy: boolean; run: Run }) {
   const t = useT();
-  const nextPriority = rows.length ? Math.max(...rows.map((r) => r.priority)) + 1 : 1;
-  const [form, setForm] = useState<{ priority: number; name: string; email: string; active: boolean } | null>(null);
-
-  const move = (i: number, dir: -1 | 1) => {
-    const order = rows.map((r) => r.email);
-    [order[i], order[i + dir]] = [order[i + dir], order[i]];
-    void run(async () => { await superAdminApi.approverReorder(token, order); return { tone: "success", text: t("act.ap.reordered") }; });
-  };
-
   return (
     <Card sx={{ p: 2.5 }}>
       <Typography variant="h6">{t("act.ap.title")}</Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>{t("act.ap.intro")}</Typography>
-      <Table size="small">
-        <TableHead>
-          <TableRow>
-            <TableCell>{t("act.ap.priority")}</TableCell><TableCell>{t("act.ap.name")}</TableCell><TableCell>{t("act.ap.email")}</TableCell>
-            <TableCell>{t("act.ap.active")}</TableCell><TableCell align="right">{t("console.col.actions")}</TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {rows.map((r, i) => (
-            <TableRow key={r.email}>
-              <TableCell sx={{ fontWeight: 700 }}>P{r.priority}</TableCell>
-              <TableCell>{r.name || "—"}</TableCell>
-              <TableCell>{r.email}</TableCell>
-              <TableCell>{r.active ? t("act.ap.yes") : t("act.ap.no")}</TableCell>
-              <TableCell align="right">
-                <IconButton size="small" aria-label={t("act.ap.up")} disabled={busy || i === 0} onClick={() => move(i, -1)}>↑</IconButton>
-                <IconButton size="small" aria-label={t("act.ap.down")} disabled={busy || i === rows.length - 1} onClick={() => move(i, 1)}>↓</IconButton>
-                <Button size="small" onClick={() => setForm({ priority: r.priority, name: r.name ?? "", email: r.email, active: r.active })}>{t("act.ap.edit")}</Button>
-                <Button size="small" color="warning" disabled={busy}
-                  onClick={() => void run(async () => { await superAdminApi.approverRemove(token, r.priority); return { tone: "success", text: t("act.ap.removed") }; })}>{t("act.ap.remove")}</Button>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-      {[2, 3].filter((p) => !rows.some((r) => r.priority === p)).map((p) => (
-        <Typography key={p} variant="body2" color="text.secondary" sx={{ mt: 1 }}>{t("act.ap.empty_priority", { priority: p })}</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>{t("act.ap.signed_note")}</Typography>
+      {rows.length === 0 ? (
+        <Typography color="error.main">{t("act.ap.not_set_up")}</Typography>
+      ) : rows.map((r) => (
+        <Typography key={r.email} sx={{ fontWeight: 700 }}>{r.email}</Typography>
       ))}
-      <Button sx={{ mt: 1.5 }} variant="outlined" onClick={() => setForm({ priority: nextPriority, name: "", email: "", active: true })}>{t("act.ap.add")}</Button>
-
-      <Dialog open={Boolean(form)} onClose={() => setForm(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>{t("act.ap.form_title", { priority: form?.priority ?? "" })}</DialogTitle>
-        {form && (
-          <DialogContent>
-            <Stack spacing={2} sx={{ mt: 1 }}>
-              <TextField label={t("act.ap.priority")} type="number" value={form.priority} onChange={(e) => setForm({ ...form, priority: Number(e.target.value) })} inputProps={{ min: 1, max: 20 }} />
-              <TextField label={t("act.ap.name")} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-              <TextField label={t("act.ap.email")} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="name@ctdtechs.com" helperText={t("act.ap.email_hint")} />
-              <FormControlLabel control={<Switch checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} />} label={t("act.ap.active")} />
-            </Stack>
-          </DialogContent>
-        )}
-        <DialogActions>
-          <Button onClick={() => setForm(null)}>{t("act.cancel_btn")}</Button>
-          <Button variant="contained" disabled={busy || !form?.email} onClick={() => {
-            const f = form!;
-            setForm(null);
-            void run(async () => { await superAdminApi.approverSet(token, f.priority, { email: f.email, name: f.name, active: f.active }); return { tone: "success", text: t("act.ap.saved") }; });
-          }}>{t("act.save")}</Button>
-        </DialogActions>
-      </Dialog>
     </Card>
   );
 }
