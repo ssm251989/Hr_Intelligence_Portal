@@ -2995,3 +2995,15 @@ NEXT: build the zip alone (no Mailpit / proof API / dev server), report size + S
 
 NEXT: colleague reviews the pull request kishore/part-30 -> KG-Development (not merged by me). Future work (AWS phase):
 docs/FUTURE_WORK.md.
+
+- part-32 zip (2026-11-23): installer\build\HR-Automation-1.1.0.zip, 181,158,563 bytes (173 MB), 23,287 entries,
+  SHA-256 869B9B5C0C7FB76F774EC5E72E97C1DAC71F5492036A83DA41FFE390F7E7EA99 (re-hashed after the build: matches).
+  Checked inside the zip (app\backend\app\platform\licence\):
+  - ctd_public_key.pem, ctd_config.json, ctd_config.json.sig present, byte-identical to the repo copies (SHA-256 compared).
+  - The CTD file passes the app's own check (licence.config.check): approver kg@ctdtechs.com, issued
+    2026-11-23T05:52:00+00:00; a copy with one character changed is rejected (CodeError).
+  - No private key: no *.pem / *.key (or any app .py/.json/.txt/.sig/.env/.ps1) contains "PRIVATE KEY" except two
+    docstrings (platform\activation.py, licence\codes.py); the only .pem files besides the public key are the
+    cacert.pem bundles (certifi, botocore). No tools\ctd_licence, no approvals_log.csv.
+    (runtime\python\...\bin\pyrsa-keygen.exe is the rsa package's own script, not CTD's tool.)
+  The signed ctd_config.json + .sig are now in the repo, so the next build_zip.ps1 picks them up by default.

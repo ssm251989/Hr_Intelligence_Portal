@@ -10,3 +10,7 @@ Dockerfile text eol=lf
 *.docx binary
 *.xlsx binary
 *.zip binary
+# Part 32: CTD's signed file and public key must stay byte-for-byte (the signature covers the exact bytes).
+backend/app/platform/licence/ctd_config.json binary
+backend/app/platform/licence/ctd_config.json.sig binary
+backend/app/platform/licence/ctd_public_key.pem binary
