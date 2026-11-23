@@ -233,10 +233,16 @@ def _module_guard(job_name: str, fn):
     """Part 19.1: a job that belongs to a module (module_registry.JOB_MODULE) is skipped for a
     company that doesn't have that module active."""
     from app.platform import module_registry, module_status
+    from app.platform.licence import state as licence
 
     module = module_registry.JOB_MODULE.get(job_name)
     if module is None:
-        return fn
+        def unlocked(db, tenant):  # Part 32: nothing runs for a company still waiting for CTD's approval
+            if licence.locked(tenant):
+                return {"skipped": "waiting for CTD approval"}
+            return fn(db, tenant)
+
+        return unlocked
 
     def guarded(db, tenant):
         if not module_status.is_active(db, tenant, module):

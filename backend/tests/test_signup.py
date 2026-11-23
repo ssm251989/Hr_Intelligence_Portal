@@ -11,6 +11,7 @@ from app.platform import signup
 from app.platform.install.validate import InvalidInput
 from app.platform.tenancy.database_cp import ControlPlaneSessionLocal
 from app.platform.tenancy.models_cp import SignupRequest
+from tests.test_licence import ctd_key  # noqa: E402,F401 -- Part 32: CTD key + signed CTD file for the access request
 
 
 @pytest.fixture()
@@ -114,7 +115,7 @@ def test_api_is_reachable_without_a_company(anonymous_client):
     assert bad.status_code == 422 and "company_slug" in bad.json()["detail"]["problems"]
 
 
-def test_real_company_on_local_postgres_with_the_chosen_password(mails, cleanup, monkeypatch):
+def test_real_company_on_local_postgres_with_the_chosen_password(mails, cleanup, monkeypatch, ctd_key):  # Part 32: a signed CTD file
     """Integration: provisioning.create_tenant on the local PostgreSQL, <slug>.localhost, the first admin can sign
     in with the password chosen at sign-up, the modules wait for CTD Techs; then everything is dropped again."""
     from app.core.security import verify_password

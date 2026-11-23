@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import LicencePanel from "../components/licence/LicencePanel";
+import { LicenceBanner, useLicenceStatus } from "../components/licence/LicenceGate";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
@@ -394,6 +396,7 @@ export default function AppLayout() {
   // Part 19.1: a page of a module that isn't active for the company shows "not active" instead
   const location = useLocation();
   const { data: me, loading: meLoading } = useMeBootstrap();
+  const { status: licence, reload: reloadLicence } = useLicenceStatus(Boolean(me)); // Part 32
   const moduleHere = me?.company_modules ? moduleKeyForPath(location.pathname, me.company_modules.pages) : null;
   const registryHere = me?.modules ? moduleKeyForPath(location.pathname, REGISTRY_MODULE_PAGES) : null;
   const inactiveHere = moduleHere && !me?.company_modules?.active.includes(moduleHere) ? moduleHere
@@ -466,7 +469,10 @@ export default function AppLayout() {
             {/* Remount the page on a language change so every label (hook or plain t()) re-renders. */}
             {/* Part 27.4: pages wait for bootstrap (modules / permissions) - a page of a switched-off module used to
                 render first and call its API (404) before the "not switched on" card replaced it */}
+            {/* Part 32: waiting for CTD Techs' approval -> only the waiting page; grace / ending -> a banner */}
+            {licence?.state !== "locked" && <LicenceBanner status={licence} />}
             {meLoading && !me ? <Box sx={{ display: "grid", placeItems: "center", py: 8 }}><CircularProgress aria-label={tr("me.loading")} /></Box>
+              : licence?.state === "locked" ? <LicencePanel waiting onUnlocked={() => { reloadLicence(); window.location.reload(); }} />
               : inactiveHere ? <ModuleNotActiveCard module={inactiveHere} /> : <Outlet key={locale} />}
           </Box>
         </Box>

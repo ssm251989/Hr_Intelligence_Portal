@@ -1621,10 +1621,6 @@ export const superAdminApi = {
   activationResend: (token: string, id: string, target: { priority?: number; all?: boolean }) =>
     consoleRequest<{ sent: boolean; email_error: string | null; number: string }>(`/api/v1/superadmin/activation-requests/${id}/resend`, token,
       { method: "POST", body: JSON.stringify(target) }),
-  activationNewCode: (token: string, id: string) =>
-    consoleRequest<{ sent: boolean; email_error: string | null; number: string }>(`/api/v1/superadmin/activation-requests/${id}/new-code`, token, { method: "POST" }),
-  activationShowCode: (token: string, id: string) =>
-    consoleRequest<{ number: string; code: string; expires_at: string }>(`/api/v1/superadmin/activation-requests/${id}/show-code`, token, { method: "POST" }),
   activationCancel: (token: string, id: string) =>
     consoleRequest<{ status: string }>(`/api/v1/superadmin/activation-requests/${id}/cancel`, token, { method: "POST" }),
   approverSet: (token: string, priority: number, body: { email: string; name?: string | null; active: boolean }) =>

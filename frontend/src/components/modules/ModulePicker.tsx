@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import CtdRequestBox from "../licence/CtdRequestBox";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -11,7 +12,6 @@ import DialogTitle from "@mui/material/DialogTitle";
 import Skeleton from "@mui/material/Skeleton";
 import Stack from "@mui/material/Stack";
 import Switch from "@mui/material/Switch";
-import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
 
@@ -32,11 +32,6 @@ type Ask =
   | { kind: "dependents"; keys: string[]; dependents: string[] }
   | { kind: "cancel_request" };
 
-/** XXXX-XXXX as the user types; only the letters/digits a code can have. */
-function formatCode(raw: string): string {
-  const clean = raw.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
-  return clean.length > 4 ? `${clean.slice(0, 4)}-${clean.slice(4)}` : clean;
-}
 
 export default function ModulePicker({ variant = "settings", onChange }: { variant?: "setup" | "settings"; onChange?: () => void }) {
   const t = useT();
@@ -45,7 +40,6 @@ export default function ModulePicker({ variant = "settings", onChange }: { varia
   const [state, setState] = useState<ModulesState | null>(null);
   const [draft, setDraft] = useState<Set<string>>(new Set());
   const [ask, setAsk] = useState<Ask | null>(null);
-  const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ tone: "success" | "error" | "warning" | "info"; text: string } | null>(null);
 
@@ -131,10 +125,9 @@ export default function ModulePicker({ variant = "settings", onChange }: { varia
     }
   });
 
-  const activate = () => run(async () => {
+  const activate = (code: string) => run(async () => {
     try {
       const next = await modulesApi19.activate(code);
-      setCode("");
       after(next);
       void celebrate(`modules.activated:${req?.id ?? next.activated.join(",")}`);
       setMsg({ tone: "success", text: t("mod19.activated", { names: names(next.activated) }) });
@@ -206,6 +199,8 @@ export default function ModulePicker({ variant = "settings", onChange }: { varia
                   <Typography sx={{ fontWeight: 700 }}>{reqExpired ? t("mod19.expired_title") : sent ? t("mod19.waiting_title") : t("mod19.not_sent_title")}</Typography>
                   <Typography variant="body2">
                     {reqExpired ? t("mod19.expired_body") : sent ? t("mod19.waiting_body")
+                      // Part 32: no mailbox on this installation -> nothing retries by itself; the person sends it (Email CTD / Copy request)
+                      : req.delivery === "manual" ? t("lic.send_yourself")
                       : t("mod19.not_sent_body", { number: req.number ?? "", support: support || t("mod19.support_none") })}
                   </Typography>
                 </Box>
@@ -221,15 +216,9 @@ export default function ModulePicker({ variant = "settings", onChange }: { varia
                 {sent && req.sent_at && ` · ${req.resend_count ? t("mod19.sent_on_resent", { when: when(req.sent_at), count: req.resend_count }) : t("mod19.sent_on", { when: when(req.sent_at) })}`}
               </Typography>
               {canManage && !reqExpired && (
-                <Stack component="form" direction={{ xs: "column", sm: "row" }} spacing={1.5}
-                  onSubmit={(e) => { e.preventDefault(); if (code.replace("-", "").length === 8) void activate(); }}>
-                  <TextField label={t("mod19.code")} placeholder="ABCD-EF23" value={code} onChange={(e) => setCode(formatCode(e.target.value))}
-                    autoComplete="off" inputProps={{ "aria-label": t("mod19.code"), style: { letterSpacing: 3, fontWeight: 700 } }} sx={{ minWidth: 220, bgcolor: f.surface }}
-                    disabled={Boolean(req.locked_until)} helperText={req.locked_until ? t("mod19.locked", { time: new Date(req.locked_until).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) }) : " "} />
-                  <Button type="submit" variant="contained" size="large" disabled={busy || code.replace("-", "").length !== 8 || Boolean(req.locked_until)} sx={{ alignSelf: { sm: "flex-start" } }}>
-                    {t("mod19.activate")}
-                  </Button>
-                </Stack>
+                // Part 32: the request text for CTD Techs + CTD's signed approval code (long, starts with CTD1.)
+                <CtdRequestBox requestText={req.request_text} mailto={req.mailto} approver={req.approver} busy={busy} locked={req.locked_until}
+                  onCode={(c) => void activate(c)} />
               )}
               {canManage && !reqExpired && (
                 <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ sm: "center" }}>

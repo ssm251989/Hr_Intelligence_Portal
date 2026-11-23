@@ -55,7 +55,7 @@ def request_activation(body: RequestIn, db: Session = Depends(get_db), current_u
 
 
 class CodeIn(BaseModel):
-    code: str = Field(min_length=1, max_length=40)
+    code: str = Field(min_length=1, max_length=20000)  # Part 32: CTD's signed code (CTD1....) is long
 
 
 @router.post("/activate")

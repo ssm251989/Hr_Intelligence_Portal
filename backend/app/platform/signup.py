@@ -242,7 +242,7 @@ def first_admin(tenant_id, slug: str, *, email: str, name: str, password_hash: s
             bridge_single_user(db, ctx, user)
             if modules:
                 try:
-                    activation.request_activation(db, ctx, modules, user, with_needs=True)
+                    activation.request_access(db, ctx, modules, user)  # Part 32: locked until CTD's signed approval
                 except activation.ActivationError as exc:  # e.g. already active -> nothing to ask
                     log.info("sign-up %s activation: %s", slug, exc)
         finally:

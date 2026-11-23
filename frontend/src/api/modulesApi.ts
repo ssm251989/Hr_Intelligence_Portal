@@ -31,7 +31,7 @@ export interface ActivationRequestInfo {
   requested_by: string | null;
   expires_at: string;
   email_sent: boolean;
-  delivery: "sent" | "sending" | "not_sent"; // never the technical reason
+  delivery: "sent" | "sending" | "not_sent" | "manual"; // never the technical reason
   sent_at: string | null;
   first_sent_at: string | null;
   resend_count: number;
@@ -40,6 +40,13 @@ export interface ActivationRequestInfo {
   locked_until: string | null;
   tries_left: number;
   support: { phone: string | null; email: string | null; hours: string | null };
+  // Part 32: the request for CTD Techs (CTD answers with a signed code), how it travels, the ONE CTD approver
+  kind?: "access" | "modules";
+  request_text?: string | null;
+  approver?: string | null;
+  mailto?: string | null;
+  manual?: boolean;
+  mail_problem?: string | null;
 }
 
 export interface ModulesState {

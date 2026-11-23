@@ -33,8 +33,18 @@ def _rows(db, tenant) -> dict:
 
 
 def active_modules(db, tenant) -> set[str]:
-    """Active modules, plus GenAI usage when any AI module is active."""
-    return reg.with_included({k for k, r in _rows(db, tenant).items() if r.status == "active" and k in reg.BY_KEY})
+    """Active modules, plus GenAI usage when any AI module is active.
+    Part 32: a row saying "active" counts only when CTD Techs' newest valid signed approval lists the module; the rows
+    are a cache. A row active without a signature is ignored and logged once as tamper."""
+    from app.platform.licence import state as licence
+
+    rows = {k for k, r in _rows(db, tenant).items() if r.status == "active" and k in reg.BY_KEY}
+    allowed = licence.allowed_modules(tenant)
+    if allowed is not None:
+        for k in sorted(rows - allowed):
+            licence.tamper(tenant, f"module {k} is active in the database without a CTD approval - ignored")
+        rows &= allowed
+    return reg.with_included(rows)
 
 
 def is_active(db, tenant, key: str) -> bool:
@@ -48,7 +58,8 @@ def status(db, tenant) -> list[dict]:
     out = []
     for m in reg.MODULES:
         r = rows.get(m.key)
-        state = "active" if m.key in active else (r.status if r is not None and not m.included else "off")
+        # Part 32: a row saying "active" that CTD did not approve shows as off (proof 32.7: SQL-tampered rows showed "active")
+        state = "active" if m.key in active else ("pending" if r is not None and r.status == "pending" and not m.included else "off")
         out.append({**next(c for c in reg.catalog() if c["key"] == m.key), "status": state,
                     "requested_at": r.requested_at.isoformat() if r is not None and r.requested_at else None,
                     "requested_by": r.requested_by if r is not None else None,

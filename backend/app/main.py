@@ -92,6 +92,9 @@ app.add_middleware(IdempotencyMiddleware)  # Part 17.13: inside the tenant resol
 
 app.add_middleware(ModuleGateMiddleware)
 app.add_middleware(ModuleActivationMiddleware)  # Part 19.1: module not active for this company -> 403 (inside the tenant resolver)
+from app.platform.licence.api import LicenceMiddleware  # noqa: E402
+
+app.add_middleware(LicenceMiddleware)  # Part 32: waiting for CTD's signed approval -> only sign-in, waiting page, code entry
 app.add_middleware(ObservabilityMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 
@@ -320,6 +323,9 @@ from app.public_api.developers_router import router as developers_router  # noqa
 public_api = build_public_api([public_api_router])
 app.mount(PUBLIC_API_PREFIX, public_api)
 app.include_router(developers_router)
+from app.platform.licence.api import router as licence_router  # noqa: E402
+
+app.include_router(licence_router)  # Part 32: CTD approval (status, request, signed code, CTD file)
 install_friendly_errors(app)
 
 

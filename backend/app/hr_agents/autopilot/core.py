@@ -45,7 +45,10 @@ def record(db: Session, tenant, run: Run, *, agent: str, action: str, outcome: s
     from app.models.autopilot import AgentActivity
 
     row = AgentActivity(tenant_id=tenant.tenant_id, agent=agent, trigger=run.trigger, event=run.event, action=action, outcome=outcome,
-                        rule=rule_key, entity_type=entity_type, entity_id=entity_id, summary=summary[:2000], details=_jsonable(details or {}))
+                        rule=rule_key, entity_type=entity_type, entity_id=entity_id, summary=summary[:2000], details=_jsonable(details or {}),
+                        # the wall-clock time, not now(): PostgreSQL's now() is fixed per transaction, so two steps recorded in
+                        # one transaction tied and the Journey could show them in the wrong order
+                        created_at=datetime.now(timezone.utc))
     db.add(row)
     db.commit()
     return row

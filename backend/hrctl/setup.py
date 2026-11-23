@@ -66,24 +66,21 @@ def _modules() -> int:
     with tenant_context(TENANT_1_ID):
         db = SessionLocal()
         try:
-            if data.get("activate"):
-                done = module_status.activate(db, tenant, keys, actor="setup")
-                db.commit()
-                out = {"modules": "active", "switched_on": done}
-            else:
-                user = db.query(User).filter(User.email == data["email"]).first()
-                try:
-                    from app.platform import activation
+            # Part 32: the install ends LOCKED with the company, admin and modules REQUESTED from CTD Techs; nothing opens
+            # until CTD's signed approval code is entered on the waiting page. ("activate" only marks the rows - without
+            # a CTD signature that switches nothing on.)
+            user = db.query(User).filter(User.email == data["email"]).first()
+            try:
+                from app.platform import activation
 
-                    activation.request_activation(db, tenant, keys, user)
-                    db.commit()
-                    out = {"modules": "requested", "keys": keys}
-                except Exception as exc:  # noqa: BLE001 -- no mailbox yet etc.: wait, the admin can ask again in Settings > Modules
-                    db.rollback()
-                    module_status.mark_pending(db, tenant, keys, actor="setup")
-                    db.commit()
-                    out = {"modules": "pending", "keys": keys, "note": f"Activation request not sent yet ({type(exc).__name__}); "
-                                                                       "send it from Settings > Company > Modules."}
+                info = activation.request_access(db, tenant, keys, user)
+                out = {"modules": "requested", "keys": keys, "request": info["number"], "sent": info["email_sent"]}
+            except Exception as exc:  # noqa: BLE001 -- e.g. no signed CTD file yet: the waiting page offers "Load CTD file"
+                db.rollback()
+                module_status.mark_pending(db, tenant, keys, actor="setup")
+                db.commit()
+                out = {"modules": "pending", "keys": keys, "note": f"Access request not made yet ({exc}); the administrator does it on the "
+                                                                   "waiting page after signing in."}
         finally:
             db.close()
     print(json.dumps(out))
