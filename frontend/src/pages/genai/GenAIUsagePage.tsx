@@ -6,6 +6,11 @@ import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
+import Chip from "@mui/material/Chip";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogTitle from "@mui/material/DialogTitle";
 import Grid from "@mui/material/Grid";
 import LinearProgress from "@mui/material/LinearProgress";
 import Stack from "@mui/material/Stack";
@@ -15,6 +20,7 @@ import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
+import TextField from "@mui/material/TextField";
 import Tabs from "@mui/material/Tabs";
 import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
@@ -35,7 +41,13 @@ interface UnitCosts {
   per_resume: { resumes: number; ai_cost: number; avg: number | null };
   per_job: { jobs: number; avg: number | null; rows: UnitJob[] };
   per_hire: { hires: number; avg: number | null };
+  // Part 33.4: from the AI cost report - one hire's application (resume to joining) and one exit
+  hire?: Journey; exit?: Journey;
 }
+interface Journey { median: number | null; p90: number | null; currency: string; samples: number; estimate: boolean }
+
+const isoDate = (d: Date) => d.toISOString().slice(0, 10);
+const PERIOD_DAYS: Record<string, number> = { day: 1, week: 7, month: 30, quarter: 90 };
 type Period = "day" | "week" | "month" | "quarter";
 
 // Part 18.24: AI Intelligence usage (was "GenAI usage") -- like the Claude usage page: tokens in/out, cost, requests, errors,
@@ -57,6 +69,23 @@ export default function GenAIUsagePage() {
     if (!blob) return;
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "ai-intelligence-usage.csv"; a.click(); URL.revokeObjectURL(a.href);
   };
+  // Part 33.4: "Export cost report (Excel)" - the 33.1 report for the chosen dates (default: the period shown)
+  const [report, setReport] = useState<{ from: string; to: string; busy: boolean; error: string } | null>(null);
+  const openReport = () => {
+    const to = new Date();
+    const from = new Date(to.getTime() - (PERIOD_DAYS[period] ?? 30) * 86_400_000);
+    setReport({ from: isoDate(from), to: isoDate(to), busy: false, error: "" });
+  };
+  const badDates = !!report && !!report.from && !!report.to && report.to < report.from;
+  const downloadReport = async () => {
+    if (!report || badDates || !report.from || !report.to) return;
+    setReport({ ...report, busy: true, error: "" });
+    const blob = await http.fetchBlob(`/api/v1/ui/genai/cost-report/export?since=${report.from}&until=${report.to}`).catch(() => null);
+    if (!blob) { setReport({ ...report, busy: false, error: t("usage.export_failed") }); return; }
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `ai-cost-report-${report.from}-to-${report.to}.xlsx`; a.click(); URL.revokeObjectURL(a.href);
+    setReport(null);
+  };
+  const journeyMoney = (j: Journey, v: number | null) => (v == null ? "—" : `${j.currency} ${v.toLocaleString(undefined, { maximumFractionDigits: 2 })}`);
 
   return (
     <Box>
@@ -64,7 +93,26 @@ export default function GenAIUsagePage() {
         extra={<Stack direction="row" spacing={1}>
           <Button component={RouterLink} to="/settings/integrations/ai">{t("usage.settings")}</Button>
           <Button variant="outlined" startIcon={<DownloadOutlinedIcon />} onClick={exportCsv}>{t("usage.export")}</Button>
+          <Button variant="contained" startIcon={<DownloadOutlinedIcon />} onClick={openReport}>{t("usage.export_report")}</Button>
         </Stack>} />
+      <Dialog open={!!report} onClose={() => setReport(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>{t("usage.export_report_title")}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{t("usage.export_report_intro")}</Typography>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+            <TextField size="small" type="date" label={t("usage.export_from")} value={report?.from ?? ""} InputLabelProps={{ shrink: true }}
+              onChange={(e) => report && setReport({ ...report, from: e.target.value, error: "" })} fullWidth />
+            <TextField size="small" type="date" label={t("usage.export_to")} value={report?.to ?? ""} InputLabelProps={{ shrink: true }}
+              onChange={(e) => report && setReport({ ...report, to: e.target.value, error: "" })} fullWidth
+              error={badDates} helperText={badDates ? t("usage.export_bad_dates") : undefined} />
+          </Stack>
+          {report?.error && <Alert severity="error" sx={{ mt: 2 }}>{report.error}</Alert>}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setReport(null)}>{t("usage.export_cancel")}</Button>
+          <Button variant="contained" onClick={downloadReport} disabled={!report || report.busy || badDates || !report.from || !report.to}>{t("usage.export_download")}</Button>
+        </DialogActions>
+      </Dialog>
       <Tabs value={period} onChange={(_e, v: Period) => setPeriod(v)} sx={{ mb: 2 }}>
         {(["day", "week", "month", "quarter"] as Period[]).map((p) => <Tab key={p} value={p} label={t(`usage.period.${p}`)} />)}
       </Tabs>
@@ -82,7 +130,9 @@ export default function GenAIUsagePage() {
             ))}
           </Grid>
           {units && (
-            <Card sx={{ p: 2 }}>
+            <Grid container spacing={2}>
+            <Grid size={{ xs: 12, lg: units.hire || units.exit ? 8 : 12 }}>
+            <Card sx={{ p: 2, height: "100%" }}>
               <Typography sx={{ fontWeight: 800 }}>{t("usage.unit_title")}</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>{t("usage.unit_intro")}</Typography>
               <Grid container spacing={2} sx={{ mb: 1.5 }}>
@@ -117,6 +167,25 @@ export default function GenAIUsagePage() {
                 <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>{t("usage.unit_unattributed", { cost: money(units.unattributed_cost) })}</Typography>
               )}
             </Card>
+            </Grid>
+            {(units.hire || units.exit) && (
+              <Grid size={{ xs: 12, lg: 4 }}>
+                <Card sx={{ p: 2, height: "100%" }} data-testid="journey-card">
+                  <Typography sx={{ fontWeight: 800 }}>{t("usage.journey_title")}</Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>{t("usage.journey_intro")}</Typography>
+                  <Stack spacing={1.5}>
+                    {([["usage.journey_hire", units.hire, "handshake"], ["usage.journey_exit", units.exit, "door"]] as const).map(([k, j, e]) => j && (
+                      <Box key={k}>
+                        <StatTile emoji={e} value={journeyMoney(j, j.median)} tone="sky"
+                          label={`${t(k)} · ${t("usage.journey_line", { n: j.samples, p90: journeyMoney(j, j.p90) })}`} />
+                        {j.estimate && j.samples > 0 && <Chip size="small" color="warning" variant="outlined" label={t("usage.journey_estimate")} sx={{ mt: 0.5 }} />}
+                      </Box>
+                    ))}
+                  </Stack>
+                </Card>
+              </Grid>
+            )}
+            </Grid>
           )}
           <Card sx={{ p: 2 }}>
             <Typography sx={{ fontWeight: 800, mb: 1 }}>{t("usage.by_day")}</Typography>

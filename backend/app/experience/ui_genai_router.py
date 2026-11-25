@@ -346,5 +346,41 @@ def unit_costs(period: str = "month", since: Optional[date] = None, until: Optio
     hires = (db.query(func.count(Application.id)).filter(Application.tenant_id == tenant.tenant_id, Application.status.in_(uc.HIRED_STATUSES),
                                                          Application.updated_at >= start, Application.updated_at <= end).scalar() or 0)
     result = uc.compute(usage_rows, apps, titles, hires_in_period=int(hires))
+    # Part 33.4: per hire (one hired application's AI, resume to joining) and per exit, from the cost report
+    report = _cost_report(db, tenant, start, end)
+    recorded = report["sources"]["recorded"]["units"]
+    cur = "usd" if (report["currency"] or "").upper() == "USD" else "inr"  # the report prices in INR and USD; show the company's
+    journey = {unit: {"median": recorded[unit][cur]["median"], "p90": recorded[unit][cur]["p90"], "currency": cur.upper(),
+                      "samples": recorded[unit]["samples"], "estimate": recorded[unit]["estimate"]} for unit in ("hire", "exit")}
     return {"period": period, "since": start.isoformat(), "until": end.isoformat(), "currency": _s(db, tenant, "ai.currency"),
-            "priced": bool(_s(db, tenant, "ai.pricing")), **result}
+            "priced": bool(_s(db, tenant, "ai.pricing")), **result, **journey}
+
+
+def _cost_report(db: Session, tenant, start: datetime, end: datetime) -> dict:
+    """Part 33: the AI cost report (platform/ai/cost_report.py) for the signed-in company and window."""
+    from app.platform.ai import cost_report as cr
+
+    prices = cr.Prices(pricing=_s(db, tenant, "ai.pricing") or {}, currency=_s(db, tenant, "ai.currency") or "INR",
+                       fx=_s(db, tenant, "ai.fx_rates") or {})
+    slug = getattr(tenant, "slug", None) or "company"
+    calls = cr.load_calls(db, tenant.tenant_id, slug, start, end)
+    return cr.build(calls, cr.load_links(db, tenant.tenant_id), prices, since=start, until=end)
+
+
+@router.get("/cost-report/export")
+def cost_report_export(period: str = "month", since: Optional[date] = None, until: Optional[date] = None,
+                       db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Part 33.4: "Export cost report (Excel)" - cost per resume / JD / job / hire / exit / assistant question /
+    agent run (min, median, p90, samples, model) for the chosen dates, same numbers as scripts/ai_cost_report.py."""
+    from app.platform.ai.cost_report_xlsx import to_xlsx
+
+    tenant = require_current_tenant()
+    if not (has_permission(db, tenant, current_user, "platform.settings.view") or has_permission(db, tenant, current_user, "analytics.report.view")):
+        raise HTTPException(status_code=403, detail="Missing permission: platform.settings.view")
+    if since and until and until < since:
+        raise HTTPException(status_code=400, detail="The end date is before the start date.")
+    start, end = _window("custom" if since else period, since, until)
+    data = to_xlsx(_cost_report(db, tenant, start, end), title="AI cost report")
+    name = f"ai-cost-report-{start.date().isoformat()}-to-{end.date().isoformat()}.xlsx"
+    return StreamingResponse(iter([data]), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": f'attachment; filename="{name}"'})

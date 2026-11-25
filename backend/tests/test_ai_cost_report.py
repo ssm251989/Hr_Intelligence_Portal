@@ -215,3 +215,63 @@ def test_excel_has_the_sheets_and_numbers():
     units = {(r[0], r[1]): r for r in wb["Per unit"].iter_rows(min_row=2, values_only=True)}
     assert units[("Resume screened", "recorded")][4] == 88.0
     assert units[("Employee exit", "recorded")][3] == "estimate"
+
+
+# ---------------------------------------------------------------- in the app (33.4): unit-costs + Excel export
+# A window in 2031 so the dev database's own rows (rolled back per test anyway) never mix in.
+
+WINDOW = "period=custom&since=2031-01-01&until=2031-01-31"
+
+
+def _usage(db_session, *, feature, entity_type, entity_id, at, out_tokens=100_000):
+    import uuid as _uuid
+
+    from app.models.intelligence import AiUsageRecord
+    from app.platform.ai import model_catalog
+
+    db_session.add(AiUsageRecord(id=_uuid.uuid4(), feature=feature, purpose="llm.judgment", model=model_catalog.CLAUDE_SONNET_5,
+                                 input_tokens=0, output_tokens=out_tokens, cost=0, entity_type=entity_type, entity_id=entity_id,
+                                 created_at=datetime(2031, 1, at, 10, tzinfo=timezone.utc)))
+    db_session.flush()
+
+
+def test_unit_costs_has_cost_per_exit_and_hire(client, db_session):
+    import uuid as _uuid
+
+    sep_a, sep_b = _uuid.uuid4(), _uuid.uuid4()
+    _usage(db_session, feature="separation.exit_summary", entity_type="separation", entity_id=sep_a, at=5)
+    _usage(db_session, feature="separation.exit_summary", entity_type="separation", entity_id=sep_a, at=6)
+    _usage(db_session, feature="separation.exit_summary", entity_type="separation", entity_id=sep_b, at=7)
+    response = client.get(f"/api/v1/ui/genai/unit-costs?{WINDOW}")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    exit_ = body["exit"]
+    assert exit_["samples"] == 2 and exit_["estimate"] is True
+    assert exit_["median"] > 0 and exit_["p90"] > exit_["median"]  # one exit had two calls, the other one
+    assert body["hire"] == {"median": None, "p90": None, "currency": body["hire"]["currency"], "samples": 0, "estimate": True}
+
+
+def test_cost_report_export_is_an_excel_of_the_chosen_dates(client, db_session):
+    import uuid as _uuid
+
+    _usage(db_session, feature="separation.exit_summary", entity_type="separation", entity_id=_uuid.uuid4(), at=9)
+    response = client.get("/api/v1/ui/genai/cost-report/export?since=2031-01-01&until=2031-01-31")
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"].startswith("application/vnd.openxmlformats")
+    assert "ai-cost-report-2031-01-01-to-2031-01-31.xlsx" in response.headers["content-disposition"]
+    wb = load_workbook(BytesIO(response.content))
+    assert wb.sheetnames[:4] == ["Summary", "Per unit", "Per agent run", "Cost drivers"]
+    units = {(r[0], r[1]): r for r in wb["Per unit"].iter_rows(min_row=2, values_only=True)}
+    assert units[("Employee exit", "recorded")][2] == 1
+    unit_costs = client.get(f"/api/v1/ui/genai/unit-costs?{WINDOW}").json()
+    if unit_costs["exit"]["currency"] == "INR":
+        assert units[("Employee exit", "recorded")][4] == unit_costs["exit"]["median"]  # same numbers as the card
+
+
+def test_cost_report_export_rejects_backwards_dates(client):
+    response = client.get("/api/v1/ui/genai/cost-report/export?since=2031-02-01&until=2031-01-01")
+    assert response.status_code == 400
+
+
+def test_cost_report_export_needs_permission(anonymous_client):
+    assert anonymous_client.get(f"/api/v1/ui/genai/cost-report/export?{WINDOW}").status_code == 401
