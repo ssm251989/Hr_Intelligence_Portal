@@ -1,0 +1,9 @@
+SYNTHETIC JD BRIEF - for cost testing only
+Title: Python Backend Developer
+Department: Engineering
+Location: Chennai (hybrid)
+Experience: 3-6 years
+Must have: Python, FastAPI or Django, PostgreSQL, REST APIs, Docker, Git, unit testing
+Nice to have: AWS, Redis, Celery, Kafka
+Salary: Rs 12-22 LPA
+About the team: a small team building a multi-tenant HR product.
