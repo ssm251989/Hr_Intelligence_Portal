@@ -357,7 +357,7 @@ def _units(calls: list[Call], links: Links, priced: dict, subjects: dict, apps_o
     policy: list = []
     judgment_runs: dict = defaultdict(list)
     chat = []
-    drivers: dict = defaultdict(lambda: {"calls": 0, "tin": 0, "tout": 0, "inr": 0.0, "usd": 0.0, "unpriced": 0})
+    drivers: dict = defaultdict(lambda: {"calls": 0, "tin": 0, "tout": 0, "min_in": None, "inr": 0.0, "usd": 0.0, "unpriced": 0})
     total = _Sample()
 
     for c in calls:
@@ -367,6 +367,7 @@ def _units(calls: list[Call], links: Links, priced: dict, subjects: dict, apps_o
         d["calls"] += 1
         d["tin"] += c.input_tokens
         d["tout"] += c.output_tokens
+        d["min_in"] = c.input_tokens if d["min_in"] is None else min(d["min_in"], c.input_tokens)
         if p:
             d["inr"] += p["inr"]
             d["usd"] += p["usd"]
@@ -439,7 +440,7 @@ def _units(calls: list[Call], links: Links, priced: dict, subjects: dict, apps_o
     }
     agents = {f: summarise(items) for f, items in sorted(agent_samples.items())}
     driver_rows = sorted(({"feature": f, "model": m, "calls": d["calls"], "tokens_in": d["tin"], "tokens_out": d["tout"],
-                           "avg_in": round(d["tin"] / d["calls"]), "avg_out": round(d["tout"] / d["calls"]),
+                           "avg_in": round(d["tin"] / d["calls"]), "avg_out": round(d["tout"] / d["calls"]), "min_in": d["min_in"],
                            "inr": _r(d["inr"]), "usd": _r(d["usd"], 6), "unpriced_calls": d["unpriced"],
                            "inr_per_call": _r(d["inr"] / d["calls"])} for (f, m), d in drivers.items()), key=lambda r: -r["inr"])
     tot = summarise([total])

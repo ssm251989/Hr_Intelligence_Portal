@@ -46,7 +46,10 @@ STAT_HEADER = ["Unit", "Source", "Samples", "Estimate?", "Median Rs", "p90 Rs", 
                "Calls per unit", "Median tokens in", "Median tokens out", "Model (calls)", "Unpriced calls"]
 
 
-def to_xlsx(report: dict, *, title: str = "AI cost report", extra_sheets: Optional[list] = None, notes: Optional[list] = None) -> bytes:
+def to_xlsx(report: dict, *, title: str = "AI cost report", extra_sheets: Optional[list] = None, notes: Optional[list] = None,
+            headline_rows: Optional[list] = None) -> bytes:
+    """`headline_rows` ([label, Rs, USD, samples, "measured"/"estimate"/"modelled", source]) replaces the automatic
+    headline (median per resume / job / hire from the source with more samples)."""
     wb = Workbook()
     ws = wb.active
     ws.title = "Summary"
@@ -59,8 +62,12 @@ def to_xlsx(report: dict, *, title: str = "AI cost report", extra_sheets: Option
     ws.append(["Headline (median)", "Rs", "USD", "Samples", "Estimate?", "Source"])
     for cell in ws[ws.max_row]:
         cell.font, cell.fill = HEAD, HEAD_FILL
-    for unit, h in headline(report).items():
-        ws.append([f"Per {unit}"] + ([h["inr"], h["usd"], h["samples"], "estimate" if h["estimate"] else "measured", h["source"]] if h else ["no data"]))
+    if headline_rows is not None:
+        for row in headline_rows:
+            ws.append(list(row))
+    else:
+        for unit, h in headline(report).items():
+            ws.append([f"Per {unit}"] + ([h["inr"], h["usd"], h["samples"], "estimate" if h["estimate"] else "measured", h["source"]] if h else ["no data"]))
     ws.append([])
     ws.append(["Source", "Calls", "Total Rs", "Total USD"])
     for cell in ws[ws.max_row]:

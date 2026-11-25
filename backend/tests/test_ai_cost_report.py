@@ -275,3 +275,10 @@ def test_cost_report_export_rejects_backwards_dates(client):
 
 def test_cost_report_export_needs_permission(anonymous_client):
     assert anonymous_client.get(f"/api/v1/ui/genai/cost-report/export?{WINDOW}").status_code == 401
+
+
+def test_excel_headline_can_be_replaced_by_the_reports_own():
+    data = to_xlsx(cr.build([], cr.Links(), PRICES), headline_rows=[["Per job (50 applicants)", 59.84, 0.68, "-", "modelled", "model"]])
+    rows = [r for r in load_workbook(BytesIO(data))["Summary"].iter_rows(values_only=True)]
+    assert ("Per job (50 applicants)", 59.84, 0.68, "-", "modelled", "model") in [tuple(r[:6]) for r in rows]
+    assert not any(r[0] == "Per resume" for r in rows)  # the automatic headline is not added as well

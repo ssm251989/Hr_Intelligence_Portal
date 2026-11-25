@@ -1,0 +1,160 @@
+{
+ "note": "Gate A controlled run (Part 33.2, 2026-11-25): links between the kept ai_usage_records (module gate-a-run) and the test rows deleted after the run. Synthetic data only.",
+ "jobs": {
+  "35e64e04-2c71-42d5-b956-abb714a2f0a3": "Python Backend Developer",
+  "16626188-4965-43fa-b061-351239d67ae0": "Data Analyst",
+  "5b8cb3a2-2c0a-4f46-8817-a5cbe93e3337": "HR Generalist"
+ },
+ "applications": {
+  "9e928f5a-8987-4050-a3cc-d83e661b6b60": {
+   "job_id": "35e64e04-2c71-42d5-b956-abb714a2f0a3",
+   "candidate_id": "b9546e37-42ed-4985-9967-2c24c9be4646",
+   "file": "resume_01_backend.pdf"
+  },
+  "466c33e7-9502-4998-ba57-e3c7d179cdc7": {
+   "job_id": "35e64e04-2c71-42d5-b956-abb714a2f0a3",
+   "candidate_id": "6ea8de01-74bd-408c-b84b-b1ffdd5ec591",
+   "file": "resume_02_backend.pdf"
+  },
+  "41b67582-a175-46d7-b8b5-1b30ea73caac": {
+   "job_id": "35e64e04-2c71-42d5-b956-abb714a2f0a3",
+   "candidate_id": "471c3a54-1c60-49de-bd2b-6d149dd0c3bc",
+   "file": "resume_03_backend.pdf"
+  },
+  "a849d57d-629c-4e19-9118-d66cc2b90c33": {
+   "job_id": "35e64e04-2c71-42d5-b956-abb714a2f0a3",
+   "candidate_id": "210d25f8-d0a9-46cc-9963-e8479bed7a4b",
+   "file": "resume_04_backend.pdf"
+  },
+  "d729d8ce-75be-41ec-8ea3-2f1d6fe20f80": {
+   "job_id": "35e64e04-2c71-42d5-b956-abb714a2f0a3",
+   "candidate_id": "67f3cafe-3e1b-4f97-b290-f9cae21aeddc",
+   "file": "resume_05_backend.pdf"
+  },
+  "47c3f524-be3f-4bb1-bb78-fc1ee0647f47": {
+   "job_id": "35e64e04-2c71-42d5-b956-abb714a2f0a3",
+   "candidate_id": "7a282137-e1b7-41a7-b0fd-142a4c752014",
+   "file": "resume_06_backend.pdf"
+  },
+  "f6a1da33-106b-4b3f-9a5a-c9f711f30ce5": {
+   "job_id": "35e64e04-2c71-42d5-b956-abb714a2f0a3",
+   "candidate_id": "16f7cf45-31a4-40e8-9c6b-c9553d205d70",
+   "file": "resume_07_backend.pdf"
+  },
+  "124a7ff0-5c08-4ac7-b84b-4712668b5d32": {
+   "job_id": "35e64e04-2c71-42d5-b956-abb714a2f0a3",
+   "candidate_id": "7103d82f-7054-4b25-8845-4dfbead02fa8",
+   "file": "resume_08_data.pdf"
+  },
+  "7149f93e-9229-4148-86fc-de1b390178c0": {
+   "job_id": "35e64e04-2c71-42d5-b956-abb714a2f0a3",
+   "candidate_id": "5aad9ef1-72b0-4d52-ab14-f29bf020357f",
+   "file": "resume_09_hr.pdf"
+  },
+  "b0228a7d-3103-4c0b-bdff-537cb865a06f": {
+   "job_id": "35e64e04-2c71-42d5-b956-abb714a2f0a3",
+   "candidate_id": "f537a492-b46d-4f3d-b0b8-3427b142ff5f",
+   "file": "resume_10_backend.pdf"
+  },
+  "ee249cea-9499-4136-be4d-ffbdd793e546": {
+   "job_id": "16626188-4965-43fa-b061-351239d67ae0",
+   "candidate_id": "308135d0-725f-438d-8c27-b98b1bcb9238",
+   "file": "resume_11_data.pdf"
+  },
+  "88d6bcb2-275f-45ff-a6e5-3cd7fdd76423": {
+   "job_id": "16626188-4965-43fa-b061-351239d67ae0",
+   "candidate_id": "253d56cc-859c-459e-85b4-dad685b92426",
+   "file": "resume_12_data.pdf"
+  },
+  "197ac12c-d498-44cf-b150-d2c7988b57ad": {
+   "job_id": "16626188-4965-43fa-b061-351239d67ae0",
+   "candidate_id": "a318ab2d-0684-4b2b-9566-ef2362573247",
+   "file": "resume_13_data.pdf"
+  },
+  "145ccad4-ff53-4597-9ed6-62f3093c8142": {
+   "job_id": "16626188-4965-43fa-b061-351239d67ae0",
+   "candidate_id": "e7c6748c-6c5d-4edb-9526-920f39a9c896",
+   "file": "resume_14_data.pdf"
+  },
+  "04ea435d-8c5b-41ae-87ee-ededd2b7e3de": {
+   "job_id": "16626188-4965-43fa-b061-351239d67ae0",
+   "candidate_id": "f0cdd14e-f3db-4733-bf4b-1d279e9fb89b",
+   "file": "resume_15_data.pdf"
+  },
+  "a862c8fb-c367-4948-b975-9600bb04bd02": {
+   "job_id": "16626188-4965-43fa-b061-351239d67ae0",
+   "candidate_id": "85852fd5-8558-4666-80f5-f02b9d95ec38",
+   "file": "resume_16_data.pdf"
+  },
+  "57d616c4-dc33-421c-89a5-29669968ad24": {
+   "job_id": "16626188-4965-43fa-b061-351239d67ae0",
+   "candidate_id": "ee051069-9435-46ff-bcaf-157b6747df1e",
+   "file": "resume_17_data.pdf"
+  },
+  "982b3eff-2eeb-41f6-b324-fb80f0079978": {
+   "job_id": "16626188-4965-43fa-b061-351239d67ae0",
+   "candidate_id": "a7a0eb2e-b7ab-4f42-8a23-8db521de8362",
+   "file": "resume_18_backend.pdf"
+  },
+  "33ec96c2-f232-4135-a2f7-4621c962758e": {
+   "job_id": "16626188-4965-43fa-b061-351239d67ae0",
+   "candidate_id": "9abd3f3d-526f-439f-9ead-93136ef94ccc",
+   "file": "resume_19_hr.pdf"
+  },
+  "38def912-d7dc-4502-bca5-77c937a589fc": {
+   "job_id": "16626188-4965-43fa-b061-351239d67ae0",
+   "candidate_id": "333682ff-46a6-4786-ae28-8e790f67f547",
+   "file": "resume_20_data.pdf"
+  },
+  "6b1637a9-236b-48a0-97a7-f5c7561c8c9d": {
+   "job_id": "5b8cb3a2-2c0a-4f46-8817-a5cbe93e3337",
+   "candidate_id": "e580196f-f937-47e4-af8d-afdc3d0106c3",
+   "file": "resume_21_hr.pdf"
+  },
+  "3ea895a0-a553-465c-9803-08e0d2413535": {
+   "job_id": "5b8cb3a2-2c0a-4f46-8817-a5cbe93e3337",
+   "candidate_id": "4cda5aef-bd32-45bc-b413-538605a12756",
+   "file": "resume_22_hr.pdf"
+  },
+  "a1c1c1a8-e340-419a-aa4f-a57cfb637e43": {
+   "job_id": "5b8cb3a2-2c0a-4f46-8817-a5cbe93e3337",
+   "candidate_id": "39c271f4-f4b8-4d01-9813-6b2aa2e85c73",
+   "file": "resume_23_hr.pdf"
+  },
+  "b57586be-6f51-4dd5-98bc-f0ad49098331": {
+   "job_id": "5b8cb3a2-2c0a-4f46-8817-a5cbe93e3337",
+   "candidate_id": "e0fb8092-2257-418f-a32f-2b291852d623",
+   "file": "resume_24_hr.pdf"
+  },
+  "c9ed0235-e149-40fa-9962-c1ecee1f0fee": {
+   "job_id": "5b8cb3a2-2c0a-4f46-8817-a5cbe93e3337",
+   "candidate_id": "49317f15-65c2-4665-a053-8f11cb645091",
+   "file": "resume_25_hr.pdf"
+  },
+  "d868ff8a-2a80-4e76-9df3-ed6ea982880c": {
+   "job_id": "5b8cb3a2-2c0a-4f46-8817-a5cbe93e3337",
+   "candidate_id": "ed3fbd4a-7e6e-49a0-9582-ba40e33e3042",
+   "file": "resume_26_hr.pdf"
+  },
+  "e80d7620-bd71-423a-9d62-c4367b045d21": {
+   "job_id": "5b8cb3a2-2c0a-4f46-8817-a5cbe93e3337",
+   "candidate_id": "4bf431e1-2e12-4175-b33b-a6ffe680fa61",
+   "file": "resume_27_hr.pdf"
+  },
+  "f7c83370-c251-406d-ad86-823cf489a40f": {
+   "job_id": "5b8cb3a2-2c0a-4f46-8817-a5cbe93e3337",
+   "candidate_id": "afd74d84-9ef1-4423-aebc-6bb19afa1a2f",
+   "file": "resume_28_data.pdf"
+  },
+  "a408a3f1-c8b7-4342-8f57-ebc5a45eb17f": {
+   "job_id": "5b8cb3a2-2c0a-4f46-8817-a5cbe93e3337",
+   "candidate_id": "a2b42611-1997-4d42-a71a-db61f75eee79",
+   "file": "resume_29_backend.pdf"
+  },
+  "8f420cb1-6019-4747-9708-173319012412": {
+   "job_id": "5b8cb3a2-2c0a-4f46-8817-a5cbe93e3337",
+   "candidate_id": "e65e9591-a050-49f4-a5c2-bf6498bd6925",
+   "file": "resume_30_hr.pdf"
+  }
+ }
+}

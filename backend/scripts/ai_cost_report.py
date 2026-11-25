@@ -14,6 +14,7 @@ import argparse
 import json
 import sys
 from datetime import date, datetime, time, timezone
+from typing import Optional
 
 from app.platform.ai import cost_report as cr
 
@@ -32,10 +33,20 @@ def _companies(only: list) -> list:
     return [r for r in rows if not only or r[0] in only]
 
 
-def collect(since: datetime, until: datetime, only: list = ()) -> dict:
+def links_from_file(path) -> cr.Links:
+    """A saved links snapshot ({"jobs": {id: title}, "applications": {id: {job_id, candidate_id}}}) - e.g. the Gate A
+    run's, whose test rows were deleted after the run while its AI usage rows were kept."""
+    data = json.loads(open(path, encoding="utf-8").read())
+    return cr.Links(applications={a: cr.AppLink(v.get("job_id"), v.get("candidate_id"), v.get("status")) for a, v in data.get("applications", {}).items()},
+                    jobs=dict(data.get("jobs", {})))
+
+
+def collect(since: datetime, until: datetime, only: list = (), extra_links: Optional[list] = None) -> dict:
     from sqlalchemy import create_engine, text
 
     calls, links, sandbox, prices_of = [], cr.Links(), set(), {}
+    for path in extra_links or []:
+        links.merge(links_from_file(path))
     engines: dict = {}
     for slug, tenant_id, dsn, _shared in _companies(list(only)):
         if cr.SANDBOX_COMPANY.search(slug):
@@ -89,12 +100,13 @@ def main(argv=None) -> int:
     parser.add_argument("--since", type=date.fromisoformat, required=True)
     parser.add_argument("--until", type=date.fromisoformat, required=True)
     parser.add_argument("--company", action="append", default=[], help="company slug (repeatable); default: all")
+    parser.add_argument("--links", action="append", default=[], help="saved links snapshot (e.g. docs/samples/gate_a/run_links.json)")
     parser.add_argument("--json")
     parser.add_argument("--xlsx")
     args = parser.parse_args(argv)
     since = datetime.combine(args.since, time.min, tzinfo=timezone.utc)
     until = datetime.combine(args.until, time.max, tzinfo=timezone.utc)
-    report = collect(since, until, args.company)
+    report = collect(since, until, args.company, args.links)
     print_report(report)
     if args.json:
         with open(args.json, "w", encoding="utf-8") as fh:
