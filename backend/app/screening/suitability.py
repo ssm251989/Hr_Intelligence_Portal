@@ -22,6 +22,7 @@ from app.ai_services.resume_matcher import ResumeMatchError, match_resume
 from app.audit.service import log_action
 from app.models.candidate import Candidate
 from app.models.job_role import JobRole
+from app.platform.ai.tracked import ai_subject
 from app.screening.service import (
     composite_score,
     compute_certificates_score,
@@ -94,7 +95,9 @@ def attempt_auto_suggest_suitable_job(db: Session, candidate: Candidate, actor: 
     best_score: Optional[float] = None
     for job in candidate_jobs:
         try:
-            result = match_resume(job.jd_text, candidate.parsed_fields, candidate.location, job.location)
+            # Part 33: count this call for the candidate (cost per resume) - it used to be recorded with no subject
+            with ai_subject("candidate", candidate.id):
+                result = match_resume(job.jd_text, candidate.parsed_fields, candidate.location, job.location)
         except ResumeMatchError:
             continue
         candidate_years = (candidate.parsed_fields or {}).get("total_experience_years")

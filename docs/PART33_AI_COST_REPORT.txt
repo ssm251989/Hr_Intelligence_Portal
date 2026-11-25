@@ -1,0 +1,52 @@
+PART 33 - AI COST REPORT + DRAFT PRICING (Gate A) (2026-11-24)
+Goal: a report management can read: what the AI really costs per resume, per job, per hire and per agent, and
+a draft price list built on it. Data already exists (ai usage records, unit_costs.py, GET /api/v1/ui/genai/unit-costs).
+Repo: hr-portal-work, remote `portal`, branch kishore/part-33.
+
+STANDING RULES (same for Parts 33-38)
+- First message: `git status`, `git log --oneline -5`; quote the output.
+- One branch per part from the latest KG-Development:
+  git checkout KG-Development && git pull portal KG-Development && git checkout -b kishore/part-33
+- All mail goes to Mailpit, never a real email. Start Mailpit only when a step sends mail.
+- Memory is short on this PC: run backend tests file by file or in batches of ~10 files; never two heavy jobs at once.
+- Never commit secrets, real candidate data or a private key. The repo is PUBLIC.
+- Agents call the same service functions the screens use; decisions about a person stay cards.
+- Keep ai.provider = anthropic. Commit per block "part-33.N: <block>". Push the branch, give the user the pull
+  request link (base KG-Development) with a short description. Do not merge.
+- Order (owner, 2026-11-24): 33 -> 34 -> 35 -> 36 -> 37 -> 38. Finish one part before starting the next.
+
+33.1 NUMBERS FROM REAL DATA
+  a. Script backend/scripts/ai_cost_report.py (read-only): for a date range, per company (all companies on this
+     install), from the recorded AI usage rows:
+     - cost per resume screened, per JD drafted, per job (all AI on that job), per hire (application to joined),
+       per employee exit, per HR-assistant question, per agent (screening, job, scheduling, salary, bgv reader,
+       interview summary, briefing ...);
+     - tokens in/out and calls behind each number; min / median / 90th percentile, not only the average;
+     - in INR and USD (setting ai.fx_rates), model by model.
+  b. Say how many real samples each number rests on. Under 20 samples -> mark "estimate" and also compute it from
+     a controlled run (33.2).
+  c. Exclude test / proof / sandbox data (sandbox company, proof jobs) and say so in the report.
+
+33.2 CONTROLLED RUN (only where real samples are thin)
+  With Mailpit on and the real model: screen 30 sample resumes (docs/samples, anonymised) against 3 JDs, draft 3
+  JDs, 5 HR-assistant questions, 2 interview summaries, 2 BGV report readings. Record cost per item. Delete the
+  test rows afterwards except the AI usage rows (real spend) - tag them "gate-a-run".
+
+33.3 THE REPORT (docs/GATE_A_COST_REPORT.md + the same as an Excel file in docs/reports/)
+  1. One-line answer: "AI costs about Rs X per resume, Rs Y per job, Rs Z per hire."
+  2. Table per unit (resume, JD, job, hire, exit, assistant question, agent run): median, p90, samples, model.
+  3. What drives cost (which agent / prompt is most expensive) and 3 concrete ways to cut it (cheaper model for
+     a step, shorter prompt, caching) with the saving in Rs.
+  4. Cost on Amazon Bedrock vs Anthropic direct for the same models (list prices; mark them "list price, check").
+  5. Draft pricing (owner decides): three plans from the blueprint - Lite (per API call), Pro (per active job /
+     month, includes the web app), Enterprise (platform fee + per hire, on-prem) - each with the AI cost inside
+     it and the margin at 3 price points. Mark clearly "DRAFT - for management".
+  6. Assumptions and what was excluded.
+
+33.4 IN THE APP
+  AI Intelligence > Usage: add "Cost per hire" and "Cost per exit" next to the existing unit-cost card, and an
+  "Export cost report (Excel)" button that runs 33.1 for the chosen dates. EN/HI/TA. Tests for the new numbers
+  (pure function tests with fixed rows) and the export.
+
+33.5 FINISH: tests file by file, npm run build, commit, push, pull request link. Tell the user the one-line
+answer from 33.3.1.

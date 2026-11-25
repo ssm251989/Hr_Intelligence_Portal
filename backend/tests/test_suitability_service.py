@@ -383,3 +383,26 @@ def test_candidates_list_and_dashboard_expose_suitable_job_fields(client, db_ses
     # which is fine; only assert the shape when it's actually present.
     if matching:
         assert matching[0]["suitable_job_title"] == "Suggested Job"
+
+
+def test_attempt_auto_suggest_counts_its_ai_calls_for_the_candidate(db_session, monkeypatch):
+    # Part 33: the "suitable for" calls are part of handling a resume - ai_usage_records must name the candidate
+    from app.platform.ai import tracked
+
+    skill = _unique_skill()
+    subjects = []
+
+    def fake_match_resume(jd_text, *args, **kwargs):
+        subjects.append(tracked._SUBJECT.get())
+        return _fake_result()
+
+    monkeypatch.setattr(suitability, "match_resume", fake_match_resume)
+    candidate = _make_candidate(db_session, parsed_fields={"skills": [skill]})
+    for i in range(2):
+        _make_job(db_session, skills=[skill], title=f"Job {i}", jd_text=f"JD {uuid.uuid4()}")
+
+    suitability.attempt_auto_suggest_suitable_job(db_session, candidate)
+
+    assert len(subjects) >= 2  # the dev database may hold other published jobs that fill the remaining slot
+    assert set(subjects) == {("candidate", candidate.id)}
+    assert tracked._SUBJECT.get() is None  # reset after the scan

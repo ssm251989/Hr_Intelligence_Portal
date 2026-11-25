@@ -1,0 +1,9 @@
+SYNTHETIC JD BRIEF - for cost testing only
+Title: Data Analyst
+Department: Business Intelligence
+Location: Bengaluru
+Experience: 2-5 years
+Must have: SQL, Excel, Power BI or Tableau, stakeholder communication
+Nice to have: Python (pandas), A/B testing, Snowflake, dbt
+Salary: Rs 8-15 LPA
+About the team: supports sales, finance and operations with reporting.
